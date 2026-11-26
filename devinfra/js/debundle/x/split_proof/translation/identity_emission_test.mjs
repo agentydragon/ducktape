@@ -10,7 +10,6 @@ import { acorn, dump, eslintScope, loadSnapshot } from "./parser.mjs";
 import { checkTranslation } from "./testing/check_translation.mjs";
 import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
-import { generateInstance } from "./testing/split.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const temp = process.env.TEST_TMPDIR;
@@ -102,37 +101,20 @@ const scopes = dump("const a = (x) => x, b = (x) => x;");
 const callbacks = scopes.body[0].declarations.map((d) => d.init);
 assert.notEqual(callbacks[0].params[0].b, callbacks[1].params[0].b);
 for (const callback of callbacks) assert.equal(callback.params[0].b, callback.body.b);
-const leanCertificate = path.join(temp, "generated.lean");
-generateInstance({ ast, spec, out: leanCertificate, preview: path.join(temp, "instance-generator-preview") });
-const emitted = run(process.env.SPLIT_PREVIEW, [writeDeployment(ast, spec, out), out]);
+const emitted = run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(ast, spec, out), out]);
 assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
 assert.match(emitted.stdout, /pass\s+OrderOk/);
 const legacyInput = path.join(temp, "legacy-ast.json");
 writeFileSync(legacyInput, legacyDump(parsed));
 const upgradedOut = path.join(temp, "upgraded");
-const upgraded = run(process.env.SPLIT_PREVIEW, [writeDeployment(legacyInput, spec, upgradedOut), upgradedOut]);
+const upgraded = run(process.env.LOWERSPLIT, [
+  "--diagnostic",
+  writeDeployment(legacyInput, spec, upgradedOut),
+  upgradedOut,
+]);
 assert.equal(upgraded.status, 0, `${upgraded.stdout}\n${upgraded.stderr}`);
 for (const file of ["entry.mjs", "side.mjs"])
   assert.equal(readFileSync(path.join(upgradedOut, file), "utf8"), readFileSync(path.join(out, file), "utf8"));
-const leanSource = readFileSync(leanCertificate, "utf8");
-assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
-assert.match(leanSource, /theorem plan_valid/);
-
-// A generated instance retains the original spelling of whole statements
-// and standalone declarations for units split out of a declaration list.
-{
-  const source = path.join(temp, "instance-source.mjs");
-  const spec = path.join(temp, "instance-spec.json");
-  const instance = path.join(temp, "instance.lean");
-  const original = "const /* retained */ seed = 1;";
-  writeFileSync(source, `${original}\nconst left = seed, right = 2;\n`);
-  writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["seed", "left", "right"] } }));
-  generateInstance({ source, spec, out: instance, preview: path.join(temp, "instance-out") });
-  const generated = readFileSync(instance, "utf8");
-  for (const unit of [original, "const left = seed;", "const right = 2;"])
-    assert(generated.includes(`src := ${JSON.stringify(unit)}`), unit);
-}
-
 const checked = checkTranslation(bundleFromParsed(parsed), out);
 assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
 assert.match(checked.stdout, /PLAN SOUND/);
@@ -265,7 +247,7 @@ console.log(import.meta.url, result);`;
   mkdirSync(dir, { recursive: true });
   writeFileSync(input, JSON.stringify(dump(codeWithFallback)));
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2"] } }));
-  const result = run(process.env.SPLIT_PREVIEW, [writeDeployment(input, spec, dir), dir]);
+  const result = run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(input, spec, dir), dir]);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /1 with fallback nodes/);
 }

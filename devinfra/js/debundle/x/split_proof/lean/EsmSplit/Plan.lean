@@ -10,8 +10,8 @@ in source order, and its `export` list. These imports and exports are the glue b
 The bundle's own `export` statements are statements like any other, and keep their names
 (`Stmt.exports`). The splitter uses these statement IDs to select ESTree nodes for each output module.
 
-`Valid B S P` is a conjunction of decidable checks (`Fast.lean` decides them). Lean evaluates it on
-the concrete example with the kernel (`decide +kernel`), and `Correct.lean` proves what it implies
+`Valid B S P` is a conjunction of decidable checks (`Fast.lean` decides them).
+`Correct.lean` proves what it implies
 for *every* bundle, spec and plan.
 -/
 

@@ -5,14 +5,12 @@ load("//devinfra/python:defs.bzl", "py_test")
 # Browser targets select different cases from the shared test source.
 # gazelle:exclude browser_smoke_test.py
 
-_SPLIT_PREVIEW = "//devinfra/js/debundle/x/split_proof/lean:split_preview"
-
 _DUMP_DATA = [
-    _SPLIT_PREVIEW,
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     "//devinfra/js/debundle/x/split_proof/translation:split_dump",
 ]
 
-_PREVIEW_ENV = {"SPLIT_PREVIEW": "$(rootpath " + _SPLIT_PREVIEW + ")"}
+_LOWERSPLIT_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
 js_test(
     name = "lowering_census",
@@ -50,7 +48,7 @@ js_test(
     ],
     entry_point = "run.mjs",
     env = dict(
-        _PREVIEW_ENV,
+        _LOWERSPLIT_ENV,
         EXCALIDRAW_OUTPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
         LOWER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
     ),
@@ -106,7 +104,7 @@ js_test(
     ],
     entry_point = "authored.mjs",
     env = dict(
-        _PREVIEW_ENV,
+        _LOWERSPLIT_ENV,
         EDITOR_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
         EXCALIDRAW_INPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
         MAIN_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_MAIN_SPEC + ")",
@@ -116,7 +114,6 @@ js_test(
 )
 
 _EXCALIDRAW_SCROLL_DATA = [
-    _SPLIT_PREVIEW,
     "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ":" + _EXCALIDRAW_EDITOR_SPEC,
     "//devinfra/js/debundle/x/split_proof/translation:parser",
@@ -128,7 +125,7 @@ _EXCALIDRAW_SCROLL_DATA = [
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
-_EXCALIDRAW_SCROLL_ENV = _PREVIEW_ENV | {
+_EXCALIDRAW_SCROLL_ENV = {
     "EDITOR_LEAN_SPEC": "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
     "EXCALIDRAW_INPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
     "EXCALIDRAW_OUTPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",

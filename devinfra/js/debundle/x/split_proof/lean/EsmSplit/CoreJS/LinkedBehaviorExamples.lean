@@ -1,12 +1,7 @@
 import EsmSplit.CoreJS.LinkedCertificate.Proof
-import EsmSplit.CoreJS.LinkedCertificate.QuoteCoreJS
-import EsmSplit.CoreJS.LinkedCertificate.QuoteJson
 import EsmSplit.CoreJS.LinkedPivotCertificate
 
 namespace CoreJS.LinkedBehaviorExamples
-
-deriving instance Lean.ToExpr for EsmSplit.Module
-deriving instance Lean.ToExpr for EsmSplit.Plan
 
 private def provider : Module where
   name := "factory"
@@ -34,32 +29,9 @@ private def candidate : Program where
   modules := [provider, ⟨"split", [], [movedUnit], []⟩,
     { entry with imports := entry.imports ++ [⟨"split", []⟩], body := [callUnit] }]
 
--- This literal exercises source punctuation, control characters, non-ASCII data, negative zero
--- and a NaN payload. Checking the parsed term against its input also covers the implicit type
--- parameters in lists and pairs produced by Lean's ToExpr instances.
-private def literals : Program := Program.single [
-  .expr (.str "\"\\\n/- -- #eval λ"), .expr (.num (Float.ofBits 0x8000000000000000)),
-  .expr (.num (Float.ofBits 0x7ff8000000000001))]
-
-private def plan : EsmSplit.Plan :=
-  ⟨"main", [⟨"factory", [0], [], [("fac", "make")]⟩,
-    ⟨"main", [1, 2], [("factory", ["fac"])], [("public", "created")]⟩]⟩
-
-open Lean Elab in
-elab "quotedFixture%" n:ident : term <= expectedType => do
-  let fixture := match n.getId with
-    | `source => toExpr source
-    | `plan => toExpr plan
-    | _ => toExpr literals
-  EsmSplit.CertificateData.elaborate fixture expectedType
-
 set_option maxRecDepth 16000
 set_option maxHeartbeats 2000000
 set_option cbv.warning false
-
-theorem literalRoundTrip :
-    (quotedFixture% source) = source ∧ (quotedFixture% literals) = literals ∧ (quotedFixture% plan) = plan :=
-  ⟨rfl, rfl, rfl⟩
 
 -- One module, no imports or exports: simply calling an arrow on initialization used
 -- to exhaust the prover when its return expression went through the ordinary unary rule.
@@ -146,64 +118,6 @@ example (w : World) (final : State w)
   · cbv <;> rfl
 
 open Lean (Json)
-
--- The insertion order and a negative decimal distinguish this literal from a reparse of
--- canonical printed JSON. The string also exercises quotes, escapes and Lean comment syntax.
-private def jsonFixture := Json.mkObj [
-  ("z", .num ⟨-20, 1⟩), ("a", .arr #[.null, .bool false,
-    Json.mkObj [("x", .str "one"), ("y", .num ⟨20, 1⟩)],
-    Json.mkObj [("x", .str "two"), ("y", .num ⟨2, 0⟩)],
-    Json.mkObj [("y", .str "three"), ("x", .null)]]),
-  ("q", .str "\"\\\n/- -- #eval λ"), ("b", .bool true)]
-
-private def wideJsonFixture : Json :=
-  Json.mkObj [("body", .arr #[.arr (Array.ofFn fun i : Fin 705 =>
-    let key := Json.mkObj [("type", .str "Literal"), ("raw", .str s!"field{i.val}"),
-      ("value", .str s!"field{i.val}"), ("lit", .str s!"s:field{i.val}")]
-    let value := Json.mkObj [("type", .str "Literal"), ("value", .num ⟨-Int.ofNat i.val, 2⟩)]
-    Json.mkObj [("type", .str "Property"), ("key", key),
-      ("computed", .bool false), ("method", .bool false), ("shorthand", .bool false),
-      ("value", value), ("kind", .str "init")])])]
-
-private def commonJsonFields := #[jsonFixture, .null, .bool false, .str "shared", .num ⟨-3, 1⟩]
-
-private def sourceJsonFixture : Json := .arr (commonJsonFields ++ #[
-  Json.mkObj [("z", .bool true), ("a", .null)], .num ⟨1, 1⟩, .null, .null, .null])
-
-private def outputJsonFixture : Json := .arr (commonJsonFields ++ #[
-  Json.mkObj [("a", .null), ("z", .bool true)], .num ⟨10, 2⟩, .null, .null, .null])
-
-open Lean Elab Command in
-elab "#quoteJsonFixture" name:ident : command => do
-  let roots := match name.getId with
-    | `quotedWideJsonFixture => [("quotedWideJsonFixture", wideJsonFixture)]
-    | `quotedSourceJsonFixture => [("quotedSourceJsonFixture", sourceJsonFixture),
-        ("quotedOutputJsonFixture", outputJsonFixture)]
-    | _ => [(name.getId.toString, jsonFixture)]
-  let (definitions, entries) := LinkedBehavior.jsonDefinitions roots
-  modifyEnv (EsmSplit.CertificateData.addEntries · entries)
-  for text in definitions do
-    let .ok stx := Parser.runParserCategory (← getEnv) `command text
-      | throwError "could not parse the quoted JSON definition"
-    elabCommand stx
-
-#quoteJsonFixture quotedJsonFixture
-
-theorem jsonLiteralRoundTrip : quotedJsonFixture = jsonFixture := rfl
-
--- The roots share a chunk. The other chunks preserve distinct raw object trees
--- and mantissa/exponent pairs even when their printed JSON agrees.
-#guard sourceJsonFixture.compress == outputJsonFixture.compress
-#quoteJsonFixture quotedSourceJsonFixture
-
-theorem sharedJsonLiteralRoundTrip : quotedSourceJsonFixture = sourceJsonFixture ∧
-    quotedOutputJsonFixture = outputJsonFixture := ⟨rfl, rfl⟩
-
--- The recursion budget here applies only to elaborating the generated syntax.
-set_option maxRecDepth 512 in
-#quoteJsonFixture quotedWideJsonFixture
-
-#guard quotedWideJsonFixture == wideJsonFixture
 
 private def node (kind : String) (fields : List (String × Json)) : Json :=
   Json.mkObj (("type", .str kind) :: fields)

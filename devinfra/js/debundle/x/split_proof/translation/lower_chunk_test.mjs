@@ -70,8 +70,9 @@ function split(name, { code, outside = {}, modules, force = false, spec = {} }) 
   writeFileSync(path.join(dir, "ast.json"), JSON.stringify(program));
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, ...spec }));
   const checked = spawnSync(
-    process.env.SPLIT_PREVIEW,
+    process.env.LOWERSPLIT,
     [
+      "--diagnostic",
       writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir),
       dir,
       "--plan",

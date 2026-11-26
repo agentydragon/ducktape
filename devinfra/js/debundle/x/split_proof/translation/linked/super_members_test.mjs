@@ -2,25 +2,22 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
-import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
-import { withSplitPreview } from "../testing/split_preview.mjs";
 import {
-  assertLinkedPreviewResult,
-  assertMatchedModel,
-  prepareLinkedFixture,
-  prepareWorkerFixture,
-} from "./fixture_preview.mjs";
-import { caseShard, moduleEvaluationOrder, observe } from "./harness.mjs";
-
-function sequentialFixture(name, source, modules, order) {
-  return prepareLinkedFixture(name, source, { entry: "entry.mjs", modules, order, sequential: true });
-}
+  assertCertifiedResult,
+  assertRejected,
+  assertRejectedOrOrderKeptSlice,
+  caseShard,
+  forcePreview,
+  lower,
+  observe,
+  sequentialSplit,
+  workerSplit,
+} from "./harness.mjs";
 
 const runCase = caseShard();
 
 if (runCase("inherited-receivers-and-disk")) {
-  const inherited = sequentialFixture(
+  const inherited = sequentialSplit(
     "super-members",
     `const run = (callback) => callback();
    class Base {
@@ -48,45 +45,33 @@ if (runCase("inherited-receivers-and-disk")) {
     { "base.mjs": ["#0", "#1"], "middle.mjs": ["#2"], "entry.mjs": ["#3", "#4", "#5", "#6", "#7", "#8", "#9"] },
     ["base.mjs", "middle.mjs"]
   );
-  const { sourceFile, specFile, manifest, out } = inherited;
-  const expected = [
+  assertCertifiedResult(inherited, [
     ["borrowed", "borrowed getter borrowed getter", null],
     "static receiver",
     "override",
     "borrowed getter",
-  ];
-  assertPublicEmissionRefused(manifest, out);
-  await withSplitPreview({ manifest }, async ({ directory, entryFile }) => {
-    for (const file of [sourceFile, entryFile]) {
-      assert.deepEqual(observe(file, "result"), { result: expected });
-      const { Leaf } = await import(pathToFileURL(file).href);
-      assert.equal(await new Leaf().deferred(), "receiver");
-    }
-    assertMatchedModel(inherited, directory, [
-      [["result", "0", "0"], "borrowed"],
-      [["result", "0", "1"], "borrowed getter borrowed getter"],
-      [["result", "0", "2"], undefined],
-      [["result", "1"], "static receiver"],
-      [["result", "2"], "override"],
-      [["result", "3"], "borrowed getter"],
-    ]);
-
-    const middleFile = path.join(directory, "middle.mjs");
-    const middle = readFileSync(middleFile, "utf8");
-    const changed = middle.replace("super.value", "this.value");
-    assert.notEqual(changed, middle);
-    writeFileSync(middleFile, changed);
-    const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
-    assert.equal(model.status, "refused", JSON.stringify(model));
-    assert.equal(model.reason_code, "linked_input", JSON.stringify(model));
-    assert.match(model.reason, /emitted syntax differs from original unit 2/);
-    assertPublicEmissionRefused(manifest, directory);
-    assertPublicRecheckRefused(manifest, directory);
-  });
+  ]);
+  assert.deepEqual(
+    lower(inherited.files.sourceFile, inherited.files.specFile, inherited.out, ["--check-output"]).verdict,
+    inherited.verdict
+  );
+  for (const file of [inherited.files.sourceFile, path.join(inherited.out, "entry.mjs")]) {
+    const { Leaf } = await import(pathToFileURL(file).href);
+    assert.equal(await new Leaf().deferred(), "receiver");
+  }
+  const middleFile = path.join(inherited.out, "middle.mjs");
+  const middle = readFileSync(middleFile, "utf8");
+  const changed = middle.replace("super.value", "this.value");
+  assert.notEqual(changed, middle);
+  writeFileSync(middleFile, changed);
+  assert.equal(
+    lower(inherited.files.sourceFile, inherited.files.specFile, inherited.out, ["--check-output"]).verdict.status,
+    "rejected"
+  );
 }
 
 if (runCase("object-method")) {
-  const object = prepareWorkerFixture(
+  const object = workerSplit(
     "super-object-method",
     `const reporter = {
      __proto__: { report() { return this.value; }, get value() { return this.payload; } },
@@ -96,16 +81,7 @@ if (runCase("object-method")) {
    };
    export const result = reporter.report();`
   );
-  assertPublicEmissionRefused(object.manifest, object.out);
-  await assertLinkedPreviewResult(
-    object,
-    [9, 9, 6],
-    [
-      [["result", "0"], 9],
-      [["result", "1"], 9],
-      [["result", "2"], 6],
-    ]
-  );
+  assertCertifiedResult(object, [9, 9, 6]);
 }
 
 if (runCase("install-and-read-order")) {
@@ -124,47 +100,20 @@ if (runCase("install-and-read-order")) {
   };
   const ready = ["classes.mjs", "install.mjs", "read.mjs"];
   const early = ["classes.mjs", "read.mjs", "install.mjs"];
-  const good = sequentialFixture("super-install-first", ordered, programs, ready);
-  assertPublicEmissionRefused(good.manifest, good.out);
-  assert.deepEqual(observe(good.sourceFile, "result"), { result: "ready" });
-  await withSplitPreview({ manifest: good.manifest, expectedExit: 1 }, ({ directory, entryFile, log }) => {
-    assert.match(log, /FAIL {2}OrderOk/);
-    assert.deepEqual(moduleEvaluationOrder(directory, "entry.mjs"), [...ready, "entry.mjs"]);
-    assert.deepEqual(observe(entryFile, "result"), { result: "ready" });
-    assertMatchedModel(good, directory, [[["result"], "ready"]]);
-  });
-  const { manifest, out, sourceFile, specFile } = sequentialFixture("super-read-first", ordered, programs, early);
-  assertPublicEmissionRefused(manifest, out);
-  assert.deepEqual(observe(sourceFile, "result"), { result: "ready" });
-  await withSplitPreview({ manifest, expectedExit: 1 }, ({ directory, entryFile }) => {
-    assert.deepEqual(moduleEvaluationOrder(directory, "entry.mjs"), [...early, "entry.mjs"]);
-    assert.deepEqual(observe(entryFile, "result"), { result: "missing" });
-    const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory, observe: [["result"]] });
-    assert.equal(model.status, "refused", JSON.stringify(model));
-    assert.equal(model.reason_code, "probe_mismatch", JSON.stringify(model));
-    assert.deepEqual(model.observation, {
-      kind: "value",
-      path: ["result"],
-      original: '"ready"',
-      split: '"missing"',
-    });
-  });
+  assertCertifiedResult(sequentialSplit("super-install-first", ordered, programs, ready), "ready");
+  const changedOrder = sequentialSplit("super-read-first", ordered, programs, early);
+  assertRejected(changedOrder, /probe executions completed normally with different final states/);
+  const preview = path.join(changedOrder.dir, "preview");
+  forcePreview(changedOrder.files, preview);
+  assert.deepEqual(observe(path.join(preview, "entry.mjs"), "result"), { result: "missing" });
 }
 
 if (runCase("null-home-prototype")) {
-  const nullBase = prepareWorkerFixture(
+  const nullBase = workerSplit(
     "super-null-home-prototype",
     `const object = { __proto__: null, read() { return super.value; } };
    export const result = object.read();`
   );
-  const { manifest, out, sourceFile, specFile } = nullBase;
-  assertPublicEmissionRefused(manifest, out);
-  assert.deepEqual(observe(sourceFile, "result"), { error: "TypeError" });
-  await withSplitPreview({ manifest }, ({ directory, entryFile }) => {
-    assert.deepEqual(observe(entryFile, "result"), { error: "TypeError" });
-    const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
-    assert.equal(model.status, "refused", JSON.stringify(model));
-    assert.equal(model.reason_code, "probe_throw", JSON.stringify(model));
-    assert.match(model.reason, /original threw during linked initialization/);
-  });
+  assertRejectedOrOrderKeptSlice(nullBase, /original threw during linked initialization/);
+  assert.deepEqual(observe(nullBase.files.sourceFile, "result"), { error: "TypeError" });
 }

@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { acorn, dump } from "../parser.mjs";
-import { root } from "./harness.mjs";
-import { writeDeployment } from "../testing/deployment_manifest.mjs";
-import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { forcePreview, lower, root } from "./harness.mjs";
 
 const app = `import { value as external, bump as change } from "./provider.mjs";
 var value = 10;
@@ -21,46 +19,7 @@ mkdirSync(dir);
 writeFileSync(path.join(dir, "app.mjs"), app);
 writeFileSync(path.join(dir, "provider.mjs"), provider);
 
-function invokePublic(manifest, out, args = []) {
-  const result = spawnSync(process.env.LOWERSPLIT, [manifest, out, ...args], { encoding: "utf8" });
-  assert.ifError(result.error);
-  assert([0, 1].includes(result.status), result.stdout + result.stderr);
-  const verdict = JSON.parse(result.stdout.trim());
-  return { result, verdict };
-}
-
-function assertRefused(manifest, out, args = [], reasonCode = null) {
-  const { result, verdict } = invokePublic(manifest, out, args);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.equal(verdict.status, "rejected", result.stdout + result.stderr);
-  assert.equal(verdict.guarantee, null, result.stdout + result.stderr);
-  if (reasonCode !== null) assert.equal(verdict.reason_code, reasonCode, result.stdout + result.stderr);
-  assert(!existsSync(out), `refusal created ${out}`);
-  return verdict;
-}
-
-function diagnosticPreview(manifest, out) {
-  const result = spawnSync(process.env.SPLIT_PREVIEW, [manifest, out, "--force"], { encoding: "utf8" });
-  assert.ifError(result.error);
-  assert([0, 1].includes(result.status), result.stdout + result.stderr);
-  assert.match(result.stdout, /model diagnostic: /, result.stdout + result.stderr);
-  assert(existsSync(out), `preview was not written to ${out}`);
-  return result.stdout;
-}
-
-function snapshotFiles(directory) {
-  return Object.fromEntries(
-    readdirSync(directory)
-      .sort()
-      .map((name) => [name, readFileSync(path.join(directory, name))])
-  );
-}
-
-function previewSpec(source, spec, out) {
-  return diagnosticPreview(writeDeployment(source, spec, out), out);
-}
-
-function split(entry, owner, owners, inputDir = dir) {
+function split(entry, owner, owners, inputDir = dir, preview = false) {
   const file = path.join(inputDir, entry);
   const bytes = readFileSync(file);
   const chunk = path.basename(entry, ".mjs");
@@ -73,9 +32,20 @@ function split(entry, owner, owners, inputDir = dir) {
   const spec = path.join(root, chunk + "-" + owner + ".json");
   writeFileSync(spec, JSON.stringify(placement));
   const out = spec + ".out";
-  const manifest = writeDeployment(file, spec, out);
-  assertRefused(manifest, out, ["--structural", "--require", "all-outcomes"]);
-  previewSpec(file, spec, out);
+  const opts = ["--structural", "--require", "all-outcomes"];
+  if (preview) {
+    const modules = { [entry]: [], [owner + ".mjs"]: [] };
+    for (const row of placement.units) modules[row.owner === null ? entry : owner + ".mjs"].push("#" + row.ordinal);
+    const specFile = spec + ".preview";
+    writeFileSync(specFile, JSON.stringify({ entry, modules, order: [owner + ".mjs"] }));
+    forcePreview({ sourceFile: file, specFile }, out);
+  } else {
+    assert.equal(lower(file, spec, out, opts, "linked-structural-order").verdict.status, "certified");
+    assert.equal(
+      lower(file, spec, out, [...opts, "--check-output"], "linked-structural-order").verdict.status,
+      "certified"
+    );
+  }
   return { entry, owner: owner + ".mjs", chunk, placement, out, inputDir };
 }
 
@@ -183,8 +153,8 @@ writeFileSync(
   var seed = () => 3;
   export { observation, seed };`
 );
-const ca = split("app.mjs", "app-tag", [false, false, true, false], cyclicDir);
-const cp = split("provider.mjs", "seed", [false, false, true, false], cyclicDir);
+const ca = split("app.mjs", "app-tag", [false, false, true, false], cyclicDir, true);
+const cp = split("provider.mjs", "seed", [false, false, true, false], cyclicDir, true);
 const both = assemble("cycle-joint", ca, cp);
 // Load each root from a separate copy, so Node's module cache cannot erase
 // the difference in initialization order.
@@ -216,7 +186,7 @@ writeFileSync(
    function bump() { value = value + step; }
    export { value, bump };`
 );
-const leak = split("provider.mjs", "leaked-state", [true, false, true, false], leakDir);
+const leak = split("provider.mjs", "leaked-state", [true, false, true, false], leakDir, true);
 const leaked = assemble("leaked", left, leak);
 const extra = await import(pathToFileURL(path.join(leaked, "provider.mjs")));
 assert.deepEqual(Object.keys(extra), ["bump", "step", "value"]);
@@ -236,8 +206,8 @@ writeFileSync(
   path.join(tagDir, "provider.mjs"),
   "const tag = x => x;\nfunction providerSite() { return tag`same`; }\nexport { providerSite };"
 );
-const tagApp = split("app.mjs", "app-template", [false, true, false], tagDir);
-const tagProvider = split("provider.mjs", "provider-template", [true, true, false], tagDir);
+const tagApp = split("app.mjs", "app-template", [false, true, false], tagDir, true);
+const tagProvider = split("provider.mjs", "provider-template", [true, true, false], tagDir, true);
 const tagOutput = assemble("joint-template-output", tagApp, tagProvider);
 for (const directory of [tagDir, tagOutput]) {
   const { appSite, providerSite } = await import(pathToFileURL(path.join(directory, "app.mjs")));
@@ -281,99 +251,95 @@ assert.equal(tagged.stdout.trim(), "certified");
     });
   }
   const manifest = path.join(original, "deployment.json");
+  const out = path.join(root, "three-providers-out");
   writeFileSync(manifest, JSON.stringify({ entry, chunks }));
-  const options = ["--structural", "--deployment-origin", "https://deployment.test"];
-  assertPublicEmissionRefused(manifest, path.join(root, "three-providers-public"));
-  assertRefused(manifest, path.join(root, "three-providers-former-mode"), options);
+  const run = (target, ...args) =>
+    spawnSync(
+      process.env.LOWERSPLIT,
+      [manifest, target, "--structural", "--deployment-origin", "https://deployment.test", ...args],
+      { encoding: "utf8" }
+    );
+  const emitted = run(out);
+  assert.equal(emitted.status, 0, emitted.stdout + emitted.stderr);
+  assert.equal(JSON.parse(emitted.stdout).guarantee, "all-outcomes");
+  assert.equal((await import(pathToFileURL(path.join(out, entry)))).total, 6);
+  const checked = run(out, "--check-output");
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+  assert.deepEqual(JSON.parse(checked.stdout), JSON.parse(emitted.stdout));
 
-  // Preserve the former case's Node evidence with a separate Lean diagnostic
-  // preview. Each changed source chunk is previewed independently, then joined
-  // with the unchanged application entry just as the deployment did.
-  const preview = path.join(root, "three-providers-node-preview");
-  mkdirSync(preview);
-  copyFileSync(path.join(original, entry), path.join(preview, entry));
-  for (const chunk of chunks.slice(1)) {
-    const placementFile = path.join(original, `${chunk.path}.placement.json`);
-    writeFileSync(placementFile, JSON.stringify(chunk.placement));
-    const chunkPreview = path.join(root, `${chunk.placement.chunk_id}-deployment-preview`);
-    const singleChunk = writeDeployment(path.join(original, chunk.source), placementFile, chunkPreview);
-    diagnosticPreview(singleChunk, chunkPreview);
-    for (const file of readdirSync(chunkPreview)) copyFileSync(path.join(chunkPreview, file), path.join(preview, file));
-  }
-  assert.equal((await import(pathToFileURL(path.join(original, entry)))).total, 6);
-  assert.equal((await import(pathToFileURL(path.join(preview, entry)))).total, 6);
+  const third = path.join(out, "third-body.mjs");
+  writeFileSync(third, readFileSync(third, "utf8").replace("= 3", "= 4"));
+  const tampered = run(out, "--check-output");
+  assert.equal(tampered.status, 1, tampered.stdout + tampered.stderr);
+  assert.equal(JSON.parse(tampered.stdout).status, "rejected");
 
-  const before = snapshotFiles(preview);
-  assertPublicRecheckRefused(manifest, preview);
-  const checkedWithFormerMode = invokePublic(manifest, preview, [...options, "--check-output"]);
-  assert.equal(
-    checkedWithFormerMode.result.status,
-    1,
-    checkedWithFormerMode.result.stdout + checkedWithFormerMode.result.stderr
-  );
-  assert.equal(checkedWithFormerMode.verdict.status, "rejected", checkedWithFormerMode.result.stdout);
-  assert.deepEqual(snapshotFiles(preview), before, "multi-chunk check-output changed existing bytes");
+  writeFileSync(path.join(original, "second-body.mjs"), "export const existing = 20;");
+  const collisionPath = path.join(root, "collision-out");
+  const collision = run(collisionPath);
+  assert.equal(collision.status, 1, collision.stdout + collision.stderr);
+  assert.match(JSON.parse(collision.stdout).reason, /output path already exists: second-body\.mjs/);
+  assert(!existsSync(collisionPath));
 }
 
-// If two moved initializers throw different values, changing which owner runs
-// first changes observable abrupt completion. A normal-completion-only claim
-// misses that difference, and the public path must refuse both requests.
+// An ordered deployment preserves abrupt initialization and the state at the
+// throw. A valid reorder of the independent declarations has a weaker proof.
 {
   const original = path.join(root, "throwing-deployment");
   mkdirSync(original);
+  const entry = "app.mjs";
   const route = "provider.mjs";
-  const provider = `const first = (() => { throw "first"; })();
-    const second = (() => { throw "second"; })();
-    export { first, second };`;
+  const message = "startup failure";
+  writeFileSync(path.join(original, entry), `import { label } from "./${route}"; export { label };`);
+  const provider =
+    'const label = "startup"; const detail = " failure"; throw label + detail; export { label, detail };';
   writeFileSync(path.join(original, route), provider);
-  const sourceFile = path.join(original, route);
-  const makePlacement = (order) => {
-    const placement = {
-      chunk_id: "provider",
-      source_sha256: createHash("sha256").update(provider).digest("hex"),
-      import_order: order,
-      units: ["first", "second", null].map((owner, ordinal) => ({ ordinal, owner })),
-    };
-    const spec = path.join(original, `${order.join("-")}.placement.json`);
-    writeFileSync(spec, JSON.stringify(placement));
-    return spec;
+  const manifest = path.join(original, "deployment.json");
+  const setOrder = (order) =>
+    writeFileSync(
+      manifest,
+      JSON.stringify({
+        entry,
+        chunks: [
+          { path: entry, source: entry },
+          {
+            path: route,
+            source: route,
+            placement: {
+              chunk_id: "provider",
+              source_sha256: createHash("sha256").update(provider).digest("hex"),
+              import_order: order,
+              units: ["label", "detail", null, null].map((owner, ordinal) => ({ ordinal, owner })),
+            },
+          },
+        ],
+      })
+    );
+  const run = (dest, ...args) => {
+    const result = spawnSync(process.env.LOWERSPLIT, [manifest, dest, "--structural", ...args], { encoding: "utf8" });
+    assert.ifError(result.error);
+    assert(result.stdout, result.stderr);
+    return { exit: result.status, verdict: JSON.parse(result.stdout) };
   };
 
-  const orderedSpec = makePlacement(["first", "second"]);
-  const orderedPreview = path.join(root, "throwing-deployment-ordered-preview");
-  const orderedManifest = writeDeployment(sourceFile, orderedSpec, orderedPreview);
-  assertRefused(orderedManifest, path.join(root, "throwing-deployment-ordered-public"), [
-    "--structural",
-    "--require",
-    "all-outcomes",
-  ]);
-  diagnosticPreview(orderedManifest, orderedPreview);
+  const out = path.join(root, "throwing-deployment-out");
+  setOrder(["label", "detail"]);
+  const required = ["--require", "all-outcomes"];
+  const emitted = run(out, ...required);
+  assert.equal(emitted.exit, 0, JSON.stringify(emitted.verdict));
+  assert.equal(emitted.verdict.guarantee, "all-outcomes");
+  assert.equal(emitted.verdict.scope, "linked-structural-order");
+  assert.deepEqual(run(out, ...required, "--check-output"), emitted);
+  for (const dir of [original, out])
+    await assert.rejects(import(pathToFileURL(path.join(dir, entry))), (thrown) => thrown === message);
 
-  const reorderedSpec = makePlacement(["second", "first"]);
-  const reorderedPreview = path.join(root, "throwing-deployment-reordered-preview");
-  const reorderedManifest = writeDeployment(sourceFile, reorderedSpec, reorderedPreview);
-  assertPublicEmissionRefused(reorderedManifest, path.join(root, "throwing-deployment-reordered-default"));
-  assertRefused(reorderedManifest, path.join(root, "throwing-deployment-reordered-normal"), [
-    "--structural",
-    "--require",
-    "normal-completion",
-  ]);
-  assertRefused(reorderedManifest, path.join(root, "throwing-deployment-reordered-all"), [
-    "--structural",
-    "--require",
-    "all-outcomes",
-  ]);
-  diagnosticPreview(reorderedManifest, reorderedPreview);
-
-  const observeAbrupt = async (file) => {
-    try {
-      await import(pathToFileURL(file));
-      return { completion: "normal" };
-    } catch (value) {
-      return { completion: "throw", value };
-    }
-  };
-  assert.deepEqual(await observeAbrupt(sourceFile), { completion: "throw", value: "first" });
-  assert.deepEqual(await observeAbrupt(path.join(orderedPreview, route)), { completion: "throw", value: "first" });
-  assert.deepEqual(await observeAbrupt(path.join(reorderedPreview, route)), { completion: "throw", value: "second" });
+  setOrder(["detail", "label"]);
+  const reordered = path.join(root, "throwing-deployment-reordered");
+  const refused = run(reordered, ...required);
+  assert.equal(refused.exit, 1, JSON.stringify(refused.verdict));
+  assert.match(refused.verdict.reason, /proves only normal-completion/);
+  assert(!existsSync(reordered));
+  const normal = run(reordered);
+  assert.equal(normal.exit, 0, JSON.stringify(normal.verdict));
+  assert.equal(normal.verdict.guarantee, "normal-completion");
+  assert.equal(run(reordered, ...required, "--check-output").exit, 1);
 }

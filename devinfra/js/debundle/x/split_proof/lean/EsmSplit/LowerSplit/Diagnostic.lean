@@ -4,11 +4,10 @@ import EsmSplit.CoreJS.Decode
 import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.HeritageCertificate
 import EsmSplit.CoreJS.Move
-import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
 import Std.Data.HashMap
 
-/-! Report plan checks and model diagnostics and optionally emit an uncertified preview. -/
+/-! Report plan checks and model diagnostics without emitting JavaScript. -/
 
 namespace EsmSplit.LowerSplit
 
@@ -277,7 +276,6 @@ private structure DiagnosticOptions where
   planPath : Option String
   corejsPath : Option String
   moveReportPath : Option String
-  force : Bool
   allConflicts : Bool
 
 private def parseDiagnosticOptions (args : List String) : IO (System.FilePath × System.FilePath × DiagnosticOptions) := do
@@ -289,21 +287,22 @@ private def parseDiagnosticOptions (args : List String) : IO (System.FilePath ×
   if premPath.isSome && footprintPath.isSome then
     throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
   let prem ← Effects.loadPremises premPath
-  let force := args.contains "--force"
+  if args.contains "--force" then
+    throw (IO.userError "--force has been removed; --diagnostic never writes JavaScript")
   let allConflicts := args.contains "--all-conflicts"
   if allConflicts && planPath.isNone then throw (IO.userError "--all-conflicts requires --plan")
-  let args := args.filter fun a => a != "--force" && a != "--all-conflicts"
+  let args := args.filter (· != "--all-conflicts")
   let (manifest, out) ← match args with
     | [manifest, out] => pure (manifest, out)
     | _ => do
-      IO.eprintln "usage: split_preview <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"
+      IO.eprintln "usage: lowersplit --diagnostic <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>]"
       throw (IO.userError "usage")
-  return (manifest, out, { prem, footprintPath, planPath, corejsPath, moveReportPath, force, allConflicts })
+  return (manifest, out, { prem, footprintPath, planPath, corejsPath, moveReportPath, allConflicts })
 
-private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (options : DiagnosticOptions)
+private def runDiagnostic (chunk : DeploymentChunk) (options : DiagnosticOptions)
     (work : System.FilePath) : IO UInt32 := do
   let tStart ← IO.monoMsNow
-  let ⟨program, source, input⟩ ← readBundle chunk.source work false false (← IO.ofExcept chunk.sourceHash)
+  let ⟨program, source, _input⟩ ← readBundle chunk.source work false false (← IO.ofExcept chunk.sourceHash)
   let t1 ← reportElapsed "read + parse JSON" tStart
   let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
   if let some reason := asts.findSome? unsupportedStatement then
@@ -319,7 +318,7 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
       for line in Effects.premiseLines options.prem analysis do IO.println line
       pure fps
   let t2 ← reportElapsed "footprints (Lean analysis)" t1
-  let B := bundleOfFootprints asts fps #[]
+  let B := bundleOfFootprints asts fps
   let S ← IO.ofExcept (chunk.spec asts.size)
   let t3 ← reportElapsed "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
@@ -339,35 +338,36 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
       | .ok value => value
       | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
   for line in modelDiagnostics program asts B S P (ok && !bad) model do IO.println line
-  if options.force || (ok && !bad) then
-    match ESTreeEmit.programs asts B P source with
-    | .error message => IO.eprintln s!"cannot write output: {message}"; return 3
-    | .ok programs => javascript #["--print"] #[← writeProgramManifest programs work, out, input]
-    if let some planPath := options.planPath then
-      let (count, sample, every) := if ok then (0, #[], #[]) else conflictInversions B P options.allConflicts
-      let pairs := if options.allConflicts then
-          [("pairs", toJson (every.map fun (later, earlier, _) => #[earlier, later]))]
-        else []
-      let examples := sample.map fun (later, earlier) =>
-        Json.mkObj [("earlier", toJson earlier), ("later", toJson later)]
-      IO.FS.writeFile planPath (Json.mkObj [
-        ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
-        ("orderConflicts", Json.mkObj ([("count", toJson count), ("examples", Json.arr examples)] ++ pairs)),
-        ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts)))]).compress
-    let _ ← reportElapsed "render + write" t5
-    IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
-  if ok && !bad then return 0
-  IO.eprintln (if options.force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
+  if let some planPath := options.planPath then
+    let (count, sample, every) := if ok then (0, #[], #[]) else conflictInversions B P options.allConflicts
+    let pairs := if options.allConflicts then
+        [("pairs", toJson (every.map fun (later, earlier, _) => #[earlier, later]))]
+      else []
+    let examples := sample.map fun (later, earlier) =>
+      Json.mkObj [("earlier", toJson earlier), ("later", toJson later)]
+    IO.FS.writeFile planPath (Json.mkObj [
+      ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
+      ("orderConflicts", Json.mkObj ([("count", toJson count), ("examples", Json.arr examples)] ++ pairs)),
+      ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts))) ]).compress
+  let _ ← reportElapsed "diagnostics" t5
+  if ok && !bad then
+    IO.println "  diagnostic checks passed; no JavaScript written"
+    return 0
+  IO.eprintln "rejected; nothing written"
+  return 1
 
 def diagnostic (args : List String) : IO UInt32 := do
-  if args.contains "--require" || args.contains "--check-output" || args.contains "--structural" || args.contains "--deployment-origin" then
-    IO.eprintln "certification options are not supported by split_preview"
+  if args.contains "--force" then
+    IO.eprintln "--force has been removed; --diagnostic never writes JavaScript"
     return 1
-  IO.println "Diagnostic run. Any emitted files are an uncertified preview."
+  if args.contains "--require" || args.contains "--check-output" || args.contains "--structural" || args.contains "--deployment-origin" then
+    IO.eprintln "certification options cannot be combined with --diagnostic"
+    return 1
+  IO.println "Diagnostic run. No JavaScript files are emitted."
   IO.FS.withTempDir fun work => do
-    let (manifestPath, out, options) ← parseDiagnosticOptions args
+    let (manifestPath, _out, options) ← parseDiagnosticOptions args
     let manifest ← readDeploymentManifest manifestPath
     let [chunk] := manifest.chunks | throw (IO.userError "diagnostic options require one original chunk")
-    runDiagnostic chunk out options work
+    runDiagnostic chunk options work
 
 end EsmSplit.LowerSplit

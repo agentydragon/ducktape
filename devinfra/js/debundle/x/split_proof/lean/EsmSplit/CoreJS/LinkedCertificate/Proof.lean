@@ -89,35 +89,6 @@ theorem ASTEquivalent.normal {profile premises source providers files plan}
   obtain ⟨original, candidate, decoded, semantics, exports⟩ := h
   exact ⟨original, candidate, decoded, semantics.normalEquivalent, exports⟩
 
-/-- Reduction used by the generated equation for a checked wide record. -/
-def evalQuotedRecordBody {W : World} (fields : List (String × String)) (props : List PropDef)
-    (width fuel : Nat) (env : Env) : M W Val :=
-  match fuel with
-  | 0 => outOfFuel
-  | n + 1 =>
-    if width < n then .obj <$> alloc (literalRecord fields) else
-      (do
-        let addr ← alloc { proto := some objectProto, props := [] }
-        evalProps n env addr props
-        pure (.obj addr))
-
-/-- The generated equation specializes the usual record rule using the checked
-property list and width. It preserves the ordinary evaluator at insufficient fuel. -/
-theorem evalQuotedRecord {W : World} {fields : List (String × String)} {props : List PropDef} {width : Nat}
-    (props_eq : props = fields.map literalField) (width_bound : fields.length ≤ width)
-    (fuel : Nat) (env : Env) :
-    (evalExpr fuel env (.obj props) : M W Val) = evalQuotedRecordBody fields props width fuel env := by
-  cases fuel with
-  | zero => rfl
-  | succ n =>
-    dsimp only [evalQuotedRecordBody]
-    split
-    · rename_i h
-      have budget := Nat.lt_of_le_of_lt width_bound h
-      rw [props_eq]
-      exact evalExpr_obj_string_fields n env fields budget
-    · rw [evalExpr] <;> rfl
-
 /-- The equation compiler puts a negative premise on the general unary case because
 `typeof` of a variable has its own lookup rule. The proof-producing `cbv` evaluator
 only uses unconditional rewrites. Dispatch on the operator and operand on the RHS

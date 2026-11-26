@@ -14,10 +14,6 @@ An earlier verbatim-output checker exposed a callback/TDZ bug in the extractor: 
 read as lazy even when the callback ran during initialization. The regression now checks the extractor's
 eager read and the translation validator's verdict, and runs the unsafe output in Node.
 
-## 2. A generated reordering in CoreJS
-
-The [three-declaration fixture](../proof_fixture/README.md) checks the source statements, footprints, execution order and rendered files of a generated plan. Its CoreJS proof relates successful executions at every fuel. Node runs the emitted modules and observes the temporal dead zone in the forced unsafe split.
-
 ## 3. Custom proofs for pairs the syntax check refuses
 
 [`CustomMoveExample.lean`](../lean/CustomMoveExample.lean) starts with two expression statements that evaluate boolean literals. `movesOk` refuses to swap them. The example proves the two steps commute in either order and passes that relation to the production `moves_preserve_run_of_sound` theorem.
@@ -112,26 +108,6 @@ The historical minified rows count each declarator list as one statement. The cu
   That is one lookup per read instead of one per pair. The proof must show that this implies the `Pairwise` condition `exec_reorder` consumes.
 - **`Faithful`** still compares every selector with every statement (5 s at 42,880); an index from names to declaring statements would remove that.
 
-**Kernel.** The kernel is a different cost model, and these changes help it much less. Synthetic bundles ([`scaling/gen.py`](scaling/gen.py)),
-`decide +kernel`, one process each ([`scaling/nat_names.sh`](scaling/nat_names.sh), [`scaling/peak.py`](scaling/peak.py)):
-
-| Statements | Before the indexed checks | Names as strings                                  | Names as numbers                                  |
-| ---------- | ------------------------- | ------------------------------------------------- | ------------------------------------------------- |
-| 12         | 0.7 s                     | 1.2 s, peak 650 MB                                | 0.8 s, peak 612 MB                                |
-| 24         | 1.4 s                     | 2.9 s, peak 866 MB                                | 1.9 s, peak 746 MB                                |
-| 48         | 5.0 s                     | 7.4 s, peak 1459 MB                               | 4.4 s, peak 1117 MB                               |
-| 96         | 19.7 s                    | 22.7 s, peak 3416 MB                              | 12.8 s, peak 2400 MB                              |
-| 144        | 51 s                      | 44.9 s, peak 6158 MB                              | 26.8 s, peak 4267 MB                              |
-| 192        | killed after 88 s         | 69.2 s, peak 9464 MB                              | 41.6 s, peak 6557 MB                              |
-| 288        | –                         | 66.6 s, peak 12031 MB, killed at the memory limit | 63.6 s, peak 12027 MB, killed at the memory limit |
-
-- **Memory, not time, is the limit.** The kernel keeps what it evaluates. 144 statements need 6 GB, and 192 need 9 GB. At 288 the 12 GB limit I set killed it.
-  `decide +kernel` on the lodash split (670 statements) reached the 12 GB limit after 62 s and was killed ([`records/`](records)).
-- **Numeric names help 1.6–1.8×, not 10×.** `Name := Nat` makes comparisons cheap in the kernel (it has big-number support; it has none for strings).
-  I had guessed it was most of the cost. It is not. [`nat_names.sh`](scaling/nat_names.sh) builds a scratch copy of the core Lean files with `Name := Nat` and times the same bundles.
-- **For a big split, use `native_decide`** (2.3 s for lodash; trusts Lean's compiler, § 8), or a kernel certificate that carries the derived tables as data and lets the kernel
-  _check_ them (closed, and least by derivation order) instead of computing them. That is how CompCert's validators work (§ 9). I have not built it.
-
 The semantic theorem does not depend on bundle size.
 
 ## 6. Lower the AST into Lean
@@ -189,21 +165,13 @@ One mutant, forgetting a catch parameter is local, is on the safe side and is co
 
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
-**End to end in one program.** [`LowerSplit.lean`](../lean/EsmSplit/LowerSplit.lean) (198 lines) takes the JSON and a spec, computes footprints in Lean,
-plans, checks, and writes the modules. The separate `split_instance_generator` writes Lean proof source. On the example the modules are identical to the first prototype’s output
-except the order of names inside two `export { … }` lists (Lean's JSON parser sorts object keys, so the spec's file order is lost).
-The generated certificate is accepted by the kernel; its axioms are `propext`, `Classical.choice` and `Quot.sound`. Whole run, compiled: 2 ms.
-
 **What lowering does not buy.**
 
 - The parser. acorn is still trusted.
 - A proof about the analysis. `Lower.lean` is `partial` over untyped JSON, so the kernel cannot run it and Lean cannot prove things about it.
   The principled endpoint is a typed ESTree with structural recursion: then `decide` can run the analysis inside the kernel and the certificate covers parse output → footprints → plan.
-  That is a bigger build; section 2 is the template.
 - A semantics. The frame assumption is unchanged. Only its _footprint side_ moved into Lean.
 - Imports from outside modules, top-level reassignment, and `import.meta`: rejected or guarded, not modeled. `lowersplit` keeps a bundle's `import` statements in the entry and writes them first; that this keeps the order of evaluation is argued in the [README](../README.md#what-is-not-proved), not proved.
-
-The Bazel `lean:lowered_example_certificate_test` builds a certificate from the example’s ESTree dump and checks it in Lean.
 
 ### Public bundle inputs
 
@@ -240,7 +208,7 @@ The other labels are `real_split_acorn_test`, `real_split_acorn_min_test`,
 `real_split_lodash_test`, and `real_split_semver_test`. Each test consumes its bundle and AST from a cacheable build action, computes
 its footprints once, and publishes JSONL and a summary as Bazel test outputs. Use `--test_arg=--sample` for one halves split instead of all strategies.
 
-For every split, the diagnostic invocation `split_preview … --force` checks it and writes an uncertified preview even when a check rejects it. Then [`smoke.mjs`](../integration/library_splits/smoke.mjs) calls the
+For every split, the diagnostic invocation `lowersplit --diagnostic … --force` checks it and writes an uncertified preview even when a check rejects it. Then [`smoke.mjs`](../integration/library_splits/smoke.mjs) calls the
 entry module's exported API and prints the result as JSON. The split behaves like the bundle when that line equals the bundle's own.
 The calls: lodash `chunk`, `get`, `set`, `merge`, `cloneDeep`, `groupBy`, `sortBy`, `uniqBy`; acorn `parse` of ES2022 programs, tokens and four syntax errors;
 semver `valid`, `compare`, `satisfies`, `inc`, `coerce`, `Range`; zod `parse` and the issues for bad input.
@@ -268,71 +236,6 @@ One JSON line per split is in [split results](../integration/library_splits/resu
 - **Putting the entry in the wrong half loses the API.** The `export { … }` statement is a statement like any other; I had not checked that it stays in the entry module.
   `lowersplit` now rejects it (`ExportOutsideEntry`). Before this experiment the checker would have accepted a split with the exports in a non-entry module.
 - **The checker is conservative in 5 of 722 rejections** (0.7%): 3 reassignments that are not on the executed path and 2 random placements.
-
-## 8. How a proof is produced
-
-**The shape.** `split_instance_generator <deployment.json> <Generated.lean>` writes a Lean file with bundle data and a proof about the plan based on the supplied footprints, without writing module previews. The example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
-
-```lean
-def bundle : Bundle := [
-  { src := "const PI = 3.14159;", defs := ["PI"] },
-  { src := "const area = (r) => PI * square(r);", defs := ["area"], lazy := ["PI", "square"] }, …
-]
-def spec : Spec := { entry := "main.mjs", modules := [("utils.mjs", [.name "PI", …]), …] }
-def plan : Plan := mkPlan bundle spec
-
-theorem plan_valid : Valid bundle spec plan := by decide +kernel
-theorem plan_correct : Correct bundle plan := split_correct plan_valid
-```
-
-No proof term is searched for. `Valid` is decidable (§ 5), so `decide +kernel` makes the kernel _evaluate_ the decision procedure and check that it returns `true`.
-`split_correct` was proved once, for every bundle, spec and plan ([`Correct.lean`](../lean/EsmSplit/Correct.lean)). Lean's reply is "accepted" or an error.
-For a bad split `decide` says the proposition is false. `¬ OrderOk …` is itself a kernel-checked theorem ([`Controls.lean`](../lean/EsmSplit/Controls.lean)),
-and the compiled report (`lowersplit`) names the failing check.
-
-**Strategies.** A strategy says how Lean runs that computation.
-
-| Strategy         | Runs it in     | Trusts                                  | Seen here                                                      |
-| ---------------- | -------------- | --------------------------------------- | -------------------------------------------------------------- |
-| `decide`         | the elaborator | the kernel                              | `maximum recursion depth` at 59 statements (5.5 s)             |
-| `decide +kernel` | the kernel     | the kernel                              | 17 s at 59 statements; 23 s at 96 synthetic ones; 12 GB at 670 |
-| `native_decide`  | compiled code  | the kernel, Lean's compiler and runtime | 2.3 s at 670                                                   |
-
-`native_decide` adds one axiom per proof, `plan_valid._native.native_decide.ax_1_1`: "the compiled evaluation returned `true`".
-(The [Lean reference](https://lean-lang.org/doc/reference/4.27.0-rc1/ValidatingProofs/) lists the trust each one adds. A [February 2026 Zulip post](<https://leanprover-community.github.io/archive/stream/270676-lean4/topic/Heads.20up.3A.20changes.20to.20native_decide.20(and.20bv_decide).html>)
-announces that the axiom machinery behind `native_decide` is being restructured, so the names printed by `#print axioms` may change.)
-
-[`Ladder.lean`](../lean/Experiments/Ladder.lean) writes the ladder inside Lean:
-
-```lean
-macro "decide_split" : tactic => `(tactic| first | decide | decide +kernel | native_decide)
-theorem ladder_valid : Valid bundle spec plan := by decide_split
-```
-
-[`proof_search/prove.mjs`](proof_search/prove.mjs) does it from outside for a generated file, with a time limit per strategy. It rewrites the tactic after `by`, runs
-`lake env lean --json`, and stops at the first strategy Lean accepts:
-
-```text
-$ node prove.mjs Semver.lean --ladder "decide;decide +kernel;native_decide"   # 59 statements, 4 modules
-decide             failed: maximum recursion depth has been reached         5.5 s
-decide +kernel     proved                                                  16.6 s  [propext, Classical.choice, Quot.sound]
-
-$ node prove.mjs Lodash.lean --ladder "decide;native_decide"                # 670 statements, 6 modules
-decide             failed: maximum recursion depth has been reached         1.8 s
-native_decide      proved                                                   2.3 s  [propext, Classical.choice, Quot.sound, plan_valid._native.native_decide.ax_1_1]
-
-$ node prove.mjs AcornMin.lean --ladder "native_decide"                     # a split that OrderOk rejects
-native_decide      failed: Tactic `native_decide` evaluated that the proposition … is false   1.4 s
-no strategy proved it
-```
-
-(`decide +kernel` is left out of the lodash ladder: it reaches 12 GB in 62 s, § 5. Raw output: [`records/ladder_*.txt`](records).)
-
-For a worked example of a pair-specific proof, see § 3.
-
-**What this is not.** It is not proof search. The strategy space is small enough to enumerate, so the ladder does.
-For a statement that is not decidable, the loop is the usual one: write a tactic script, run `lake env lean --json`, read the goals and errors, try `simp`, `omega`, `grind`, `exact?`.
-§ 4 did that by hand. I did not build an automatic loop.
 
 ## 9. What already exists, and what I would reuse
 
@@ -384,7 +287,7 @@ bbr test //devinfra/js/debundle/x/split_proof/es_order:es_order_sweep_test  # 50
 ## 11. debundle's e2e cases
 
 debundle does the same job without Lean. Its corpus ([`e2e/cases`](../../../e2e/cases)) has 207 entries: a bundle, a spec, and the verdict debundle must give.
-[`debundle_cases/run_cases.mjs`](../debundle_cases/run_cases.mjs) translates each spec, runs `split_preview … --force`, runs the original and the emitted entry in Node, and compares. The emitted modules are diagnostic previews, not certified output.
+[`debundle_cases/run_cases.mjs`](../debundle_cases/run_cases.mjs) translates each spec, runs `lowersplit --diagnostic … --force`, runs the original and the emitted entry in Node, and compares. The emitted modules are diagnostic previews, not certified output.
 Run it with the [Bazel corpus commands](../debundle_cases/README.md#run-it). Details, causes and the plan: [`debundle_cases/README.md`](../debundle_cases/README.md), [`PLAN.md`](../PLAN.md).
 
 | Outcome                                                                                    | Entries |
@@ -500,7 +403,7 @@ structure World where
 
 - Every top-level statement of a program carries an _identity_, a number no other statement of the program has. The statement with identity `i` owns region `i + 1`. Its bindings and, for a function declaration, its function are made there when the program is linked, and what it allocates when it runs goes there too.
 - So where a statement allocates depends on its identity and on nothing else: not on its module, and not on what ran before it. Two statements that only allocate end in equal states in either order, with no renaming of addresses.
-- A program that is split into modules keeps the identities of its statements. The front end numbers the top-level statements of a file as [`translation/annotated_estree.mjs`](../translation/annotated_estree.mjs) numbers a bundle's (a declaration list counts once for each name), and takes other numbers for a file when told: `split_preview … --plan` writes, for each module, the bundle statements it holds.
+- A program that is split into modules keeps the identities of its statements. The front end numbers the top-level statements of a file as [`translation/annotated_estree.mjs`](../translation/annotated_estree.mjs) numbers a bundle's (a declaration list counts once for each name), and takes other numbers for a file when told: `lowersplit --diagnostic … --plan` writes, for each module, the bundle statements it holds.
 - A closure keeps only the bindings of the names its code can mean (`Env.capture` of `Func.closes`, the free names of the function). So two scopes that give those names the same bindings give the same closure, and a function made in a module of a split is the object it is in the bundle.
 - Linking visits the statements of all modules in the order of their identities, not module by module. No program code runs while a program is linked, so that order cannot be observed, and it makes the state after linking independent of how the statements are divided into modules.
 
@@ -511,7 +414,7 @@ structure World where
 - 41 hand-written cases for what the generator rarely writes: a getter three prototypes up, a setter that throws, `finally` overriding `return`, `delete` of a missing and of a fixed property, a method with another `this`, closures over a loop variable, `var` hoisting, the dead zone, descriptor validation, a getter put on `Object.prototype`, class fields, number printing; and for the world: methods of strings and numbers, `Math`, the parsing functions, a host function that throws, a property of a string found on `Object.prototype`, a host function stored and called later. Eleven of them must end `unknown`, among them a host function that is handed an object and one that returns a string containing an isolated UTF-16 surrogate.
 - 19 hand-written programs of several modules: a live binding read after the exporter assigned it, a function called before the body of its module ran, the dead zone and `var` across modules, bare imports, a cycle of three, export and import under other names, a module imported twice, a missing export, an assigned import (also in its dead zone), default exports, a module that throws, modules in directories. For each, the order in which the model runs the modules is also compared with `Plan.evalOrder` of the proved checker (the `evalorder` executable): they agree on all 19.
 - Programs of [`translation/gen`](../translation/testing/gen/). The generator leans on the standard library, so the front end accepts no whole program. A program is cut down to the units the front end accepts alone and whose names are still declared; a unit where the model then reaches unknown code is dropped and the program is run again. Of 2,040 programs (340 for each of the six sets of families, seeds 1000 to 1339): 52,652 units, 24,890 accepted alone (47%), 9,000 left in the programs that ran (17%). 123 programs had no unit left. The other 1,917 agree with Node, all of them, and the model made every host call Node made (3,529 in this run, those of the hand-written cases included). Before the world was a parameter, 4,665 units (9%) were left and 387 programs had none: a method of a string ended the run. What ends it most often now is a method of an array, which takes an object.
-- **Splits by the real tool.** Programs the model runs to the end are split by `split_preview` under three specs each: consecutive pieces run in order, a random module for each statement with `sequential`, and the same with the order left to the imports. These test invocations emit uncertified previews. For every split accepted by the diagnostic checker, four runs must agree: the bundle in Node, the bundle in the model, the split in Node, the split in the model. The front end must also give every statement of the split the tokens it gave that statement of the bundle, and the model must run the modules in the order of the plan. With `--count 40 --seed 1 --splits 150`: 135 programs, 405 specs, 219 accepted (127 of the consecutive ones, 46 with `sequential`, 46 without). On 218 the four runs agree, 196 of those with the statements in the bundle's order. The model never differed from Node, and no accepted split of a bundle that ends normally differed from its bundle. No accepted split asked the world for anything else than its bundle did, or in another order. Every accepted split that runs the statements in the bundle's order was also run in the world its bundle recorded, and ended in the bundle's state: every object and binding at the same address, by a hash of the whole state (189 of 189 in a run of `--count 40 --seed 1 --splits 150`).
+- **Splits by the real tool.** Programs the model runs to the end are split by `lowersplit --diagnostic` under three specs each: consecutive pieces run in order, a random module for each statement with `sequential`, and the same with the order left to the imports. These test invocations emit uncertified previews. For every split accepted by the diagnostic checker, four runs must agree: the bundle in Node, the bundle in the model, the split in Node, the split in the model. The front end must also give every statement of the split the tokens it gave that statement of the bundle, and the model must run the modules in the order of the plan. With `--count 40 --seed 1 --splits 150`: 135 programs, 405 specs, 219 accepted (127 of the consecutive ones, 46 with `sequential`, 46 without). On 218 the four runs agree, 196 of those with the statements in the bundle's order. The model never differed from Node, and no accepted split of a bundle that ends normally differed from its bundle. No accepted split asked the world for anything else than its bundle did, or in another order. Every accepted split that runs the statements in the bundle's order was also run in the world its bundle recorded, and ended in the bundle's state: every object and binding at the same address, by a hash of the whole state (189 of 189 in a run of `--count 40 --seed 1 --splits 150`).
 - The members the model gives the six prototypes are compared with Node's own, and every function of the table has to be a function of this Node.
 
 **A split that moves code is compared with its bundle only if the bundle ends normally.** The tool's verdict is for a bundle whose evaluation completes: premise P4 of [`effects/README.md`](../effects/README.md). Two named cases (`splitCases` in [`model/cases.mjs`](../model/cases.mjs)) hold the line between what the tool orders and what the premise covers:
@@ -637,7 +540,7 @@ The JSON report counts executable source units, excluding static imports, export
 
 **Footprints against the syntax.** `corejs --footprints program.json footprints.jsonl` checks `FootprintsOfSyntax` ([`Split.lean`](../lean/EsmSplit/CoreJS/Split.lean)) on a real bundle: for each statement, the names it declares are the footprint's `defs`, and every name it mentions is in `defs`, `eager` or `lazy`. On the large bundle, with its import line blanked and the vendor module as part of the world, it holds for all 9,708 statements. That run took the 41 units with `import()` as opaque too, which is faithful only if the split leaves every module in the directory of the chunk: a specifier then resolves to the same file.
 
-**Model diagnostics (formerly “the verdict names the slice”).** `split_preview … --corejs program.json` decides whether the model hypotheses of `valid_order_kept_preserves` hold for the checked plan, on its own footprints: `Valid`, `OrderKept` and `FootprintsOfSyntax` (decidable through `footprintsOfSyntax_iff`). It prints a `model diagnostic:`, not a certificate verdict. [`translation/core_program.mjs`](../translation/core_program.mjs) writes `program.json`: the bundle as one module, its `import`s the world's, with the identities `lowersplit` gives the statements. Two readings are `lowersplit`'s own. A statement the front end gives no statement of the model (an `export { … }` list, `;`, `debugger`) does nothing when the bundle runs, so the model has an empty block in its place, and its footprint must declare nothing. An `import` of an outside module binds before any statement runs, wherever it stands, while the plan runs it with the entry, last: the check leaves the imports out of the bundle, the spec and the plan, and requires that this changes no other statement, module, import or export of the plan, and that the plan without them passes the nine checks again. A bundle that reads `import.meta` is not covered, and one with `import()` only if every module is in one directory. The differential test runs it on every split it makes. Historically, the diagnostic found the model slice for an order-kept split of 4,091 modules, and not for the bundle-order split of 2,364 whole modules, whose modules run in the order their imports nest; these were model results, not artifact-verified certifications.
+**Model diagnostics (formerly “the verdict names the slice”).** `lowersplit --diagnostic … --corejs program.json` decides whether the model hypotheses of `valid_order_kept_preserves` hold for the checked plan, on its own footprints: `Valid`, `OrderKept` and `FootprintsOfSyntax` (decidable through `footprintsOfSyntax_iff`). It prints a `model diagnostic:`, not a certificate verdict. [`translation/core_program.mjs`](../translation/core_program.mjs) writes `program.json`: the bundle as one module, its `import`s the world's, with the identities `lowersplit` gives the statements. Two readings are `lowersplit`'s own. A statement the front end gives no statement of the model (an `export { … }` list, `;`, `debugger`) does nothing when the bundle runs, so the model has an empty block in its place, and its footprint must declare nothing. An `import` of an outside module binds before any statement runs, wherever it stands, while the plan runs it with the entry, last: the check leaves the imports out of the bundle, the spec and the plan, and requires that this changes no other statement, module, import or export of the plan, and that the plan without them passes the nine checks again. A bundle that reads `import.meta` is not covered, and one with `import()` only if every module is in one directory. The differential test runs it on every split it makes. Historically, the diagnostic found the model slice for an order-kept split of 4,091 modules, and not for the bundle-order split of 2,364 whole modules, whose modules run in the order their imports nest; these were model results, not artifact-verified certifications.
 
 **How much of a bundle is opaque** ([`translation/opaque_census.mjs`](../translation/opaque_census.mjs)). A unit is a top-level statement, or one declarator of a list.
 

@@ -1,8 +1,7 @@
 import EsmSplit.LowerSplit.Certified
 
-/-! The public dispatcher requires an all-outcomes, strict source-to-output
-certificate. Until a constructed rule covers that contract, it refuses without
-publishing files. -/
+/-! The public lowering command refuses until a constructed rule proves the
+strict all-outcomes CoreJS contract. -/
 
 namespace EsmSplit.LowerSplit
 

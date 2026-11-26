@@ -47,33 +47,13 @@ js_library(
 )
 
 js_library(
-    name = "linked_model_probe",
-    srcs = ["linked_model_probe.mjs"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = ["//devinfra/js/debundle/x/split_proof/translation:parser"],
-)
-
-js_library(
     name = "lint_sources",
     srcs = glob(["**/*.mjs"]),
 )
 
 js_library(
-    name = "public_refusal",
-    srcs = ["public_refusal.mjs"],
-    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
-)
-
-js_library(
     name = "split",
     srcs = ["split.mjs"],
-    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
-    deps = [":deployment_manifest"],
-)
-
-js_library(
-    name = "split_preview",
-    srcs = ["split_preview.mjs"],
     visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
     deps = [":deployment_manifest"],
 )

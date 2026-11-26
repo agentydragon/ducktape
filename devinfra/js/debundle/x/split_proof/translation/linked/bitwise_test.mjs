@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
-import { assertLinkedPreviewResult, prepareWorkerFixture } from "./fixture_preview.mjs";
-import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
-import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
-import { withSplitPreview } from "../testing/split_preview.mjs";
 import {
   array,
   arrow,
+  assertRejectedOrOrderKeptSlice,
+  assertWorkerResult,
   binary,
   block,
   call,
@@ -19,6 +17,7 @@ import {
   throws,
   unary,
   variable,
+  workerSplit,
 } from "./harness.mjs";
 
 const entryUnits = ["#1", "#2"];
@@ -66,25 +65,19 @@ for (const [name, cases] of [
       alternate: null,
     },
   ]);
-  const fixture = prepareWorkerFixture(
+  assertWorkerResult(
     name,
     program([
       variable("const", "worker", arrow([], block([...body, returns(array(values))]))),
       variable("const", "result", call(id("worker"))),
       exportNamed([["result", "result"]]),
     ]),
+    cases.map(([, expected]) => expected),
     entryUnits
-  );
-  assertPublicEmissionRefused(fixture.manifest, fixture.out);
-  const expected = cases.map(([, value]) => value);
-  await assertLinkedPreviewResult(
-    fixture,
-    expected,
-    expected.map((value, i) => [["result", String(i)], value])
   );
 }
 
-const zero = prepareWorkerFixture(
+assertWorkerResult(
   "unary-zero-and-nan",
   `const worker = () => {
     const zero = +"-0";
@@ -93,12 +86,11 @@ const zero = prepareWorkerFixture(
     return true;
   };
   const result = worker(); export { result };`,
+  true,
   entryUnits
 );
-assertPublicEmissionRefused(zero.manifest, zero.out);
-await assertLinkedPreviewResult(zero, true);
 
-const operandOrder = prepareWorkerFixture(
+assertWorkerResult(
   "shift-operand-order",
   `const worker = () => {
     let phase = 0;
@@ -118,10 +110,9 @@ const operandOrder = prepareWorkerFixture(
     }
   };
   const result = worker(); export { result };`,
+  "right stopped",
   entryUnits
 );
-assertPublicEmissionRefused(operandOrder.manifest, operandOrder.out);
-await assertLinkedPreviewResult(operandOrder, "right stopped");
 
 for (const [name, expression, reason, runtime] of [
   ["bitwise-object", "({ valueOf: () => 3 }) & 1", /object is converted to a primitive/, { result: 1 }],
@@ -129,21 +120,12 @@ for (const [name, expression, reason, runtime] of [
   ["bitwise-bigint", "1n & 1", /unsupported literal/, { error: "TypeError" }],
   ["exponentiation", "2 ** 3", /unsupported linked binary operator/, { result: 8 }],
 ]) {
-  const fixture = prepareWorkerFixture(
+  const { files, out, verdict, log } = workerSplit(
     name,
     `const worker = () => ${expression};
     const result = worker(); export { result };`,
     entryUnits
   );
-  assertPublicEmissionRefused(fixture.manifest, fixture.out);
-  assert.deepEqual(observe(fixture.sourceFile, "result"), runtime);
-  await withSplitPreview({ manifest: fixture.manifest }, ({ directory, entryFile }) => {
-    const model = probeLinkedModel({ source: fixture.sourceFile, spec: fixture.specFile, directory });
-    assert.equal(model.status, "refused", name);
-    assert.equal(model.reason_code, "probe_unknown", name);
-    assert.match(model.reason, reason, name);
-    assert.deepEqual(observe(entryFile, "result"), runtime);
-    assertPublicEmissionRefused(fixture.manifest, directory);
-    assertPublicRecheckRefused(fixture.manifest, directory);
-  });
+  assertRejectedOrOrderKeptSlice({ verdict, log, out }, reason);
+  assert.deepEqual(observe(files.sourceFile, "result"), runtime);
 }

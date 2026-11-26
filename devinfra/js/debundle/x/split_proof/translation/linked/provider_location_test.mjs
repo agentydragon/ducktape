@@ -1,55 +1,14 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { prepare, root } from "./harness.mjs";
-import { writeDeployment } from "../testing/deployment_manifest.mjs";
-import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { lower, prepare, root } from "./harness.mjs";
 
 const provider = "nested/provider.mjs";
 const lazy = "nested/lazy.mjs";
 const entry = "entry.mjs";
 const worker = "renderer.mjs";
 const dir = path.join(root, "provider-reentry");
-
-function invokePublic(files, out, args = []) {
-  const manifest = writeDeployment(files.sourceFile, files.specFile, out);
-  const result = spawnSync(process.env.LOWERSPLIT, [manifest, out, ...args], { encoding: "utf8" });
-  assert.ifError(result.error);
-  assert([0, 1].includes(result.status), result.stdout + result.stderr);
-  const verdict = JSON.parse(result.stdout.trim());
-  return { result, verdict };
-}
-
-function assertRefused(files, out, args = [], reasonCode = null) {
-  const { result, verdict } = invokePublic(files, out, args);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.equal(verdict.status, "rejected", result.stdout + result.stderr);
-  assert.equal(verdict.guarantee, null, result.stdout + result.stderr);
-  if (reasonCode !== null) assert.equal(verdict.reason_code, reasonCode, result.stdout + result.stderr);
-  assert(!existsSync(out), `refusal created ${out}`);
-  return verdict;
-}
-
-function writePreview(files, out) {
-  const manifest = writeDeployment(files.sourceFile, files.specFile, out);
-  const result = spawnSync(process.env.SPLIT_PREVIEW, [manifest, out, "--force"], { encoding: "utf8" });
-  assert.ifError(result.error);
-  assert([0, 1].includes(result.status), result.stdout + result.stderr);
-  assert.match(result.stdout, /model diagnostic: /, result.stdout + result.stderr);
-  assert(existsSync(out), `preview was not written to ${out}`);
-  return result.stdout;
-}
-
-function snapshotFiles(directory) {
-  return Object.fromEntries(
-    readdirSync(directory)
-      .sort()
-      .map((name) => [name, readFileSync(path.join(directory, name))])
-  );
-}
-
 mkdirSync(path.join(dir, "nested"), { recursive: true });
 const files = prepare(dir, {
   sourceName: entry,
@@ -80,26 +39,12 @@ const opts = [
   "native-browser-record@1",
 ];
 const out = path.join(dir, "out");
-const deployment = writeDeployment(files.sourceFile, files.specFile, path.join(dir, "public-refusal"));
-assertPublicEmissionRefused(deployment, path.join(dir, "public-refusal"));
-assertRefused(files, path.join(dir, "former-mode-refusal"), opts);
-writePreview(files, out);
-
-const previewBytes = snapshotFiles(out);
-const previewManifest = writeDeployment(files.sourceFile, files.specFile, out);
-assertPublicRecheckRefused(previewManifest, out);
-const checkedWithFormerMode = invokePublic(files, out, [...opts, "--check-output"]);
-assert.equal(
-  checkedWithFormerMode.result.status,
-  1,
-  checkedWithFormerMode.result.stdout + checkedWithFormerMode.result.stderr
+const { verdict } = lower(files.sourceFile, files.specFile, out, opts, "linked-structural-pivot");
+assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+assert.deepEqual(
+  lower(files.sourceFile, files.specFile, out, [...opts, "--check-output"], "linked-structural-pivot").verdict,
+  verdict
 );
-assert.equal(
-  checkedWithFormerMode.verdict.status,
-  "rejected",
-  checkedWithFormerMode.result.stdout + checkedWithFormerMode.result.stderr
-);
-assert.deepEqual(snapshotFiles(out), previewBytes, "former-mode check-output changed the preview bytes");
 
 // An overlay serves lazy assets and providers at their original URLs. Recreate
 // it in a second tree to exercise both module graphs without sharing Node's cache.
@@ -124,39 +69,16 @@ for (const tree of [dir, overlay]) {
 // Same provider file, different re-entry: the lazy module requires an export
 // the real linked provider doesn't have. A root-relative decoy still exists.
 writeFileSync(path.join(dir, lazy), 'import {missing} from "./provider.mjs"; export {missing};');
-const refused = assertRefused(files, path.join(dir, "unlinked"));
-assert.equal(refused.reason_code, "no_constructed_rule");
-
-// Keep the missing-export diagnostic on a test-only native module-linking path.
-// The public construction-only CLI refuses this input before linking it.
-const linked = spawnSync(
-  process.execPath,
-  [
-    "--input-type=module",
-    "--eval",
-    `const api = await import(${JSON.stringify(pathToFileURL(path.join(dir, entry)).href)}); await api.load();`,
-  ],
-  { encoding: "utf8" }
-);
-assert.equal(linked.status, 1, linked.error?.message ?? linked.stdout + linked.stderr);
-assert.match(linked.stderr, /does not provide an export named ['"]missing['"]/);
+const refused = lower(files.sourceFile, files.specFile, path.join(dir, "unlinked"), opts, "linked-structural").verdict;
+assert.equal(refused.status, "rejected");
+assert.match(refused.reason, /does not export missing/);
+assert(!existsSync(path.join(dir, "unlinked")));
 const original = readFileSync(path.join(dir, provider), "utf8");
 writeFileSync(path.join(dir, provider), original.replace('import("./lazy.mjs")', 'import("./provider.mjs")'));
-const direct = assertRefused(files, path.join(dir, "direct"));
-assert.equal(direct.reason_code, "no_constructed_rule");
-
-// Native ESM resolves the provider's dynamic self-import to its existing namespace.
-const directLink = spawnSync(
-  process.execPath,
-  [
-    "--input-type=module",
-    "--eval",
-    `const api = await import(${JSON.stringify(pathToFileURL(path.join(dir, entry)).href)}); const linked = await api.load(); const provider = await import(${JSON.stringify(pathToFileURL(path.join(dir, provider)).href)}); console.log(JSON.stringify({same: linked === provider, current: linked.current}));`,
-  ],
-  { encoding: "utf8" }
+assert.match(
+  lower(files.sourceFile, files.specFile, path.join(dir, "direct"), opts, "linked-structural").verdict.reason,
+  /directly requests a linked namespace/
 );
-assert.equal(directLink.status, 0, directLink.error?.message ?? directLink.stdout + directLink.stderr);
-assert.deepEqual(JSON.parse(directLink.stdout.trim()), { same: true, current: "before" });
 
 // The retained provider's hoist can obtain the entry's live pivot cell only
 // through the external lazy script. That capability is already in the ready
@@ -169,9 +91,15 @@ const capture = prepare(captureDir, {
   extras: { "lazy.mjs": 'import {pivot} from "./entry.mjs"; export const sample = () => pivot;' },
   spec: { entry, modules: { [entry]: ["#0", "#1", "#3"], [worker]: ["#2"] }, order: [worker], sequential: true },
 });
-const hiddenOut = path.join(captureDir, "unsafe");
-const hiddenManifest = writeDeployment(capture.sourceFile, capture.specFile, hiddenOut);
-assertPublicEmissionRefused(hiddenManifest, hiddenOut);
+const hidden = lower(
+  capture.sourceFile,
+  capture.specFile,
+  path.join(captureDir, "unsafe"),
+  opts,
+  "linked-structural"
+).verdict;
+assert.equal(hidden.status, "rejected");
+assert.match(hidden.reason, /linked state already exposes the region of unit 2/);
 
 // Both providers export the same names. Retargeting a relocated namespace
 // import must still fail disk verification, even with byte-identical providers.
@@ -186,10 +114,10 @@ const nsFiles = prepare(nsDir, {
   spec: { entry, modules: { [entry]: ["#0", "#1", "#3"], [worker]: ["#2"] }, order: [worker], sequential: true },
 });
 const nsOut = path.join(nsDir, "out");
-writePreview(nsFiles, nsOut);
+const nsCheck = (args, scope) => lower(nsFiles.sourceFile, nsFiles.specFile, nsOut, args, scope).verdict;
+assert.equal(nsCheck(opts, "linked-structural-order").status, "certified");
 const relocated = path.join(nsOut, worker);
 const emitted = readFileSync(relocated, "utf8");
 assert.match(emitted, /provider\.mjs/);
 writeFileSync(relocated, emitted.replace("provider.mjs", "other.mjs"));
-const tamperedManifest = writeDeployment(nsFiles.sourceFile, nsFiles.specFile, nsOut);
-assertPublicRecheckRefused(tamperedManifest, nsOut);
+assert.equal(nsCheck([...opts, "--check-output"], "linked-structural").status, "rejected");

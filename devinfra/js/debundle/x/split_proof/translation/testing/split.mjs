@@ -102,25 +102,3 @@ export function split({
     verdict,
   };
 }
-
-/** Generate the Lean example instance without asking lowersplit to emit module previews. */
-export function generateInstance({ source, ast, manifest, spec, out, preview }) {
-  const inputCount = Number(source !== undefined) + Number(ast !== undefined);
-  assert.equal(inputCount + Number(manifest !== undefined), 1, "provide source, ast, or a deployment manifest");
-  assert(manifest || spec, "spec is required when source or ast is provided");
-  assert(out, "out is required");
-  assert(preview, "preview path is required");
-  assert(process.env.SPLIT_INSTANCE_GENERATOR, "SPLIT_INSTANCE_GENERATOR is required");
-  assert(!existsSync(preview), "preview path must not exist before instance generation");
-  const input = source ?? ast;
-  const deployment = manifest ?? writeDeployment(input, spec, preview);
-  const result = spawnSync(process.env.SPLIT_INSTANCE_GENERATOR, [deployment, out], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (result.error) throw result.error;
-  const log = result.stdout + result.stderr;
-  assert.equal(result.status, 0, log);
-  assert(!existsSync(preview), "instance generation emitted module previews");
-  return { out, stdout: result.stdout, stderr: result.stderr, log };
-}

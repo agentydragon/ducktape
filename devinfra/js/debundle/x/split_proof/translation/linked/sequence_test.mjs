@@ -1,20 +1,22 @@
 import assert from "node:assert/strict";
-import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
-import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
-import { withSplitPreview } from "../testing/split_preview.mjs";
-import { assertLinkedPreviewResult, assertMatchedModel, prepareLinkedFixture } from "./fixture_preview.mjs";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import {
+  assertCertified,
   arrow,
+  assertCertifiedResult,
   block,
   call,
   caseShard,
   conditional,
   exportNamed,
+  forcePreview,
   id,
   literal,
   moduleEvaluationOrder,
   observe,
   program,
+  sequentialSplit,
   throws,
   variable,
 } from "./harness.mjs";
@@ -22,15 +24,8 @@ import {
 const entry = "entry.mjs";
 const includesCase = caseShard();
 
-async function checkSequence(name, source, expected) {
-  const fixture = prepareLinkedFixture(name, source, {
-    entry,
-    modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] },
-    order: ["worker.mjs"],
-    sequential: true,
-  });
-  assertPublicEmissionRefused(fixture.manifest, fixture.out);
-  await assertLinkedPreviewResult(fixture, expected);
+function assertWorkerResult(name, source, expected) {
+  assertCertifiedResult(sequentialSplit(name, source), expected);
 }
 
 // Generate different operand counts and both direct and deferred sequences.
@@ -57,11 +52,11 @@ for (const [index, operands] of [
     variable("const", "value", conditional(test, literal(expected), reject)),
     exportNamed([["value", "result"]]),
   ]);
-  await checkSequence(`generated-sequence-${index}`, source, expected);
+  assertWorkerResult(`generated-sequence-${index}`, source, expected);
 }
 
 if (includesCase("first-abrupt-operand")) {
-  await checkSequence(
+  assertWorkerResult(
     "first-abrupt-operand",
     `const worker = () => {
     const stop = (message) => { throw message; };
@@ -79,7 +74,7 @@ if (includesCase("first-abrupt-operand")) {
 
 // The member access provides a receiver only for the direct call.
 if (includesCase("detached-receiver")) {
-  await checkSequence(
+  assertWorkerResult(
     "detached-receiver",
     `const worker = () => {
     const read = function () { return typeof this; };
@@ -97,7 +92,7 @@ if (includesCase("detached-receiver")) {
 
 // The sequence operand does not inherit the static property key as its function name.
 if (includesCase("sequence-property-value")) {
-  await checkSequence(
+  assertWorkerResult(
     "sequence-property-value",
     `const worker = { run: (0, () => 9) };
   const value = worker.run.name === "" ? worker.run() : (() => { throw "wrong function name"; })();
@@ -118,33 +113,21 @@ for (const dependent of [false, true]) {
     const value = read();
     const late = 2;
     export { value as result };`;
-  const fixture = prepareLinkedFixture(`reordered-sequence-${dependent}`, source, {
-    entry,
-    modules: { "worker.mjs": ["#3"], [entry]: ["#0", "#1", "#2", "#4"] },
-    order: ["worker.mjs"],
-    sequential: true,
+  const { dir, files, out, verdict, log } = sequentialSplit(`reordered-sequence-${dependent}`, source, {
+    "worker.mjs": ["#3"],
+    [entry]: ["#0", "#1", "#2", "#4"],
   });
-  const { manifest, out, sourceFile, specFile } = fixture;
-  const original = dependent ? "object" : "string";
-  assertPublicEmissionRefused(manifest, out);
-  assert.deepEqual(observe(sourceFile, "result"), { result: original });
-  await withSplitPreview({ manifest, expectedExit: dependent ? 1 : 0 }, ({ directory, entryFile }) => {
-    assert.deepEqual(moduleEvaluationOrder(directory, entry), ["worker.mjs", entry]);
-    assert.deepEqual(observe(entryFile, "result"), { result: "string" });
-    if (dependent) {
-      const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory, observe: [["result"]] });
-      assert.equal(model.status, "refused", JSON.stringify(model));
-      assert.equal(model.reason_code, "probe_mismatch", JSON.stringify(model));
-      assert.deepEqual(model.observation, {
-        kind: "value",
-        path: ["result"],
-        original: '"object"',
-        split: '"string"',
-      });
-    } else {
-      assertMatchedModel(fixture, directory, [[["result"], "string"]]);
-    }
-    assertPublicEmissionRefused(manifest, directory);
-    assertPublicRecheckRefused(manifest, directory);
-  });
+  assert.deepEqual(observe(files.sourceFile, "result"), { result: dependent ? "object" : "string" });
+  let candidate = out;
+  if (dependent) {
+    assert.equal(verdict.status, "rejected", log);
+    assert.match(verdict.reason, /probe executions completed normally with different final states/);
+    assert(!existsSync(out));
+    candidate = path.join(dir, "preview");
+    forcePreview(files, candidate);
+  } else {
+    assertCertified(verdict, log);
+  }
+  assert.deepEqual(moduleEvaluationOrder(candidate, entry), ["worker.mjs", entry]);
+  assert.deepEqual(observe(path.join(candidate, entry), "result"), { result: "string" });
 }

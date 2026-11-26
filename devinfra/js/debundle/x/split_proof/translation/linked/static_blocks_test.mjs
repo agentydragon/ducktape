@@ -1,28 +1,18 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
-import { withSplitPreview } from "../testing/split_preview.mjs";
-import {
-  assertLinkedPreviewResult,
-  assertMatchedModel,
-  prepareLinkedFixture,
-  prepareWorkerFixture,
-} from "./fixture_preview.mjs";
-import { observe } from "./harness.mjs";
+import { assertCertifiedResult, lower, sequentialSplit, workerSplit } from "./harness.mjs";
 
-function sequentialFixture(name, source, modules, order) {
-  return prepareLinkedFixture(name, source, { entry: "entry.mjs", modules, order, sequential: true });
-}
-
-const nullHeritage = prepareWorkerFixture(
-  "static-block-null-heritage",
-  `class Child extends null { static { this.value = 1; } }
-   export const result = Child.value;`
+assertCertifiedResult(
+  workerSplit(
+    "static-block-null-heritage",
+    `class Child extends null { static { this.value = 1; } }
+     export const result = Child.value;`
+  ),
+  1
 );
-assertPublicEmissionRefused(nullHeritage.manifest, nullHeritage.out);
-await assertLinkedPreviewResult(nullHeritage, 1);
 
-const effects = sequentialFixture(
+const effects = sequentialSplit(
   "static-blocks-and-fields",
   `const trace = { value: "" };
    const mark = (note, value) => { trace.value += note; return value; };
@@ -49,34 +39,18 @@ const effects = sequentialFixture(
   { "base.mjs": ["#0", "#1", "#2"], "entry.mjs": ["#3", "#4", "#5"] },
   ["base.mjs"]
 );
-const result = ["first;block;last;second block;", "parentearly", true, 8];
-assertPublicEmissionRefused(effects.manifest, effects.out);
-await withSplitPreview({ manifest: effects.manifest }, async ({ directory, entryFile }) => {
-  for (const file of [effects.sourceFile, entryFile]) {
-    assert.deepEqual(observe(file, "result"), { result });
-    const { Child } = await import(pathToFileURL(file).href);
-    assert.deepEqual(Reflect.ownKeys(Child), [
-      "length",
-      "name",
-      "prototype",
-      "first",
-      "seen",
-      "inner",
-      "saved",
-      "later",
-    ]);
-  }
-  assertMatchedModel(
-    effects,
-    directory,
-    result.map((value, index) => [["result", String(index)], value])
-  );
-  assertPublicEmissionRefused(effects.manifest, directory);
-  assertPublicRecheckRefused(effects.manifest, directory);
-});
+assertCertifiedResult(effects, ["first;block;last;second block;", "parentearly", true, 8]);
+assert.deepEqual(
+  lower(effects.files.sourceFile, effects.files.specFile, effects.out, ["--check-output"]).verdict,
+  effects.verdict
+);
+for (const file of [effects.files.sourceFile, path.join(effects.out, "entry.mjs")]) {
+  const { Child } = await import(pathToFileURL(file).href);
+  assert.deepEqual(Reflect.ownKeys(Child), ["length", "name", "prototype", "first", "seen", "inner", "saved", "later"]);
+}
 
 // Even a block textually above a computed instance-field key must wait for that key.
-const tdz = sequentialFixture(
+const tdz = sequentialSplit(
   "static-block-after-computed-keys",
   `const trace = { value: "" };
    const computed = () => {
@@ -93,11 +67,10 @@ const tdz = sequentialFixture(
   { "trace.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
   ["trace.mjs"]
 );
-assertPublicEmissionRefused(tdz.manifest, tdz.out);
-await assertLinkedPreviewResult(tdz, "key;key threw;");
+assertCertifiedResult(tdz, "key;key threw;");
 
 // An abrupt block completion skips all remaining static initialization.
-const abrupt = sequentialFixture(
+const abrupt = sequentialSplit(
   "throwing-static-block",
   `const trace = { value: "" };
    const compute = () => {
@@ -116,5 +89,4 @@ const abrupt = sequentialFixture(
   { "trace.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
   ["trace.mjs"]
 );
-assertPublicEmissionRefused(abrupt.manifest, abrupt.out);
-await assertLinkedPreviewResult(abrupt, "stop:field;throw;");
+assertCertifiedResult(abrupt, "stop:field;throw;");

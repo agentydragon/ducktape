@@ -1,10 +1,15 @@
 # Splitting a bundle into ES modules, with a Lean proof
 
-A flat JavaScript bundle goes in. A spec says which top-level statement goes to which module.
-The experimental splitter publishes ES modules only with the strict all-outcomes
-CoreJS guarantee. The [target theorem](PLAN.md#target) covers every input and spec
-accepted by the constructor, with its proof checked when building the splitter.
-[Certification commands and current acceptance](#request-a-corejs-guarantee)
+The splitter is being rebuilt around a proved transformation of CoreJS programs.
+The public `lowersplit` command currently refuses every request with
+`no_constructed_rule` and exit status 1, before reading inputs or changing the
+output directory. It does not run Lean at split time or emit a preview. The
+[acceptance plan](PLAN.md#acceptance-contract) describes the intended compiled
+constructor and its CoreJS equivalence theorem.
+
+The JavaScript-to-CoreJS frontend and CoreJS-to-JavaScript printer are trusted
+components. The machine-checked claim concerns the CoreJS transformation;
+frontend and printer tests are engineering checks, not part of that theorem.
 
 [`SUPPORT.md`](SUPPORT.md) inventories the syntax, standard library and host
 features the intended inputs require. [CoreJS coverage](model/README.md) tracks
@@ -17,73 +22,39 @@ p=//devinfra/js/debundle/x/split_proof
 bbr test "$p/..." --config=ci
 ```
 
-Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused checks and longer experiments, use the following commands with the same `p` (`out` is an absolute output path):
+Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused proof and model checks, use the following commands with the same `p`:
 
-| Task                                                         | Command                                                                               |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| Compare the rendered example and rejected controls with Node | `bbr test "$p/lean:example_test"`                                                     |
-| Render the verified example                                  | `bb run "$p/lean:render" -- "$out"`                                                   |
-| Audit axioms and check the lowered example certificate       | `bbr test "$p/lean:axioms_test" "$p/lean:lowered_example_certificate_test"`           |
-| Compile the extra Lean proofs                                | `bbr test "$p/lean:experiments_test"`                                                 |
-| Compare module evaluation order across 500 graphs            | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
-| Fuzz the example renderer                                    | `bb run "$p/fuzz:render_fuzz" -- 600 1`                                               |
-| Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/effects:effects_cases_test"`             |
-| Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
-| Run the extended CoreJS comparison                           | `bbr test "$p/model:corejs_differential_sweep_test"`                                  |
-| Run the debundle case corpus                                 | [Corpus commands](debundle_cases/README.md#run-it)                                    |
-| Lower public library bundles and check their splits          | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                    |
-
-To refresh the checked-in example instance after changing the inputs:
-
-```sh
-dir=devinfra/js/debundle/x/split_proof
-bbr build "//$dir/lean/generated:generate_instance" --remote_build_event_upload=all --remote_download_outputs=toplevel
-cp "bb-out/bazel-out/k8-fastbuild/bin/$dir/lean/generated/EsmSplit/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
-bbr test "//$dir/lean:instance_freshness_test"
-```
+| Task                                              | Command                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Audit the shared proofs                           | `bbr test "$p/lean:axioms_test" "$p/lean:corejs_axioms_test"`                         |
+| Compile the extra Lean proofs                     | `bbr test "$p/lean:experiments_test"`                                                 |
+| Compare module evaluation order across 500 graphs | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
+| Check translation fixtures and effect cases       | `bbr test "$p/translation:fixtures_test" "$p/effects:effects_cases_test"`             |
+| Run a larger translation fuzz sample              | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
+| Run the extended CoreJS comparison                | `bbr test "$p/model:corejs_differential_sweep_test"`                                  |
 
 Acorn supplies an unsplit module AST and eslint-scope annotates its binding occurrences. Lean enumerates source ordinals from the module body. It gives each declarator of a top-level `var`, `let` or `const` its own ordinal, including under a named export, and keeps each destructuring pattern together. Lean assembles an ESTree `Program` for each output file, including the imports and exports that connect the modules. Astring prints these trees as JavaScript. Functions, classes and methods retain their original source spelling because JavaScript exposes it through `Function.prototype.toString`. Unversioned input dumps are upgraded by reparsing the included source and checking its annotations.
 
-For a closed module containing only identifier declarations, Lean also proves a `Declaration extraction` model result. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of a supported initializer (for example, `const offset = -42, visible = !!offset;`). The model allocates the entire module’s bindings before running initializers in order, and the proof includes throws. This model result alone does not authorize publication. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
+For a closed module containing only identifier declarations, the checker also handles `Declaration extraction`. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of any supported initializer (for example, `const offset = -42, visible = !!offset;`). It evaluates the original declaration groups by allocating the entire module’s bindings before running the initializers in order. Lean proves that evaluating these groups gives the same CoreJS result as evaluating their extracted units, including if an initializer throws. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
 
 ## Request a CoreJS guarantee
 
-Pass the deployment manifest and a fresh output directory to the publishing splitter:
+The command below currently refuses without publishing output. The discussion
+following it records the previous checker and its model coverage; its strategy
+flags, diagnostic emitter, generated proofs, and successful verdicts are no
+longer available through `lowersplit`.
 
 ```sh
 bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json output
 ```
 
-Publication requires one strict guarantee: the requested placement and entry's public live cells are preserved, and all supported observable CoreJS endings agree, including throws and their effects. This is a claim about the modeled CoreJS programs under the supported JavaScript boundary, not a proof of general JavaScript semantics. The [target and trusted parts](PLAN.md#target) describe that boundary.
-
-**Current acceptance:** no public constructor rule yet proves both the source/output bridge and the strict JavaScript observations. The splitter reports `reason_code: "no_constructed_rule"` when the required constructor evidence is unavailable; it does not publish a fresh output tree. `--check-output` is not an accepted option; requests using it are rejected before the output tree is modified. A model diagnostic or a proof of normal completion alone is not a publication certificate. Earlier replay and structural acceptances are not a current coverage promise.
-
-The publishing command no longer accepts research switches to select replay or structural proof, request normal completion, supply host/deployment premise overrides, or run `--check-output`. There is no unchecked publishing mode.
-
-### Developer diagnostics
-
-Separate developer tools expose model experiments and example generation. The preview is test-only, is not certified output, and must not be used as a published split:
-
-```sh
-p=//devinfra/js/debundle/x/split_proof/lean
-bb run "$p:split_preview" -- deployment.json scratch-output --force
-bb run "$p:split_instance_generator" -- deployment.json Generated.lean
-```
-
-`split_preview` replaces the former `lowersplit --diagnostic` entry point; `split_instance_generator` replaces `lowersplit --generate-instance`. They serve example generation, tests and research, not the publishing contract. The [CoreJS differential inventory](model/README.md) describes model comparisons, and the [plan](PLAN.md#target) records the work needed to accept public splits.
-
-## Historical replay and structural examples
-
-The remainder of this section records the former replay and structural publishing paths, their commands, premises and example results. Those paths and flags have been retired from the publishing splitter. The examples describe historical model behavior and are not instructions for the current CLI or evidence that these inputs now certify.
-
-<details>
-<summary>Former replay and structural interface (historical; options are no longer accepted)</summary>
+### Historical checker and model coverage
 
 An ordinary call to ambient `Symbol.for` can be retained in deferred code without a host assumption. If initialization reaches the callee, the model reports an unknown result before evaluating the arguments.
 
 For browser module scripts, the `browser-page` contract also permits `.js` output paths on emission and disk checking.
 
-Before retirement, a browser page entry could use `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and `--check-output`. Those options are no longer accepted. Under that former profile, ambient `window`, `globalThis`, and `self` may return the same opaque page object, and their `typeof` may return `"object"`. The browser fallback `typeof global` may return `"undefined"`; a page with a Node-style shim can violate that premise. Each selected observation must preserve host state throughout initialization. A direct read of ambient `global` remains opaque and stops the proof if reached. Lexical and imported names use their actual bindings.
+For a module loaded as a browser page entry, you can pass `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and on `--check-output`. Under this profile, ambient `window`, `globalThis`, and `self` may return the same opaque page object, and their `typeof` may return `"object"`. The browser fallback `typeof global` may return `"undefined"`; a page with a Node-style shim can violate that premise. Each selected observation must preserve host state throughout initialization. A direct read of ambient `global` remains opaque and stops the proof if reached. Lexical and imported names use their actual bindings.
 
 The [browser globals catalog](lean/EsmSplit/CoreJS/BrowserGlobals.lean) covers ECMAScript and browser APIs, including DOM bindings, timers, networking, storage, and static method references such as `Object.defineProperty` and `Date.now`. A reached lookup can assume a specific `typeof` or stable reference. For example, a reference to `FileReader` requires it to exist on that page. Reading `window.Error` and reading the bare `Error` binding can return the same opaque reference under separate premises. The checker records observations from both initializers and the generated Lean theorem checks them in every world satisfying the listed premises. A deferred or untaken lookup adds no premise. A reference to a method supplies no result for a call. Volatile page values, including scroll coordinates, and operations such as reading Error stacks or writing to the DOM stay opaque.
 
@@ -107,12 +78,12 @@ Class static blocks run in their own scope with the constructor as the
 receiver. The checker evaluates class member keys before it initializes
 fixed-name static fields and runs blocks in their source order.
 
-The retired command reported successful replay and structural verdicts under different guarantees. Its default `normal-completion` compared successful modeled final states; its linked-program proof additionally established normal initialization. An order-preserving structural proof could instead report `all-outcomes`, including throws, and `--require all-outcomes` selected that stronger request. These former success routes and the guarantee-selection flag are not part of the current publishing CLI.
+The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee. A structural split that links to the same initial state and the same ordered units reports `all-outcomes`, including when both versions throw. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
-A historical structural example moved `Math.PI / 12` using
+To move an initializer such as `Math.PI / 12`, pass
 `{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}` with
-`--host-contract` and `--structural` on both emission and `--check-output`. Those flags have been retired.
-The caller asserted that throughout initialization the ambient binding returns
+`--host-contract` and `--structural` on both emission and `--check-output`.
+The caller asserts that throughout initialization the ambient binding returns
 the same Math object, and that reading its own `PI` data property returns the
 Number with binary64 bits `0x400921fb54442d18`. Both reads must have no
 observable effects. The verdict lists the premise when the move uses it.
@@ -122,20 +93,20 @@ move. Such a page does not satisfy the contract. Neither a lexical `Math`
 binding nor an object operand requiring numeric coercion qualifies for this
 rule. The plain browser-page profile makes no such assertion.
 
-For the pinned Node semver bundle, the former `{"profile":"ecmascript","stableIntrinsicValues":["Object.defineProperty@1"]}`
-profile let the structural checker move `var saved = Object.defineProperty;`. Throughout initialization,
+For the pinned Node semver bundle, `{"profile":"ecmascript","stableIntrinsicValues":["Object.defineProperty@1"]}`
+lets the structural checker move `var saved = Object.defineProperty;`. Throughout initialization,
 reading the ambient `Object` binding must return the same receiver, and reading its own data
 property `defineProperty` must return the same method reference. Both reads must preserve host
 state. Deployments that replace the method or install an observable getter can violate the premise.
 The contract grants no behavior for invoking the method and does not require browser globals.
 
-The former deployment interface used one manifest for the original loader graph. Each changed chunk
-embedded one record from `debundle spec resolve-placements`; a fixed chunk has
+Use one deployment manifest for the original loader graph. Each changed chunk
+embeds one record from `debundle spec resolve-placements`; a fixed chunk has
 only its original route and source. Resolve physical source paths relative to
-the manifest. These historical commands assembled a manifest for two changed chunks
-from a batch export; the splitter flags shown are no longer accepted:
+the manifest. The following shell assembles a manifest for two changed chunks
+from a batch export:
 
-```text
+```sh
 jq '{entry:"main.js", chunks:[.placements[] | {
   path:(.chunk_id + ".js"), source:("bundle/" + .chunk_id + ".js"), placement:.
 }]}' resolved.json > deployment.json
@@ -179,7 +150,7 @@ in each schedule, including through a local alias. A write, accessor or
 unmodeled intervening operation drops the evidence. Only the scheduling
 proof substitutes the value; the emitted JS still reads `table.value`.
 
-The former experimental `--structural` checker selected a proof from the linked schedules. If the units keep their original order, it checks the exact unit sequence, source syntax, resolved capture cells, initial state and entry exports, then reports `scope: "linked-structural-order"` and `guarantee: "all-outcomes"` when the decoded schedules match exactly. For an order change, it brings units forward one at a time. A hoisted function is already in its declaration cell before either schedule runs. The initial states must agree on its object address, code, and captured cells; entry exports must resolve to the same live cells. Only the inert declaration step moves past earlier units, which may already use the function. Moving an allocating initializer still requires checks on the prefix and crossed units of the intermediate schedule. It reports `scope: "linked-structural-pivot"` for one move and `scope: "linked-structural-moves"` for multiple moves.
+The experimental `--structural` checker selects a proof from the linked schedules. If the units keep their original order, it checks the exact unit sequence, source syntax, resolved capture cells, initial state and entry exports, then reports `scope: "linked-structural-order"` and `guarantee: "all-outcomes"` when the decoded schedules match exactly. For an order change, it brings units forward one at a time. A hoisted function is already in its declaration cell before either schedule runs. The initial states must agree on its object address, code, and captured cells; entry exports must resolve to the same live cells. Only the inert declaration step moves past earlier units, which may already use the function. Moving an allocating initializer still requires checks on the prefix and crossed units of the intermediate schedule. It reports `scope: "linked-structural-pivot"` for one move and `scope: "linked-structural-moves"` for multiple moves.
 
 A regex literal can move as a fresh allocation, including as the value of a named data property. Each evaluation creates a distinct object with its own `lastIndex` and the realm's `%RegExp.prototype%`. The intrinsic constructor's `prototype` is a non-writable, non-configurable data property; literal evaluation does not consult the global `RegExp` binding or invoke getters on the prototype. This rule needs no browser-page premise. Calling `new RegExp(...)`, reading `/a/.flags`, and running a matcher during initialization remain outside the allocation rule.
 
@@ -195,22 +166,25 @@ For a page whose import map remains empty, `--deployment-import-map empty@1` rec
 
 [Lean's initializer](lean/EsmSplit/CoreJS/NativeRecord.lean) allocates that receiver and its nonconstructible resolver in a private model dependency before original module bodies run. Each referrer captures its immutable binding. The resolver runs in the common opaque world with its actual receiver and arguments. The record's properties can subsequently change; getter calls and objects reachable from them remain subject to the ordinary structural frame checks. All metadata sites, including deferred ones, must stay at their original referrer. The model dependency is never emitted. Pass the same preset to `--check-output`; without it the original deployment checks still apply.
 
-In the retired interface, the verdict's `scope` identified which theorem the run established. Each theorem was about the CoreJS programs that Lean lowers from the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean):
+The verdict's `scope` identifies which theorem the run established. Each theorem is about the CoreJS programs that Lean lowers from the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean):
 
 - [Closed declarations](lean/EsmSplit/CoreJS/Declaration/Artifacts.lean): `prepare?` checks the plan, footprints and order. Its `certify` function is a proven checker that runs as compiled code. It decodes the output modules, checks the entry's public surface, and proves the reported level for those modules. Kept order gives equal results and states for every world and fuel, including throws. Checked moves give the same successful states in both directions.
 - [Structural order and moves](lean/EsmSplit/CoreJS/StructuralCertificate.lean): `certifyStructuralASTs` is a proven checker that runs as compiled code. It checks both linked schedules. Its result proves that each entry exports the same live cells and that either graph reaches a successful final state exactly when the other does, under the opaque-world and deployment interpretation above.
 - [Compiled slices](lean/EsmSplit/LowerSplit/SliceCertificate.lean): the checker uses the empty lowering profile and proves the reported guarantee for the exact decoded CoreJS pair. It checks the requested placement and that each entry export resolves to the same live cell. Kept order gives equal results and states for every CoreJS world and fuel. Checked moves give the same successful states in both directions. Deployments that require a host profile or have source ordinals omitted from the decoded program can use the other linked checks.
-- [Compiled linked replay](lean/EsmSplit/CoreJS/ProbeReplay.lean): the checker transports supported successful probe runs to every world satisfying the reported host premises. It checks the linked programs and their entry exports with compiled proof-carrying functions. Requests outside the available compiled rules are rejected with `reason_code: "no_compiled_rule"` when no rule applies.
+- [Linked execution](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean): each run writes a Lean proof about the two lowered programs, and the kernel checks it in a separate Lean process. `certifyASTs` then runs as compiled code and checks that the supplied ASTs lower to those programs. Both initialize normally in the same state for every world satisfying the reported host premises and export the same live cells.
 
-The former [publication path](lean/EsmSplit/SplitFiles.lean) printed to staging, reparsed the files, and checked their module set, syntax, and callable spelling. It required copied providers to match the source text. The certificate consumed the annotated ASTs from those disk reads. The former `--check-output` repeated those checks on an existing directory, including for regrouped declarations with the same ordered units; the current CLI rejects this option. The theorems relate CoreJS programs. Their application to the files relies on the parser and scope annotator, the lowering and CoreJS model, and Lean's compiler and file IO.
+[Publication](lean/EsmSplit/SplitFiles.lean) prints to staging, reparses the files, and checks their module set, syntax, and callable spelling. It requires copied providers to match the source text. The certificate consumes the annotated ASTs from those disk reads. `--check-output` repeats the same checks on an existing directory, including for regrouped declarations with the same ordered units. The theorems relate CoreJS programs. Their application to the files relies on the parser and scope annotator, the lowering and CoreJS model, and Lean's compiler and file IO.
 
-`CoreJS.CheckedSplit.checkedSplit` constructs an order-preserving split of a single import-free CoreJS entry. The fragment covers simple `const` declarations, including direct zero-argument calls, and ordinary zero-argument function declarations that return a literal or binding. Each success carries the requested placement, the same public live cells, and the requested guarantee in every CoreJS world. A companion check compares an independently decoded artifact with the constructed program. A Bazel fixture exercises the API from prebuilt Lean modules. This research API is not connected to the current publishing CLI. [Constructor and proof](lean/EsmSplit/CoreJS/CheckedSplit.lean)
+`CoreJS.CheckedSplit.checkedSplit` constructs an order-preserving split of a single import-free CoreJS entry. The fragment covers simple `const` declarations, including direct zero-argument calls, and ordinary zero-argument function declarations that return a literal or binding. Each success carries the requested placement, the same public live cells, and the requested guarantee in every CoreJS world. A companion check compares an independently decoded artifact with the constructed program. A Bazel fixture exercises the API from prebuilt Lean modules. The `lowersplit` command uses the production checkers above. [Constructor and proof](lean/EsmSplit/CoreJS/CheckedSplit.lean)
 
 The test-only `checked_artifact_test` exercises the constructor from a JavaScript file and authored spec. It prints the constructor's plan with the existing emitter, reparses the staged files, and requires their linked lowering to equal the constructed graph before publication. It also checks the same graph on disk, rejects tampered files and keeps prior output intact on refusal. The tracked Bazel test uses the standard Lean launcher for the test entry. The native version of the fixture uses the same JavaScript frontend and staging code. [Artifact verification](lean/EsmSplit/LowerSplit/CheckedArtifact.lean)
 
-For a module that called functions or imported named bindings from relative JavaScript files, the former manifest command parsed
-reachable `.mjs` and `.js` providers as ES modules and copied them alongside the split.
-The former compiled checker lowered the original and generated module ASTs to CoreJS and checks statement placement, live binding addresses and the entry's exports. Its accepted replay rules prove normal completion in the same final state for every modeled world satisfying the reported host premises. When no compiled rule covers the request, the command rejects it without publishing output; `--check-output` rejects it without changing the existing tree. Neither command starts Lean or elaborates a proof at runtime.
+For a module that calls functions or imports named bindings from relative JavaScript files, use
+the manifest command with the same original source path. The splitter parses
+reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
+Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world satisfying the reported host premises.
+
+For large certificates, the checker can elaborate AST correspondence in a separate Lean process. That check imports the execution theorem compiled for the current certificate and audits the result. For large linked programs that need neither host premises nor file-local write-batch rules, the checker also proves the source run first and records its complete final state. The candidate must reach that same state. If a checkpoint stage fails, the checker retries with the ordinary execution proof.
 
 The linked checker can retain an ordinary function whose body fails lowering. It checks the callable's source spelling, original unit and lexical position, and captured bindings in both trees. The interpreter allocates the closure and its properties as usual. Calling or constructing it then yields an unknown result with the body’s lowering error. Retention requires that the callable can be represented without a module URL, method home object, or direct `eval`.
 
@@ -347,11 +321,11 @@ reports `"scope":"linked-programs"`.
 
 Linked refusals from AST lowering and the concrete probe include a `reason_code`. A `linked_input` refusal means the input failed linked lowering or linkage. `probe_fuel` means the search exhausted its budget. `probe_mismatch` means both probe executions finished with different states. Its optional `observation` reports a differing exported value or object alias when one is visible in exported cells or their own data properties. Paths list the export name and, for an own property, the property name.
 
-### Historical certification timing
+### Historical certification measurements
 
-The retired checker used `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. These phases described staging, output comparison, lowering and the compiled checks available at that time.
+Set `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. Stdout carries the certification verdict. One Lean process reports a combined execution and AST correspondence time. Staged proofs report the subprocesses individually, including any attempted checkpoint before a fallback.
 
-The historical comparison used the wide-table reversal and the 48-reader linked module graph:
+For public comparisons, use the wide-table reversal and the 48-reader linked module graph:
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof
@@ -359,115 +333,12 @@ bbr test "$p/translation/linked:wide_table_reversal_test" "$p/translation/linked
   --test_env=SPLIT_PROOF_TIMINGS=1 --test_output=all --nocache_test_results
 ```
 
-Those figures describe the former proof paths, not current public certification.
+Compare the same fixture, proof mode and runner across revisions. Record peak memory separately from the phase times.
 
-### Inspect an uncertified preview
+### Historical diagnostic preview
 
-The test-only preview tool runs structural checks and prints model diagnostics.
-
-```sh
-bb run //devinfra/js/debundle/x/split_proof/lean:split_preview -- deployment.json scratch-output
-```
-
-Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
-
-</details>
-
-## The example
-
-This is an abstract plan-checking and renderer example, not a current publishing certificate.
-
-Input, [`example/input/bundle.mjs`](example/input/bundle.mjs). It has 12 top-level statements, numbered 0–11:
-
-```js
-const PI = 3.14159; // 0
-function square(x) {
-  return x * x;
-} // 1
-const area = (r) => PI * square(r); // 2
-function isEven(n) {
-  return n === 0 || isOdd(n - 1);
-} // 3
-function isOdd(n) {
-  return n !== 0 && isEven(n - 1);
-} // 4
-const registry = []; // 5
-function register(name, fn) {
-  registry.push(name);
-  return fn;
-} // 6
-register("area", area); // 7
-const label = (s) => "<" + s + ">"; // 8
-register("label", label); // 9
-console.log(label("circle"), area(2), isEven(10)); // 10
-console.log(registry.join(",")); // 11
-```
-
-Spec, [`example/spec.json`](example/spec.json). A selector is a declared name, or `#n` for a statement that declares nothing:
-
-```json
-{
-  "entry": "main.mjs",
-  "modules": {
-    "utils.mjs": ["PI", "square", "area", "isEven", "isOdd", "label"],
-    "registry.mjs": ["registry", "register"],
-    "plugins.mjs": ["#7", "#9"],
-    "main.mjs": ["#10", "#11"]
-  }
-}
-```
-
-Two optional keys set the order the modules run in. `"order": ["a.mjs", …]` is an import priority: the entry imports every module in that order. That does not fix the order of evaluation, because a module runs after the modules it imports. `"sequential": true` does: the modules run in exactly `order` (or, without `order`, in the order of their first statements), the entry last. The planner then makes a module that an earlier one mentions import that earlier module first, and every module between ([`Split.lean`](lean/EsmSplit/Split.lean), `nest`). `Valid` checks the resulting plan like any other.
-
-For certification, the authored spec has a closed set of keys: `entry`, `modules`, `order`, `sequential`, and `privateEntryBody`. Unknown keys, duplicate keys, and values of the wrong type are refused. Resolved placements use their own format.
-
-The `render` target writes these files to the output directory you pass it. Statements are copied verbatim.
-
-```js
-// main.mjs
-import { label, area, isEven } from "./utils.mjs";
-import { registry } from "./registry.mjs";
-import "./plugins.mjs";
-
-console.log(label("circle"), area(2), isEven(10));
-console.log(registry.join(","));
-
-// plugins.mjs
-import { area, label } from "./utils.mjs";
-import { register } from "./registry.mjs";
-
-register("area", area);
-register("label", label);
-
-// registry.mjs
-const registry = [];
-function register(name, fn) {
-  registry.push(name);
-  return fn;
-}
-
-export { register, registry };
-
-// utils.mjs
-const PI = 3.14159;
-function square(x) {
-  return x * x;
-}
-const area = (r) => PI * square(r);
-function isEven(n) {
-  return n === 0 || isOdd(n - 1);
-}
-function isOdd(n) {
-  return n !== 0 && isEven(n - 1);
-}
-const label = (s) => "<" + s + ">";
-
-export { area, label, isEven };
-```
-
-The bundle runs statements in order `0 1 2 … 11`. The split runs `0 1 2 3 4 8 5 6 7 9 10 11`.
-`label` (8) now runs before `registry`, `register` and the first registration. The proof says why that is fine.
-Both programs print `<circle> 12.56636 true` and `area,label`.
+The former `--diagnostic` emitter has been removed. The model theorems and
+proof inventory remain available for build-time checks.
 
 ## What is proved
 
@@ -518,8 +389,7 @@ That last rule cuts import cycles.
 
 [`Semantics.lean`](lean/EsmSplit/Semantics.lean) proves pairwise commutation of
 nonconflicting statements (`step_comm`) and lifts it to the plan's execution
-order (`exec_reorder`). The generated [example certificate](lean/EsmSplit/Instance.lean)
-uses `decide +kernel` for `Valid` and applies `split_correct`.
+order (`exec_reorder`).
 `lean:axioms_test` checks axiom dependencies;
 `leanchecker` replays the declarations.
 
@@ -529,62 +399,22 @@ The abstract theorem assumes footprint soundness for the supplied program.
 [`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
 names, and assignment sites. [The Effects analysis](effects/README.md) supplies
 writes, indirect reads and world effects under its printed premises.
-The standalone `split_instance_generator` uses both to write the checked-in example's Lean source without rendering JavaScript modules.
 
 `Meaning` models one flat environment. Using that theorem for JavaScript assumes
 that `Hygienic` justifies flattening and that `Plan.visit` agrees with module
 evaluation. The [module-order experiment](experiments/README.md#10-does-the-models-module-order-match-node)
-compares that order with Node. In the test-only model preview, external imports count as
+compares that order with Node. In a structural preview, external imports count as
 preexisting bindings. The diagnostic admission check keeps source imports and
 exports in the entry. The emitter writes source imports before generated imports. Preserving external initialization order assumes synchronous dependencies
 and unchanged resolution of relative specifiers. Diagnostic glue exports may widen
 the entry's public surface.
 
-For the publishing splitter, the [CoreJS artifact guarantee](#request-a-corejs-guarantee)
+For the normal splitter, the [CoreJS artifact guarantee](#request-a-corejs-guarantee)
 states the parser, binding annotation, lowering, printer, model and compiler premises. The
 [footprint proof inventory](docs/footprint_soundness.md#current-proof-inventory)
 lists the Effects summaries already covered by separate CoreJS certificates.
 For validation of a separately authored tree, see the
 [translation validator's renaming premise](translation/README.md#trusted).
-
-## Controls
-
-Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`, checked by the kernel) and a real failure in Node.
-`lean:example_test` checks the Node behavior.
-
-| Control                                                                                                      | Failing check | Node, when written anyway                                          |
-| ------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------------------------------------------------ |
-| [`effect_order`](example/controls/effect_order.json): last `console.log` moved into `registry.mjs`           | `OrderOk`     | prints `"\n<circle> 12.56636 true\n"`                              |
-| [`cycle_tdz`](example/controls/cycle_tdz.json): `label` in `main.mjs`, which `plugins.mjs` needs and imports | `OrderOk`     | `ReferenceError: Cannot access 'label' before initialization`      |
-| [`claimed_twice`](example/controls/claimed_twice.json): two modules pick `label`                             | `Faithful`    | `SyntaxError: Identifier 'label' has already been declared`        |
-| `missing_import` (a buggy splitter forgets one import)                                                       | `Hygienic`    | `ReferenceError: registry is not defined`                          |
-| `dropped_module` (nobody imports `plugins.mjs`)                                                              | `Permutes`    | prints `"<circle> 12.56636 true\n\n"`; the registrations never run |
-
-[`example/variants/cycle.json`](example/variants/cycle.json) must pass: `isEven` and `isOdd` in separate modules form a real import cycle, which is fine because function declarations exist before any module runs.
-`cycle_tdz` is the same cycle with a `const` in it, and fails.
-
-[`Controls.lean`](lean/EsmSplit/Controls.lean) also runs a concrete `Meaning` in the kernel. The accepted splits end in the bundle's state. The two order-violating controls end in a different one.
-
-## Checking the trusted parts
-
-These are tests, not proofs. The Bazel target `fuzz:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
-510 random placements of the 12 statements, each rendered and run in Node.
-
-- 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
-- 353 rejected. 325 really break in Node. 28 are harmless: the checker is conservative.
-
-[`fuzz/mutate.py`](fuzz/mutate.py) weakens the trusted logic and reruns the fuzzer (400 placements per mutant):
-
-| Mutant                                                     | Result                                                                                                |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| drop the effect-order conflict                             | caught (18 wrong accepts)                                                                             |
-| drop the read-after-declare conflict                       | caught (87)                                                                                           |
-| run imports in reverse order                               | caught (4)                                                                                            |
-| drop the declare-after-read conflict                       | survives: this bundle reads nothing before its declaration. It matters for `var`.                     |
-| no transitive reads (the read set is just the eager names) | caught by a proof: the build fails, because `reads_closed` no longer holds for the changed definition |
-| un-mark a module after it runs                             | survives, still sound: `Permutes` rejects the double run                                              |
-
-Running `example/output/` in Node also found a bug in the first printer (no `export` lines). The proof does not cover the printer.
 
 ## Further reading
 
@@ -592,4 +422,4 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 - [Structural checker experiments and Node comparisons](experiments/README.md)
 - [Historical scale measurements](experiments/TIMINGS.md)
 - [Lessons from the experiment](docs/lessons_learned.md)
-- [Historical Excalidraw placement and browser replay](integration/excalidraw/README.md#certified-placement)
+- [Excalidraw: certified placement, upstream ownership, and browser replay](integration/excalidraw/README.md#certified-placement)

@@ -15,17 +15,6 @@ js_library(
     ],
 )
 
-js_library(
-    name = "fixture_preview",
-    srcs = ["fixture_preview.mjs"],
-    deps = [
-        ":harness",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
-    ],
-)
-
 js_test(
     name = "input_test",
     data = [
@@ -44,16 +33,10 @@ js_test(
 
 _TEST_DATA = [
     ":harness",
-    "//devinfra/js/debundle/x/split_proof/lean:split_preview",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
-_TEST_ENV = {
-    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    "SPLIT_PREVIEW": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:split_preview)",
-}
-
-_PUBLIC_REFUSAL_TEST_DATA = ["//devinfra/js/debundle/x/split_proof/translation/testing:public_refusal"]
+_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
 # These valid Lean-backed shards exceed the medium budget or have timed out in CI.
 _LONG_TIMEOUT_TESTS = [
@@ -132,7 +115,7 @@ js_test(
 js_test(
     name = "joint_static_test",
     size = "medium",
-    data = _TEST_DATA + _PUBLIC_REFUSAL_TEST_DATA + [
+    data = _TEST_DATA + [
         "//devinfra/js/debundle/x/split_proof/lean:joint_static_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
@@ -143,27 +126,13 @@ js_test(
     ),
 )
 
-js_test(
-    name = "arithmetic_observer_test",
-    size = "medium",
-    data = _TEST_DATA + [
-        "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:public_refusal",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
-    ],
-    entry_point = "arithmetic_observer_test.mjs",
-    env = _TEST_ENV | {"LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)"},
-)
-
 _UNSHARDED_TESTS = [
+    "arithmetic_observer_test",
     "arithmetic_test",
     "arrays_test",
     "async_methods_test",
     "bitwise_test",
     "composition_test",
-    "construction_only_cut_test",
     "derived_defaults_test",
     "derived_fields_test",
     "derived_object_parameters_test",
@@ -203,53 +172,11 @@ _UNSHARDED_TESTS = [
     "switch_test",
     "symbol_brand_test",
     "symbol_iterator_test",
+    "symbol_tag_test",
     "weakmap_constructor_test",
     "wide_provider_scope_test",
     "wide_records_test",
 ]
-
-_RECORD_DATA = [
-    "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
-    "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
-    "//devinfra/js/debundle/x/split_proof/translation/testing:public_refusal",
-    "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
-]
-
-_LINKED_MODEL_ENV = {"LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)"}
-
-_RECORD_TESTS = [
-    "literal_records_test",
-    "record_values_test",
-    "small_records_test",
-    "wide_records_test",
-    "wide_table_reversal_test",
-]
-
-_FIXTURE_PREVIEW_TESTS = [
-    "bitwise_test",
-    "derived_object_parameters_test",
-    "record_prefix_test",
-    "regexp_test",
-    "relational_test",
-    "resolved_placement_test",
-    "rest_parameters_test",
-    "sequence_test",
-    "spread_arguments_test",
-    "static_blocks_test",
-    "strict_arguments_test",
-    "super_members_test",
-    "switch_test",
-    "symbol_brand_test",
-    "symbol_iterator_test",
-    "tagged_templates_test",
-    "templates_test",
-    "wide_provider_scope_test",
-]
-
-_FIXTURE_PREVIEW_DATA = [
-    ":fixture_preview",
-    "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
-] + _PUBLIC_REFUSAL_TEST_DATA
 
 _SHARD_COUNTS = {
     "browser_globals_test": 4,
@@ -289,34 +216,16 @@ _SHARD_COUNTS = {
         name = name,
         size = "medium",
         timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
-        data = _TEST_DATA + (
-            _RECORD_DATA if name in _RECORD_TESTS or name == "realm_constructors_test" else _PUBLIC_REFUSAL_TEST_DATA if name == "provider_location_test" else []
-        ) + (_FIXTURE_PREVIEW_DATA if name in _FIXTURE_PREVIEW_TESTS else []),
+        data = _TEST_DATA,
         entry_point = name + ".mjs",
-        env = _TEST_ENV | (_LINKED_MODEL_ENV if name in _RECORD_TESTS or name in _FIXTURE_PREVIEW_TESTS or name == "realm_constructors_test" else {}),
+        env = dict(
+            _TEST_ENV,
+            SPLIT_PROOF_STRATEGY_CENSUS = "1",
+        ) if name == "composition_test" else _TEST_ENV,
         shard_count = _SHARD_COUNTS.get(name),
     )
     for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()
 ]
-
-js_test(
-    name = "symbol_tag_test",
-    size = "medium",
-    data = _TEST_DATA + [
-        "//devinfra/js/debundle/x/split_proof/lean:corejs",
-        "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
-        "//devinfra/js/debundle/x/split_proof/translation:parser",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:public_refusal",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
-    ],
-    entry_point = "symbol_tag_test.mjs",
-    env = dict(
-        _TEST_ENV,
-        COREJS = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
-        LINKED_MODEL_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)",
-    ),
-)
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(
@@ -332,11 +241,12 @@ js_test(
 js_test(
     name = "staged_ast_gate_test",
     size = "medium",
-    data = _TEST_DATA + _FIXTURE_PREVIEW_DATA + [
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
-    ],
+    data = _TEST_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest"],
     entry_point = "staged_ast_gate_test.mjs",
-    env = _TEST_ENV | _LINKED_MODEL_ENV,
+    env = dict(
+        _TEST_ENV,
+        SPLIT_PROOF_TIMINGS = "1",
+    ),
 )
 
 js_test(
@@ -353,10 +263,10 @@ js_test(
 js_test(
     name = "record_fuel_test",
     size = "medium",
-    data = _TEST_DATA + _RECORD_DATA,
+    data = _TEST_DATA,
     entry_point = "wide_table_reversal_test.mjs",
     # Cross the old probe ceiling without repeating the 44-row scaling workload.
-    env = _TEST_ENV | _LINKED_MODEL_ENV | {
+    env = _TEST_ENV | {
         "LINKED_TABLE_FIELDS": "1410",
         "LINKED_TABLE_ROWS": "3",
     },
@@ -385,19 +295,4 @@ js_library(
 eslint_test(
     name = "eslint_test",
     srcs = [":lint_sources"],
-)
-
-js_test(
-    name = "wide_record_probe_test",
-    data = [
-        "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
-        "//devinfra/js/debundle/x/split_proof/lean:split_preview",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
-    ],
-    entry_point = "wide_record_probe_test.mjs",
-    env = {
-        "LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)",
-        "SPLIT_PREVIEW": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:split_preview)",
-    },
 )
