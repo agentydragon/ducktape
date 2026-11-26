@@ -10,7 +10,6 @@ use super::callable_inference::{CallableInferenceInputs, FunctionBindingFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use super::statement_facts::StructuralStatementFacts;
-use super::value_flow::ChunkValueFlow;
 use analysis_domain::builtins::Row;
 use analysis_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
 use analysis_vocabulary::inputs::{
@@ -30,6 +29,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::Id;
+use value_flow::ChunkValueFlow;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SemanticKey {

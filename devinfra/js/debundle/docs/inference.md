@@ -1365,7 +1365,7 @@ call adds bounded shape checks and indexed identity lookups. The importer
 allocation mask is still shared, and ordinary source propagation retains its
 existing cost.
 
-`facts/value_flow/program.rs` prepares a source-qualified instance of the existing
+`value_flow/program.rs` prepares a source-qualified instance of the existing
 `FlowRules`, lexical-access rules and candidate reachability closure.
 `cross_module_purity` builds it after the raw
 native census and inferred Set roots have closed, then hands its chunk views to
