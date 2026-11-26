@@ -157,7 +157,7 @@ def test : IO Unit := do
       exports World.probe wrongCell == some [("seed", ⟨3, 0⟩)] do
     throw (IO.userError "wrong live export cell was not distinguished")
   match CheckedSplit.checkedSplit sparse spec .allOutcomes with
-  | .error "source must be an import-free entry with consecutive unit identities starting at zero" => pure ()
+  | .error "source has sparse unit identities; placement requires the original ordinals" => pure ()
   | _ => throw (IO.userError "the unchanged production splitter should refuse sparse IDs")
 
 #print axioms proveSparse
