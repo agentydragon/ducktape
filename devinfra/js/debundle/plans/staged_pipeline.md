@@ -1,32 +1,22 @@
 # Staged analysis and incremental application
 
-The existing analysis identity and Bazel reuse contract is in
-<../docs/bazel_integration.md>; native-premise source identity is specified in
-<../SPEC.md#native-integrity-inputs> and <../docs/wire_format.md>.
-
 ## Current boundary
 
-`debundle_analysis` already shares one `.analysis` artifact among apply
-targets with the same canonical projection. Its header binds the analysis
-engine, projection, and parser-input digests; its body stores the program-wide
-summary once and the per-chunk facts. [`analyze_program`](../staged_analysis/mod.rs)
-prepares source, resolves the selected static-import closure, computes the
-cross-module summary, then computes each selected chunk's facts. Apply in
-[`materialize_logical_modules`](../lowering/mod.rs) still prepares source,
-reconstructs AST contexts, and resolves selectors; it checks the completed
-projection before consuming the restored facts. This is
-semantic-analysis reuse, not a parse-free apply cache.
+The [Bazel integration guide](../docs/bazel_integration.md#explicit-analysis-and-apply-stages)
+owns the existing reuse rules. Native-premise identity is specified in the
+[spec](../SPEC.md#native-integrity-inputs) and
+[wire format](../docs/wire_format.md#native-input-identity-in-saved-analysis).
 
-The saved fact codec in
-[`analysis_artifact.rs`](../staged_analysis/analysis_artifact.rs) serializes
-AST references as context ordinals, then maps those ordinals onto freshly
-parsed ASTs when reading the artifact. [`SourceWithAst`](../artifacts/artifact.rs)
-is a read-only in-process representation: mutable AST access promotes it and
-invalidates the retained source pairing, and analysis releases it when those
-contexts are no longer needed. A persistent cache may retain codec ordinals
-only with enough source and context-order identity to rebuild and validate the
-mapping before use. It must not treat ordinal values alone as portable, or
-persist raw SWC ASTs, process-local marks, `Id`s, or spans.
+[`analyze_program`](../staged_analysis/mod.rs) already separates source preparation,
+the static-import closure and program join, and per-chunk facts. The apply path
+prepares source again for selector resolution and AST-context reconstruction.
+
+The [saved codec](../staged_analysis/analysis_artifact.rs) remaps context ordinals
+onto freshly parsed ASTs. A persistent cache must bind both source identity and
+context order before reusing ordinals. Keep raw SWC ASTs, process-local marks,
+`Id`s and spans out of persistent cache keys and values. In-process
+[`SourceWithAst`](../artifacts/artifact.rs) invalidates its source pairing on
+mutable AST access.
 
 ## Next architecture
 

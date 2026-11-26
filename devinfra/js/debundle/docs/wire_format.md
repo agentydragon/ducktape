@@ -45,14 +45,10 @@ semantic premises and base selector anchors. Graph source-unit IDs remain
 snapshot coordinates rather than persisted selector claims. See
 <module_proposals.md> for the checked selected-view workflow.
 
-The staged per-chunk `SynchronousCalls` fact now carries
-`non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content
-cells. It is analysis input to the commuting-premise check, not a new public
-report field. `dependency_graph.json.gz` retains the existing
-`premise_verdict.conflict` shape with `kind: shared_cell` when the verdict is
-`known`; the cell
-may now come from a directly invoked callee. Saved analysis from an earlier
-engine must be recomputed before this field can be read.
+`SynchronousCalls.non_assumed_heap_accesses` stores typed read/write sets for
+commuting-premise analysis. The public graph reports a known shared-cell conflict
+as `premise_verdict.conflict.kind: shared_cell`; that cell can come from a
+callee's access.
 
 ## Native input identity in saved analysis
 
@@ -63,8 +59,7 @@ and do not enter the saved analysis identity. A resolved-member selector becomes
 `declaration` with the original `binding` and `body_index`, keyed by provider
 chunk. Saved native input evidence uses the same source-only declaration;
 rendered reports restore the current `resolved_member` selector. Structural
-selectors remain `source_match`. Fresh analysis is required after this compiled
-schema change. The authored YAML field and its values are unchanged.
+selectors retain `source_match`.
 
 ## Convention: `Atom`-only on the wire
 
