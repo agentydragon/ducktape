@@ -3,7 +3,8 @@
 What `debundle` guarantees to spec authors and CLI users: invocations, reports,
 selector resolution, assignment and the author assertions the analysis trusts.
 How to write selectors: <docs/selectors.md>. Selector-resolution implementation:
-<docs/selector_resolution.md>. Design and correctness proof: <docs/design.md>.
+[selector_resolution.md](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/selector_resolution.md). Design and correctness
+proof: [design.md](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md).
 
 ## Resolved CLI invocations
 
@@ -408,7 +409,7 @@ regenerated with the consuming engine. The hidden `spec project-apply` and
 `run --apply-projection` commands are an internal Bazel action interface, and
 projected input cannot export full graphs. Action inputs, path binding and
 sharing: [Bazel integration](docs/bazel_integration.md#explicit-analysis-and-apply-stages);
-saved formats: [design § Pipeline split](docs/design.md#pipeline-split-frontend-elaboration--chunk-analysis--materialization).
+saved formats: [design § Pipeline split](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#pipeline-split-frontend-elaboration--chunk-analysis--materialization).
 
 ### Reading-only output on gate rejection
 
