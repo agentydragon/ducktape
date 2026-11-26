@@ -138,6 +138,8 @@ message Identity {
   int64 generation = 2;
   map<string, string> labels = 3;
   agentplane.policy.resource.v1.IdentitySpec spec = 4;
+  // Set once deletion is requested; credential verifiers treat such an Identity as gone.
+  google.protobuf.Timestamp deletion_timestamp = 5;
 }
 message WatchIdentitiesRequest {}
 message IdentityChunk { repeated Identity identities = 1; }

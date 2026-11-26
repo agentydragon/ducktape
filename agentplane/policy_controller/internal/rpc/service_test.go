@@ -647,7 +647,11 @@ func TestIdentityBindingWatchesSelectOnlyIdentitySubjects(t *testing.T) {
 
 func TestIdentityWatchFollowsIdentitiesForReaderServicesOnly(t *testing.T) {
 	flux := map[string]string{policyapi.FluxKustomizationNameLabel: "fake-kustomization"}
-	api, kube := fixture(t, testIdentity("git-origin-identity", flux))
+	deleting := testIdentity("deleting-identity", nil)
+	deletionRequested := metav1.NewTime(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	deleting.DeletionTimestamp = &deletionRequested
+	deleting.Finalizers = []string{"fake.example/hold"}
+	api, kube := fixture(t, testIdentity("git-origin-identity", flux), deleting)
 	stream, err := api["app"].WatchIdentities(testContext(t), &policypb.WatchIdentitiesRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -657,9 +661,12 @@ func TestIdentityWatchFollowsIdentitiesForReaderServicesOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := first.GetSnapshot().GetIdentities()
-	if len(got) != 1 || got[0].GetIdentity().GetName() != "git-origin-identity" || got[0].GetSpec().GetDescription() != "Fake agent git-origin-identity" ||
-		got[0].GetLabels()[policyapi.FluxKustomizationNameLabel] != "fake-kustomization" {
+	if len(got) != 2 || got[1].GetIdentity().GetName() != "git-origin-identity" || got[1].GetSpec().GetDescription() != "Fake agent git-origin-identity" ||
+		got[1].GetLabels()[policyapi.FluxKustomizationNameLabel] != "fake-kustomization" || got[1].GetDeletionTimestamp() != nil {
 		t.Fatalf("snapshot = %v", got)
+	}
+	if got[0].GetIdentity().GetName() != "deleting-identity" || !got[0].GetDeletionTimestamp().AsTime().Equal(deletionRequested.Time) {
+		t.Fatalf("deleting identity = %v", got[0])
 	}
 	if frame, err := stream.Recv(); err != nil || frame.GetSnapshotComplete() == nil {
 		t.Fatalf("snapshot complete %v %v", frame, err)
