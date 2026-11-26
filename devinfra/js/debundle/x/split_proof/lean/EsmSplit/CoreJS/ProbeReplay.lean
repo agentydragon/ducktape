@@ -12,7 +12,7 @@ operations do not depend on host answers. The executable check covers
 allocation-only initializers, deferred opaque closures, own data-property
 reads, and primitive logical and `void` expressions inside arrays and records.
 It checks each descriptor in the reached heap; an accessor or unsupported
-operation falls back to the generated proof.
+operation is refused when no other compiled rule applies.
 -/
 
 namespace CoreJS.LinkedBehavior
