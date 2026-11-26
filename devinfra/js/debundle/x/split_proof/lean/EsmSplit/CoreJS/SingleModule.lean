@@ -152,6 +152,7 @@ theorem link_singleModuleConst (name : Name) (exports : List (Name × Name))
     rw [scopes, lift, M.pure_bind, sorted_units sorted, hoists, M.pure_bind] <;> rfl
   exact ⟨frames, ⟨[(m, env)], ready, equation⟩, allocated, declareTops_names _ allocated, rfl⟩
 
+#print axioms declareConstTops_ok
 #print axioms link_singleModuleConst
 
 end CoreJS

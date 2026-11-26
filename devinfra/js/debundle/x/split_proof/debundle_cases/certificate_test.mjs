@@ -18,8 +18,9 @@ function check(out, status, { checkOutput = false } = {}) {
   const { verdict, log } = split({ source, spec, out, require: request, checkOutput });
   assert.equal(verdict.status, status, log);
   if (status === "certified") {
-    assert([request, "all-outcomes"].includes(verdict.guarantee), log);
-    if (verdict.guarantee === "all-outcomes") assert.equal(verdict.scope, "linked-slice-order-kept", log);
+    assert.equal(verdict.guarantee, "all-outcomes", log);
+    assert.equal(verdict.scope, "terminal-declarations", log);
+    assert.equal(verdict.strategy, "compiled-constructor", log);
   } else assert.equal(verdict.guarantee, null, log);
 }
 place({ [provider]: ["#0"], [entry]: ["#1"] });
