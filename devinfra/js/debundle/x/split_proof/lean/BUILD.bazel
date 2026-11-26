@@ -1772,10 +1772,51 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.MetadataCells"],
     required_theorems = [
+        "CoreJS.MetadataCells.bundle_decl_cell",
         "CoreJS.MetadataCells.frame_keys",
+        "CoreJS.MetadataCells.import_alias",
+        "CoreJS.MetadataCells.import_distinct",
+        "CoreJS.MetadataCells.module_scope_cells",
         "CoreJS.MetadataCells.scope_lookup_decl",
         "CoreJS.MetadataCells.scope_lookup_none",
         "CoreJS.MetadataCells.split_import_original_cell",
     ],
     deps = [":corejs_metadata_cells"],
+)
+
+lean_library(
+    name = "corejs_terminal_entry_table",
+    srcs = ["EsmSplit/CoreJS/TerminalEntryTable.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_terminal_entry_names",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_entry_table_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalEntryTable"],
+    required_theorems = [
+        "CoreJS.TerminalEntryTable.exact_exports",
+        "CoreJS.TerminalEntryTable.resolve_table",
+    ],
+    deps = [":corejs_terminal_entry_table"],
+)
+
+lean_library(
+    name = "corejs_terminal_entry_cells",
+    srcs = ["EsmSplit/CoreJS/TerminalEntryCells.lean"],
+    deps = [
+        ":corejs_metadata_cells",
+        ":corejs_terminal_entry_names",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_entry_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalEntryCells"],
+    required_theorems = ["CoreJS.TerminalEntryCells.entry_cells"],
+    deps = [":corejs_terminal_entry_cells"],
 )

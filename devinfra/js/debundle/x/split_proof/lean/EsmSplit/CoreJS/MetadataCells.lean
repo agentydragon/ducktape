@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.Split
+import EsmSplit.CoreJS.LinkedCells
 
 /-! Live import cells for a full source plan containing trailing metadata.
 Executable statements retain dense original IDs; later metadata cannot declare
@@ -58,6 +59,23 @@ theorem scope_lookup_decl (footprints : Footprints ss B) (hF : FramesOf ((List.r
   · obtain ⟨p, hp, rfl⟩ := member
     exact ⟨p, hp, rfl⟩
 
+/-- Every executable source declaration has an actual original bundle cell. -/
+theorem bundle_decl_cell (footprints : Footprints ss B) (unique : EsmSplit.UniqueDefs B)
+    (hF : FramesOf ((List.range ss.length).zip ss) frames)
+    {j : Nat} {u : Name} (within : j < ss.length) (declared : u ∈ (B.stmt j).defs) :
+    ∃ a, (bundleEnv ss frames).vars.lookup u = some a := by
+  have inBundle : ∃ p ∈ (bundleModule ss).body, p.1 = j := by
+    refine ⟨(j, ss[j]), ?_, rfl⟩
+    show (j, ss[j]) ∈ (List.range ss.length).zip ss
+    rw [← filterMap_numbered_range, mem_numbered]
+    exact ⟨List.mem_range.2 within, by simp [within]⟩
+  obtain ⟨a, cell⟩ : ∃ a, (frameAt frames j).lookup u = some a :=
+    Option.ne_none_iff_exists'.1 fun h =>
+      (lookup_none_iff_not_mem_keys.mp h) ((frame_keys footprints hF).2 ⟨within, declared⟩)
+  refine ⟨a, ?_⟩
+  show ((bundleModule ss).scope frames ++ []).lookup u = some a
+  rw [List.append_nil, scope_lookup_decl footprints hF unique inBundle within declared, cell]
+
 /-- Every actual generated import resolves to its original source cell, with
 its full-plan declaring owner and authored original ordinal. -/
 theorem split_import_original_cell {S : EsmSplit.Spec} (valid : EsmSplit.Valid B S P)
@@ -107,9 +125,105 @@ theorem split_import_original_cell {S : EsmSplit.Spec} (valid : EsmSplit.Valid B
     · show ((bundleModule ss).scope frames ++ []).lookup u = some a
       rw [List.append_nil, scope_lookup_decl footprints hF unique inBundle jExecutable hasName, cell]
 
+/-- The actual imports succeed and every name declared or imported by the
+module has the original bundle lookup, including export-only local uses. -/
+theorem module_scope_cells {S : EsmSplit.Spec} (valid : EsmSplit.Valid B S P)
+    (footprints : Footprints ss B) (hF : FramesOf ((List.range ss.length).zip ss) frames)
+    {md : EsmSplit.Module} (moduleIn : md ∈ P.mods) :
+    ∃ cells, (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
+      ∀ u, (∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2) →
+        ((moduleOf ss B P md).scope frames ++ cells).lookup u = (bundleEnv ss frames).vars.lookup u := by
+  have hv := valid
+  obtain ⟨unique, -, faithful, linkable, -, -, -, -, -⟩ := valid
+  have within : ∀ j ∈ md.stmts, ∀ u ∈ (B.stmt j).defs, j < ss.length := by
+    intro j hj u hu
+    by_cases executable : j < ss.length
+    · exact executable
+    · have bound := faithful.2.2.2.2.2.1 md moduleIn j hj
+      have empty := footprints.metadata j (Nat.le_of_not_gt executable) bound
+      rw [empty] at hu
+      simp at hu
+  have imported : ∃ cells,
+      (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
+      ∀ u, cells.lookup u = if u ∈ md.imports.flatMap (·.2) then (bundleEnv ss frames).vars.lookup u else none := by
+    apply imported_ok (splitProgram ss B P) frames ((bundleEnv ss frames).vars.lookup ·)
+      (fun src u => EsmSplit.exportNameFor (P.namedExports B src) u) md.imports
+    intro e he
+    refine ⟨?_, ?_⟩
+    · rw [split_find, Option.isSome_map]
+      exact ((linkable md moduleIn).1 e he).2.1
+    · intro u hu
+      obtain ⟨_, _, a, _, _, _, _, cell, original⟩ :=
+        split_import_original_cell hv footprints hF moduleIn he hu
+      exact ⟨a, cell, original⟩
+  obtain ⟨cells, linked, lookup⟩ := imported
+  refine ⟨cells, linked, ?_⟩
+  intro u admitted
+  rw [List.lookup_append]
+  by_cases declared : ∃ j ∈ md.stmts, u ∈ (B.stmt j).defs
+  · obtain ⟨j, hj, hu⟩ := declared
+    have hjn := within j hj u hu
+    have inModule : ∃ p ∈ (moduleOf ss B P md).body, p.1 = j :=
+      ⟨(j, ss[j]), (mem_numbered ss).2 ⟨hj, by simp [hjn]⟩, rfl⟩
+    have inBundle : ∃ p ∈ (bundleModule ss).body, p.1 = j := by
+      refine ⟨(j, ss[j]), ?_, rfl⟩
+      show (j, ss[j]) ∈ (List.range ss.length).zip ss
+      rw [← filterMap_numbered_range, mem_numbered]
+      exact ⟨List.mem_range.2 hjn, by simp [hjn]⟩
+    have someCell : ∃ a, (frameAt frames j).lookup u = some a :=
+      Option.ne_none_iff_exists'.1 fun h =>
+        (lookup_none_iff_not_mem_keys.mp h) ((frame_keys footprints hF).2 ⟨hjn, hu⟩)
+    obtain ⟨a, ha⟩ := someCell
+    rw [scope_lookup_decl footprints hF unique inModule hjn hu, ha, Option.some_or]
+    show some a = ((bundleModule ss).scope frames ++ []).lookup u
+    rw [List.append_nil, scope_lookup_decl footprints hF unique inBundle hjn hu, ha]
+  · have noneLocal : ∀ j ∈ md.stmts, u ∉ (B.stmt j).defs := fun j hj hu => declared ⟨j, hj, hu⟩
+    have noScope : ((moduleOf ss B P md).scope frames).lookup u = none :=
+      scope_lookup_none footprints hF fun p hp => noneLocal p.1 ((mem_numbered ss).1 hp).1
+    have isImport : u ∈ md.imports.flatMap (·.2) := admitted.resolve_left declared
+    rw [noScope, Option.none_or, lookup]
+    simp [isImport]
+
+/-- Two generated imports of one binding retain the same live address. -/
+theorem import_alias {S : EsmSplit.Spec} (valid : EsmSplit.Valid B S P)
+    (footprints : Footprints ss B) (hF : FramesOf ((List.range ss.length).zip ss) frames)
+    {m₁ m₂ : EsmSplit.Module} (hm₁ : m₁ ∈ P.mods) (hm₂ : m₂ ∈ P.mods)
+    {e₁ e₂ : String × List Name} (he₁ : e₁ ∈ m₁.imports) (he₂ : e₂ ∈ m₂.imports)
+    {u : Name} (hu₁ : u ∈ e₁.2) (hu₂ : u ∈ e₂.2) :
+    ∃ a, (bundleEnv ss frames).vars.lookup u = some a ∧
+      (splitProgram ss B P).importCell frames e₁.1 (EsmSplit.exportNameFor (P.namedExports B e₁.1) u) = .ok a ∧
+      (splitProgram ss B P).importCell frames e₂.1 (EsmSplit.exportNameFor (P.namedExports B e₂.1) u) = .ok a := by
+  obtain ⟨_, _, a, _, _, _, _, ca, sa⟩ := split_import_original_cell valid footprints hF hm₁ he₁ hu₁
+  obtain ⟨_, _, b, _, _, _, _, cb, sb⟩ := split_import_original_cell valid footprints hF hm₂ he₂ hu₂
+  rw [sa] at sb
+  cases sb
+  exact ⟨a, sa, ca, cb⟩
+
+/-- Distinct declared names resolve to different live cells, regardless of
+whether their initialized values happen to be equal. -/
+theorem import_distinct {S : EsmSplit.Spec} (valid : EsmSplit.Valid B S P)
+    (footprints : Footprints ss B) (hF : FramesOf ((List.range ss.length).zip ss) frames)
+    {w : World} {s s' : State w} (allocated : declareTops ((List.range ss.length).zip ss) s = .ok frames s')
+    {m₁ m₂ : EsmSplit.Module} (hm₁ : m₁ ∈ P.mods) (hm₂ : m₂ ∈ P.mods)
+    {e₁ e₂ : String × List Name} (he₁ : e₁ ∈ m₁.imports) (he₂ : e₂ ∈ m₂.imports)
+    {u v : Name} (hu : u ∈ e₁.2) (hv : v ∈ e₂.2) (different : u ≠ v) :
+    ∃ a b, a ≠ b ∧
+      (splitProgram ss B P).importCell frames e₁.1 (EsmSplit.exportNameFor (P.namedExports B e₁.1) u) = .ok a ∧
+      (splitProgram ss B P).importCell frames e₂.1 (EsmSplit.exportNameFor (P.namedExports B e₂.1) v) = .ok b := by
+  obtain ⟨_, _, a, _, _, _, _, ca, sa⟩ := split_import_original_cell valid footprints hF hm₁ he₁ hu
+  obtain ⟨_, _, b, _, _, _, _, cb, sb⟩ := split_import_original_cell valid footprints hF hm₂ he₂ hv
+  refine ⟨a, b, ?_, ca, cb⟩
+  intro same
+  subst b
+  exact declareTops_bundleEnv_disjoint allocated different a sa sb
+
+#print axioms bundle_decl_cell
 #print axioms frame_keys
 #print axioms scope_lookup_none
 #print axioms scope_lookup_decl
 #print axioms split_import_original_cell
+#print axioms module_scope_cells
+#print axioms import_alias
+#print axioms import_distinct
 
 end CoreJS.MetadataCells
