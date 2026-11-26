@@ -108,25 +108,10 @@ pub fn resolve_source_claims(
     context: SourceClaimsContext<'_>,
     claim_sets: &[SourceClaimSet<'_>],
 ) -> Result<Vec<ResolvedSourceClaims>> {
-    let SourceClaimsContext {
-        graph,
-        dependency_graph_path,
-        modules_root,
-        source_root,
-        source_context,
-        diagnostics,
-    } = context;
-    resolve_claim_sets(
-        graph,
-        dependency_graph_path,
-        modules_root,
-        source_root,
-        source_context,
-        claim_sets,
-    )?
-    .into_iter()
-    .map(|resolved| resolved.map(|resolved| resolved.record(diagnostics)))
-    .collect()
+    resolve_claim_sets(&context, claim_sets)?
+        .into_iter()
+        .map(|resolved| resolved.map(|resolved| resolved.record(context.diagnostics)))
+        .collect()
 }
 
 /// [`resolve_source_claims`] for `claim_sets[index]` alone, resolved together
@@ -136,24 +121,9 @@ pub fn resolve_source_claims_of(
     claim_sets: &[SourceClaimSet<'_>],
     index: usize,
 ) -> Result<ResolvedSourceClaims> {
-    let SourceClaimsContext {
-        graph,
-        dependency_graph_path,
-        modules_root,
-        source_root,
-        source_context,
-        diagnostics,
-    } = context;
-    resolve_claim_sets(
-        graph,
-        dependency_graph_path,
-        modules_root,
-        source_root,
-        source_context,
-        claim_sets,
-    )?
-    .swap_remove(index)
-    .map(|resolved| resolved.record(diagnostics))
+    resolve_claim_sets(&context, claim_sets)?
+        .swap_remove(index)
+        .map(|resolved| resolved.record(context.diagnostics))
 }
 
 /// A claim set's resolution and the warnings it carries.
@@ -176,11 +146,7 @@ impl ResolvedClaimSet {
 }
 
 fn resolve_claim_sets(
-    graph: &DependencyGraphReport,
-    dependency_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    source_context: Option<&VerifiedGraphSourceContext>,
+    context: &SourceClaimsContext<'_>,
     claim_sets: &[SourceClaimSet<'_>],
 ) -> Result<Vec<Result<ResolvedClaimSet>>> {
     let mut resolved = claim_sets
@@ -212,7 +178,7 @@ fn resolve_claim_sets(
                     .iter()
                     .all(|(_, selector)| matches!(selector, MemberSelectorSpec::Binding(_)))
         });
-    js_ast::with_swc_globals(|| {
+    js_ast::with_swc_globals(|| -> Result<()> {
         let modules = (!direct_binding_claims)
             .then(|| {
                 claim_sets
@@ -228,16 +194,9 @@ fn resolve_claim_sets(
             "spec contains typed direct, source-backed, or relational binding claims, but \
              dependency_graph.json.gz has no source_location data; cannot resolve selectors"
         };
-        with_source_modules(
-            graph,
-            dependency_graph_path,
-            modules_root,
-            source_root,
-            source_context,
-            no_sources,
-            |parsed_by_source| {
-                // An import-only direct check does not need chunk analysis.
-                if modules.is_none()
+        let parsed_by_source = read_source_modules(context, no_sources)?;
+        // An import-only direct check does not need chunk analysis.
+        if modules.is_none()
                     && !claim_sets.iter().any(|claims| {
                         claims.module.member_selectors.iter().any(|(_, selector)| {
                             matches!(selector, MemberSelectorSpec::Binding(binding)
@@ -266,132 +225,127 @@ fn resolve_claim_sets(
                     return Ok(());
                 }
 
-                // Every source is a chunk every module is scoped to.
-                let chunks = parsed_by_source
-                    .iter()
-                    .map(|(source_path, parsed)| {
-                        selector_resolve::Chunk::analyze(source_path, &parsed.module)
-                    })
-                    .collect::<Vec<_>>();
-                record_direct_binding_checks(claim_sets, &mut resolved, |binding| {
-                    parsed_by_source
-                        .keys()
-                        .zip(&chunks)
-                        .map(|(source_path, chunk)| {
-                            (
-                                source_path.clone(),
-                                chunk.direct_binding_source_evidence(binding),
-                            )
-                        })
-                        .collect()
-                });
-                let Some(modules) = &modules else {
-                    return Ok(());
+        // Every source is a chunk every module is scoped to.
+        let chunks = parsed_by_source
+            .iter()
+            .map(|(source_path, parsed)| {
+                selector_resolve::Chunk::analyze(source_path, &parsed.module)
+            })
+            .collect::<Vec<_>>();
+        record_direct_binding_checks(claim_sets, &mut resolved, |binding| {
+            parsed_by_source
+                .keys()
+                .zip(&chunks)
+                .map(|(source_path, chunk)| {
+                    (
+                        source_path.clone(),
+                        chunk.direct_binding_source_evidence(binding),
+                    )
+                })
+                .collect()
+        });
+        let Some(modules) = &modules else {
+            return Ok(());
+        };
+        let mut anonymous_source_unit_by_source_ordinal =
+            HashMap::<(String, usize), SourceUnitId>::new();
+        for (idx, node) in context.graph.nodes.iter().enumerate() {
+            if let (SourceUnitClass::AnonymousStatement, Some(location)) =
+                (node.class(), &node.source_location)
+            {
+                anonymous_source_unit_by_source_ordinal.insert(
+                    (location.source_path.clone(), node.statement_ordinal.0),
+                    SourceUnitId(idx),
+                );
+            }
+        }
+        let resolutions = resolve_chunks(
+            &chunks
+                .iter()
+                .map(|chunk| (chunk, modules.as_slice()))
+                .collect::<Vec<_>>(),
+        )?;
+        // Per entity, its outcome in every source.
+        let mut per_source = BTreeMap::<(usize, EntityIndex), Vec<SourceOutcome>>::new();
+        for ((source_path, parsed), resolution) in parsed_by_source.iter().zip(resolutions) {
+            for reference in resolution.member_references {
+                if reference.source_module != reference.referenced_module {
+                    continue;
+                }
+                let Ok(set) = &mut resolved[reference.source_module] else {
+                    continue;
                 };
-                let mut anonymous_source_unit_by_source_ordinal =
-                    HashMap::<(String, usize), SourceUnitId>::new();
-                for (idx, node) in graph.nodes.iter().enumerate() {
-                    if let (SourceUnitClass::AnonymousStatement, Some(location)) =
-                        (node.class(), &node.source_location)
-                    {
-                        anonymous_source_unit_by_source_ordinal.insert(
-                            (location.source_path.clone(), node.statement_ordinal.0),
-                            SourceUnitId(idx),
-                        );
+                let source = match reference.source {
+                    SourceMatchReferenceOrigin::Member(member) => {
+                        ResolvedLocalMemberOrigin::Member(member)
                     }
-                }
-                let resolutions = resolve_chunks(
-                    &chunks
-                        .iter()
-                        .map(|chunk| (chunk, modules.as_slice()))
-                        .collect::<Vec<_>>(),
-                )?;
-                // Per entity, its outcome in every source.
-                let mut per_source = BTreeMap::<(usize, EntityIndex), Vec<SourceOutcome>>::new();
-                for ((source_path, parsed), resolution) in parsed_by_source.iter().zip(resolutions)
-                {
-                    for reference in resolution.member_references {
-                        if reference.source_module != reference.referenced_module {
-                            continue;
-                        }
-                        let Ok(set) = &mut resolved[reference.source_module] else {
-                            continue;
-                        };
-                        let source = match reference.source {
-                            SourceMatchReferenceOrigin::Member(member) => {
-                                ResolvedLocalMemberOrigin::Member(member)
-                            }
-                            SourceMatchReferenceOrigin::AnonymousStatement(index) => {
-                                let selector = modules[reference.source_module]
-                                    .anonymous_statements
-                                    .iter()
-                                    .find(|statement| statement.index == index)
-                                    .with_context(|| {
-                                        format!(
-                                            "resolved anonymous source_match reference has no \
+                    SourceMatchReferenceOrigin::AnonymousStatement(index) => {
+                        let selector = modules[reference.source_module]
+                            .anonymous_statements
+                            .iter()
+                            .find(|statement| statement.index == index)
+                            .with_context(|| {
+                                format!(
+                                    "resolved anonymous source_match reference has no \
                                              authored selector index {index} in module {}",
-                                            claim_sets[reference.source_module]
-                                                .module_path
-                                                .display()
-                                        )
-                                    })?
-                                    .selector
-                                    .selector()
-                                    .clone();
-                                ResolvedLocalMemberOrigin::AnonymousStatement { index, selector }
-                            }
-                        };
-                        set.claims
-                            .local_member_references
-                            .insert(ResolvedLocalMemberReference {
-                                source,
-                                referenced_by: reference.referenced_member,
-                                module_neutral_meaning: reference.module_neutral_meaning,
-                            });
+                                    claim_sets[reference.source_module].module_path.display()
+                                )
+                            })?
+                            .selector
+                            .selector()
+                            .clone();
+                        ResolvedLocalMemberOrigin::AnonymousStatement { index, selector }
                     }
-                    for entity in resolution.outcomes {
-                        per_source
-                            .entry((entity.module, entity.entity))
-                            .or_default()
-                            .push(SourceOutcome {
-                                source_path,
-                                module: &parsed.module,
-                                outcome: entity.outcome,
-                            });
-                    }
-                }
-                // Anonymous statements first, then members, in module order.
-                let mut entities = per_source.into_iter().collect::<Vec<_>>();
-                entities.sort_by_key(|((module, entity), _)| {
-                    (matches!(entity, EntityIndex::Member(_)), *module, *entity)
-                });
-                for ((module_index, entity), outcomes) in entities {
-                    // Name pins are already accounted for as static claims.
-                    // Keep them in the joint solve as relational anchors.
-                    if matches!(entity, EntityIndex::Member(index)
+                };
+                set.claims
+                    .local_member_references
+                    .insert(ResolvedLocalMemberReference {
+                        source,
+                        referenced_by: reference.referenced_member,
+                        module_neutral_meaning: reference.module_neutral_meaning,
+                    });
+            }
+            for entity in resolution.outcomes {
+                per_source
+                    .entry((entity.module, entity.entity))
+                    .or_default()
+                    .push(SourceOutcome {
+                        source_path,
+                        module: &parsed.module,
+                        outcome: entity.outcome,
+                    });
+            }
+        }
+        // Anonymous statements first, then members, in module order.
+        let mut entities = per_source.into_iter().collect::<Vec<_>>();
+        entities.sort_by_key(|((module, entity), _)| {
+            (matches!(entity, EntityIndex::Member(_)), *module, *entity)
+        });
+        for ((module_index, entity), outcomes) in entities {
+            // Name pins are already accounted for as static claims.
+            // Keep them in the joint solve as relational anchors.
+            if matches!(entity, EntityIndex::Member(index)
                         if index < claim_sets[module_index].module.member_selectors.len()
                             && matches!(claim_sets[module_index].module.member_selectors[index].1,
                                 MemberSelectorSpec::Binding(_)))
-                    {
-                        continue;
-                    }
-                    let Ok(set) = &mut resolved[module_index] else {
-                        continue;
-                    };
-                    if let Err(error) = claim_entity(
-                        &claim_sets[module_index],
-                        &modules[module_index],
-                        entity,
-                        &outcomes,
-                        &anonymous_source_unit_by_source_ordinal,
-                        set,
-                    ) {
-                        resolved[module_index] = Err(error);
-                    }
-                }
-                Ok(())
-            },
-        )
+            {
+                continue;
+            }
+            let Ok(set) = &mut resolved[module_index] else {
+                continue;
+            };
+            if let Err(error) = claim_entity(
+                &claim_sets[module_index],
+                &modules[module_index],
+                entity,
+                &outcomes,
+                &anonymous_source_unit_by_source_ordinal,
+                set,
+            ) {
+                resolved[module_index] = Err(error);
+            }
+        }
+        Ok(())
     })?;
     Ok(resolved)
 }
@@ -679,75 +633,41 @@ fn one_place<'o, 's>(
     }
 }
 
-/// Parse every distinct `source_location.source_path` in `graph` and hand
-/// `body` the parsed modules. `no_sources` is the caller-specific error raised
-/// when the graph carries no `source_location` data.
-fn with_source_modules<R>(
-    graph: &DependencyGraphReport,
-    dependency_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    source_context: Option<&VerifiedGraphSourceContext>,
+/// Parse each distinct source named by the graph once, in source-path order.
+fn read_source_modules(
+    context: &SourceClaimsContext<'_>,
     no_sources: &str,
-    body: impl FnOnce(&BTreeMap<String, js_ast::ParsedJsModule>) -> Result<R>,
-) -> Result<R> {
-    let source_paths: BTreeSet<String> = graph
+) -> Result<BTreeMap<String, js_ast::ParsedJsModule>> {
+    let source_paths: BTreeSet<&str> = context
+        .graph
         .nodes
         .iter()
         .filter_map(|node| node.source_location.as_ref())
-        .map(|location| location.source_path.clone())
+        .map(|location| location.source_path.as_str())
         .collect();
     if source_paths.is_empty() {
         bail!("{no_sources}");
     }
-
-    let parsed_by_source: BTreeMap<String, js_ast::ParsedJsModule> = source_paths
-        .iter()
+    source_paths
+        .into_iter()
         .map(|source_path| {
-            Ok((
-                source_path.clone(),
-                read_and_parse_source(
-                    source_path,
-                    source_root,
-                    dependency_graph_path,
-                    modules_root,
-                    source_context,
-                )?,
-            ))
+            let resolved = resolve_source_file(
+                source_path,
+                context.source_root,
+                context.dependency_graph_path,
+                context.modules_root,
+                context.source_context,
+            )?;
+            let source = match context.source_context {
+                Some(verified) => verified.source().to_owned(),
+                None => fs::read_to_string(&resolved)
+                    .with_context(|| format!("reading source file {}", resolved.display()))?,
+            };
+            let parsed = js_ast::parse_js_module(source_path, source)
+                .with_context(|| format!("parsing source file {}", resolved.display()))?;
+            Ok((source_path.to_owned(), parsed))
         })
-        .collect::<Result<_>>()?;
-    body(&parsed_by_source)
-}
-
-/// Resolve `source_path` to a file on disk, read it, and parse it as a JS
-/// module. The resolve/read/parse trio every selector-claim resolver in this
-/// module repeats; the read and parse error contexts name the resolved file.
-fn read_and_parse_source(
-    source_path: &str,
-    source_root: Option<&Path>,
-    dependency_graph_path: &Path,
-    modules_root: &Path,
-    source_context: Option<&VerifiedGraphSourceContext>,
-) -> Result<js_ast::ParsedJsModule> {
-    let resolved = resolve_source_file(
-        source_path,
-        source_root,
-        dependency_graph_path,
-        modules_root,
-        source_context,
-    )?;
-    let source = match source_context {
-        Some(context) if context.matches_source_path(source_path) => context.source().to_owned(),
-        Some(context) => bail!(
-            "graph source path {source_path:?} does not match verified chunk {} source path {:?}",
-            context.chunk_id(),
-            context.source_path()
-        ),
-        None => fs::read_to_string(&resolved)
-            .with_context(|| format!("reading source file {}", resolved.display()))?,
-    };
-    js_ast::parse_js_module(source_path, &source)
-        .with_context(|| format!("parsing source file {}", resolved.display()))
+        .collect()
 }
 
 /// Locate a graph-referenced source file using the same fallback order for

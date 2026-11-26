@@ -169,7 +169,7 @@ pub fn synthesize_residual_claims_for_modules(
     js_ast::with_swc_globals(|| {
         let source = fs::read_to_string(source_file)
             .with_context(|| format!("reading source file {}", source_file.display()))?;
-        let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
+        let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)
             .with_context(|| format!("parsing source file {}", source_file.display()))?;
         let index = ChunkSelectorIndex::new(&parsed.module);
         let mut result = BTreeMap::new();
@@ -237,7 +237,7 @@ pub fn synthesize_anonymous_claims_for_modules(
 ) -> Result<BTreeMap<String, Vec<spec::AnonymousStatement>>> {
     js_ast::with_swc_globals(|| {
         let source = fs::read_to_string(source_file)?;
-        let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)?;
+        let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)?;
         with_source_unit_selector_synthesizer(&parsed.module, |synthesizer| {
             let mut result = BTreeMap::new();
             for (module, ordinals) in modules {
@@ -1086,7 +1086,7 @@ fn load_synthesis_module(config: &SelectorCodemodConfig) -> Result<js_ast::Parse
     .context("synthesize-selectors requires --source-file or --source-root + --chunk")?;
     let source = fs::read_to_string(&source_file)
         .with_context(|| format!("reading source file {}", source_file.display()))?;
-    js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
+    js_ast::parse_js_module(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))
 }
 

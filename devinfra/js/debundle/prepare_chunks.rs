@@ -8,7 +8,7 @@ use artifact::{
     CANONICAL_CHUNK_ENTRY_FILE, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
     JsChunk, JsFile, JsFileBody, LoadedJsChunks, SourceProgram,
 };
-use js_ast::{ParsedJsModule, parse_js_module_consuming};
+use js_ast::{ParsedJsModule, parse_js_module};
 use program_analysis::{analyze_program_shallow, build_chunk_manifest_from_analysis};
 use source_identity::ChunkId;
 use spec::VendorMark;
@@ -108,7 +108,7 @@ struct PrepareChunkJob<'a> {
 }
 
 fn prepare_chunk(job: PrepareChunkJob<'_>) -> Result<(ChunkArtifact, bool)> {
-    let parsed = parse_js_module_consuming(
+    let parsed = parse_js_module(
         &format!("{}/{}", job.chunk_name, job.entry_file),
         job.entry_source,
     )?;

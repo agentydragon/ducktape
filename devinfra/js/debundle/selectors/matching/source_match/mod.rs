@@ -93,6 +93,5 @@ pub use parse_validate::parse_selector_module;
 pub use preview::source_match_preview;
 pub use types::{
     AnonymousGroupMatch, BindingGroupMemberSelector, MatchedBinding, MemberBindingGroupMatch,
-    MemberBindingMatch, ParsedSourceMatchSelector, ResolvedMemberBinding, SourceMatchBodyDebt,
-    SourceMatchNearMiss,
+    MemberBindingMatch, ParsedSourceMatchSelector, SourceMatchBodyDebt, SourceMatchNearMiss,
 };

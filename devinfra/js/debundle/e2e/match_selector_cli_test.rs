@@ -680,3 +680,28 @@ fn solver_stop_and_operational_settings_failure_remain_distinct() {
     let control: Value = serde_json::from_slice(&control.stdout).unwrap();
     assert_eq!(control["counts"]["ambiguous"], 2, "{control:#}");
 }
+
+#[test]
+fn ambiguous_target_reports_each_position_in_the_selectors_coordinate_system() {
+    let (_workspace, source) = fixture("var a = 1; var b = 2;");
+    for (pattern, kind, positions) in [
+        (
+            "var x = 1; var x = 2;",
+            "statement_binding",
+            [[0, 0], [1, 0]],
+        ),
+        (
+            "var x = 1, DECLARATORS_BETWEEN, x = 2;",
+            "declarator_binding",
+            [[0, 0], [2, 0]],
+        ),
+        ("var [x, x] = z;", "statement_binding", [[0, 0], [0, 1]]),
+    ] {
+        let report = run_match_selector(&source, pattern, &["--target-binding", "x", "--no-slack"]);
+        assert_eq!(
+            outcome(&report)["error"]["problem"],
+            json!({"kind": "ambiguous", "index_kind": kind, "indices": positions}),
+            "{pattern}"
+        );
+    }
+}

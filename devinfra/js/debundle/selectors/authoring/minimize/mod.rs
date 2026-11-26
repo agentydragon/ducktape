@@ -161,7 +161,7 @@ pub(crate) fn relax_exact_declaration(
     if prove_synthesized_selector(index, decl, targets, &source).is_err() {
         return Ok(None);
     }
-    let mut current = js_ast::parse_js_module_consuming("<exact selector>", source)?.module;
+    let mut current = js_ast::parse_js_module("<exact selector>", source)?.module;
     js_ast::strip_parens(&mut current);
     let mut seen = BTreeSet::from([js_ast::emit_module_source(&current)?]);
     current = relax_progressively(
@@ -220,8 +220,7 @@ pub(crate) fn exact_declaration_source(
 }
 
 pub(crate) fn collapse_statement_hole_runs(source: &str) -> Result<String> {
-    let mut module =
-        js_ast::parse_js_module_consuming("<selector hole runs>", source.to_string())?.module;
+    let mut module = js_ast::parse_js_module("<selector hole runs>", source)?.module;
     module.visit_mut_with(&mut CollapseStatementHoleRuns);
     js_ast::emit_module_source(&module)
 }
@@ -963,9 +962,9 @@ mod run_hole_tests {
     #[test]
     fn progressive_relaxation_skips_rejected_site_and_obeys_probe_budget() {
         js_ast::with_swc_globals(|| {
-            let module = js_ast::parse_js_module_consuming(
+            let module = js_ast::parse_js_module(
                 "<selector>",
-                "function Selected(x) { x += 1; x += 2; x += 3; return x * 4; }".to_string(),
+                "function Selected(x) { x += 1; x += 2; x += 3; return x * 4; }",
             )
             .unwrap()
             .module;

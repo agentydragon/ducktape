@@ -415,7 +415,7 @@ proptest! {
         let source = js_ast::emit_module_source(&module).expect("emit generated module");
 
         let outcome: Result<(), TestCaseError> = js_ast::with_swc_globals(|| {
-            let parsed = js_ast::parse_js_module_consuming("<proptest>", source.clone())
+            let parsed = js_ast::parse_js_module("<proptest>", &source)
                 .map_err(|err| TestCaseError::fail(format!("parse failed: {err}\n{source}")))?;
             let index = ChunkSelectorIndex::new(&parsed.module);
 

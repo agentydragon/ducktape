@@ -1,11 +1,6 @@
 use super::*;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct ResolvedMemberBinding {
-    pub binding_name: String,
-}
-
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct SourceMatchNearMiss {
     pub body_idx: usize,
@@ -26,7 +21,7 @@ pub struct SourceMatchBodyDebt {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MemberBindingMatch {
     pub body_idx: usize,
-    pub binding: ResolvedMemberBinding,
+    pub binding: String,
     pub free_bindings: BTreeMap<String, String>,
 }
 
@@ -34,7 +29,7 @@ pub struct MemberBindingMatch {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MatchedBinding {
     pub body_idx: usize,
-    pub binding: ResolvedMemberBinding,
+    pub binding: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -102,10 +97,6 @@ impl ParsedSourceMatchSelector {
     }
 
     pub fn declared_binding_names(&self) -> Vec<String> {
-        self.body()
-            .iter()
-            .flat_map(declared_bindings)
-            .map(|binding| binding.binding_name)
-            .collect()
+        self.body().iter().flat_map(declared_bindings).collect()
     }
 }

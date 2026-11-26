@@ -211,7 +211,7 @@ pub fn explain_range(
                             ),
                         };
                     }
-                    first.map(|candidate| (candidate.binding.binding_name, candidate.free_bindings))
+                    first.map(|candidate| (candidate.binding, candidate.free_bindings))
                 }
                 Err(err) => return RangeExplanation::unsupported(err.to_string()),
             }
@@ -237,12 +237,8 @@ pub fn explain_range(
                 Ok(candidates) => {
                     let mut candidates = candidates.into_iter().filter_map(|candidate| {
                         let binding = candidate.bindings.get(target)?;
-                        (binding.body_idx < selected.len()).then(|| {
-                            (
-                                binding.binding.binding_name.clone(),
-                                candidate.free_bindings,
-                            )
-                        })
+                        (binding.body_idx < selected.len())
+                            .then(|| (binding.binding.clone(), candidate.free_bindings))
                     });
                     let first = candidates.next();
                     multiple_group_alignments = candidates.next().is_some();
@@ -391,7 +387,7 @@ fn diagnostic_subject_variants(
             let is_target = target.is_none_or(|name| {
                 declared_bindings(item)
                     .iter()
-                    .any(|binding| binding.binding_name == name)
+                    .any(|binding| binding == name)
             });
             is_target.then_some(index)
         });

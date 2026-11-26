@@ -1,48 +1,31 @@
 use super::*;
 
-pub(crate) fn declared_bindings(item: &ModuleItem) -> Vec<ResolvedMemberBinding> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => declared_bindings_for_decl(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
-            declared_bindings_for_decl(&export.decl)
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
-            .specifiers
-            .iter()
-            .map(|specifier| specifier.local().sym.to_string())
-            .map(|binding_name| ResolvedMemberBinding { binding_name })
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-pub(crate) fn declared_bindings_for_decl(decl: &Decl) -> Vec<ResolvedMemberBinding> {
-    match decl {
-        Decl::Fn(f) => vec![ResolvedMemberBinding {
-            binding_name: f.ident.sym.to_string(),
-        }],
-        Decl::Class(c) => vec![ResolvedMemberBinding {
-            binding_name: c.ident.sym.to_string(),
-        }],
-        Decl::Var(var) => var
+/// A selector projects ordinary and exported declarations and import locals.
+/// Declarator-list holes stand for a sequence, so they never declare a binding.
+pub(crate) fn declared_bindings(item: &ModuleItem) -> Vec<String> {
+    match js_ast::item_decl(item) {
+        Some(Decl::Var(var)) => var
             .decls
             .iter()
             .flat_map(declared_bindings_for_var_declarator)
             .collect(),
-        _ => Vec::new(),
+        Some(decl) => binding_targets::declaration_name_strings(decl),
+        None => match item {
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
+                .specifiers
+                .iter()
+                .map(|specifier| specifier.local().sym.to_string())
+                .collect(),
+            _ => Vec::new(),
+        },
     }
 }
 
-pub(crate) fn declared_bindings_for_var_declarator(
-    declarator: &VarDeclarator,
-) -> Vec<ResolvedMemberBinding> {
+pub(crate) fn declared_bindings_for_var_declarator(declarator: &VarDeclarator) -> Vec<String> {
     if declarator_list_hole_name(declarator).is_some() {
         return Vec::new();
     }
     binding_targets::binding_name_strings(&declarator.name)
-        .into_iter()
-        .map(|binding_name| ResolvedMemberBinding { binding_name })
-        .collect()
 }
 
 pub(crate) fn target_binding_candidate_names(
@@ -54,8 +37,8 @@ pub(crate) fn target_binding_candidate_names(
         .iter()
         .filter_map(|declarator| {
             declared_bindings_for_var_declarator(declarator)
-                .get(target_binding_idx)
-                .map(|binding| binding.binding_name.clone())
+                .into_iter()
+                .nth(target_binding_idx)
         })
         .collect()
 }
@@ -69,35 +52,13 @@ pub(crate) fn selector_binding_location(
     selector: &AnonymousStatementSelector,
     target_binding: &str,
 ) -> MatchResult<(usize, usize)> {
-    let selector_binding_locations: Vec<(usize, usize)> = needles
-        .iter()
-        .enumerate()
-        .flat_map(|(item_idx, item)| {
-            declared_bindings(item).into_iter().enumerate().filter_map(
-                move |(binding_idx, binding)| {
-                    (binding.binding_name == target_binding).then_some((item_idx, binding_idx))
-                },
-            )
-        })
-        .collect();
-    match selector_binding_locations.as_slice() {
-        [single] => Ok(*single),
-        [] => Err(SourceMatchError::binding(
-            request_id,
-            selector,
-            target_binding,
-            BindingProblem::NotDeclared,
-        )),
-        multiple => Err(SourceMatchError::binding(
-            request_id,
-            selector,
-            target_binding,
-            BindingProblem::Ambiguous {
-                index_kind: ProjectionIndexKind::StatementBinding,
-                indices: multiple.to_vec(),
-            },
-        )),
-    }
+    binding_location(
+        needles.iter().map(declared_bindings),
+        ProjectionIndexKind::StatementBinding,
+        request_id,
+        selector,
+        target_binding,
+    )
 }
 
 /// Locate the selector-local projected binding within a single var-decl needle's
@@ -109,53 +70,66 @@ pub(crate) fn selector_var_declarator_binding_location(
     selector: &AnonymousStatementSelector,
     target_binding: &str,
 ) -> MatchResult<(usize, usize)> {
-    let selector_binding_locations = needle_var
-        .decls
-        .iter()
-        .enumerate()
-        .flat_map(|(declarator_idx, declarator)| {
-            declared_bindings_for_var_declarator(declarator)
-                .into_iter()
-                .enumerate()
-                .filter_map(move |(binding_idx, binding)| {
-                    (binding.binding_name == target_binding)
-                        .then_some((declarator_idx, binding_idx))
-                })
-        })
-        .collect::<Vec<_>>();
-    match selector_binding_locations.as_slice() {
-        [single] => Ok(*single),
-        [] => Err(SourceMatchError::binding(
-            request_id,
-            selector,
-            target_binding,
-            BindingProblem::NotDeclared,
-        )),
-        multiple => Err(SourceMatchError::binding(
-            request_id,
-            selector,
-            target_binding,
-            BindingProblem::Ambiguous {
-                index_kind: ProjectionIndexKind::DeclaratorBinding,
-                indices: multiple.to_vec(),
-            },
-        )),
-    }
+    binding_location(
+        needle_var
+            .decls
+            .iter()
+            .map(declared_bindings_for_var_declarator),
+        ProjectionIndexKind::DeclaratorBinding,
+        request_id,
+        selector,
+        target_binding,
+    )
 }
 
-/// The lone `VarDecl` of a single-declarator var-decl statement or `export`
-/// var-decl needle (`None` otherwise).
-pub(crate) fn selector_single_var_declarator(needle: &ModuleItem) -> Option<&VarDecl> {
-    match needle {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() == 1 => Some(var),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) if matches!(&export.decl, Decl::Var(var) if var.decls.len() == 1) => {
-            match &export.decl {
-                Decl::Var(var) => Some(var),
-                _ => None,
+/// Return the unique (group, binding) position, preserving every position for
+/// the ambiguity diagnostic in the caller's coordinate system.
+fn binding_location(
+    groups: impl IntoIterator<Item = impl AsRef<[String]>>,
+    index_kind: ProjectionIndexKind,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target: &str,
+) -> MatchResult<(usize, usize)> {
+    let mut positions = Vec::new();
+    for (group_idx, group) in groups.into_iter().enumerate() {
+        for (binding_idx, name) in group.as_ref().iter().enumerate() {
+            if name == target {
+                positions.push((group_idx, binding_idx));
             }
         }
-        _ => None,
     }
+    let problem = match positions.as_slice() {
+        [position] => return Ok(*position),
+        [] => BindingProblem::NotDeclared,
+        _ => BindingProblem::Ambiguous {
+            index_kind,
+            indices: positions,
+        },
+    };
+    Err(SourceMatchError::binding(
+        request_id, selector, target, problem,
+    ))
+}
+
+pub(super) fn declared_target_index(
+    declared: &[String],
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target: &str,
+) -> MatchResult<usize> {
+    binding_location(
+        [declared],
+        ProjectionIndexKind::StatementBinding,
+        request_id,
+        selector,
+        target,
+    )
+    .map(|(_, binding_idx)| binding_idx)
+}
+
+pub(crate) fn selector_has_single_var_declarator(needle: &ModuleItem) -> bool {
+    item_var_decl(needle).is_some_and(|var| var.decls.len() == 1)
 }
 
 /// Whether a var-decl needle uses any `DECLARATORS_*` list hole.
