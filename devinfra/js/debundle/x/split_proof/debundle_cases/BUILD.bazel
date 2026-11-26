@@ -73,6 +73,10 @@ js_test(
         "MAIN_JS": "$(rootpath //devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/main.js)",
         "PROVIDER_MODULE": "$(rootpath //devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/provider_module.js)",
     },
+    no_copy_to_bin = [
+        "//devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/main.js",
+        "//devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/provider_module.js",
+    ],
 )
 
 js_test(
