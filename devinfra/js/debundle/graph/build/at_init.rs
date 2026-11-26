@@ -268,107 +268,16 @@ pub(super) fn promote_at_init_calls(
     let mut fallback: Option<SourceUnitReadClosure> = None;
     let mut fallback_eager_uses = BTreeMap::new();
     for stmt in facts {
-        if let Some(synchronous) = &stmt.synchronous_calls {
-            let caller = SourceUnitId(stmt.ordinal.0);
-            let mut emitted = BTreeSet::new();
-
-            // A read known to observe a binding before its source
-            // initialization is not a safely-droppable call promotion: moving
-            // the declaration ahead of this callback would erase a TDZ or
-            // change the initial `undefined` value. Keep a direct dependency
-            // on the declaration, and when that declaration is later in the
-            // source, pair it with reverse source order. EagerUse alone would
-            // merely ask the later provider to run first; the pair makes the
-            // two source units atomic so the emitted module retains original order.
-            for target_binding in &synchronous.uninitialized_reads {
-                let Some(&target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == target_source_unit {
-                    continue;
-                }
-                if direct_eager_bindings.insert((
-                    caller,
-                    target_source_unit,
-                    target_binding.clone(),
-                )) {
-                    if let Some(reason) = synchronous.fallback_read(target_binding) {
-                        fallback_eager_uses.insert(raw_edges.len(), reason.clone());
-                    }
-                    raw_edges.push((
-                        caller,
-                        target_source_unit,
-                        EdgeReason::for_binding(
-                            DepKind::EagerUse,
-                            stmt.ordinal,
-                            target_binding.clone(),
-                        ),
-                    ));
-                }
-                if caller < target_source_unit {
-                    binding_order.offer(
-                        target_source_unit,
-                        caller,
-                        SequencedCause::UninitializedObservation {
-                            binding: target_binding.0.clone(),
-                            observation: EffectProvenance::from_fallback(
-                                synchronous.fallback_uninitialized_read(target_binding),
-                            ),
-                        },
-                    );
-                }
-            }
-
-            let reads = synchronous
-                .reads
-                .iter()
-                .filter(|(binding, _)| !synchronous.uninitialized_reads.contains(binding))
-                .map(|(binding, callee)| (binding, callee, synchronous.fallback_read(binding)));
-            let rebinds = synchronous
-                .rebinds
-                .iter()
-                .map(|(binding, callee)| (binding, callee, synchronous.fallback_rebind(binding)));
-            for (target_binding, callee_ordinal, fallback) in reads.chain(rebinds) {
-                if target_is_hoisted(target_binding) {
-                    continue;
-                }
-                let Some(&target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                let callee_source_unit = SourceUnitId(callee_ordinal.0);
-                if caller == target_source_unit
-                    || !emitted.insert((target_source_unit, callee_source_unit))
-                {
-                    continue;
-                }
-                if let Some(reason) = fallback {
-                    fallback_eager_uses.insert(raw_edges.len(), reason.clone());
-                }
-                raw_edges.push((
-                    caller,
-                    target_source_unit,
-                    EdgeReason::for_binding(
-                        DepKind::EagerUse,
-                        stmt.ordinal,
-                        target_binding.clone(),
-                    )
-                    .promoted_at_init(callee_source_unit),
-                ));
-            }
-            match synchronous.binding_effect_authority() {
-                analysis::facts::sync_effects::BindingEffectAuthority::Unclassified => {}
-                analysis::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
-                    complete: true,
-                }
-                | analysis::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
-                | analysis::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
-                    continue;
-                }
-                analysis::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
-                    complete: false,
-                }
-                | analysis::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {}
-            }
+        if promote_synchronous_effects(
+            stmt,
+            binding_source_unit,
+            &target_is_hoisted,
+            &mut direct_eager_bindings,
+            &mut binding_order,
+            &mut fallback_eager_uses,
+            raw_edges,
+        ) {
+            continue;
         }
         if stmt.calls.eager.is_empty()
             && stmt.at_init_unresolved_sources.is_empty()
@@ -783,4 +692,110 @@ fn close_over_call_graph(
         fallback_roots: scc_fallback_roots,
         needs_caller_values: scc_needs_caller_values,
     }
+}
+
+/// Promotes a statement's synchronous-callee effects to eager edges from it.
+/// Returns whether the summary's binding-effect authority makes it the
+/// statement's complete account, so the at-init call fallback is skipped.
+fn promote_synchronous_effects(
+    stmt: &StatementFacts,
+    binding_source_unit: &HashMap<Id, SourceUnitId>,
+    target_is_hoisted: &impl Fn(&Id) -> bool,
+    direct_eager_bindings: &mut BTreeSet<(SourceUnitId, SourceUnitId, Id)>,
+    binding_order: &mut BindingOrderEdges,
+    fallback_eager_uses: &mut BTreeMap<usize, AssumedEffectReason>,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) -> bool {
+    let Some(synchronous) = &stmt.synchronous_calls else {
+        return false;
+    };
+    let caller = SourceUnitId(stmt.ordinal.0);
+    let mut emitted = BTreeSet::new();
+
+    // A read known to observe a binding before its source
+    // initialization is not a safely-droppable call promotion: moving
+    // the declaration ahead of this callback would erase a TDZ or
+    // change the initial `undefined` value. Keep a direct dependency
+    // on the declaration, and when that declaration is later in the
+    // source, pair it with reverse source order. EagerUse alone would
+    // merely ask the later provider to run first; the pair makes the
+    // two source units atomic so the emitted module retains original order.
+    for target_binding in &synchronous.uninitialized_reads {
+        let Some(&target_source_unit) = binding_source_unit.get(target_binding) else {
+            continue;
+        };
+        if caller == target_source_unit {
+            continue;
+        }
+        if direct_eager_bindings.insert((caller, target_source_unit, target_binding.clone())) {
+            if let Some(reason) = synchronous.fallback_read(target_binding) {
+                fallback_eager_uses.insert(raw_edges.len(), reason.clone());
+            }
+            raw_edges.push((
+                caller,
+                target_source_unit,
+                EdgeReason::for_binding(DepKind::EagerUse, stmt.ordinal, target_binding.clone()),
+            ));
+        }
+        if caller < target_source_unit {
+            binding_order.offer(
+                target_source_unit,
+                caller,
+                SequencedCause::UninitializedObservation {
+                    binding: target_binding.0.clone(),
+                    observation: EffectProvenance::from_fallback(
+                        synchronous.fallback_uninitialized_read(target_binding),
+                    ),
+                },
+            );
+        }
+    }
+
+    let reads = synchronous
+        .reads
+        .iter()
+        .filter(|(binding, _)| !synchronous.uninitialized_reads.contains(binding))
+        .map(|(binding, callee)| (binding, callee, synchronous.fallback_read(binding)));
+    let rebinds = synchronous
+        .rebinds
+        .iter()
+        .map(|(binding, callee)| (binding, callee, synchronous.fallback_rebind(binding)));
+    for (target_binding, callee_ordinal, fallback) in reads.chain(rebinds) {
+        if target_is_hoisted(target_binding) {
+            continue;
+        }
+        let Some(&target_source_unit) = binding_source_unit.get(target_binding) else {
+            continue;
+        };
+        let callee_source_unit = SourceUnitId(callee_ordinal.0);
+        if caller == target_source_unit || !emitted.insert((target_source_unit, callee_source_unit))
+        {
+            continue;
+        }
+        if let Some(reason) = fallback {
+            fallback_eager_uses.insert(raw_edges.len(), reason.clone());
+        }
+        raw_edges.push((
+            caller,
+            target_source_unit,
+            EdgeReason::for_binding(DepKind::EagerUse, stmt.ordinal, target_binding.clone())
+                .promoted_at_init(callee_source_unit),
+        ));
+    }
+    match synchronous.binding_effect_authority() {
+        analysis::facts::sync_effects::BindingEffectAuthority::Unclassified => {}
+        analysis::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
+            complete: true,
+        }
+        | analysis::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
+        | analysis::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
+            return true;
+        }
+        analysis::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
+            complete: false,
+        }
+        | analysis::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {
+        }
+    }
+    false
 }
