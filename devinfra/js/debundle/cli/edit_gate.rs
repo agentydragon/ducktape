@@ -747,14 +747,13 @@ fn record_direct_binding_source_check(
     let Some(expected_kind) = binding.kind else {
         return;
     };
-    let check =
-        check
-            .and_then(Option::as_ref)
-            .cloned()
-            .unwrap_or_else(|| DirectBindingSourceCheck {
-                expected_kind,
-                resolution: DirectBindingSourceResolution::Missing,
-            });
+    let check = check
+        .and_then(Option::as_ref)
+        .cloned()
+        .unwrap_or(DirectBindingSourceCheck {
+            expected_kind,
+            resolution: DirectBindingSourceResolution::Missing,
+        });
     if !matches!(
         check.resolution,
         DirectBindingSourceResolution::Matched { .. }
