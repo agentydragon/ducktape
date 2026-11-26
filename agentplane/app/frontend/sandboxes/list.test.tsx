@@ -29,6 +29,8 @@ import {
 
 import { serveEventStreams } from "../testing/watch";
 
+vi.mock("../policy/watch", () => ({ useIdentities: () => ({ identities: [], error: null }) }));
+
 const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { environments: EnvironmentDescriptor[] } | null }));
 
 afterEach(async () => {

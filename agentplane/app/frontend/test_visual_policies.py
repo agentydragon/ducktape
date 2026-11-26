@@ -1269,8 +1269,7 @@ async def test_sandbox_form_test_coder_preset_layout(view: VisualPage, app: Agen
 async def test_launch_with_existing_identity(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.bind_sandbox_identity("ready-sandbox", "referenced-identity")
     await app.mount_app("/sandboxes?preset=test-coder")
-    await view.page.get_by_role("radio", name="Use existing identity").check()
-    await view.page.get_by_role("combobox", name="Existing identity").click()
+    await view.page.get_by_label("Identity name", exact=True).fill("referenced-identity")
     await view.page.get_by_role("option", name="referenced-identity", exact=True).click()
     await expect(view.page.get_by_role("combobox", name="Policy sets")).to_have_count(0)
     await expect(view.page.get_by_role("textbox", name="Name", exact=True)).to_have_attribute(

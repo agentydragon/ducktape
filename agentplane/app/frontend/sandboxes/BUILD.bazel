@@ -163,6 +163,7 @@ ts_library(
         "//agentplane/app/frontend/ui:mark_glyph",
         "//agentplane/app/frontend/ui:status_mark",
         "//agentplane/environments/v1:environment_service_pb",
+        "//util/frontend:disclosure",
     ],
 )
 

@@ -10,7 +10,7 @@ import {
   Button,
   Checkbox,
   Fieldset,
-  Radio,
+  Autocomplete,
   Group,
   Menu,
   MultiSelect,
@@ -40,6 +40,7 @@ import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import { TopbarTitle } from "../shell/topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
+import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { useIdentities } from "../policy/watch";
 import {
   createEnvironment,
@@ -89,35 +90,12 @@ function StatusIcon({ row }: { row: EnvironmentDescriptor }): JSX.Element {
   );
 }
 
-function ExistingIdentityPicker({
-  value,
-  onChange,
-}: {
-  value: string | null;
-  onChange: (name: string | null) => void;
-}): JSX.Element {
-  const { identities, error } = useIdentities();
-  return (
-    <Select
-      label="Existing identity"
-      description="This sandbox uses the identity’s current grants."
-      searchable
-      data={(identities ?? []).flatMap((item) => (item.identity ? [item.identity.name] : []))}
-      value={value}
-      onChange={onChange}
-      error={error}
-      placeholder="Choose an identity"
-    />
-  );
-}
-
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandboxForm>(EMPTY_FORM);
-  const [existing, setExisting] = useState(false);
-  const [pickedIdentity, setPickedIdentity] = useState<string | null>(null);
-  const [newIdentity, setNewIdentity] = useState("");
+  const { identities, error: identityError } = useIdentities();
+  const [identityOverride, setIdentityOverride] = useState<string | null>(null);
   const [defaults, setDefaults] = useState<DefaultFields>({
     wake_on_send: false,
     idle_suspend_after_seconds: null,
@@ -140,6 +118,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     selectedPreset ?? "sandbox",
     new Set(rows.map((row) => row.target!.name))
   );
+  const suggestedIdentity = form.name || placeholderName;
+  const identityInput = identityOverride ?? suggestedIdentity;
+  const identityName = identityInput || suggestedIdentity;
+  const names = (identities ?? []).flatMap((item) => (item.identity ? [item.identity.name] : []));
+  const existing = names.includes(identityName);
   const nameError = sandboxNameError(form.name || placeholderName);
 
   /** Fill the Sandbox creation fields from a preset; session defaults remain app configuration. */
@@ -208,7 +191,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   async function create(): Promise<void> {
     const request = createProto(CreateEnvironmentRequestSchema, {
       name: form.name || placeholderName,
-      identity: existing ? (pickedIdentity ?? "") : newIdentity || form.name || placeholderName,
+      identity: identityName,
       template: form.template,
       inboxTags: form.inbox_tags,
       bootstrap: form.bootstrap,
@@ -221,9 +204,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     });
     try {
       const data = existing ? await createEnvironment(request) : await launchEnvironment(request, form.policy_sets);
-      setExisting(false);
-      setPickedIdentity(null);
-      setNewIdentity("");
+      setIdentityOverride(null);
       setForm({ ...EMPTY_FORM, ...defaults });
       setSelectedPreset(null);
       const params = new URLSearchParams(searchParams);
@@ -252,25 +233,25 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         />
       )}
       {error && <Text c="red">{error}</Text>}
+      <Select
+        clearable
+        label="Launch preset"
+        description="Fills the runtime template, policy sets, inbox tags, and bootstrap below; session defaults stay in app configuration"
+        data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
+        value={selectedPreset}
+        onChange={(name) => {
+          const preset = presets.find((candidate) => candidate.name === name) ?? null;
+          pickPreset(preset);
+          const params = new URLSearchParams(searchParams);
+          if (preset) params.set(PRESET_PARAM, preset.name);
+          else params.delete(PRESET_PARAM);
+          setSearchParams(params, { replace: true });
+        }}
+        maw={420}
+      />
       <Fieldset legend="Sandbox">
         <Stack>
           <Group align="flex-end">
-            <Select
-              clearable
-              label="Launch preset"
-              description="Fills the runtime template, policy sets, inbox tags, and bootstrap below; session defaults stay in app configuration"
-              data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
-              value={selectedPreset}
-              onChange={(name) => {
-                const preset = presets.find((candidate) => candidate.name === name) ?? null;
-                pickPreset(preset);
-                const params = new URLSearchParams(searchParams);
-                if (preset) params.set(PRESET_PARAM, preset.name);
-                else params.delete(PRESET_PARAM);
-                setSearchParams(params, { replace: true });
-              }}
-              style={{ flex: "1 1 12rem" }}
-            />
             <TextInput
               label="Name"
               value={form.name}
@@ -310,56 +291,55 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
               onChange={(seconds) => setForm({ ...form, idle_suspend_after_seconds: seconds })}
             />
           </Group>
-          <Textarea
-            label="Bootstrap script"
-            description="Runs once before this Sandbox's first session"
-            autosize
-            minRows={2}
-            value={form.bootstrap}
-            onChange={(event) => setForm({ ...form, bootstrap: event.currentTarget.value })}
-          />
+          <Disclosure summary="Bootstrap script" keepMounted>
+            <DisclosureBody>
+              {" "}
+              <Textarea
+                aria-label="Bootstrap script"
+                description="Runs once before this Sandbox's first session"
+                autosize
+                minRows={2}
+                value={form.bootstrap}
+                onChange={(event) => setForm({ ...form, bootstrap: event.currentTarget.value })}
+              />
+            </DisclosureBody>
+          </Disclosure>
         </Stack>
       </Fieldset>
       <Fieldset legend="Identity">
         <Stack>
-          <Radio.Group
-            aria-label="Identity choice"
-            value={existing ? "existing" : "new"}
-            onChange={(mode) => setExisting(mode === "existing")}
-          >
-            <Group>
-              <Radio value="new" label="Create new identity" />
-              <Radio value="existing" label="Use existing identity" />
-            </Group>
-          </Radio.Group>
-          {existing ? (
-            <ExistingIdentityPicker value={pickedIdentity} onChange={setPickedIdentity} />
-          ) : (
-            <>
-              <TextInput
-                label="New identity name"
-                value={newIdentity}
-                placeholder={form.name || placeholderName}
-                onChange={(event) => setNewIdentity(event.currentTarget.value)}
-              />
-              <MultiSelect
-                label="Policy sets"
-                description="Grants for the new identity"
-                hidePickedOptions
-                data={policySets}
-                value={form.policy_sets ?? []}
-                onChange={(picked) => setForm({ ...form, policy_sets: picked })}
-                w="100%"
-              />
-            </>
+          <Autocomplete
+            label="Identity name"
+            data={names}
+            value={identityInput}
+            placeholder={suggestedIdentity}
+            onChange={setIdentityOverride}
+            error={identityError}
+            description={
+              identities === null
+                ? "Checking identities…"
+                : existing
+                  ? "Uses this existing identity and its current grants."
+                  : `Creates a new identity: ${identityName}`
+            }
+          />
+          {identities !== null && !existing && (
+            <MultiSelect
+              label="Policy sets"
+              description="Grants for the new identity"
+              hidePickedOptions
+              data={policySets}
+              value={form.policy_sets ?? []}
+              onChange={(picked) => setForm({ ...form, policy_sets: picked })}
+              w="100%"
+            />
           )}
         </Stack>
       </Fieldset>
       <Group>
-        {" "}
         <Button
           onClick={() => void create()}
-          disabled={nameError !== null || !form.template || (existing && !pickedIdentity)}
+          disabled={nameError !== null || !form.template || identities === null || identityError !== null}
         >
           New sandbox
         </Button>
