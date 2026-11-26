@@ -161,9 +161,18 @@ class Settings(BaseModel):
         ge=1,
         le=3650,
         description=(
-            "Days to retain raw GitHub deliveries (including IDs, digests and subject links) and generated "
-            "mergeability transitions; null retains both indefinitely. This bounds raw replay and deduplication. "
-            "Inbox payloads and current pull request snapshots have separate lifetimes."
+            "Days to retain GitHub delivery facts (including IDs, digests and subject links) and generated "
+            "mergeability transitions; null retains both indefinitely. This bounds replay and deduplication. "
+            "Raw webhook bodies and inbox payloads have separate lifetimes."
+        ),
+    )
+    github_delivery_payload_retention_days: int | None = Field(
+        default=3,
+        ge=0,
+        le=3650,
+        description=(
+            "Days to retain raw GitHub webhook bodies; zero stores no new body and expires existing bodies on the next "
+            "maintenance pass, while null retains bodies indefinitely. Finite retention cannot exceed fact retention."
         ),
     )
     unavailable_destination_retry_s: PositiveSeconds = Field(
@@ -190,6 +199,12 @@ class Settings(BaseModel):
             raise ValueError("operator_reader_services must not contain duplicates")
         if not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
             raise ValueError("rpc requires SPIFFE client trust")
+        facts_days = self.github_delivery_retention_days
+        payload_days = self.github_delivery_payload_retention_days
+        if payload_days is None and facts_days is not None:
+            raise ValueError("infinite GitHub payload retention requires infinite github_delivery_retention_days")
+        if payload_days is not None and facts_days is not None and payload_days > facts_days:
+            raise ValueError("github_delivery_payload_retention_days cannot exceed github_delivery_retention_days")
         return self
 
     github: GitHubSettings | None = Field(

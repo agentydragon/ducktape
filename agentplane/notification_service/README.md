@@ -66,7 +66,7 @@ migrating with the previous image. Subsequent schema changes use new Goose versi
 
 The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
 commit and nanosecond timestamp; and Message text and optional source Session in native columns.
-GitHub webhook receipts keep their signed raw body separately from a compact event-specific fact projection;
+GitHub webhook receipts keep an optional signed raw body separately from a compact event-specific fact projection;
 generated observation payloads remain JSONB. Subscription `creation_proto` and notice
 `runner_entry` remain binary protobuf snapshots. Expired entries retain identity tombstones while
 their content stays cleared.
@@ -165,13 +165,32 @@ inbox's acknowledged cursor.
 
 ### GitHub event retention
 
-`github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650, or explicit YAML `null` for infinite retention.
-The distinction is preserved: an omitted key uses seven days, while `github_delivery_retention_days: null` disables cleanup of delivery receipts (including their raw bodies, facts, IDs, digests and subject links) and generated mergeability transitions; zero remains invalid. GitHub maintenance deletes up to 1000 expired receipts per cleanup pass, once a minute. This bounds source replay, late association
-matching and delivery-ID deduplication, including for active subscriptions. Inbox payload copies
-keep their independent 30-day retention. The same setting also deletes up to 1000 expired generated
-pull-request mergeability transitions and 1000 generated CI transitions and 1000 generated review/lifecycle transitions per pass, including transitions not consumed by an inbox;
-current pull-request snapshots remain. Old CI heads without active PR followers are pruned in bounded batches;
-current facts for an actively followed head and copied inbox payloads retain their independent lifetimes. Changing this setting does not enable the GitHub provider.
+`github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650, or
+explicit YAML `null` for infinite fact retention. It bounds replay, late association matching and
+delivery-ID deduplication, including for active subscriptions.
+
+`github_delivery_payload_retention_days` defaults to 3 and accepts 0 to 3650 days, or explicit
+YAML `null` for infinite body retention. It cannot exceed fact retention, and null is valid only
+when fact retention is also infinite. Staging uses the three-day default. Zero stores no new raw
+body and begins expiring existing bodies on the next maintenance pass. Expiring a body preserves
+its receipt position, digest, identity, compact fact and subject links. Each pass expires up to 1000
+bodies after backfilling any legacy fact needed by matching. Receipt cleanup at the configured fact
+retention later deletes the whole receipt and its links; `github_delivery_retention_days: null`
+disables that cleanup while the body setting still applies independently. Inbox payload copies keep
+their independent 30-day retention.
+
+The fact setting also deletes up to 1000 expired generated pull-request mergeability transitions,
+1000 generated CI transitions and 1000 generated review/lifecycle transitions per pass, including
+transitions not consumed by an inbox. Current pull-request snapshots remain. Old CI heads without
+active PR followers are pruned in bounded batches; current facts for an actively followed head and
+copied inbox payloads retain their independent lifetimes. These settings do not enable the GitHub
+provider.
+
+Writers predating the compact-facts change leave `fact` empty; new readers backfill retained bodies
+before matching, and body cleanup completes that backfill before expiry. Keep the three-day body
+window through a rolling rollout. Set body retention to zero only after every reader runs the
+fact-based code; once a body expires, a release that matches from raw bodies cannot recover it.
+Rolling back to the compact-facts release remains supported.
 
 ### GitHub source work and inbox delivery
 
@@ -287,7 +306,8 @@ GitHub does not automatically retry failed webhook requests: failures/timeouts r
 Durable recovery starts at the committed receipt, not at the start of the HTTP request.
 If GitHub reports a failed delivery, an App operator should inspect the webhook's Recent Deliveries
 in GitHub App settings and redeliver that delivery (or use GitHub's App delivery-attempt API
-with App authority). Within the configured raw receipt retention window, a retry of an already committed receipt returns 202 with `duplicate: true`;
+with App authority). While its fact receipt is retained, a retry of an already committed delivery
+returns 202 with `duplicate: true`, even after its raw body expires;
 a retry of an uncommitted receipt returns 202 with `duplicate: false` after commit. Then check
 subscription/inbox state separately: HTTP acceptance does not prove runner delivery or agent
 acknowledgement. Do not replay with a new delivery ID or assume GitHub retries automatically.

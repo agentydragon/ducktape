@@ -90,3 +90,9 @@ including facts, entries, schedule changes and transactional notifications.
 A successful refresh settles `next_attempt` to SQL NULL. Changed facts publish
 wakeups before commit. Quiet workers wait on committed notifications or a real due
 deadline; retry timers cover storage failures only.
+
+Webhook ingress verifies and digests the complete signed request before its transaction.
+The receipt identity, digest, compact fact and subject/revision links commit together; with
+zero body retention the transaction stores no request body. Body cleanup backfills legacy facts
+first and nulls only bodies whose facts exist. It leaves receipt positions, digests, links and
+inbox copies intact. Receipt cleanup at fact retention remains a separate operation.

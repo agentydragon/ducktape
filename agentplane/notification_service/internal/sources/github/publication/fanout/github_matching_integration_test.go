@@ -277,9 +277,12 @@ func TestHistoricalCIFactsMatchLatePRAssociationAcrossWorkerRestart(t *testing.T
 	g.reconcileAll(t, sub)
 	g.requireDelivered(t, "failure", "success", "association")
 
-	// Delivery matching uses the normalized fact. Neither rendering nor a duplicate receipt retry needs the body.
-	g.exec(t, `UPDATE github_delivery SET payload = 'null'::jsonb WHERE delivery_id IN ($1, $2)`,
+	// Body expiry leaves facts and inbox copies intact; neither matching nor a duplicate retry needs the body.
+	g.exec(t, `UPDATE github_delivery SET received_at = now() - interval '4 days' WHERE delivery_id IN ($1, $2)`,
 		failure.DeliveryID, success.DeliveryID)
+	if err := g.coordinator.CleanupPayloads(t.Context(), time.Now().Add(-3*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	if g.ingest(t, failure) || g.ingest(t, success) {
 		t.Fatal("a redelivery was accepted as new after its body was removed")
 	}

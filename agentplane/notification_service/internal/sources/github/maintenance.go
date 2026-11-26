@@ -10,19 +10,26 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 )
 
-// Maintenance expires GitHub's cached receipts and observations. It makes no GitHub API calls,
-// and runs even when the GitHub source is disabled. Published inbox content has its own lifetime.
+// Maintenance expires GitHub's optional webhook bodies, cached receipts and observations. It makes no GitHub API
+// calls, and runs even when the GitHub source is disabled. Published inbox content has its own lifetime.
 type Maintenance struct {
 	Fanout    *fanout.Coordinator
 	Retention settings.Retention
 }
 
-// Cleanup deletes one bounded page of expired GitHub state.
+// Cleanup deletes one bounded page of expired GitHub state and expires optional bodies independently.
 func (m Maintenance) Cleanup(ctx context.Context) error {
-	if m.Retention.Days == nil {
-		return nil
+	now := time.Now()
+	if m.Retention.PayloadDays != nil {
+		cutoff := now.Add(-time.Duration(*m.Retention.PayloadDays) * 24 * time.Hour)
+		if err := m.Fanout.CleanupPayloads(ctx, cutoff); err != nil {
+			return err
+		}
 	}
-	return m.Fanout.Cleanup(ctx, time.Now().Add(-time.Duration(*m.Retention.Days)*24*time.Hour))
+	if m.Retention.Days != nil {
+		return m.Fanout.Cleanup(ctx, now.Add(-time.Duration(*m.Retention.Days)*24*time.Hour))
+	}
+	return nil
 }
 
 func (m Maintenance) Run(ctx context.Context) error {

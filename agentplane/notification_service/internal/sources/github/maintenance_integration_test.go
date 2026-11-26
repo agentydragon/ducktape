@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 
 func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.T) {
 	h := newHarness(t)
-	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Days: new(3)}}
+	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Days: new(3), PayloadDays: new(3)}}
 	repositoryID := seedMergeabilityHistory(t, h)
 	h.exec(`INSERT INTO github_delivery
 		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
@@ -34,6 +35,50 @@ func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.
 		t.Fatalf("pull request snapshot state = %q, want OPEN after transition cleanup", snapshotState)
 	}
 	h.exec(`DELETE FROM github_delivery WHERE app_id = 42`)
+}
+
+func TestPayloadRetentionExpiresBodiesBeforeFactReceipts(t *testing.T) {
+	h := newHarness(t)
+	repositoryID := seedMergeabilityHistory(t, h)
+	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Days: new(7), PayloadDays: new(3)}}
+	h.exec(`INSERT INTO github_delivery
+		(app_id, delivery_id, installation_id, repository_id, event, digest, payload, fact, received_at)
+		VALUES
+		(44, '00000000-0000-0000-0000-000000000041', 44, $1, 'issue_comment', 'old-digest', '{"comment":"archive"}', '{"action":"created"}', now() - interval '4 days'),
+		(44, '00000000-0000-0000-0000-000000000042', 44, $1, 'issue_comment', 'new-digest', '{"comment":"recent"}', '{"action":"created"}', now() - interval '2 days')`, repositoryID)
+	if err := maintenance.Cleanup(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var oldBodyExpired bool
+	var oldFact []byte
+	if err := h.db.QueryRowContext(t.Context(), `SELECT payload IS NULL, fact FROM github_delivery WHERE app_id = 44 AND delivery_id = '00000000-0000-0000-0000-000000000041'`).
+		Scan(&oldBodyExpired, &oldFact); err != nil {
+		t.Fatal(err)
+	}
+	var fact struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal(oldFact, &fact); err != nil {
+		t.Fatal(err)
+	}
+	if !oldBodyExpired || fact.Action != "created" {
+		t.Fatalf("old body expired = %v, fact = %s", oldBodyExpired, oldFact)
+	}
+	var recentBodyPresent bool
+	if err := h.db.QueryRowContext(t.Context(), `SELECT payload IS NOT NULL FROM github_delivery WHERE app_id = 44 AND delivery_id = '00000000-0000-0000-0000-000000000042'`).
+		Scan(&recentBodyPresent); err != nil {
+		t.Fatal(err)
+	}
+	if !recentBodyPresent {
+		t.Fatal("body younger than its retention window expired")
+	}
+	if count := postgres.Count(t, h.db, `SELECT count(*) FROM github_delivery WHERE app_id = 44`); count != 2 {
+		t.Fatalf("retained %d fact receipts, want both", count)
+	}
+	if count := postgres.Count(t, h.db, `SELECT count(*) FROM github_mergeability_event WHERE repository_id = $1`, repositoryID); count != 1 {
+		t.Fatalf("retained %d mergeability transitions, want the seven-day fact lifetime", count)
+	}
+	h.exec(`DELETE FROM github_delivery WHERE app_id = 44`)
 }
 
 func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {

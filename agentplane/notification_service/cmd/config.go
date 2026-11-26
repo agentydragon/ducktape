@@ -147,6 +147,9 @@ func loadConfig() (config, error) {
 	if value, exists := raw["github_delivery_retention_days"]; exists && value == nil {
 		c.GitHubRetention.Days = nil
 	}
+	if value, exists := raw["github_delivery_payload_retention_days"]; exists && value == nil {
+		c.GitHubRetention.PayloadDays = nil
+	}
 	// Only these runtime credentials are read from environment variables; static settings never consult the process environment.
 	c.DatabaseURL = os.Getenv(settingPrefix + "DATABASE_URL")
 	c.GitHub.PrivateKey = os.Getenv(settingPrefix + "GITHUB__PRIVATE_KEY")

@@ -222,7 +222,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		sharedState := githubstate.New(db, runner, time.Duration(c.GitHub.FreshnessSeconds)*time.Second, publication.Adapter{})
 		provider := github.NewProvider(githubClient, githubFanout, sharedState, c.GitHub)
 		githubAPI, providers["github"] = provider, provider
-		webhookHandler = webhook.New(c.GitHub, githubFanout)
+		webhookHandler = webhook.New(c.GitHub, c.GitHubRetention, githubFanout)
 	}
 
 	options := rpc.Options{
