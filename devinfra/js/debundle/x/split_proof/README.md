@@ -90,10 +90,12 @@ placement and the entry's live exports, then requires the staged and reread
 JavaScript to decode to that exact candidate before publishing. Its verdict
 states the CoreJS theorem, reports no host premises, and marks
 `every_ending_matches: true`. This route refuses sparse IDs and changed unit
-order without changing an existing output directory. It does not select this
-strategy for function declarations, calls, or other effectful initializers;
-those remain subject to the other certified checker paths and their reported
-evidence.
+order without changing an existing output directory. A recognized dense
+singleton source with a function declaration, call, or other effectful
+initializer is refused with `strict_observation_unsupported` before structural
+or host-profile alternatives can run. Source forms outside this constructor's
+fragment remain subject to the other certified checker paths and their
+reported evidence.
 
 To move an initializer such as `Math.PI / 12`, pass
 `{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}` with
