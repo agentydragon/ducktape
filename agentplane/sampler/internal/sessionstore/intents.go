@@ -487,7 +487,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 		return "", err
 	}
 	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
@@ -523,7 +523,7 @@ func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, 
 		return err
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
