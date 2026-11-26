@@ -5,7 +5,9 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { assertSelectedSourceUnits } from "../../translation/testing/ast_assertions.mjs";
 import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
-import { splitInputs } from "../../translation/split_dump.mjs";
+import { acorn, eslintScope } from "../../translation/parser.mjs";
+import { dumpParsed } from "../../translation/annotated_estree.mjs";
+import { parseModule, topLevelStatements } from "../../translation/scope_metadata.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));
 assert(chunks);
@@ -21,7 +23,9 @@ for (const [chunk, spec] of [
   const validation = JSON.parse(readFileSync(path.join(reports, "translation_validation.json"), "utf8"));
   assert(validation.gate_accepts && validation.accepts);
   const source = readFileSync(path.join(chunks, chunk + ".js"), "utf8");
-  const { dump, core, units } = splitInputs(source, { external: true, census: true });
+  const parsed = parseModule(source, acorn.parse, eslintScope);
+  const dump = dumpParsed(parsed);
+  const units = topLevelStatements(parsed.ast);
   const nodes = graph.nodes.sort((a, b) => a.statement_ordinal - b.statement_ordinal);
   assert.equal(nodes.length, units.length);
   const entry = "entry.mjs";
@@ -50,10 +54,6 @@ for (const [chunk, spec] of [
     return file;
   };
   const ast = write("ast", dump);
-  const model = write("program", {
-    entry: "main",
-    modules: [{ name: "main", imports: [], exports: core.exports, ids: core.ids, tokens: core.tokens }],
-  });
   // Request a plan even on rejection so we can verify the schedule Lean actually checked.
   const rendered = path.join(process.env.TEST_TMPDIR, chunk);
   for (const name of owners.values()) mkdirSync(path.join(rendered, path.dirname(name)), { recursive: true });
@@ -64,8 +64,6 @@ for (const [chunk, spec] of [
       "--diagnostic",
       writeDeployment(ast, spec, rendered),
       rendered,
-      "--corejs",
-      model,
       "--plan",
       planFile,
       "--force",

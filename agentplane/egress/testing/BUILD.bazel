@@ -11,8 +11,9 @@ py_library(
     deps = [
         "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
+        "//agentplane/testing:go_process",
+        "//devinfra/testing:undeclared_outputs",
         "//util:net",
-        "@pypi//aiohttp",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],

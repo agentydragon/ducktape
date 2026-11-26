@@ -25,7 +25,14 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.session_dispatcher.client import SandboxControlClient
-from agentplane.testing.go_process import GoProcess, RestartGoProcess, WhileStopped, go_process, restartable_go_process
+from agentplane.testing.go_process import (
+    GoProcess,
+    GrpcHealth,
+    RestartGoProcess,
+    WhileStopped,
+    go_process,
+    restartable_go_process,
+)
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import listen_tcp
@@ -174,8 +181,7 @@ async def run_environment_service(
                 Path(binary),
                 env=environment,
                 stderr=log_path,
-                health_port=listener.port,
-                health_credentials=credentials,
+                readiness=GrpcHealth(port=listener.port, credentials=credentials),
                 pass_fds=(listener.socket.fileno(),),
                 grace_s=10,
             )

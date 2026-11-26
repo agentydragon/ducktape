@@ -40,7 +40,7 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.go_process import GoProcess, go_process
+from agentplane.testing.go_process import GoProcess, GrpcHealth, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, workload_uri, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -440,10 +440,9 @@ async def go_history_service(
             _SERVICE,
             env={_DATABASE_URL_ENV: _go_database_url(database_url), _CONFIG_FILE_ENV: str(config)},
             stderr=undeclared_outputs_dir() / f"history-service-{uuid4().hex}.log",
-            health_port=reader_listener.port,
+            readiness=GrpcHealth(port=reader_listener.port, credentials=reader_channel_credentials),
             grace_s=_GRACE_SECONDS,
             pass_fds=(reader_fd,),
-            health_credentials=reader_channel_credentials,
         ) as process:
             listeners.close()
             read_target = f"localhost:{reader_listener.port}"
