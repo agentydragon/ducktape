@@ -15,6 +15,9 @@ func samplingReconciliation(ctx context.Context, tx *sql.Tx, session *Session, i
 	linkedItems := make(map[uint64][]string)
 	absent := make(map[string]bool)
 	var sources []uint64
+	// TODO: Index dispatch and source sequences by sampling intent, and item IDs
+	// by source sequence, so recovery can fetch this intent's evidence without
+	// scanning and decoding unrelated journal entries back to dispatch.
 	before := session.Cursor + 1
 	for before > 1 {
 		entries, err := recoveryEventsBefore(ctx, tx, session.ID, before)
