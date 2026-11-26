@@ -580,13 +580,10 @@ fn rename_batch_names_only_verdict_does_not_validate_template_references() {
         ],
     );
     let validate = || {
-        let output = debundle_e2e_support::run_source_only_validate(
+        debundle_e2e_support::run_source_only_validate_json(
             &fixture.modules,
             &fixture.source_path(),
-            &["--format", "json"],
-        );
-        assert!(output.status.success(), "{}", output.stderr);
-        serde_json::from_str::<Value>(&output.stdout).unwrap()
+        )
     };
     let before = validate();
     assert_eq!(

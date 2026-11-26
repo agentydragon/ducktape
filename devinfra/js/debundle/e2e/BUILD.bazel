@@ -941,7 +941,6 @@ debundle_e2e_test(
     size = "small",
     deps = [
         "@crates//:serde_json",
-        "@crates//:tempfile",
     ],
 )
 
@@ -1166,7 +1165,6 @@ debundle_e2e_test(
     name = "match_selector_cli_test",
     deps = [
         "@crates//:serde_json",
-        "@crates//:tempfile",
     ],
 )
 
@@ -1244,7 +1242,6 @@ debundle_e2e_test(
     name = "synthesis_diagnostics_test",
     deps = [
         "@crates//:serde_json",
-        "@crates//:tempfile",
     ],
 )
 

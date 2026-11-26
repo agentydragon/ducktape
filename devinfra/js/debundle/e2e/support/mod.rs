@@ -1239,9 +1239,27 @@ pub fn run_source_only_validate(
     source_file: &Path,
     extra_args: &[&str],
 ) -> CommandResult {
-    let bin = debundler_path();
-    let output = debundle_fixture_output(
-        Command::new(&bin)
+    CommandResult::from(source_only_validate_output(
+        modules_root,
+        source_file,
+        extra_args,
+    ))
+}
+
+/// Run the source-only preflight and parse its JSON report after a successful exit.
+pub fn run_source_only_validate_json(modules_root: &Path, source_file: &Path) -> Value {
+    let output = source_only_validate_output(modules_root, source_file, &["--format", "json"]);
+    process::assert_success(&output);
+    parse_stdout_json(&output)
+}
+
+fn source_only_validate_output(
+    modules_root: &Path,
+    source_file: &Path,
+    extra_args: &[&str],
+) -> std::process::Output {
+    debundle_fixture_output(
+        Command::new(debundler_path())
             .args(["spec", "validate", "--modules"])
             .arg(modules_root)
             .arg("--source-file")
@@ -1250,8 +1268,7 @@ pub fn run_source_only_validate(
             .args(extra_args),
         source_file,
     )
-    .unwrap_or_else(|e| panic!("{e}"));
-    CommandResult::from(output)
+    .unwrap_or_else(|e| panic!("{e}"))
 }
 
 /// `debundle spec match-selector --source-file <source_file> --match <selector>
