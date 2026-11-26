@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import signal
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,7 +79,7 @@ async def test_notification_stream_closes_and_cancels_upstream(
         elif ending == "eof":
             peer.service.inbox_script.put_nowait(None)
         elif ending == "sigterm":
-            app.process.send_signal(signal.SIGTERM)
+            app.process.terminate()
         elif ending == "logout":
             assert (await http.post("/auth/logout")).status_code == 303
         if ending != "disconnect":

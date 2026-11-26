@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import signal
 import socket
 import ssl
 import time
@@ -28,7 +27,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.oidc import OIDCSecretInputs, OIDCSettings
 from agentplane.app.settings import EnvironmentServicePeer
@@ -41,6 +39,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
 from agentplane.notification_service.api.notifications import notifications_pb2_grpc
+from agentplane.testing.go_process import GoProcess, HttpReadiness, go_process
 from agentplane.testing.tls import CertificateAuthority, make_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.asgi import serve_app_in_loop
@@ -100,8 +99,7 @@ class ReplayGate:
 @dataclass
 class AppProcess:
     url: str
-    process: asyncio.subprocess.Process
-    stderr: Path
+    process: GoProcess
     cookies: httpx.Cookies = field(default_factory=httpx.Cookies)
     gate: ReplayGate | None = None
     public_url: str | None = None
@@ -120,10 +118,6 @@ class AppProcess:
     def disconnect_replay(self) -> None:
         assert self.gate is not None
         self.gate.send(ReplayAction.DISCONNECT)
-
-    async def kill(self) -> None:
-        self.process.kill()
-        assert await self.process.wait() == -signal.SIGKILL
 
     async def authenticate(self) -> None:
         assert self.public_url is not None
@@ -270,7 +264,6 @@ async def spawn_go_app(
     database_url = render_postgresql_url(
         str(configured.pop("database_url")), "postgresql", query={"sslmode": "disable"}
     )
-    stderr = undeclared_outputs_dir() / f"go-app-{uuid4().hex}.log"
     with (
         nullcontext(listener) if listener is not None else listen_tcp() as endpoint,
         TemporaryDirectory(prefix="go-app-") as directory,
@@ -283,13 +276,7 @@ async def spawn_go_app(
         config_file = Path(directory) / "config.yaml"
         config_file.write_text(yaml.safe_dump(configured, sort_keys=False))
         process_env = {key: value for key, value in os.environ.items() if not key.startswith("AGENTPLANE_")}
-        process_env.update(
-            {
-                "AGENTPLANE_CONFIG_FILE": str(config_file),
-                "AGENTPLANE_DATABASE_URL": database_url,
-                "OTEL_SDK_DISABLED": "true",
-            }
-        )
+        process_env.update({"AGENTPLANE_CONFIG_FILE": str(config_file), "AGENTPLANE_DATABASE_URL": database_url})
         if oidc_secrets is not None:
             process_env.update(
                 {
@@ -299,37 +286,15 @@ async def spawn_go_app(
                 }
             )
         process_env.update(env or {})
-        with stderr.open("wb") as log:
-            process = await asyncio.create_subprocess_exec(
-                (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/cmd/agentplane-app_/agentplane-app"),
-                pass_fds=(listener_fd,),
-                env=process_env,
-                stdout=log,
-                stderr=log,
-            )
-        try:
-            async with httpx.AsyncClient(timeout=1) as client:
-                async for attempt in AsyncRetrying(
-                    stop=stop_after_delay(20),
-                    wait=wait_fixed(0.05),
-                    retry=retry_if_exception_type(httpx.HTTPError),
-                    reraise=True,
-                ):
-                    with attempt:
-                        assert process.returncode is None, stderr.read_text()
-                        (await client.get(url + "/readyz")).raise_for_status()
-            yield AppProcess(url, process, stderr)
-        finally:
-            if process.returncode is None:
-                process.terminate()
-                try:
-                    async with asyncio.timeout(10):
-                        await process.wait()
-                except TimeoutError:
-                    process.send_signal(signal.SIGQUIT)
-                    await process.wait()
-                    raise AssertionError(stderr.read_text()) from None
-            assert process.returncode in (0, -signal.SIGKILL), stderr.read_text()
+        async with go_process(
+            Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/cmd/agentplane-app_/agentplane-app",
+            env=process_env,
+            stderr=undeclared_outputs_dir() / f"go-app-{uuid4().hex}.log",
+            readiness=HttpReadiness(url=url + "/readyz"),
+            grace_s=10,
+            pass_fds=(listener_fd,),
+        ) as process:
+            yield AppProcess(url, process)
 
 
 class ReadyServer(uvicorn.Server):

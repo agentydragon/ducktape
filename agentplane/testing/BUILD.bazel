@@ -80,6 +80,7 @@ py_library(
     deps = [
         "@pypi//grpcio",
         "@pypi//grpcio_health_checking",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//tenacity",
     ],
