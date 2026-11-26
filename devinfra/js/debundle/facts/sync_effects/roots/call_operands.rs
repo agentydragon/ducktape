@@ -2,12 +2,12 @@
 //! arguments of a direct `Call` in order and hands them over with their
 //! selections; the transfer never re-evaluates either.
 
-use super::super::execution_index::{Call, CallKind};
 use super::super::interpreter::{EvaluatedCallOperands, Executor, Outcome, SuppliedCallSelections};
 use super::super::runtime_inference::{CallOperands, CallTransfer};
 use analysis_vocabulary::inputs::{ForeignCallSummary, ForeignInvocation, ForeignReturn};
 use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
 use analysis_vocabulary::value::Kind;
+use execution_index::{Call, CallKind};
 use kernel::frame::EvaluatedCallee;
 use std::collections::BTreeSet;
 use std::sync::Arc;

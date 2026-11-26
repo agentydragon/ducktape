@@ -4,8 +4,7 @@
 //! decides closure addresses and literal writability, and the adapter keeps
 //! the ledger's heap cells out of any caller's effects.
 
-use super::super::alternatives::outcome::join_allocation_judgments;
-use super::super::execution_index::ExecutionIndex;
+use crate::ExecutionIndex;
 use analysis_domain::builtins::{self, Invocation};
 use analysis_domain::integrity::Integrity;
 use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
@@ -32,7 +31,9 @@ use value_model::{
     OwnPropertyShape, ProviderInput, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
 };
 use world::World;
-use world::allocation_transfer::{self, AllocationJudgment, AllocationValue};
+use world::allocation_transfer::{
+    self, AllocationJudgment, AllocationValue, join_allocation_judgments,
+};
 use world::effect_coverage::EffectCoverageFragment;
 use world::join::Joined;
 

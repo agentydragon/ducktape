@@ -45,7 +45,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         callee: &ValueExpr,
         site: CallSite,
     ) -> Option<NativeCallIdentity> {
-        let (row, callee) = super::super::execution_index::native_call_identity_key(kind, callee)?;
+        let (row, callee) = execution_index::native_call_identity_key(kind, callee)?;
         if !names_intrinsic(
             &callee,
             row.family()?,

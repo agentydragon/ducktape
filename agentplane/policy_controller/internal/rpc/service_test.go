@@ -412,6 +412,16 @@ func TestRevokeRejectsStaleOrOwnedBindingsAndResourceVersionConflicts(t *testing
 			return item
 		}, bindingUID: "uid-operator-grant"},
 		{name: "another Sandbox incarnation", binding: func() *policyapi.PolicyBinding { return operatorBinding("sandbox-old") }, bindingUID: "uid-operator-grant"},
+		{name: "Identity owned, no Sandbox owner", binding: func() *policyapi.PolicyBinding {
+			item := operatorBinding("sandbox-uid")
+			item.OwnerReferences = []metav1.OwnerReference{{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity", Name: "agent-worker", UID: "uid-agent-worker"}}
+			return item
+		}, bindingUID: "uid-operator-grant"},
+		{name: "no owner", binding: func() *policyapi.PolicyBinding {
+			item := operatorBinding("sandbox-uid")
+			item.OwnerReferences = nil
+			return item
+		}, bindingUID: "uid-operator-grant"},
 		{name: "another Identity", binding: func() *policyapi.PolicyBinding {
 			item := operatorBinding("sandbox-uid")
 			item.Spec.Subject.Identity.Name = "other"

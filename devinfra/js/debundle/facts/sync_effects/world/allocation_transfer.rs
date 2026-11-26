@@ -42,6 +42,20 @@ impl AllocationJudgment {
     }
 }
 
+/// Allocation-only when every leaf is, under all of their conditions.
+pub fn join_allocation_judgments<'a>(
+    judgments: impl IntoIterator<Item = &'a AllocationJudgment>,
+) -> AllocationJudgment {
+    let mut dependencies = ProofDependencies::default();
+    for judgment in judgments {
+        let AllocationJudgment::CoveredAllocationOnly(covered) = judgment else {
+            return AllocationJudgment::Opaque;
+        };
+        dependencies.extend(covered);
+    }
+    AllocationJudgment::CoveredAllocationOnly(Box::new(dependencies))
+}
+
 pub struct AllocationValue {
     pub values: Values,
     pub judgment: AllocationJudgment,

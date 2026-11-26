@@ -14,7 +14,7 @@ use world::allocation_transfer::AllocationJudgment;
 use world::effect_coverage::EffectCoverageFragment;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum NativeConstructorKind {
+pub enum NativeConstructorKind {
     Set,
     TextEncoder,
 }
@@ -23,13 +23,13 @@ pub(super) enum NativeConstructorKind {
 /// The array identity is retained so the lowered operand must be the same
 /// direct source literal collected before syntax lowering.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum NativeConstructorForm {
+pub enum NativeConstructorForm {
     Empty,
     SetPrimitiveArray { array: u32 },
 }
 
 impl NativeConstructorKind {
-    pub(super) fn global_name(self) -> &'static str {
+    pub fn global_name(self) -> &'static str {
         match self {
             Self::Set => "Set",
             Self::TextEncoder => "TextEncoder",
@@ -59,12 +59,12 @@ enum Leaf {
 /// Collected from the original owner before ValueExpr can erase syntax.
 /// This says nothing about executing a function's lazy body.
 #[derive(Clone)]
-pub(super) struct OriginalInitializer {
+pub struct OriginalInitializer {
     identity: InitializationSourceIdentity,
     leaf: Leaf,
 }
 
-pub(super) struct EvaluatedInitializer {
+pub struct EvaluatedInitializer {
     owner: SourceUnitOrdinal,
     initializer_span: Span,
     dependencies: ProofDependencies,
@@ -73,7 +73,7 @@ pub(super) struct EvaluatedInitializer {
 /// A candidate exists only while one dedicated root initializer is evaluated.
 /// Its matching transfer is recorded by that root's native New dispatch.
 #[derive(Clone, Copy)]
-pub(super) struct NativeConstructorCandidate {
+pub struct NativeConstructorCandidate {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
     kind: NativeConstructorKind,
@@ -84,7 +84,7 @@ pub(super) struct NativeConstructorCandidate {
 /// constructor row for its collected source form. This is not a value identity
 /// or a heap-shape fact.
 #[derive(Clone)]
-pub(super) struct NativeConstructorTransfer {
+pub struct NativeConstructorTransfer {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
     kind: NativeConstructorKind,
@@ -93,10 +93,7 @@ pub(super) struct NativeConstructorTransfer {
 }
 
 impl NativeConstructorTransfer {
-    pub(super) fn applied(
-        candidate: NativeConstructorCandidate,
-        dependencies: ProofDependencies,
-    ) -> Self {
+    pub fn applied(candidate: NativeConstructorCandidate, dependencies: ProofDependencies) -> Self {
         Self {
             owner: candidate.owner,
             call_site: candidate.call_site,
@@ -115,7 +112,7 @@ impl NativeConstructorTransfer {
 }
 
 impl NativeConstructorCandidate {
-    pub(super) fn kind(self) -> NativeConstructorKind {
+    pub fn kind(self) -> NativeConstructorKind {
         self.kind
     }
 
@@ -129,7 +126,7 @@ impl NativeConstructorCandidate {
         ) && self.call_site.allocation_id() == allocation
     }
 
-    pub(super) fn matches_dispatch(
+    pub fn matches_dispatch(
         self,
         call_site: CallSite,
         kind: NativeConstructorKind,
@@ -141,7 +138,7 @@ impl NativeConstructorCandidate {
 
 /// Seal only the exact normally completed root initializer. Child operations
 /// and invocation memos carry fragments, never this evidence.
-pub(super) fn completed_root_initialization(
+pub fn completed_root_initialization(
     source: &InitializationSourceIdentity,
     owner: SourceUnitOrdinal,
     binding: &Id,
@@ -162,7 +159,7 @@ pub(super) fn completed_root_initialization(
 /// ordered execution completed normally with every operation covered.
 /// The statement initializes no binding; its binding reads and rebinds
 /// stay the owner's syntactic cells.
-pub(super) fn completed_root_statement(
+pub fn completed_root_statement(
     owner: SourceUnitOrdinal,
     effects: &EffectCoverageFragment,
 ) -> Option<CompletedInitialization> {
@@ -265,7 +262,7 @@ fn ordinary_parameter(parameter: &Pat) -> bool {
 /// records which owner, binding, and original initializer span the syntax
 /// belongs to; it says nothing about the initializer's value or effects.
 #[derive(Clone)]
-pub(super) struct InitializationSourceIdentity {
+pub struct InitializationSourceIdentity {
     owner: SourceUnitOrdinal,
     binding: Id,
     initializer_span: Span,
@@ -283,7 +280,7 @@ impl InitializationSourceIdentity {
     /// Recover the exact original initializer for a canonical source unit,
     /// including a split view's parent/index provenance. This admits source
     /// identity independently of the leaf forms understood below.
-    pub(super) fn collect<'source>(
+    pub fn collect<'source>(
         item: &TopLevelItemView<'source>,
         owner: SourceUnitOrdinal,
     ) -> Result<(Self, &'source Expr), OwnerInitializationCoverageRefusalReason> {
@@ -303,24 +300,19 @@ impl InitializationSourceIdentity {
         ))
     }
 
-    pub(super) fn owner(&self) -> SourceUnitOrdinal {
+    pub fn owner(&self) -> SourceUnitOrdinal {
         self.owner
     }
 
-    pub(super) fn binding(&self) -> &Id {
+    pub fn binding(&self) -> &Id {
         &self.binding
     }
 
-    pub(super) fn initializer_span(&self) -> Span {
+    pub fn initializer_span(&self) -> Span {
         self.initializer_span
     }
 
-    pub(super) fn matches(
-        &self,
-        owner: SourceUnitOrdinal,
-        binding: &Id,
-        initializer_span: Span,
-    ) -> bool {
+    pub fn matches(&self, owner: SourceUnitOrdinal, binding: &Id, initializer_span: Span) -> bool {
         self.owner == owner && self.binding == *binding && self.initializer_span == initializer_span
     }
 }
@@ -486,7 +478,7 @@ fn set_primitive_array_constructor(
 }
 
 impl OriginalInitializer {
-    pub(super) fn collect<'source>(
+    pub fn collect<'source>(
         item: &TopLevelItemView<'source>,
         owner: SourceUnitOrdinal,
         source: Result<
@@ -576,20 +568,20 @@ impl OriginalInitializer {
         Ok(Self { identity, leaf })
     }
 
-    pub(super) fn matches_binding(&self, owner: SourceUnitOrdinal, binding: &Id) -> bool {
+    pub fn matches_binding(&self, owner: SourceUnitOrdinal, binding: &Id) -> bool {
         self.identity.owner() == owner && self.identity.binding() == binding
     }
 
     /// The expression and coverage come from the same canonical lowering.
     /// Only this retained source expression may enable covered child transfers.
-    pub(super) fn composed_expression(&self) -> Option<&ValueExpr> {
+    pub fn composed_expression(&self) -> Option<&ValueExpr> {
         match &self.leaf {
             Leaf::Composed(expression) => Some(expression),
             _ => None,
         }
     }
 
-    pub(super) fn operation_source(
+    pub fn operation_source(
         &self,
         expression: &ValueExpr,
     ) -> Option<&InitializationSourceIdentity> {
@@ -609,7 +601,7 @@ impl OriginalInitializer {
         .then_some(&self.identity)
     }
 
-    pub(super) fn native_constructor_candidate(
+    pub fn native_constructor_candidate(
         &self,
         expression: &ValueExpr,
     ) -> Option<NativeConstructorCandidate> {
@@ -650,7 +642,7 @@ impl OriginalInitializer {
     /// expected value. Every source cell read must be initialized before that
     /// transfer; imported and global reads cannot supply this proof.
     /// Generic lowering or an empty effect ledger is no proof.
-    pub(super) fn evaluated(
+    pub fn evaluated(
         &self,
         expression: &ValueExpr,
         values: &Values,
@@ -724,7 +716,7 @@ impl OriginalInitializer {
         })
     }
 
-    pub(super) fn complete(
+    pub fn complete(
         &self,
         evaluated: EvaluatedInitializer,
         owner: SourceUnitOrdinal,

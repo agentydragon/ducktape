@@ -17,20 +17,6 @@ pub mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
-use super::execution_index::intrinsic_roots::native_own_data_read_slots;
-use super::execution_index::local_constructors::LocalConstructor;
-use super::execution_index::patterns::pattern_source;
-use super::execution_index::{
-    Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
-    MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
-};
-use super::native::operation::{
-    self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
-};
-use super::noninvoking_initialization::{
-    NativeConstructorCandidate, NativeConstructorForm, NativeConstructorKind,
-    NativeConstructorTransfer, OriginalInitializer,
-};
 use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
     CallbackResult,
@@ -77,6 +63,20 @@ use analysis_vocabulary::report_schema::{
     NativePrototypePropertyCheck, RecordFactoryRejectionReason,
 };
 use analysis_vocabulary::value::{Kind, Value};
+use execution_index::intrinsic_roots::native_own_data_read_slots;
+use execution_index::local_constructors::LocalConstructor;
+use execution_index::native_operation::{
+    self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
+};
+use execution_index::noninvoking_initialization::{
+    NativeConstructorCandidate, NativeConstructorForm, NativeConstructorKind,
+    NativeConstructorTransfer, OriginalInitializer,
+};
+use execution_index::patterns::pattern_source;
+use execution_index::{
+    Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
+    MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
+};
 use imbl::OrdMap;
 use kernel::alternatives::{Family, Leaf, join_frames};
 use kernel::closure::{CapturePolicy, lexical_captures};

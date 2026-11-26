@@ -567,10 +567,7 @@ impl ExecutionIndex {
     }
 
     /// Native slot proof for one indexed own-data read.
-    pub(in super::super) fn native_own_data_read_premise(
-        &self,
-        span: Span,
-    ) -> Option<NativePremise> {
+    pub fn native_own_data_read_premise(&self, span: Span) -> Option<NativePremise> {
         if !self.dynamic_scope_owners.is_empty() {
             return None;
         }
