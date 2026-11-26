@@ -3,17 +3,10 @@
 use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, native_call_identity_key, native_own_data_read_slots,
 };
-use super::super::value_model::{
-    AbstractValue, CallSite, CaptureInterner, MemberKey, ValueExpr, Values,
-};
-use super::super::world::prefix_values::{PrefixValues, TopBindings};
-use super::super::world::{World, WorldScope};
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
-use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
 use analysis::facts::callable_inference::CallableInferenceInputs;
-use analysis::facts::item_views::TopLevelItemView;
 use analysis::facts::semantic_inference::SemanticFacts;
 use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
 use analysis::facts::statement_facts::{
@@ -27,6 +20,8 @@ use analysis::facts::{
     TopLevelNativeIterableOperandSite,
 };
 use analysis::purity::ChunkCodeGraph;
+use analysis_domain::integrity::IntrinsicSlot;
+use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::inputs::{
     AnalysisInputs, NativeInputKind, NativeIntrinsic, ProofDependencies,
 };
@@ -40,6 +35,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::*;
+use value_model::WorldScope;
+use value_model::{AbstractValue, CallSite, CaptureInterner, MemberKey, ValueExpr, Values};
+use world::World;
+use world::prefix_values::{PrefixValues, TopBindings};
 
 pub(super) struct TopLevelEffectView<'source> {
     pub(super) reads: Vec<&'source Id>,

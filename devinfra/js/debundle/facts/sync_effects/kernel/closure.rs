@@ -2,24 +2,22 @@
 //! callable's address in the creating world plus the lexical captures it
 //! retains; the adapter supplies only the capture and admission policy.
 
-use super::super::allocation_transfer::{AllocationJudgment, AllocationValue};
-use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::execution_index::ExecutionIndex;
-use super::super::local_operations::DeferredCallableCreation;
-use super::super::value_model::{
-    AbstractValue, Context, HeapAddress, LexicalCaptures, LexicalCellId, Values,
-};
 use super::context::KernelContext;
-use super::frame::{CallableSelection, LocalFrame, LocalValueResult, RemainderDisposition};
+use super::frame::{LocalFrame, LocalValueResult, RemainderDisposition};
 use analysis_vocabulary::value::Value;
 use imbl::OrdMap;
 use rustc_hash::FxHashSet;
 use std::collections::BTreeSet;
 use swc_ecma_ast::Id;
+use value_model::CallableSelection;
+use value_model::local_operations::DeferredCallableCreation;
+use value_model::{AbstractValue, Context, HeapAddress, LexicalCaptures, LexicalCellId, Values};
+use world::allocation_transfer::{AllocationJudgment, AllocationValue};
+use world::effect_coverage::EffectCoverageFragment;
 
 /// How a closure created now retains a free binding that has no active cell.
 #[derive(Clone, Copy)]
-pub(crate) enum CapturePolicy<'a> {
+pub enum CapturePolicy<'a> {
     /// The application prefix. Module bindings are read live at call time,
     /// so creation captures nothing for them. A binding some closure writes
     /// is unknown (its stores reach a cell or are published); a value past
@@ -38,49 +36,33 @@ pub(crate) enum CapturePolicy<'a> {
 const CAPTURE_BUDGET: usize = 64;
 
 /// What the adapter admits about one closure creation.
-pub(crate) struct ClosureAdmission {
-    pub(crate) effects: EffectCoverageFragment,
-    pub(crate) judgment: AllocationJudgment,
+pub struct ClosureAdmission {
+    pub effects: EffectCoverageFragment,
+    pub judgment: AllocationJudgment,
 }
 
-/// The lexical captures of `callable` created in `environment`: a captured
+/// What `lexical_captures` reads of one callable's census.
+pub struct CaptureCensus<'a> {
+    pub home_object: Option<u32>,
+    /// Bindings the callable or a closure nested in it reads, rebinds or
+    /// writes without binding them itself, each with whether the callable's
+    /// own body reads or rebinds it. May repeat.
+    pub free: Vec<(&'a Id, bool)>,
+}
+
+/// The lexical captures of a callable created in `environment`: a captured
 /// binding with an active cell is shared by identity, any other is a snapshot.
-pub(crate) fn lexical_captures(
-    index: &ExecutionIndex,
+pub fn lexical_captures(
+    census: CaptureCensus<'_>,
     active_cells: &OrdMap<Id, LexicalCellId>,
     environment: &Context,
-    callable: u32,
     policy: CapturePolicy<'_>,
 ) -> LexicalCaptures {
-    let Some(body) = index.callables.get(&callable) else {
-        return LexicalCaptures::default();
-    };
-    // This canonical census also contains nested closures' references. An
-    // intermediate closure must retain cells needed by its children.
-    let reads = index
-        .prototype_callable_reads
-        .get(&callable)
-        .unwrap_or(&body.reads);
     let mut captured = LexicalCaptures {
-        home_object: index.callable_home_object(callable),
+        home_object: census.home_object,
         ..Default::default()
     };
-    // A nested closure's write needs the cell as much as a read does.
-    let writes = index.nested_callable_writes.get(&callable);
-    for id in reads
-        .iter()
-        .chain(body.rebinds.iter())
-        .chain(writes.into_iter().flatten())
-    {
-        if body.declared_locals.contains(id)
-            || body.local_functions.contains_key(id)
-            || body
-                .params
-                .iter()
-                .any(|parameter| parameter.binding.as_ref() == Some(id))
-        {
-            continue;
-        }
+    for (id, own) in census.free {
         if let CapturePolicy::Application {
             module_bindings, ..
         } = policy
@@ -101,8 +83,7 @@ pub(crate) fn lexical_captures(
                 Values::from([AbstractValue::Value(Value::Top)])
             }
             CapturePolicy::Application { .. }
-                if captured.snapshots.len() + captured.cells.len() >= CAPTURE_BUDGET
-                    || (!body.reads.contains(id) && !body.rebinds.contains(id)) =>
+                if captured.snapshots.len() + captured.cells.len() >= CAPTURE_BUDGET || !own =>
             {
                 // Past the budget, or for a descendant-only snapshot a
                 // source-summary activation supplied (not a live binding
@@ -122,25 +103,23 @@ pub(crate) fn lexical_captures(
 /// Create the closure for one canonical callable creation in this frame. Its
 /// body does not run; the address's scope keeps it apart from closures other
 /// worlds create at the same source site.
-pub(super) fn create(
+pub(crate) fn create(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     creation: DeferredCallableCreation,
 ) -> Result<LocalValueResult, RemainderDisposition> {
     let callable = creation.callable();
     let index = context.index();
-    if index.callable_creation(callable) != Some(creation)
-        || !index.callables.contains_key(&callable)
-    {
+    let census = match index.capture_census(callable) {
+        Some(census) if index.callable_creation(callable) == Some(creation) => census,
         // Lowering names only canonical creations; anything else has no
         // callable census to capture from.
-        return Err(RemainderDisposition::NeedsSummary);
-    }
+        _ => return Err(RemainderDisposition::NeedsSummary),
+    };
     let captures = lexical_captures(
-        index,
+        census,
         &context.world().active_cells,
         &frame.environment,
-        callable,
         context.capture_policy(),
     );
     let ClosureAdmission { effects, judgment } =

@@ -3,8 +3,8 @@ use artifact::runtime_resources::{RuntimeResourceKind, RuntimeResourceUse};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
-use analysis::facts::abstract_domain::primitive::{NoBindings, evaluate};
 use analysis::facts::module_has_top_level_await;
+use analysis_domain::primitive::{NoBindings, evaluate};
 use analysis_model::PrimKinds;
 use analysis_model::StableExportValue;
 use swc_common::{Span, Spanned, SyntaxContext};

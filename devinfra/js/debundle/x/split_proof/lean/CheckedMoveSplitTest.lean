@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.CheckedMoveSplit
+import EsmSplit.CoreJS.LiteralReorderLink
 
 open CoreJS CoreJS.CheckedMoveSplit
 
@@ -49,6 +50,24 @@ def main : IO Unit := do
     let .ok () state := runProgram World.probe 16 program | throw (IO.userError "expected a normal run")
     let .ok (.num value) _ := readCell resultCell state | throw (IO.userError "expected a numeric result")
     unless value == 1 do throw (IO.userError "the result changed")
+  -- The exact same authored request is also accepted by the all-outcomes constructor.
+  let exact ← IO.ofExcept (CoreJS.LiteralReorderLink.construct source spec)
+  unless exact.program.evalOrder == [right, left, entry] do
+    throw (IO.userError "the exact constructor changed the authored module order")
+  let some exactRight := exact.program.find right | throw (IO.userError "missing exact right module")
+  let some exactLeft := exact.program.find left | throw (IO.userError "missing exact left module")
+  let some exactEntry := exact.program.find entry | throw (IO.userError "missing exact entry module")
+  unless exactRight.body.map Prod.fst == [1] && exactLeft.body.map Prod.fst == [0] &&
+      exactEntry.body.map Prod.fst == [2] do
+    throw (IO.userError "the exact constructor changed source unit ownership")
+  let renamed := CoreJS.LiteralReorderLink.source "firstValue" "secondValue" "answer"
+    (.str "first") (.bool true)
+  let widened ← IO.ofExcept (CoreJS.LiteralReorderLink.construct renamed spec)
+  unless widened.program.evalOrder == [right, left, entry] do
+    throw (IO.userError "source-defined names changed the requested order")
+  match CoreJS.LiteralReorderLink.construct (source (.var "a")) spec with
+  | .error _ => pure ()
+  | .ok _ => throw (IO.userError "the exact constructor moved an interfering read")
   match checkedMoveSplit source spec .allOutcomes with
   | .error "commuting moves prove only normal-completion" => pure ()
   | _ => throw (IO.userError "the unsupported guarantee was not refused")

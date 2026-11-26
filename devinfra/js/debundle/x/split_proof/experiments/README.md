@@ -187,32 +187,19 @@ To run the same builder outside Bazel, copy `package.json.in` to `package.json` 
 
 Compare their footprints with `bb run "$p/lowering:compare_footprints" -- "$out/"*.json`.
 
-## 7. Real splits: halves, cuts, blocks, random placements
+## 7. Library constructor and certificate test
 
-`bbr test "$p/integration/library_splits:library_certificate_test"` runs the structural certificate on the pinned Acorn and semver bundles. It cuts each bundle in half, tries advancing its second unit, and moves its first noninitial function declaration if present. The checker receives the original JavaScript and a placement. Each certified split must also pass `--check-output` and match the original library's Node API smoke.
-
-The test writes `certificates.jsonl` to the test outputs. A refused library placement is **unknown**: a refusal alone establishes no difference. The **disproved** control executes an uncertified preview of the refused placement under Node: advancing an initializer changes the exported value from `1` to `undefined`. The larger sweeps below use diagnostic mode.
-
-A bundle cannot be cut anywhere. This section runs the checker on 2,892 splits of six real bundles and runs each result in Node.
-Each bundle has an opt-in Bazel test, with the same strategies as the full sweep.
-Run one library variant or the whole corpus from the repository root:
+Run the retained positive constructor and certificate checks with:
 
 ```sh
-p=//devinfra/js/debundle/x/split_proof
-bbr test "$p/integration/library_splits:real_split_zod_test"
-bbr test "$p/integration/library_splits:real_split_zod_min_test" --test_arg=--sample
-bbr test "$p/integration/library_splits:real_split_sweep"
+bbr test "$p/integration/library_splits:library_certificate_test"
 ```
 
-The other labels are `real_split_acorn_test`, `real_split_acorn_min_test`,
-`real_split_lodash_test`, and `real_split_semver_test`. Each test consumes its bundle and AST from a cacheable build action, computes
-its footprints once, and publishes JSONL and a summary as Bazel test outputs. Use `--test_arg=--sample` for one halves split instead of all strategies.
+The test prepares Acorn and semver bundles, checks the supported placements through the real constructor, rechecks certified output, and compares the original Node API smoke results. Unsupported placements are recorded as refusals and leave the output absent.
 
-For every split, the diagnostic invocation `lowersplit --diagnostic … --force` checks it and writes an uncertified preview even when a check rejects it. Then [`smoke.mjs`](../integration/library_splits/smoke.mjs) calls the
-entry module's exported API and prints the result as JSON. The split behaves like the bundle when that line equals the bundle's own.
-The calls: lodash `chunk`, `get`, `set`, `merge`, `cloneDeep`, `groupBy`, `sortBy`, `uniqBy`; acorn `parse` of ES2022 programs, tokens and four syntax errors;
-semver `valid`, `compare`, `satisfies`, `inc`, `coerce`, `Range`; zod `parse` and the issues for bad input.
-One JSON line per split is in [split results](../integration/library_splits/results); [`results/summary.md`](../integration/library_splits/results/summary.md) has the per-bundle table.
+The scheduled diagnostic sweep and its preview runner have been retired. The counts below are historical results from 2,892 placements of six bundles; the result files remain archived under [split results](../integration/library_splits/results), but there are no runnable sweep targets.
+
+The historical smoke probes called lodash `chunk`, `get`, `set`, `merge`, `cloneDeep`, `groupBy`, `sortBy`, and `uniqBy`; Acorn parsing, tokens, and syntax errors; semver `valid`, `compare`, `satisfies`, `inc`, `coerce`, and `Range`; and zod parsing and validation errors. [`results/summary.md`](../integration/library_splits/results/summary.md) has the archived per-bundle table.
 
 | Strategy                                                                           | Splits    | Accepted  | Accepted, Node differs | Rejected, Node breaks | Rejected, Node fine | Failing checks (splits)                                  |
 | ---------------------------------------------------------------------------------- | --------- | --------- | ---------------------- | --------------------- | ------------------- | -------------------------------------------------------- |

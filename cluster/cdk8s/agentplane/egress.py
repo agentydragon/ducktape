@@ -57,8 +57,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import APIServer, Settings
-from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
-from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
+from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI, POLICY_CONTROLLER_URI, PolicyServicePeer
 from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
@@ -66,6 +65,7 @@ from cluster.cdk8s.agentplane import (
     environment_service,
     llm_ingress,
     notifications,
+    policy_controller,
     runner_gateway,
     workload_tls,
 )
@@ -119,6 +119,11 @@ HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
 CA_BUNDLE_KEY = "ca-certificates.crt"
 # The workload CA, which verifies the forward listener's client SVIDs and the proxy's own SVID.
 _SVID_CA_FILE = f"/etc/agentplane-egress/svid-ca/{cluster_ca.BUNDLE_KEY}"
+_SVID_DIR = "/etc/agentplane-egress/svid"
+# The proxy's own SVID: its forward listener's serving leaf and its client certificate to PolicyService.
+_SVID = workload_tls.MountedCertificate(
+    cert_file=f"{_SVID_DIR}/tls.crt", key_file=f"{_SVID_DIR}/tls.key", ca_file=_SVID_CA_FILE
+)
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
@@ -579,13 +584,10 @@ class Egress(Construct):
             # it may impersonate there is kubernetes_accounts.py's Role, not this.
             local_api_server=APIServer(host=KUBERNETES_HOST, port=443, token_file=Path(_API_SERVER_TOKEN_FILE)),
             tls_passthrough_targets=[service.authority for service in (self.admin, *tls_passthrough_services)],
-            forward=Listener(
-                listen_address=f"0.0.0.0:{self.proxy.pod_port}",
-                tls=TLS(
-                    cert_file=Path("/etc/agentplane-egress/svid/tls.crt"),
-                    key_file=Path("/etc/agentplane-egress/svid/tls.key"),
-                ),
-                auth=[SPIFFEAuth(ca_file=Path(_SVID_CA_FILE))],
+            forward=_SVID.spiffe_listener(self.proxy.pod_port),
+            policy_service=PolicyServicePeer(
+                target=policy_controller.tls_service(env.namespace).authority,
+                tls=_SVID.client_tls(POLICY_CONTROLLER_URI, client_uri=EGRESS_PROXY_URI),
             ),
             admin_listen_address=f"0.0.0.0:{self.admin.pod_port}",
             log_levels={},
@@ -796,7 +798,7 @@ class Egress(Construct):
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
         public_web_pki.mount(self, workload.container)
-        workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
+        workload.container.mount(_SVID_DIR, svid_volume, read_only=True)
         workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
         return workload
@@ -826,6 +828,7 @@ class Egress(Construct):
                 runner_gateway.sessions_service(namespace).egress(),
                 environment_service.environments_service(namespace).egress(),
                 notifications.service(namespace).egress(),
+                policy_controller.tls_service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
                 litellm.SERVICE.egress(),

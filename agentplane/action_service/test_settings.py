@@ -14,6 +14,19 @@ from agentplane.net.peertls.config import (
 )
 
 
+def _policy_service(*, target: str = "test-policy-controller:8443", client_uri: str = ACTIONS_URI) -> dict[str, object]:
+    return {
+        "target": target,
+        "tls": {
+            "ca_file": "/etc/actions/ca",
+            "server_uri": POLICY_CONTROLLER_URI,
+            "cert_file": "/etc/actions/cert",
+            "key_file": "/etc/actions/key",
+            "client_uri": client_uri,
+        },
+    }
+
+
 def _settings_source() -> dict[str, object]:
     return {
         "rpc": {
@@ -21,6 +34,7 @@ def _settings_source() -> dict[str, object]:
             "tls": {"cert_file": "/etc/actions/cert", "key_file": "/etc/actions/key"},
             "auth": [{"mode": "spiffe", "ca_file": "/etc/actions/ca"}],
         },
+        "policy_service": _policy_service(),
         "policy_namespace": "test-agentplane",
         "caller_service_account_namespaces": ["test-agentplane"],
     }
@@ -144,24 +158,14 @@ def test_environment_service_peer_is_optional_and_pins_controller_svid() -> None
             EnvironmentServicePeer.model_validate(invalid)
 
 
-def _policy_service(*, target: str = "test-policy-controller:8443", client_uri: str = ACTIONS_URI) -> dict[str, object]:
-    return {
-        "target": target,
-        "tls": {
-            "ca_file": "/etc/actions/ca",
-            "server_uri": POLICY_CONTROLLER_URI,
-            "cert_file": "/etc/actions/cert",
-            "key_file": "/etc/actions/key",
-            "client_uri": client_uri,
-        },
-    }
-
-
-def test_policy_service_is_optional_and_calls_as_actions() -> None:
+def test_policy_service_is_required() -> None:
     source = _settings_source()
-    assert "policy_service" not in Settings.model_validate(source).model_dump(mode="json")
-    settings = Settings.model_validate(source | {"policy_service": _policy_service()})
-    assert settings.model_dump(mode="json")["policy_service"]["target"] == "test-policy-controller:8443"
+    assert Settings.model_validate(source).model_dump(mode="json")["policy_service"]["target"] == (
+        "test-policy-controller:8443"
+    )
+    del source["policy_service"]
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
 
 
 @pytest.mark.parametrize(

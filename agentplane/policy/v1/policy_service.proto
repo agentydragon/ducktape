@@ -40,6 +40,12 @@ service PolicyService {
   rpc WatchIdentities(WatchIdentitiesRequest) returns (stream WatchIdentitiesResponse) {
     option (google.api.http) = {get: "/v1/identities:watch"};
   }
+  // One Identity, read from the API server rather than a watch: a reader whose WatchIdentities view
+  // has not yet seen a just-created Identity asks here before refusing it. NotFound when absent.
+  // Reader services only.
+  rpc GetIdentity(GetIdentityRequest) returns (GetIdentityResponse) {
+    option (google.api.http) = {get: "/v1/identities/{name}"};
+  }
   // Deletes one Identity incarnation, and with it, by garbage collection, everything it owns. Refused
   // for an Identity Flux manages, which Flux would recreate; while a PolicyBinding the Identity does
   // not own names it, since such a binding would grant a later Identity of the same name; and while a
@@ -50,7 +56,11 @@ service PolicyService {
   }
   // Creates an Identity in the policy namespace. Nothing owns it: its creator deletes it, through
   // DeleteIdentity. A launch creates the Identity, grants it PolicySets, then creates the
-  // environment naming it, as three operations.
+  // environment naming it, as three operations. `ALREADY_EXISTS` if the name is taken.
+  //
+  // With an `idempotency_key`, an identical retry answers with the Identity incarnation the key
+  // created; the key reused for another request, a name taken by an Identity the key did not
+  // create, and the key's Identity once it is being deleted all fail `ALREADY_EXISTS`.
   rpc CreateIdentity(CreateIdentityRequest) returns (CreateIdentityResponse) {
     option (google.api.http) = {
       post: "/v1/identities"
@@ -59,6 +69,11 @@ service PolicyService {
   }
   // Binds PolicySets to one exact Identity incarnation. The binding is owned by the Identity, so
   // deleting the Identity deletes its grants and a later Identity of the same name inherits none.
+  //
+  // A grant is identified by `idempotency_key` within the Identity incarnation: an identical retry
+  // answers with the same binding, and the key reused for other PolicySets or `expires_at` fails
+  // `ALREADY_EXISTS`, as does the key's binding once it is being deleted. Without a key, every call
+  // creates another binding.
   rpc GrantIdentityPolicyBinding(GrantIdentityPolicyBindingRequest) returns (GrantIdentityPolicyBindingResponse) {
     option (google.api.http) = {
       post: "/v1/identities/{identity_name}/policy-bindings"
@@ -71,6 +86,9 @@ message CreateIdentityRequest {
   string name = 1;
   // Who this agent is, for the operator. Required.
   string description = 2;
+  // Optional, chosen by the caller: 1 to 200 characters. Identical retries return the Identity the
+  // first call created.
+  string idempotency_key = 3;
 }
 message CreateIdentityResponse { Identity identity = 1; }
 message GrantIdentityPolicyBindingRequest {
@@ -78,6 +96,9 @@ message GrantIdentityPolicyBindingRequest {
   string identity_uid = 2;
   repeated string policy_sets = 3;
   google.protobuf.Timestamp expires_at = 4;
+  // Optional, chosen by the caller, unique within the Identity incarnation: 1 to 200 characters.
+  // Identical retries return the binding the first call created.
+  string idempotency_key = 5;
 }
 message GrantIdentityPolicyBindingResponse { PolicyBinding binding = 1; }
 
@@ -142,6 +163,8 @@ message Identity {
   google.protobuf.Timestamp deletion_timestamp = 5;
 }
 message WatchIdentitiesRequest {}
+message GetIdentityRequest { string name = 1; }
+message GetIdentityResponse { Identity identity = 1; }
 message IdentityChunk { repeated Identity identities = 1; }
 message WatchIdentitiesResponse {
   oneof frame {

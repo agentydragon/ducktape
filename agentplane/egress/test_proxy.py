@@ -44,7 +44,7 @@ from agentplane.egress.resources import CREDENTIALS_PLURAL, placeholder_of
 from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
-from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.egress.testing.sidecar_process import sidecar_process
 from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import EGRESS_PROXY_URI
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -531,7 +531,7 @@ async def test_rules_grpc_sidecar_presents_its_svid_and_discards_caller_credenti
     caller_token = await egress.api.workload_token(
         ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B), ["ignored-caller-token"]
     )
-    async with SidecarProcess(
+    async with sidecar_process(
         proxy=Proxy(
             address=f"{egress.proxy_listener.host}:{egress.proxy_listener.port}",
             transport=TLSProxyTransport(ca_file=root, auth=SpiffeProxyAuth(cert_file=certificate, key_file=key)),
@@ -1321,7 +1321,7 @@ async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.M
     finished = asyncio.Event()
     async with (
         recording_grpc_upstream(keypair, finished=finished) as (port, requests),
-        SidecarProcess(
+        sidecar_process(
             proxy=Proxy(
                 address=f"localhost:{egress.proxy_listener.port}",
                 transport=TLSProxyTransport(

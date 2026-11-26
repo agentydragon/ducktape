@@ -106,7 +106,7 @@ impl InitializationCensus {
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => Some(&export.decl),
             _ => None,
         };
-        let variable = super::super::item_views::var_decl_of_item(item);
+        let variable = analysis_domain::item_views::var_decl_of_item(item);
         let single_variable = variable.and_then(|variable| {
             let [declarator] = variable.decls.as_slice() else {
                 return None;

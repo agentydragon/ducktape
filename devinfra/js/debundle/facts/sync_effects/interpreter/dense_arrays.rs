@@ -137,7 +137,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().dense_array(object, slots);
     }
 
-    pub(crate) fn literal_heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
+    pub(crate) fn literal_heap(&mut self) -> world::allocation_transfer::LiteralHeap<'_> {
         self.state.world_mut().literal_heap()
     }
 

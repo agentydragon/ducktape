@@ -1,5 +1,5 @@
 use super::*;
-use crate::facts::{close_const_aliases, top_level_initializers};
+use analysis_domain::item_views::{close_const_aliases, top_level_initializers};
 
 /// Close the author-asserted fluent roots (`seed`, the projected
 /// `fluent_exports` locals) over chunk-top `const X = <fluent chain>`

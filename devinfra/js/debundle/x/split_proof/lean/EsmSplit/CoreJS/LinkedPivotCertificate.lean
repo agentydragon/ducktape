@@ -38,17 +38,6 @@ theorem pivotFrameOk_move {W : World} {ready : State W} {pre crossed : List Prep
 #print axioms checkedPivot_move
 #print axioms pivotFrameOk_move
 
-def CheckedLink.forWorld {p : Program} (checked : CheckedLink p World.probe) (w : World) :
-    CheckedLink p w :=
-  ⟨checked.linked, linkState w checked.ready, link_from_probe checked w⟩
-
-def checkLink (p : Program) : Except String (CheckedLink p World.probe) :=
-  match h : link p (initialState World.probe p.regions) with
-  | .ok linked ready => .ok ⟨linked, ready, h⟩
-  | .unknown reason _ => .error reason
-  | .throw _ _ => .error "the module graph threw during linking"
-  | .fuel => .error "linking exhausted fuel"
-
 private theorem Access.linkState {w cells A} {s : State World.probe} (access : Access cells A s) :
     Access cells A (linkState w s) := by
   refine ⟨access.handed, access.supplied, ?_⟩

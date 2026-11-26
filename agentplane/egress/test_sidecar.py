@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.egress.sidecar_config import READINESS_PATH, Proxy, SpiffeProxyAuth, TLSProxyTransport
-from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.egress.testing.sidecar_process import sidecar_process
 from agentplane.net.peertls.config import EGRESS_PROXY_URI
 from agentplane.testing.tls import (
     CertificateAuthority,
@@ -78,8 +78,7 @@ async def get_readiness(listener: Listener, method: str = "GET") -> int:
 
 
 async def test_readiness_tracks_listener_startup_and_shutdown(proxy_config: Proxy) -> None:
-    relay = SidecarProcess(proxy=proxy_config)
-    async with relay:
+    async with sidecar_process(proxy=proxy_config) as relay:
         assert await get_readiness(relay.readiness_listener) == 200
         assert await get_readiness(relay.readiness_listener, "HEAD") == 200
     with pytest.raises(aiohttp.ClientError):
@@ -87,8 +86,7 @@ async def test_readiness_tracks_listener_startup_and_shutdown(proxy_config: Prox
 
 
 async def test_sigterm_shutdown_closes_an_active_tunnel(proxy_config: Proxy) -> None:
-    relay = SidecarProcess(proxy=proxy_config)
-    async with relay:
+    async with sidecar_process(proxy=proxy_config) as relay:
         reader, writer = await asyncio.open_connection(relay.proxy_listener.host, relay.proxy_listener.port)
         writer.write(
             b"CONNECT tunnel.test:443 HTTP/1.1\r\nHost: tunnel.test:443\r\nProxy-Connection: Keep-Alive\r\n\r\n"

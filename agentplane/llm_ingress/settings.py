@@ -27,26 +27,19 @@ class Settings(BaseModel):
     def sort_allowed_service_account_namespaces(self, value: frozenset[str]) -> list[str]:
         return sorted(value)
 
-    policy_namespace: str = Field(
-        min_length=1,
-        description=(
-            "Namespace holding the Identities a Sandbox SVID may name. "
-            "Every attribution output must then carry the `identity` claim."
-        ),
-    )
-    # CLEANUP(added 2026-11-26): require policy_service and drop policy_namespace once the staging manifests set it
-    #   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-    policy_service: PolicyServicePeer | None = Field(
+    # CLEANUP(added 2026-11-26): Remove once the manifests stop setting policy_namespace for llm_ingress (manifest PR after this one).
+    policy_namespace: str | None = Field(
         default=None,
+        min_length=1,
         exclude_if=lambda value: value is None,
-        description="PolicyService supplying Identities through WatchIdentities instead of reads in policy_namespace.",
+        description="Unused; Identities come from policy_service.",
     )
+    policy_service: PolicyServicePeer = Field(description="PolicyService supplying Identities through WatchIdentities.")
 
     @field_validator("policy_service")
     @classmethod
-    def policy_service_caller_is_llm_ingress(cls, value: PolicyServicePeer | None) -> PolicyServicePeer | None:
-        if value is not None:
-            value.tls.validate_caller(None, LLM_INGRESS_URI)
+    def policy_service_caller_is_llm_ingress(cls, value: PolicyServicePeer) -> PolicyServicePeer:
+        value.tls.validate_caller(None, LLM_INGRESS_URI)
         return value
 
     model_config_service_callers: list[ServiceSPIFFEID] = Field(
@@ -96,5 +89,5 @@ class Settings(BaseModel):
         if self.central_sampler_identity_callers and not self.central_sampler_services:
             raise ValueError("central_sampler_identity_callers requires central_sampler_services")
         if not self.attribution.names_identity():
-            raise ValueError("policy_namespace requires every attribution output to carry the identity claim")
+            raise ValueError("every attribution output to carry the identity claim")
         return self

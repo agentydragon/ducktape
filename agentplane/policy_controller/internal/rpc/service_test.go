@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -694,6 +696,25 @@ func TestIdentityWatchFollowsIdentitiesForReaderServicesOnly(t *testing.T) {
 	}
 }
 
+func TestGetIdentityReadsOneIdentityForReaderServicesOnly(t *testing.T) {
+	api, kube := fixture(t)
+	created := testIdentity("just-created-identity", nil)
+	created.ResourceVersion = ""
+	if err := kube.Create(context.Background(), created); err != nil {
+		t.Fatal(err)
+	}
+	got, err := api["app"].GetIdentity(testContext(t), &policypb.GetIdentityRequest{Name: "just-created-identity"})
+	if err != nil || got.GetIdentity().GetIdentity().GetUid() != "uid-just-created-identity" {
+		t.Fatalf("get = %v %v", got, err)
+	}
+	if _, err := api["app"].GetIdentity(testContext(t), &policypb.GetIdentityRequest{Name: "absent-identity"}); status.Code(err) != codes.NotFound {
+		t.Fatalf("absent: %v, want NotFound", err)
+	}
+	if _, err := api["unlisted"].GetIdentity(testContext(t), &policypb.GetIdentityRequest{Name: "just-created-identity"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unlisted service: %v, want PermissionDenied", err)
+	}
+}
+
 func TestDeleteIdentityRemovesAnUnreferencedIdentityExactly(t *testing.T) {
 	identity := testIdentity("unreferenced-identity", nil)
 	api, kube := fixture(t, identity, identityBinding("own-launch-binding", "unreferenced-identity", identity))
@@ -988,5 +1009,124 @@ func TestPolicyWatchRevalidatesServiceCertificateBeforeEachFrame(t *testing.T) {
 	}
 	if len(stream.frames) != 1 {
 		t.Fatalf("sent %d frames", len(stream.frames))
+	}
+}
+
+// markDeleting has object's deletion requested while a finalizer holds it.
+func markDeleting(t *testing.T, kube client.Client, object client.Object) {
+	t.Helper()
+	if err := kube.Get(context.Background(), client.ObjectKeyFromObject(object), object); err != nil {
+		t.Fatal(err)
+	}
+	object.SetFinalizers([]string{"test.invalid/hold"})
+	if err := kube.Update(context.Background(), object); err != nil {
+		t.Fatal(err)
+	}
+	if err := kube.Delete(context.Background(), object); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateIdentityIdempotencyKeyAnswersRetriesWithTheFirstIncarnation(t *testing.T) {
+	api, kube := fixture(t, testIdentity("unkeyed", nil))
+	keyed := &policypb.CreateIdentityRequest{Name: "launch-a", Description: "Agent of launch a", IdempotencyKey: "test-key-a"}
+	first, err := api["app"].CreateIdentity(testContext(t), keyed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retried, err := api["app"].CreateIdentity(testContext(t), keyed)
+	if err != nil {
+		t.Fatalf("identical retry: %v", err)
+	}
+	if !proto.Equal(retried.GetIdentity(), first.GetIdentity()) {
+		t.Fatalf("retry = %v, want the first call's %v", retried.GetIdentity(), first.GetIdentity())
+	}
+	for name, request := range map[string]*policypb.CreateIdentityRequest{
+		"the key for another description": {Name: "launch-a", Description: "another agent", IdempotencyKey: "test-key-a"},
+		"another key for the name":        {Name: "launch-a", Description: "Agent of launch a", IdempotencyKey: "test-key-b"},
+		"a key for an unkeyed Identity":   {Name: "unkeyed", Description: "Fake agent unkeyed", IdempotencyKey: "test-key-a"},
+	} {
+		if _, err := api["app"].CreateIdentity(testContext(t), request); status.Code(err) != codes.AlreadyExists {
+			t.Errorf("%s: %v, want AlreadyExists", name, err)
+		}
+	}
+	markDeleting(t, kube, &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: "launch-a"}})
+	if _, err := api["app"].CreateIdentity(testContext(t), keyed); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("retry of a deleting Identity: %v, want AlreadyExists", err)
+	}
+}
+
+// Characters, not bytes; proto3 already refuses a string that is not UTF-8.
+func TestIdempotencyKeyMustBeAtMostTwoHundredCharacters(t *testing.T) {
+	api, _ := fixture(t, testIdentity("launch-a", nil), policySet("base"))
+	tooLong := strings.Repeat("é", 201)
+	if _, err := api["app"].CreateIdentity(testContext(t), &policypb.CreateIdentityRequest{Name: "launch-b", Description: "x", IdempotencyKey: tooLong}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("create with 201 characters: %v", err)
+	}
+	if _, err := api["app"].GrantIdentityPolicyBinding(testContext(t), &policypb.GrantIdentityPolicyBindingRequest{
+		IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"base"}, IdempotencyKey: tooLong,
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("grant with 201 characters: %v", err)
+	}
+	if _, err := api["app"].CreateIdentity(testContext(t), &policypb.CreateIdentityRequest{Name: "launch-b", Description: "x", IdempotencyKey: strings.Repeat("é", 200)}); err != nil {
+		t.Errorf("create with 200 characters: %v", err)
+	}
+}
+
+func identityGrants(t *testing.T, kube client.Client, identity *policyapi.Identity) []string {
+	t.Helper()
+	var bindings policyapi.PolicyBindingList
+	if err := kube.List(context.Background(), &bindings, client.InNamespace("policies")); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, binding := range bindings.Items {
+		if ownedBy(binding.OwnerReferences, identity.UID) {
+			names = append(names, binding.Name)
+		}
+	}
+	return names
+}
+
+func TestGrantIdentityPolicyBindingIdempotencyKeyAnswersRetriesWithTheFirstBinding(t *testing.T) {
+	identity := testIdentity("launch-a", nil)
+	api, kube := fixture(t, identity, policySet("base"), policySet("extra"))
+	keyed := &policypb.GrantIdentityPolicyBindingRequest{IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"base"}, IdempotencyKey: "test-grant"}
+	first, err := api["app"].GrantIdentityPolicyBinding(testContext(t), keyed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retried, err := api["app"].GrantIdentityPolicyBinding(testContext(t), keyed)
+	if err != nil {
+		t.Fatalf("identical retry: %v", err)
+	}
+	if !proto.Equal(retried.GetBinding(), first.GetBinding()) {
+		t.Fatalf("retry = %v, want the first call's %v", retried.GetBinding(), first.GetBinding())
+	}
+	if grants := identityGrants(t, kube, identity); !slices.Equal(grants, []string{first.GetBinding().GetIdentity().GetName()}) {
+		t.Fatalf("Identity grants = %v, want only the first call's", grants)
+	}
+	conflicting := proto.CloneOf(keyed)
+	conflicting.PolicySets = []string{"extra"}
+	if _, err := api["app"].GrantIdentityPolicyBinding(testContext(t), conflicting); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("the key for other PolicySets: %v, want AlreadyExists", err)
+	}
+	markDeleting(t, kube, &policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: first.GetBinding().GetIdentity().GetName()}})
+	if _, err := api["app"].GrantIdentityPolicyBinding(testContext(t), keyed); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("retry of a deleting binding: %v, want AlreadyExists", err)
+	}
+}
+
+func TestGrantIdentityPolicyBindingWithoutAKeyCreatesABindingPerCall(t *testing.T) {
+	identity := testIdentity("launch-a", nil)
+	api, kube := fixture(t, identity, policySet("base"))
+	request := &policypb.GrantIdentityPolicyBindingRequest{IdentityName: "launch-a", IdentityUid: "uid-launch-a", PolicySets: []string{"base"}}
+	for range 2 {
+		if _, err := api["app"].GrantIdentityPolicyBinding(testContext(t), request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if grants := identityGrants(t, kube, identity); len(grants) != 2 {
+		t.Fatalf("Identity grants = %v, want two", grants)
 	}
 }

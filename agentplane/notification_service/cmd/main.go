@@ -77,7 +77,7 @@ const (
 )
 
 // kubeDeps is what the service reads from Kubernetes: live workload credentials, Sandboxes, and
-// the API server its send grants are watched on. Without a policy_service block, Identities are read through Sandboxes.
+// the API server its send grants are watched on. Identities come from PolicyService.
 type kubeDeps struct {
 	Sandboxes client.Reader
 	Policies  *rest.Config
@@ -142,7 +142,7 @@ func newRoutes(webhookHandler http.Handler) http.Handler {
 
 // serve answers until ctx ends or a worker or a listener fails: the gRPC servicers and signed webhook.
 func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
-	identities, stopIdentities, err := startIdentities(ctx, c, deps)
+	identities, stopIdentities, err := startIdentities(ctx, c)
 	if err != nil {
 		return err
 	}

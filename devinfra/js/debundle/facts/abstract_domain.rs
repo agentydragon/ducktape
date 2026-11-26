@@ -1,9 +1,6 @@
-//! The abstract domain the synchronous interpreter evaluates under: values,
-//! primitive operator results, heap mutations, coercion steps, intrinsic-slot
-//! integrity flags and the builtin summary table that describes every native
-//! operation in those terms.
+//! The part of the abstract domain that depends on value flow and statement
+//! facts: chunk-top heap state. The value-free parts (builtin table,
+//! primitive results, intrinsic-slot integrity) live in the `analysis_domain`
+//! crate.
 
-pub mod builtins;
 pub mod heap;
-pub mod integrity;
-pub mod primitive;

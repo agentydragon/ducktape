@@ -702,3 +702,25 @@ func int64s(first, last int64) []int64 {
 	}
 	return values
 }
+
+func TestRepackGroupsOutputBlocksInBoundedTransactions(t *testing.T) {
+	writer := testStore(t)
+	for _, limit := range []int{1, 4} {
+		id := opened(t, writer)
+		original := make([]*eventlogpb.EventEntry, 48)
+		for i := range original {
+			original[i] = nativeEntry(uint64(i+1), strings.Repeat("repeated fixture input ", 32))
+		}
+		appendEntries(t, writer, id, original...)
+		before := logicalFrames(t, writer.db, id)
+		store := NewStore(writer.db, Options{EventPackers: repackTestPackers(t), RepackBlocksPerTxn: limit})
+		if _, err := store.RepackSession(t.Context(), id, true, nil); err != nil {
+			t.Fatal(err)
+		}
+		assertLogicalFrames(t, logicalFrames(t, writer.db, id), before)
+		got := testpostgres.Count(t, writer.db, `SELECT max(n) FROM (SELECT count(*) AS n FROM session_event_block WHERE session_id=$1 GROUP BY xmin) AS batches`, id)
+		if got != limit {
+			t.Fatalf("largest transaction installed %d blocks, want %d", got, limit)
+		}
+	}
+}

@@ -2,7 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::{BindingId, ModuleId, ModuleRole, StatementKind};
+use analysis::{BindingId, ModuleId, ModuleRole};
+
+use analysis_domain::item_views::StatementKind;
 use analysis_model::DepKind;
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use gate::AssignmentAnalysis;

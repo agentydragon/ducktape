@@ -103,7 +103,7 @@ the common case is fine. Choose general inference, sound specific recognition or
 an audited annotation using <skills/shared/workflow.md#choose-the-solution-depth>.
 A sound scoped solution can be the lasting choice. Theorem: <docs/design.md>
 § Soundness over completeness. Read <docs/purity_soundness.md> before touching
-<facts/abstract_domain/builtins.rs> or adding a purity annotation to a spec.
+<analysis_domain/builtins.rs> or adding a purity annotation to a spec.
 
 ## Testing
 

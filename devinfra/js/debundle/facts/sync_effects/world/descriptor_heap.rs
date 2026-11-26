@@ -5,31 +5,31 @@
 //! the defining operation completed normally; those obligations stay with the
 //! planning transfer (`native::operation`) and the realizability gate.
 
-use super::super::allocation_transfer::LiteralHeap;
-use super::super::own_data_transfer::OwnDataContext;
-use super::super::property_inference::{
-    CapturedPropertyDescriptor, OwnPropertyDescriptorProjection,
-};
-use super::super::value_model::{AbstractValue, CallSite, DenseArray, Values};
 use super::object_surface::ObjectSurfaceStore;
+use crate::allocation_transfer::LiteralHeap;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
 use std::collections::BTreeMap;
+use value_model::own_data_transfer::OwnDataContext;
+use value_model::property_inference::{
+    CapturedPropertyDescriptor, OwnPropertyDescriptorProjection,
+};
+use value_model::{AbstractValue, CallSite, DenseArray, Values};
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct OwnDescriptorMapState {
+pub struct OwnDescriptorMapState {
     pub(crate) source_object: u32,
     /// A pooled site that captured a different source or shape, or whose
     /// map escaped to unmodeled code, keeps only its retained values.
-    pub(crate) valid: bool,
+    pub valid: bool,
     pub(crate) property_order: Vec<String>,
     pub(crate) properties: BTreeMap<String, CapturedPropertyDescriptor>,
-    pub(crate) retained_values: Values,
+    pub retained_values: Values,
 }
 
 /// Premises a descriptor application needs from its executing context.
-pub(crate) trait DescriptorContext: OwnDataContext {
+pub trait DescriptorContext: OwnDataContext {
     fn descriptor_map(&self, site: CallSite) -> Option<&OwnDescriptorMapState>;
     fn object_surface(&self) -> &ObjectSurfaceStore;
     /// A fresh plain-data literal: its own descriptors are the literal's, so
@@ -47,7 +47,7 @@ pub(crate) trait DescriptorContext: OwnDataContext {
 /// target's dynamic-key slot, so every own-key projection of the target
 /// refuses from then on, and drops the target's literal writability witness.
 #[derive(Debug, Clone)]
-pub(crate) struct DynamicKeyDefinition {
+pub struct DynamicKeyDefinition {
     target: u32,
     value: Values,
 }
@@ -61,7 +61,7 @@ const DATA_DESCRIPTOR_FIELDS: [&str; 4] = ["value", "writable", "enumerable", "c
 /// exact settled plain-data descriptor record holding only data-descriptor
 /// fields, with the ordinary `Object.prototype` intact for the inherited
 /// field lookups. The key's `ToPropertyKey` is silent on every primitive.
-pub(crate) fn dynamic_key_definition(
+pub fn dynamic_key_definition(
     context: &mut impl DescriptorContext,
     target: &Values,
     key: &Values,
@@ -117,14 +117,14 @@ pub(crate) fn dynamic_key_definition(
 /// A checked `Object.defineProperties(target, map)` whose every definition is
 /// copied in, so commit cannot fail after the prefix starts changing.
 #[derive(Debug, Clone)]
-pub(crate) struct DescriptorApplication {
+pub struct DescriptorApplication {
     pub(crate) target: u32,
     definitions: Vec<(String, CapturedPropertyDescriptor)>,
 }
 
 impl DescriptorApplication {
     /// Every property of a still-valid map, in creation order.
-    pub(crate) fn from_map(target: u32, map: &OwnDescriptorMapState) -> Option<Self> {
+    pub fn from_map(target: u32, map: &OwnDescriptorMapState) -> Option<Self> {
         if !map.valid {
             return None;
         }
@@ -143,7 +143,7 @@ impl DescriptorApplication {
 /// Defining captured descriptors completes normally only on an exact fresh
 /// plain-data target with no own data or accessors yet, from a valid map,
 /// with the ordinary `Object.prototype` intact for descriptor conversion.
-pub(crate) fn application(
+pub fn application(
     context: &mut impl DescriptorContext,
     target: &Values,
     descriptors: &Values,
@@ -173,7 +173,7 @@ pub(crate) fn application(
 /// A caller's borrowed prefix store. Admission owns native identity, target
 /// and completion proofs; these updates grant neither ordinary-property shape
 /// nor effect coverage.
-pub(crate) struct DescriptorHeap<'a> {
+pub struct DescriptorHeap<'a> {
     pub(crate) maps: &'a mut OrdMap<CallSite, OwnDescriptorMapState>,
     pub(crate) surface: &'a mut ObjectSurfaceStore,
     pub(crate) arrays: &'a mut OrdMap<u32, DenseArray>,
@@ -207,7 +207,7 @@ impl<'a> DescriptorHeap<'a> {
     /// Record one inspection's snapshot. A pooled site that observes a
     /// different source or shape loses its map but keeps every value it may
     /// retain.
-    pub(crate) fn capture(
+    pub fn capture(
         &mut self,
         site: CallSite,
         projection: OwnPropertyDescriptorProjection,
@@ -253,11 +253,11 @@ impl<'a> DescriptorHeap<'a> {
         AbstractValue::OwnDescriptorMap(site)
     }
 
-    pub(crate) fn invalidate_writable(&mut self, object: u32) {
+    pub fn invalidate_writable(&mut self, object: u32) {
         self.literal().invalidate_writable(object);
     }
 
-    pub(crate) fn dense_array(&mut self, allocation: u32, slots: Vec<Values>) {
+    pub fn dense_array(&mut self, allocation: u32, slots: Vec<Values>) {
         self.literal().dense_array(allocation, slots);
     }
 
@@ -267,7 +267,7 @@ impl<'a> DescriptorHeap<'a> {
     /// tainted: it has no accessor, and the site never seeds a writability
     /// witness, so the row-execution, spread and own-data proofs that need a
     /// dense or primitive snapshot or a source record shape all refuse it.
-    pub(crate) fn contents_array(&mut self, allocation: u32, contents: Values) {
+    pub fn contents_array(&mut self, allocation: u32, contents: Values) {
         let mut literal = self.literal();
         literal.invalidate_dense_array(allocation);
         literal.invalidate_primitive_array(allocation);
@@ -276,7 +276,7 @@ impl<'a> DescriptorHeap<'a> {
 
     /// Commit a checked primitive-keyed definition: the payload joins the
     /// target's dynamic-key slot and the literal writability witness is gone.
-    pub(crate) fn define_dynamic_key(&mut self, definition: &DynamicKeyDefinition) {
+    pub fn define_dynamic_key(&mut self, definition: &DynamicKeyDefinition) {
         self.literal().invalidate_writable(definition.target);
         if self
             .surface
@@ -287,7 +287,7 @@ impl<'a> DescriptorHeap<'a> {
     }
 
     /// A map that reached unmodeled code may be mutated there.
-    pub(crate) fn invalidate(&mut self, site: CallSite) {
+    pub fn invalidate(&mut self, site: CallSite) {
         if let Some(map) = self.maps.get_mut(&site)
             && map.valid
         {
@@ -298,7 +298,7 @@ impl<'a> DescriptorHeap<'a> {
 
     /// Commit a prevalidated application. The target's literal writability
     /// witness is gone whether or not any payload changed.
-    pub(crate) fn apply(&mut self, application: &DescriptorApplication) {
+    pub fn apply(&mut self, application: &DescriptorApplication) {
         self.literal().invalidate_writable(application.target);
         let mut changed = false;
         for (name, descriptor) in &application.definitions {

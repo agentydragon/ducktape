@@ -35,6 +35,7 @@ def static_values() -> dict[str, object]:
         "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
         "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
         "session_dispatcher": {"target": "dispatcher:8080", "token_file": "/tokens/dispatcher"},
+        "policy_service": policy_service_block(),
     }
 
 
@@ -273,14 +274,11 @@ def policy_service_block(**tls: str) -> dict[str, object]:
     }
 
 
-def test_policy_service_is_omitted_until_set() -> None:
+def test_policy_service_is_required() -> None:
     values = static_values()
-    assert "policy_service" not in Settings.model_validate(values).model_dump()
-    values["policy_service"] = policy_service_block()
-    assert (
-        Settings.model_validate(values).model_dump(mode="json")["policy_service"]["target"]
-        == "test-policy.invalid:8443"
-    )
+    del values["policy_service"]
+    with pytest.raises(ValidationError):
+        Settings.model_validate(values)
 
 
 @pytest.mark.parametrize(

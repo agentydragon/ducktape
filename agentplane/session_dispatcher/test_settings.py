@@ -16,6 +16,16 @@ def _settings(*, kubernetes_client_qps: float = 0) -> Settings:
             {
                 "sandbox_namespace": "test-sandboxes",
                 "policy_namespace": "test-policies",
+                "policy_service": {
+                    "target": "policy-controller.test:8443",
+                    "tls": {
+                        "ca_file": "/test/workload-ca",
+                        "server_uri": "spiffe://agentplane/policy-controller",
+                        "cert_file": "/test/sessions-cert",
+                        "key_file": "/test/sessions-key",
+                        "client_uri": "spiffe://agentplane/sessions",
+                    },
+                },
                 "runner_token_file": "/run/test/token",
                 "gateway_tls": {"ca_file": "/test/workload-ca", "server_uri": "spiffe://agentplane/session-dispatcher"},
                 "rpc": {
@@ -140,25 +150,18 @@ def test_central_sampler_sessions_svid_is_an_optional_tokenless_caller_mode() ->
         Settings.model_validate(source)
 
 
-def test_policy_service_is_called_with_the_sessions_svid() -> None:
+def test_policy_service_is_required_and_called_with_the_sessions_svid() -> None:
     source = _settings().model_dump(mode="json")
-    source["policy_service"] = {
-        "target": "policy-controller.test:8443",
-        "tls": {
-            "ca_file": "/test/workload-ca",
-            "server_uri": "spiffe://agentplane/policy-controller",
-            "cert_file": "/test/sessions-cert",
-            "key_file": "/test/sessions-key",
-            "client_uri": "spiffe://agentplane/sessions",
-        },
-    }
-    settings = Settings.model_validate(source)
-    assert settings.policy_service is not None
-    assert settings.model_dump(mode="json")["policy_service"]["target"] == "policy-controller.test:8443"
+    assert source["policy_service"]["target"] == "policy-controller.test:8443"
 
     source["policy_service"]["tls"]["client_uri"] = "spiffe://agentplane/session-dispatcher"
     with pytest.raises(ValidationError, match="client_uri must be 'spiffe://agentplane/sessions'"):
         Settings.model_validate(source)
+
+    del source["policy_service"]
+    with pytest.raises(ValidationError) as rejected:
+        Settings.model_validate(source)
+    assert [error["loc"] for error in rejected.value.errors()] == [("policy_service",)]
 
 
 def test_rpc_auth_requires_a_spiffe_method() -> None:
@@ -171,12 +174,7 @@ def test_rpc_auth_requires_a_spiffe_method() -> None:
 
 def test_empty_service_settings_are_omitted_from_deployment_output() -> None:
     source = _settings().model_dump(mode="json")
-    new_optional_fields = {
-        "dispatcher_service_delegation",
-        "dispatcher_service_callers",
-        "wake_service_callers",
-        "policy_service",
-    }
+    new_optional_fields = {"dispatcher_service_delegation", "dispatcher_service_callers", "wake_service_callers"}
     assert new_optional_fields.isdisjoint(source)
 
 

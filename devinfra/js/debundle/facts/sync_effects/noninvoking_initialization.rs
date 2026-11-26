@@ -1,17 +1,17 @@
 //! Whole-source-unit coverage for a small, non-invoking initializer subset.
 
-use super::allocation_transfer::AllocationJudgment;
-use super::effect_coverage::EffectCoverageFragment;
-use super::value_model::{AbstractValue, CallSite, HeapAddress, ValueExpr, Values};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::initialization_effects::CompletedInitialization;
-use analysis::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
+use analysis_domain::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
+use value_model::{AbstractValue, CallSite, HeapAddress, ValueExpr, Values};
+use world::allocation_transfer::AllocationJudgment;
+use world::effect_coverage::EffectCoverageFragment;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NativeConstructorKind {
@@ -743,7 +743,7 @@ impl OriginalInitializer {
 mod source_identity_tests {
     use super::{InitializationSourceIdentity, OriginalInitializer};
     use analysis::facts::OwnerInitializationCoverageRefusalReason;
-    use analysis::facts::item_views::top_level_item_views;
+    use analysis_domain::item_views::top_level_item_views;
     use source_identity::SourceUnitOrdinal;
     use swc_common::{Spanned, SyntaxContext};
     use swc_ecma_ast::Id;

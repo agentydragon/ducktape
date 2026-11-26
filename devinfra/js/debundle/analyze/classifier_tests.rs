@@ -1,7 +1,7 @@
-use analysis::facts::item_views::TopLevelItemView;
 use analysis::purity::classifier::classify_class_static_purity;
 use analysis::purity::classifier::classify_expr_purity;
 use analysis::purity::classifier::classify_var_decl_purity;
+use analysis_domain::item_views::TopLevelItemView;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::CoerceSite;
 use analysis_vocabulary::effect::Effect;
@@ -13,15 +13,15 @@ use swc_ecma_ast::Module;
 use swc_ecma_ast::ModuleItem;
 use swc_ecma_ast::Stmt;
 
-use analysis::facts::abstract_domain::heap::{
-    ChunkHeap, plain_array_bindings, tracked_allocation_roots,
-};
+use analysis::facts::abstract_domain::heap::{ChunkHeap, plain_array_bindings};
 use analysis::facts::{
-    ChunkValueFlow, DynamicScopeFact, LocalClassConstructionProof, SetIterableProof,
-    StructuralChunkAnalysis, analyze_chunk_structural, compute_shadowed_globals,
-    top_level_item_views,
+    ChunkValueFlow, LocalClassConstructionProof, SetIterableProof, StructuralChunkAnalysis,
+    analyze_chunk_structural,
 };
 use analysis::purity::*;
+use analysis_domain::allocation_roots::tracked_allocation_roots;
+use analysis_domain::dynamic_scope::DynamicScopeFact;
+use analysis_domain::item_views::{compute_shadowed_globals, top_level_item_views};
 use analysis_vocabulary::inputs::{ProofDependencies, ValueInputRef};
 use analysis_vocabulary::purity::{Effects, Purity};
 use swc_common::{FileName, sync::Lrc};

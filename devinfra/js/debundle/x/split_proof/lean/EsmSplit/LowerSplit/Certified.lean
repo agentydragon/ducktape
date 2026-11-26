@@ -296,8 +296,6 @@ continue through the existing certified routes; printer refusals remain final. -
 private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural do return none
-  if (← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS") == some "1" &&
-      (← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED") == some "1" then return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
   let .ok (source, _localExports) :=
@@ -368,13 +366,7 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
         pure (path.fileName.getD "bundle.mjs", path.parent)
       else pure ("bundle.mjs", none)
     Json.mkObj <$> loadProviders entry (Std.HashMap.ofList [(entry, program)]) root work (allowEntryImport := false)
-  -- The opt-in census wrapper must be able to measure linked execution even
-  -- when the ordinary selector would take the closed-declaration fast path.
-  let censusLinked ← do
-    let enabled ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-    let forceLinked ← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED"
-    pure (enabled == some "1" && forceLinked == some "1")
-  let declaration := if structural || censusLinked then none else declarations.bind fun groups =>
+  let declaration := if structural then none else declarations.bind fun groups =>
     CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
   if let some prepared := declaration then
     let level := prepared.level
@@ -432,16 +424,14 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
               reason := s!"the compiled {kind.scope} slice proves only normal-completion"
               reasonCode := some "slice_guarantee"
             } : CertificationRefusal))
-          else pure (.ok (some kind, {}, "compiled-slice", []))
+          else pure (.ok (some kind, {}, "compiled-slice"))
         | .error _refusal =>
           if request != .normalCompletion then
             pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
           else do
-            let census ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-            let replayBlockers := if census == some "1" then blockers.map (·.label) else []
             let replayed ← if needsAccessorCheck then pure accessorReplay else checkReplay "compiled_replay"
             if replayed.isSome then
-              pure (.ok (none, eligibility.probe.premises, "compiled-replay-premised", []))
+              pure (.ok (none, eligibility.probe.premises, "compiled-replay-premised"))
             else
               let prepared : Except CertificationRefusal
                   (CoreJS.LinkedBehavior.Certificate × System.FilePath) ←
@@ -462,16 +452,14 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
               | .error refusal => pure (.error refusal)
               | .ok (cert, dataFile) => do
                 let used ← verifyExecution loadToolchain timings work cert dataFile
-                pure (.ok (none, used, "generated-proof", replayBlockers))
+                pure (.ok (none, used, "generated-proof"))
     match checked with
-    | .ok (some kind, active, strategy, blockers) => do
-      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+    | .ok (some kind, active, strategy) => do
       return ← emitVerdict request.label (.ok kind.level) kind.scope
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
-    | .ok (none, active, strategy, blockers) => do
-      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+        (profileVerdict profile active ++ [("strategy", toJson strategy)])
+    | .ok (none, active, strategy) => do
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+        (profileVerdict profile active ++ [("strategy", toJson strategy)])
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
