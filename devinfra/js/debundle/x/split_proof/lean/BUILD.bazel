@@ -499,7 +499,10 @@ executable_test(
 lean_proof_test(
     name = "ordered_region_axioms_test",
     allow_empty = True,
-    modules = ["EsmSplit.CoreJS.OrderedRegion"],
+    modules = [
+        "EsmSplit.CoreJS.OrderedRegion",
+        "EsmSplit.CoreJS.SingleModule",
+    ],
     required_theorems = [
         "CoreJS.OrderedRegion.matching_link",
         "CoreJS.OrderedRegion.planned_link",
@@ -507,6 +510,7 @@ lean_proof_test(
         "CoreJS.OrderedRegion.planned_runs_with_exports",
         "CoreJS.OrderedRegion.planned_scopes",
         "CoreJS.OrderedRegion.sameUnits_capture",
+        "CoreJS.link_singleModuleConst",
     ],
     deps = [":ordered_region"],
 )
