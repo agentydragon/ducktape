@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
@@ -67,9 +68,9 @@ func TestOIDCDiscoveryIsDeferredUntilLogin(t *testing.T) {
 		t.Fatalf("OIDC discovery requests during construction = %d, want 0", got)
 	}
 
-	session := &RequestSession{pendingLogins: make(map[string]loginAttempt)}
+	requestSession := &RequestSession{pendingLogins: make(map[string]session.Attempt)}
 	r := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
-	r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, session))
+	r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, requestSession))
 	w := httptest.NewRecorder()
 	a.login(w, r)
 	if w.Code != http.StatusServiceUnavailable {
@@ -128,20 +129,20 @@ func TestAuthTraceIdentifiesBlockedDiscoveryWithoutLoggingCredentials(t *testing
 }
 
 func TestCallbackRejectsInvalidLoginAttempt(t *testing.T) {
-	valid := loginAttempt{Nonce: "nonce", CodeVerifier: "verifier", ExpiresAt: time.Now().UTC().Add(time.Minute)}
+	valid := session.Attempt{Nonce: "nonce", CodeVerifier: "verifier", ExpiresAt: time.Now().UTC().Add(time.Minute)}
 	for _, tc := range []struct {
 		name     string
-		attempts map[string]loginAttempt
+		attempts map[string]session.Attempt
 	}{
-		{name: "unknown state", attempts: map[string]loginAttempt{"different-state": valid}},
-		{name: "expired", attempts: map[string]loginAttempt{"state": {Nonce: "nonce", CodeVerifier: "verifier", ExpiresAt: time.Now().UTC().Add(-time.Second)}}},
-		{name: "missing nonce", attempts: map[string]loginAttempt{"state": {CodeVerifier: "verifier", ExpiresAt: valid.ExpiresAt}}},
-		{name: "missing verifier", attempts: map[string]loginAttempt{"state": {Nonce: "nonce", ExpiresAt: valid.ExpiresAt}}},
+		{name: "unknown state", attempts: map[string]session.Attempt{"different-state": valid}},
+		{name: "expired", attempts: map[string]session.Attempt{"state": {Nonce: "nonce", CodeVerifier: "verifier", ExpiresAt: time.Now().UTC().Add(-time.Second)}}},
+		{name: "missing nonce", attempts: map[string]session.Attempt{"state": {CodeVerifier: "verifier", ExpiresAt: valid.ExpiresAt}}},
+		{name: "missing verifier", attempts: map[string]session.Attempt{"state": {Nonce: "nonce", ExpiresAt: valid.ExpiresAt}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			session := &RequestSession{pendingLogins: tc.attempts}
+			requestSession := &RequestSession{pendingLogins: tc.attempts}
 			r := httptest.NewRequest(http.MethodGet, "/auth/callback?state=state&code=code", nil)
-			r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, session))
+			r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, requestSession))
 			w := httptest.NewRecorder()
 			new(Auth).callback(w, r)
 			if w.Code != http.StatusUnauthorized {
@@ -193,7 +194,7 @@ func TestOperatorCallerRequiresSameOriginForUnsafeMethods(t *testing.T) {
 		if origin != "" {
 			r.Header.Set("Origin", origin)
 		}
-		r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, &RequestSession{Login: &OperatorSession{Username: "operator"}}))
+		r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, &RequestSession{Login: &session.Login{Username: "operator"}}))
 		w := httptest.NewRecorder()
 		next.ServeHTTP(w, r)
 		return w
