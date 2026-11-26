@@ -7,9 +7,8 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::read_off_candidates;
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-};
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
 use selector_render::{
     AnchorSpan, anything_expr, class_member_hole, collapse_omitted_runs, emit_selector,
     hole_function, holed_function_body, ident_node, node_retains_any, retain_or_hole_param,

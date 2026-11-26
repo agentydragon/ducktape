@@ -31,10 +31,10 @@ use proptest::sample::Index;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 
-use super::{
-    ChunkSelectorIndex, GroupSelectorOutcome, NameBindingMember, matched_body_indices,
-    synthesize_simplest_selector_for_group,
-};
+use crate::chunk_index::ChunkSelectorIndex;
+use crate::group_synthesis::{GroupSelectorOutcome, synthesize_simplest_selector_for_group};
+use crate::name_binding_rewrite::NameBindingMember;
+use crate::proof::matched_body_indices;
 
 const METHODS: [&str; 3] = ["foo", "bar", "baz"];
 const STRINGS: [&str; 3] = ["alpha", "beta", "gamma"];
