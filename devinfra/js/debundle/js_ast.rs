@@ -116,9 +116,14 @@ impl ParsedJsModule {
         SourceLineIndex::for_source_map(&self.cm)
     }
 
+    /// The source file whose byte positions and text the parsed spans refer to.
+    pub fn source_file(&self) -> Lrc<SourceFile> {
+        self.cm.files()[0].clone()
+    }
+
     /// Copy the source text retained by the parser.
     pub fn source_text(&self) -> String {
-        self.cm.files()[0].src.to_string()
+        self.source_file().src.to_string()
     }
 }
 

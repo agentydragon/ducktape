@@ -135,7 +135,10 @@ impl GlobalResolutionSources {
                 let entry_sha256 = chunk.js.get_file(&chunk.js.entry_file).and_then(|file| {
                     file.source()
                         .map(|text| sha256(text.as_bytes()))
-                        .or_else(|| file.ast().map(|ast| sha256(ast.source_text().as_bytes())))
+                        .or_else(|| {
+                            file.ast()
+                                .map(|ast| sha256(ast.source_file().src.as_bytes()))
+                        })
                 });
                 (
                     chunk.chunk_id,
