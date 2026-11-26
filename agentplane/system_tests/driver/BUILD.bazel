@@ -381,6 +381,7 @@ py_library(
     data = [":runner_data_archive_bin"],
     deps = [
         ":cluster",
+        ":host_command",
         ":sandbox",
         ":tracing",
         "//devinfra/testing:undeclared_outputs",
@@ -971,5 +972,28 @@ py_library(
     deps = [
         "//agentplane/proto:session_pb2",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "containerd_task",
+    srcs = ["containerd_task.py"],
+    deps = [":host_command"],
+)
+
+py_library(
+    name = "host_command",
+    srcs = ["host_command.py"],
+)
+
+py_test(
+    name = "test_host_command",
+    srcs = ["test_host_command.py"],
+    deps = [
+        ":host_command",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
