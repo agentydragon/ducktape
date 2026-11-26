@@ -1055,6 +1055,8 @@ lean_proof_test(
     ],
     required_theorems = [
         "CoreJS.evaluatorFrames",
+        "CoreJS.split_import_alias",
+        "CoreJS.split_import_original_cell",
         "CoreJS.LinkedBehavior.checkedPivot_move",
         "CoreJS.LinkedBehavior.pivotFrameOk_move",
         "CoreJS.LinkedBehavior.pivotFrameOk_sound",
