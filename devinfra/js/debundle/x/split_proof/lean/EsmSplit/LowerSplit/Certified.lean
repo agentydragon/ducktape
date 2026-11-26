@@ -1,7 +1,7 @@
 import EsmSplit.Cli
 import EsmSplit.CoreJS.Declaration.Artifacts
 import EsmSplit.CoreJS.JointStatic
-import EsmSplit.CoreJS.LinkedCertificate
+import EsmSplit.CoreJS.LinkedCertificate.Probe
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.StructuralCertificate
@@ -17,79 +17,6 @@ namespace EsmSplit.LowerSplit
 open Lean EsmSplit.SplitFiles
 
 open CoreJS (Guarantee)
-
-/-- Compiler and project paths selected by the splitter's build. -/
-structure GeneratedProofToolchain where
-  lean : System.FilePath
-  sysroot : System.FilePath
-  importArts : Lean.NameMap Lean.ImportArtifacts := {}
-  projectLibrary : Option System.FilePath := none
-  projectSource : Option System.FilePath := none
-
-/-- Use the SDK's default runtime settings and only the build-selected search paths. -/
-private def checkLean (toolchain : GeneratedProofToolchain)
-    (work : System.FilePath) (args : Array String) : IO Unit := do
-  let paths := #[("LEAN_SYSROOT", some toolchain.sysroot.toString),
-    ("LEAN_PATH", toolchain.projectLibrary.map toString),
-    ("LEAN_SRC_PATH", toolchain.projectSource.map toString)]
-  let defaults := #["LEAN_IMPORT_WORKERS", "LEAN_NUM_THREADS", "LEAN_STACK_SIZE_KB",
-    "LEAN_MAIN_USE_THREAD", "LEAN_ABORT_ON_PANIC", "LEAN_ABORT_ON_NONLINEAR",
-    "LEAN_BACKTRACE", "LEAN_BACKTRACE_RAW", "LEAN_TRACE_TASK_GET_BLOCKED"].map (·, none)
-  let proc ← IO.Process.output {
-    cmd := toolchain.lean.toString
-    args := #["-DwarningAsError=true", s!"--root={work}"] ++ args
-    env := paths ++ defaults
-  }
-  unless proc.exitCode == 0 do
-    let detail := (proc.stdout ++ proc.stderr).trimAscii.take 1200
-    let reason := s!"could not prove equivalent linked executions (Lean exited with status {proc.exitCode})"
-    throw (IO.userError (if detail.isEmpty then reason else s!"{reason}: {detail}"))
-
-private def checkProofModule (toolchain : GeneratedProofToolchain)
-    (work : System.FilePath) (setup : Lean.ModuleSetup)
-    (code : String) (args : Array String) : IO Unit := do
-  let stem := setup.name.toString
-  let file := work / (stem ++ ".lean")
-  let config := work / (stem ++ ".setup.json")
-  IO.FS.writeFile file code
-  IO.FS.writeFile config (toJson setup).compress
-  checkLean toolchain work (#[s!"--setup={config}"] ++ args ++ #[file.toString])
-
-private def runProofRecipe (toolchain : GeneratedProofToolchain)
-    (timings : Bool) (work : System.FilePath)
-    (initialImports : Lean.NameMap Lean.ImportArtifacts) (recipe : CoreJS.LinkedBehavior.ProofRecipe) : IO Unit := do
-  let mut importArts := initialImports
-  for (module, index) in recipe.zipIdx do
-    let intermediate := index + 1 < recipe.size
-    let args := if intermediate then
-        #["-o", (work / (module.name.toString ++ ".olean")).toString]
-      else #[]
-    timePhase timings module.timing fun _ =>
-      checkProofModule toolchain work { name := module.name, importArts } module.code args
-    if intermediate then
-      let compiled := work / (module.name.toString ++ ".olean")
-      importArts := importArts.insert module.name (.ofArrays #[#[compiled]])
-
-private def writeCertificateData (work : System.FilePath)
-    (terms : CertificateData.Entries) : IO System.FilePath := do
-  let dataFile := work / (CertificateData.moduleName.toString ++ ".olean")
-  CertificateData.write dataFile terms
-  return dataFile
-
-/-- Publication waits for the kernel-checked executions and the exact AST gate. -/
-private def verifyExecution (loadToolchain : IO GeneratedProofToolchain)
-    (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate)
-    (dataFile : System.FilePath) : IO CoreJS.HostPremises := do
-  let toolchain ← loadToolchain
-  let importArts := toolchain.importArts.insert CertificateData.moduleName (.ofArrays #[#[dataFile]])
-  let accepted ← match cert.checkpoint with
-    | none => pure false
-    | some recipe => try
-        runProofRecipe toolchain timings work importArts recipe
-        pure true
-      catch _ => pure false
-  unless accepted do runProofRecipe toolchain timings work importArts cert.ordinary
-  return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
   let everyEndingMatches := match outcome with
@@ -290,8 +217,7 @@ def prepareSliceEligibility (profile : CoreJS.HostProfile) (source providers fil
 
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
-private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
-    (chunk : DeploymentChunk) (out work : System.FilePath)
+private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
   let request := options.request
   let profile := options.profile
@@ -356,13 +282,13 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
       | .ok eligibility => do
         let blockers := eligibility.replayBlockers
         let checkReplay := fun phase => timePhase timings phase fun _ => IO.lazyPure fun _ => eligibility.certifyReplay
-        -- Keep the generated proof path for a property read that may invoke
-        -- an accessor when the compiled replay check cannot handle that read.
+        -- A property read may invoke an accessor. Admit the slice only when
+        -- compiled replay has checked that reached read.
         let needsAccessorCheck := blockers.contains .objectAccessor && blockers.contains .propertyRead
         let accessorReplay ← if needsAccessorCheck then checkReplay "compiled_replay_slice_guard" else pure none
         let sliceResult ← if needsAccessorCheck && accessorReplay.isNone then
             pure (.error ({
-              reason := "compiled replay declined a property read; retaining the generated proof path"
+              reason := "compiled replay declined a property read"
               reasonCode := some "slice_replay_guard"
             } : CertificationRefusal))
           else timePhase timings "compiled_slice" fun _ =>
@@ -374,46 +300,26 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
               reason := s!"the compiled {kind.scope} slice proves only normal-completion"
               reasonCode := some "slice_guarantee"
             } : CertificationRefusal))
-          else pure (.ok (some kind, {}, "compiled-slice", []))
+          else pure (.ok (some kind, {}, "compiled-slice"))
         | .error _refusal =>
           if request != .normalCompletion then
             pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
           else do
-            let census ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-            let replayBlockers := if census == some "1" then blockers.map (·.label) else []
             let replayed ← if needsAccessorCheck then pure accessorReplay else checkReplay "compiled_replay"
             if replayed.isSome then
-              pure (.ok (none, eligibility.probe.premises, "compiled-replay-premised", []))
+              pure (.ok (none, eligibility.probe.premises, "compiled-replay-premised"))
             else
-              let prepared : Except CertificationRefusal
-                  (CoreJS.LinkedBehavior.Certificate × System.FilePath) ←
-                timePhase timings "certificate_preparation" fun _ => do
-                  let result ← IO.lazyPure fun _ =>
-                    CoreJS.LinkedBehavior.certificateWithWitness profile program providers files P eligibility.probe
-                  match result with
-                  | .error refusal => pure (.error (probeRefusal refusal))
-                  | .ok (cert, terms) =>
-                    try
-                      pure (.ok (cert, ← writeCertificateData work terms))
-                    catch err =>
-                      pure (.error ({
-                        reason := err.toString
-                        reasonCode := some "proof_preparation"
-                      } : CertificationRefusal))
-              match prepared with
-              | .error refusal => pure (.error refusal)
-              | .ok (cert, dataFile) => do
-                let used ← verifyExecution loadToolchain timings work cert dataFile
-                pure (.ok (none, used, "generated-proof", replayBlockers))
+              pure (.error ({
+                reason := "no compiled certification rule covers this linked execution"
+                reasonCode := some "no_compiled_rule"
+              } : CertificationRefusal))
     match checked with
-    | .ok (some kind, active, strategy, blockers) => do
-      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+    | .ok (some kind, active, strategy) => do
       return ← emitVerdict request.label (.ok kind.level) kind.scope
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
-    | .ok (none, active, strategy, blockers) => do
-      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+        (profileVerdict profile active ++ [("strategy", toJson strategy)])
+    | .ok (none, active, strategy) => do
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+        (profileVerdict profile active ++ [("strategy", toJson strategy)])
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
@@ -474,8 +380,7 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
     | .error refusal => emitRefusal request.label refusal "linked-structural"
   catch e => emitVerdict request.label (.error e.toString) "linked-structural"
 
-def certified (args : List String) (loadToolchain : IO GeneratedProofToolchain) :
-    IO UInt32 := do
+def certified (args : List String) : IO UInt32 := do
   let (level?, args) := EsmSplit.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label
   try
@@ -484,7 +389,7 @@ def certified (args : List String) (loadToolchain : IO GeneratedProofToolchain) 
     let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
     IO.FS.withTempDir fun work =>
       match manifest.chunks, options.deploymentOrigin with
-      | [chunk], none => runSingleton loadToolchain chunk out work options timings
+      | [chunk], none => runSingleton chunk out work options timings
       | _, _ => runDeployment manifest out work options timings
   catch e => emitVerdict label (.error e.toString)
 
