@@ -6,12 +6,14 @@
 //! after the declaration and a unique class value in whole-chunk flow.
 
 use super::*;
-use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use crate::semantic_inference::{SemanticFacts, SemanticKey};
 use analysis_domain::builtins::{self, Invocation};
 use analysis_domain::dynamic_scope::DynamicScopeFact;
+use analysis_domain::item_views::var_decl_of_item;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
 use std::sync::Arc;
+use value_flow::ChunkValueFlow;
 
 #[derive(Debug, Clone, Default)]
 pub struct LocalClassConstructionShapes {
@@ -116,7 +118,7 @@ impl LocalClassConstructionProof {
         self.facts.dependencies(&SemanticKey::LocalClass(class))
     }
 
-    pub(crate) fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
+    pub fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
         self.facts
             .class_for_construction(span)
             .and_then(|class| self.dependencies_for_class(class))
@@ -145,7 +147,7 @@ pub struct LocalClassHeapProof {
 }
 
 impl LocalClassHeapProof {
-    pub(crate) fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
+    pub fn dependencies_for_construction(&self, span: Span) -> Option<&ProofDependencies> {
         let class = self.facts.class_for_construction(span)?;
         self.facts.dependencies(&SemanticKey::LocalClass(class))
     }

@@ -3,7 +3,7 @@
 The `inference` crate defines `Judgment` (`inference/lib.rs`);
 `inference/iterative.rs` provides the
 dependency worklist (`IterativeInference`) for finite growing facts and
-positive certificates. `facts/semantic_inference.rs` composes native,
+positive certificates. `purity/semantic_inference.rs` composes native,
 construction, and callable rules in that store. Structural analysis supplies
 candidates; candidates alone cannot certify an operation. Rules use typed
 `FactContext` access so an enclosing rule family can project their keys without
@@ -1197,7 +1197,7 @@ walking, opaque-pool replay or all callback work.
 Completion barriers are valid only at actual one-way dependencies; the old pass
 order alone is insufficient.
 
-- `facts/semantic_inference.rs` requires a completed conditional native write
+- `purity/semantic_inference.rs` requires a completed conditional native write
   census from every analyzed chunk. Native branch refinement consumes
   `callback_object_arguments` from the source-only canonical AST collectors.
   Later generic callback-factory certificates do not produce that field or feed

@@ -379,6 +379,7 @@ debundle_e2e_test(
     source = "cli/spec_lint/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/purity",
         "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
     ],
@@ -502,6 +503,7 @@ debundle_e2e_test(
     name = "purity_hint_diagnostics_test",
     deps = [
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/purity",
         "@crates//:serde",
     ],
 )

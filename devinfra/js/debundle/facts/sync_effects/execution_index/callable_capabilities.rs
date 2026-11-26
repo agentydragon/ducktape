@@ -3,11 +3,6 @@
 use super::super::strict_provider;
 use super::native_write_census::{ArraySpreadProtocolIntegrity, NativeWriteCensus};
 use super::{CallKind, ExecutionIndex, SemanticShapeInputs};
-use analysis::facts::callable_inference::{
-    CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
-};
-use analysis::facts::semantic_inference::{SemanticFact, SemanticKey};
-use analysis::facts::{LocalClassConstructionShapes, SetIterableShapes, StableArraySpreadShapes};
 use analysis_domain::integrity::{IntegrityFlags, IntrinsicSlot, PrototypeWrites};
 use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::execution_evidence::SourceLocator;
@@ -19,6 +14,11 @@ use analysis_vocabulary::inputs::{
 };
 use analysis_vocabulary::report_schema::NativeMutationWitness;
 use analysis_vocabulary::value::{Kind, Value};
+use purity::callable_inference::{
+    CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
+};
+use purity::semantic_inference::{SemanticFact, SemanticKey};
+use purity::{LocalClassConstructionShapes, SetIterableShapes, StableArraySpreadShapes};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;

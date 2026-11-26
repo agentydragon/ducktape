@@ -3388,7 +3388,7 @@ per-prefix facts live in one `IterativeInference` context
   diagnostics. The common CLI e2e helper treats any disagreement as a bug.
 
 Whether a member read's object can be written later is a whole-chunk fact
-(`facts/abstract_domain/heap.rs`), not prefix state: a pure statement leaves
+(`purity/heap.rs`), not prefix state: a pure statement leaves
 the S-chain and may move past a later write, so purity at _n_ needs "no write
 at any prefix", which `Prefix(n)` cannot say.
 

@@ -1,7 +1,7 @@
 use super::*;
-use crate::facts::{ChunkValueFlow, own_data_keys};
 use analysis_domain::allocation_roots::is_plain_data_prop;
 use analysis_domain::dynamic_scope::DynamicScopeFact;
+use value_flow::{ChunkValueFlow, own_data_keys};
 
 /// Prepared value shape and whole-chunk identity guards for the ordinary
 /// declaration classifier. The initializer still follows its normal purity
@@ -67,7 +67,7 @@ pub struct FreshRecordProof {
     pub write_spans: BTreeSet<u32>,
 }
 
-pub(crate) fn fresh_record_proof(params: &[&Pat], body: &FunctionBody) -> Option<FreshRecordProof> {
+pub fn fresh_record_proof(params: &[&Pat], body: &FunctionBody) -> Option<FreshRecordProof> {
     let parameters: BTreeSet<Id> = params
         .iter()
         .map(|param| match param {

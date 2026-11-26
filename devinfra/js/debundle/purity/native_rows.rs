@@ -8,7 +8,7 @@
 //! not purity's.
 
 use super::*;
-use crate::facts::TopLevelNativeIterableOperandProjection;
+use crate::TopLevelNativeIterableOperandProjection;
 use analysis_domain::allocation_roots::is_plain_data_prop;
 use analysis_domain::builtins::Mutation;
 use analysis_domain::builtins::{self, ArgSel, Invocation, Row, Throws};

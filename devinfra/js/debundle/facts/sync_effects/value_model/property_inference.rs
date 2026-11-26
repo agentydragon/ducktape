@@ -8,12 +8,10 @@ use crate::{
     AbstractValue, HeapAddress, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
     ordered_own_property_names,
 };
-use analysis::facts::semantic_inference::{
-    NativePremise, SemanticFact, SemanticFacts, SemanticKey,
-};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::provenance::{InferenceRule, InferenceUse};
 use analysis_vocabulary::value::{Kind, Value};
+use purity::semantic_inference::{NativePremise, SemanticFact, SemanticFacts, SemanticKey};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -279,11 +277,11 @@ mod tests {
         AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
         ordered_own_property_names,
     };
-    use analysis::facts::semantic_inference::{SemanticFacts, native_premise};
     use analysis_domain::integrity::{IntegrityFlags, IntrinsicSlot, PrototypeWrites};
     use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
     use analysis_vocabulary::provenance::InferenceRule;
     use analysis_vocabulary::value::{Kind, Value};
+    use purity::semantic_inference::{SemanticFacts, native_premise};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
