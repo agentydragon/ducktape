@@ -264,7 +264,7 @@ pub(crate) fn for_each_relaxation(
 /// exhausting every order of greedy edits.
 /// `max_probes` also bounds AST clones and resolver calls for a huge exact
 /// declaration; the original selector remains a proven witness throughout.
-pub(crate) fn relax_progressively(
+pub fn relax_progressively(
     mut selector: Module,
     target_binding: Option<&str>,
     max_probes: usize,

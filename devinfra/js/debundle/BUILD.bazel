@@ -1147,10 +1147,33 @@ rust_test(
     edition = "2024",
 )
 
+# Read-only agent-facing selector query primitives (`debundle spec
+# match-selector`): resolve a candidate selector and report its holing slack.
+rust_library(
+    name = "match_selector",
+    srcs = ["selectors/authoring/match_selector.rs"],
+    crate_root = "selectors/authoring/match_selector.rs",
+    edition = "2024",
+    deps = [
+        ":binding_targets",
+        ":js_ast",
+        ":selector_outcome",
+        ":selector_render",
+        ":selector_resolve",
+        ":source_input",
+        ":source_match",
+        ":source_match_holes",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
 rust_library(
     name = "selector_codemod",
     srcs = [
-        "selectors/authoring/match_selector.rs",
         "selectors/authoring/minimize/class.rs",
         "selectors/authoring/minimize/function.rs",
         "selectors/authoring/minimize/group.rs",
@@ -1167,6 +1190,7 @@ rust_library(
     deps = [
         ":binding_targets",
         ":js_ast",
+        ":match_selector",
         ":readoff_render",
         ":selector_outcome",
         ":selector_render",
@@ -1721,6 +1745,7 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":lowering",
+        ":match_selector",
         ":output_layout",
         ":ownership_subset",
         ":package_args",

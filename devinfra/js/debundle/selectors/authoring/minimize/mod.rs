@@ -50,12 +50,12 @@ use source_match_holes::{
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use crate::match_selector::relax_progressively;
 use crate::regex_anchor::RegexAnchorSubstitution;
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
     matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
 };
+use match_selector::relax_progressively;
 use selector_render::{
     AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
     hole_stmt, holes_present, named_pat, object_props_pat_prop, span_key,
@@ -954,12 +954,11 @@ mod run_hole_tests {
             .unwrap()
             .module;
             let mut probes = 0;
-            let relaxed =
-                crate::match_selector::relax_progressively(module, Some("Selected"), 3, |_| {
-                    probes += 1;
-                    Ok(probes > 1)
-                })
-                .unwrap();
+            let relaxed = match_selector::relax_progressively(module, Some("Selected"), 3, |_| {
+                probes += 1;
+                Ok(probes > 1)
+            })
+            .unwrap();
             let source = js_ast::emit_module_source(&relaxed).unwrap();
             assert_eq!(probes, 3);
             assert_eq!(source.matches("STMT_LIST").count(), 2, "{source}");

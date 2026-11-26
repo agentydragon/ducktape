@@ -45,10 +45,6 @@ use source_match_holes::STMT_LIST_HOLE_KEYWORD;
 mod minimize;
 mod regex_anchor;
 
-// Read-only agent-facing selector query primitives (M1 of the
-// selector-authoring plan), sharing this crate's source loading + prove-gate.
-pub mod match_selector;
-
 use crate::minimize::{
     collapse_statement_hole_runs, exact_declaration_rejection, exact_declaration_source,
     minimize_class_selector_candidates, minimize_function_selector_candidates,

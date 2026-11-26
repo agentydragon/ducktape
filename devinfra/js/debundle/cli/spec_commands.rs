@@ -12,9 +12,7 @@ use peel::OutputFormat;
 use resolved_placement::{ResolvePlacementArgs, ResolvePlacementsArgs};
 use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
 
-use selector_codemod::match_selector::{
-    MatchSelectorConfig, render_match_selector_text, run_match_selector,
-};
+use match_selector::{MatchSelectorConfig, render_match_selector_text, run_match_selector};
 use selector_codemod::{SelectorCodemodConfig, render_selector_codemod_text, run_selector_codemod};
 use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
