@@ -14,7 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
-	"github.com/agentydragon/ducktape/agentplane/environments/testing/servicefixture"
+	"github.com/agentydragon/ducktape/agentplane/environments/testing/servicetest"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -101,7 +101,7 @@ func newFixture(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	environment := servicefixture.Launcher(t, namespace, objects)
+	environment := servicetest.Launcher(t, namespace, objects)
 	executor, err := NewExecutor(testGroup, catalog.OrchestrationBinding{
 		Description: "test orchestration", Namespace: namespace,
 		Presets: json.RawMessage(testPresets),

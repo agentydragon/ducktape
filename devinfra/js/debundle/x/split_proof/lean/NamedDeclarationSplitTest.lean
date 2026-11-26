@@ -8,9 +8,9 @@ private def worker := "worker.mjs"
 private def name (i : Nat) : String := s!"binding{i}"
 
 /-- An unbounded family: every declaration after the first reads its predecessor. -/
-private def source (n : Nat) : Program :=
+private def source (n : Nat) (kind : DeclKind := .const) : Program :=
   let body := (List.range n).map fun i =>
-    (i, .decl .const (name i) (if i == 0 then .num 7 else .var (name (i - 1))))
+    (i, .decl kind (name i) (if i == 0 then .num 7 else .var (name (i - 1))))
   ⟨entry, [⟨entry, [], body, if n == 0 then [] else [("last", name (n - 1))]⟩]⟩
 
 private def request (n cut : Nat) : EsmSplit.Spec := {
@@ -26,9 +26,9 @@ private def requireRefusal (label : String) (source : Program) (spec : EsmSplit.
   | .error _ => pure ()
   | .ok _ => throw (IO.userError s!"{label}: inadmissible request was accepted")
 
-private def checkFamily (n : Nat) : IO Unit := do
+private def checkFamily (n : Nat) (kind : DeclKind := .const) : IO Unit := do
   let cut := n / 2
-  let original := source n
+  let original := source n kind
   let spec := request n cut
   let result ← IO.ofExcept ((construct original spec).mapError fun why => s!"{n} declarations: {why}")
   let output := result.split.program
@@ -54,6 +54,7 @@ private def checkFamily (n : Nat) : IO Unit := do
 
 private def run : IO Unit := do
   for n in [1, 2, 5, 19, 64] do checkFamily n
+  for n in [1, 2, 5, 19, 64] do checkFamily n .let_
   let emptySource := source 0
   let emptySpec : EsmSplit.Spec := { entry, modules := [(entry, [])], order := [], sequential := true }
   let _ ← IO.ofExcept (construct emptySource emptySpec)
@@ -70,6 +71,11 @@ private def run : IO Unit := do
   let selfRead : Program := ⟨entry, [⟨entry, [], [(0, .decl .const "a" (.var "a"))], []⟩]⟩
   let selfSpec : EsmSplit.Spec := { entry, modules := [(entry, [.stmt 0])], sequential := true }
   requireRefusal "self read" selfRead selfSpec
+  let letForward : Program := ⟨entry, [⟨entry, [],
+    [(0, .decl .let_ "a" (.var "b")), (1, .decl .let_ "b" (.num 2))], []⟩]⟩
+  requireRefusal "lexical forward read" letForward simpleSpec
+  let uninitializedLet : Program := ⟨entry, [⟨entry, [], [(0, .decl .let_ "a" .undef)], []⟩]⟩
+  requireRefusal "uninitialized lexical declaration" uninitializedLet selfSpec
   let missing : EsmSplit.Spec := { (request 5 2) with modules :=
     [(entry, [.stmt 2, .stmt 3, .stmt 4, .stmt 99]), (worker, [.stmt 0, .stmt 1])] }
   requireRefusal "missing authored selector" (source 5) missing

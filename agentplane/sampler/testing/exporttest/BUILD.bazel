@@ -3,10 +3,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 package(default_visibility = ["//visibility:private"])
 
 go_library(
-    name = "exportfixture",
+    name = "exporttest",
     testonly = True,
     srcs = ["source.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture",
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/testing/exporttest",
     visibility = ["//agentplane/history_service/internal/ingress:__pkg__"],
     deps = [
         "//agentplane/proto:command_go_proto",

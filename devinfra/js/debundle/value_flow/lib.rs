@@ -16,6 +16,7 @@ mod guarded_member_reads;
 mod initialization;
 mod member_read_certificates;
 mod program;
+pub mod program_bindings;
 mod read_only_callbacks;
 mod return_summary;
 mod scalar_sequence;
@@ -50,14 +51,7 @@ use analysis_model::PrimKinds;
 use analysis_vocabulary::value::{Kind, Value};
 use inference::{FactContext, IterativeInference, IterativeRules};
 
-use super::StatementFacts;
 use analysis_domain::item_views::TopLevelItemView;
-use analysis_domain::lazy_boundary::{
-    LazyBoundary, LazyPosition, PositionBucketed, lazy_visit_may_skip,
-};
-use analysis_domain::{
-    impl_lazy_callable_visits, impl_lazy_class_visits, impl_lazy_optional_path_visits,
-};
 
 pub(crate) fn native_set_allocation_roots(
     inputs: &[analysis_vocabulary::inputs::ResolvedNativeOperationInput],
@@ -93,11 +87,11 @@ pub(crate) fn native_set_allocation_roots(
     allocations
 }
 
-pub(crate) struct CallTargets {
-    pub(crate) bindings: BTreeSet<Id>,
+pub struct CallTargets {
+    pub bindings: BTreeSet<Id>,
     /// Every possible value has a canonical callable binding. Otherwise a
     /// direct identifier's syntactic target must retain its opaque fallback.
-    pub(crate) complete: bool,
+    pub complete: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -106,14 +100,14 @@ struct OriginId(u32);
 /// Per-chunk, deterministic mapping between semantic origins and dense bitmap
 /// positions. The vector order preserves `Value::Ord` when decoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct OriginTable {
+pub(crate) struct OriginTable {
     origins: Vec<Value>,
     ids: HashMap<Value, OriginId>,
     function_class_ids: RoaringBitmap,
 }
 
 impl OriginTable {
-    pub(super) fn from_origins(origins: impl IntoIterator<Item = Value>) -> Self {
+    pub(crate) fn from_origins(origins: impl IntoIterator<Item = Value>) -> Self {
         let mut origins: Vec<_> = origins.into_iter().chain([Value::Top]).collect();
         origins.sort_unstable();
         origins.dedup();
@@ -153,7 +147,7 @@ impl OriginTable {
     }
 
     #[cfg(test)]
-    pub(super) fn for_expr(expr: &Expr) -> Arc<Self> {
+    pub(crate) fn for_expr(expr: &Expr) -> Arc<Self> {
         let mut collector = AllocationCollector::default();
         expr.visit_with(&mut collector);
         Arc::new(Self::from_origins(collector.origins))
@@ -231,7 +225,7 @@ impl std::fmt::Debug for Values {
 }
 
 impl Values {
-    pub(super) fn empty(origins: Arc<OriginTable>) -> Self {
+    pub(crate) fn empty(origins: Arc<OriginTable>) -> Self {
         Self {
             bitmap: Arc::new(RoaringBitmap::new()),
             unknown: false,
@@ -239,7 +233,7 @@ impl Values {
         }
     }
 
-    pub(super) fn singleton(origins: Arc<OriginTable>, value: Value) -> Self {
+    pub(crate) fn singleton(origins: Arc<OriginTable>, value: Value) -> Self {
         let mut values = Self::empty(origins);
         values.insert(value);
         values
@@ -255,7 +249,7 @@ impl Values {
     }
 
     #[cfg(test)]
-    pub(super) fn bitmap_payload_bytes(&self) -> u64 {
+    pub(crate) fn bitmap_payload_bytes(&self) -> u64 {
         let statistics = self.bitmap.statistics();
         statistics.n_bytes_array_containers
             + statistics.n_bytes_bitset_containers
@@ -263,12 +257,12 @@ impl Values {
     }
 
     #[cfg(test)]
-    pub(super) fn shares_bitmap(&self, other: &Self) -> bool {
+    pub(crate) fn shares_bitmap(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.bitmap, &other.bitmap)
     }
 
     #[cfg(test)]
-    pub(super) fn contains(&self, value: &Value) -> bool {
+    pub(crate) fn contains(&self, value: &Value) -> bool {
         if *value == Value::Top {
             return self.unknown;
         }
@@ -278,7 +272,7 @@ impl Values {
         self.bitmap.contains(id.0)
     }
 
-    pub(super) fn insert(&mut self, value: Value) -> bool {
+    pub(crate) fn insert(&mut self, value: Value) -> bool {
         if value == Value::Top {
             return !std::mem::replace(&mut self.unknown, true);
         }
@@ -296,7 +290,7 @@ impl Values {
     }
 
     /// Merge another value set, returning whether it contributed new origins.
-    pub(super) fn union_with(&mut self, other: &Self) -> bool {
+    pub(crate) fn union_with(&mut self, other: &Self) -> bool {
         assert!(Arc::ptr_eq(&self.origins, &other.origins));
         let mut changed = union_bitmap(&mut self.bitmap, &other.bitmap);
         if other.unknown && !self.unknown {
@@ -702,7 +696,7 @@ impl ValuesBuilder {
 /// A filtered view over candidate-reachability facts in the completed flow
 /// store. Reachability itself is solved with value flow; this view only limits
 /// results to the roots requested by one consumer.
-pub(crate) struct CandidateObjectIndex<'a> {
+pub struct CandidateObjectIndex<'a> {
     flow: &'a ChunkValueFlow,
     /// Requested candidate positions, stored without a chunk-wide zero prefix.
     mask: RoaringBitmap,
@@ -734,7 +728,7 @@ impl CandidateObjectIndex<'_> {
         });
     }
 
-    pub(crate) fn for_binding(&self, id: &Id, visit: impl FnMut(Value)) {
+    pub fn for_binding(&self, id: &Id, visit: impl FnMut(Value)) {
         if let Some(bits) = self.flow.candidate_bindings.get(id) {
             self.visit_bits(bits, visit);
         }
@@ -742,7 +736,7 @@ impl CandidateObjectIndex<'_> {
 
     /// Visit the union of reachable requested roots, once per root. Expanding
     /// each origin separately repeats every shared descendant at the sink.
-    pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(Value)) {
+    pub fn for_values(&self, values: &Values, mut visit: impl FnMut(Value)) {
         #[cfg(test)]
         self.summary_intersections.set(0);
         if self.mask.is_empty() {
@@ -842,7 +836,7 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
+    pub(crate) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
         let mut symbols = FlowSymbols {
             member_read_certificates: self.member_read_certificates.clone(),
             ..FlowSymbols::default()
@@ -932,10 +926,7 @@ impl ChunkValueFlow {
         values.finish()
     }
 
-    pub(crate) fn candidate_object_index(
-        &self,
-        candidates: &BTreeSet<Value>,
-    ) -> CandidateObjectIndex<'_> {
+    pub fn candidate_object_index(&self, candidates: &BTreeSet<Value>) -> CandidateObjectIndex<'_> {
         let mut mask = RoaringBitmap::new();
         for candidate in candidates {
             let index = self
@@ -1068,7 +1059,7 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub(super) fn candidate_reachability_storage_for_test(&self) -> (usize, u64, u64) {
+    pub(crate) fn candidate_reachability_storage_for_test(&self) -> (usize, u64, u64) {
         let mut cardinality = 0;
         let mut payload_bytes = 0;
         for bitmap in self.candidate_reachability.values() {
@@ -1096,7 +1087,7 @@ impl ChunkValueFlow {
         FlowProgram::collect(body, candidates).solve().0
     }
 
-    pub(crate) fn analyze_structural(
+    pub fn analyze_structural(
         body: &[TopLevelItemView<'_>],
         inputs: &[analysis_vocabulary::inputs::ResolvedNativeOperationInput],
         inferred: &BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
@@ -1104,7 +1095,7 @@ impl ChunkValueFlow {
         FlowProgram::structural(body, inputs, inferred).solve().0
     }
 
-    pub(crate) fn native_set_allocations(
+    pub fn native_set_allocations(
         &self,
     ) -> &BTreeMap<u32, analysis_vocabulary::inputs::ProvenSetAllocation> {
         &self.native_set_allocations
@@ -1317,7 +1308,7 @@ impl ChunkValueFlow {
         out
     }
 
-    pub(crate) fn values_of_expr(&self, expr: &Expr) -> Values {
+    pub fn values_of_expr(&self, expr: &Expr) -> Values {
         if let Some(program) = &self.program {
             return program.values_of_expr(expr, self);
         }
@@ -1449,7 +1440,7 @@ impl ChunkValueFlow {
     /// An exact local call target whose every normal return is a newly
     /// allocated record with the listed own data fields. Call evaluation and
     /// the function body's effects remain outside this value-shape fact.
-    pub(crate) fn fresh_returned_record_keys(&self, call: &CallExpr) -> Option<&BTreeSet<String>> {
+    pub fn fresh_returned_record_keys(&self, call: &CallExpr) -> Option<&BTreeSet<String>> {
         let Callee::Expr(callee) = &call.callee else {
             return None;
         };
@@ -1480,7 +1471,7 @@ impl ChunkValueFlow {
         self.properties.get(&object)?.get(property)
     }
 
-    pub(crate) fn aliases_by_object(
+    pub fn aliases_by_object(
         &self,
         objects: &BTreeSet<Value>,
     ) -> BTreeMap<Value, BTreeSet<String>> {
@@ -1493,7 +1484,7 @@ impl ChunkValueFlow {
         aliases
     }
 
-    pub(crate) fn call_targets(&self, callee: &Expr) -> CallTargets {
+    pub fn call_targets(&self, callee: &Expr) -> CallTargets {
         let values = self.values_of_expr(callee);
         let complete = !values.is_empty()
             && values
@@ -1505,72 +1496,6 @@ impl ChunkValueFlow {
                 .filter_map(|origin| self.canonical_callable(origin).cloned())
                 .collect(),
             complete,
-        }
-    }
-
-    /// Add call targets discovered through parameters, aliases, returns and
-    /// static object properties to the ordinary syntactic call buckets.
-    pub fn augment_calls(&self, body: &[TopLevelItemView<'_>], facts: &mut [StatementFacts]) {
-        for (item, fact) in body.iter().zip(facts) {
-            let mut collector = FlowCallCollector {
-                flow: self,
-                calls: PositionBucketed::default(),
-                complete_ident_calls: PositionBucketed::default(),
-                incomplete_ident_calls: PositionBucketed::default(),
-                position: LazyPosition::default(),
-            };
-            item.as_module_item().visit_with(&mut collector);
-            for id in collector
-                .complete_ident_calls
-                .eager
-                .difference(&collector.incomplete_ident_calls.eager)
-            {
-                fact.calls.eager.remove(id);
-            }
-            for id in collector
-                .complete_ident_calls
-                .lazy
-                .difference(&collector.incomplete_ident_calls.lazy)
-            {
-                fact.calls.lazy.remove(id);
-            }
-            for id in collector
-                .complete_ident_calls
-                .first_order_lazy
-                .difference(&collector.incomplete_ident_calls.first_order_lazy)
-            {
-                fact.calls.first_order_lazy.remove(id);
-            }
-            fact.calls.extend(collector.calls);
-            if let (Some(class), Some(constructor)) = (
-                analysis_domain::item_views::class_of_item(item.as_module_item()),
-                fact.constructor.as_mut(),
-            ) {
-                let mut ctor_calls = FlowCallCollector {
-                    flow: self,
-                    calls: PositionBucketed::default(),
-                    complete_ident_calls: PositionBucketed::default(),
-                    incomplete_ident_calls: PositionBucketed::default(),
-                    position: LazyPosition::default(),
-                };
-                for member in &class.body {
-                    if matches!(member, ClassMember::Constructor(_))
-                        || matches!(member, ClassMember::ClassProp(prop) if !prop.is_static)
-                        || matches!(member, ClassMember::PrivateProp(prop) if !prop.is_static)
-                        || matches!(member, ClassMember::AutoAccessor(accessor) if !accessor.is_static)
-                    {
-                        member.visit_with(&mut ctor_calls);
-                    }
-                }
-                for id in ctor_calls
-                    .complete_ident_calls
-                    .first_order_lazy
-                    .difference(&ctor_calls.incomplete_ident_calls.first_order_lazy)
-                {
-                    constructor.calls.remove(id);
-                }
-                constructor.calls.extend(ctor_calls.calls.first_order_lazy);
-            }
         }
     }
 }
@@ -2630,7 +2555,8 @@ fn solve_flow(
         candidate_objects,
         native_set_allocations,
         cell_effects,
-        &crate::diagnostics::Diagnostics::default(),
+        &work_metrics::WorkMetrics::default(),
+        None,
     )
 }
 
@@ -2647,7 +2573,8 @@ fn solve_flow_observed(
     candidate_objects: &[Value],
     native_set_allocations: BTreeSet<u32>,
     cell_effects: BTreeMap<u32, CallEffectBody>,
-    diagnostics: &crate::diagnostics::Diagnostics,
+    metrics: &work_metrics::WorkMetrics,
+    observer: Option<&dyn progress::Observer>,
 ) -> (BTreeMap<FlowKey, FlowFact>, FlowWorkStats) {
     let FlowConstraints {
         events,
@@ -2662,7 +2589,7 @@ fn solve_flow_observed(
     let work = Rc::new(RefCell::new(FlowWorkStats::default()));
     let events = Arc::new(events);
     let rules = FlowRules {
-        metrics: diagnostics.metrics().clone(),
+        metrics: metrics.clone(),
         invocations: RefCell::new(
             events
                 .iter()
@@ -2703,13 +2630,13 @@ fn solve_flow_observed(
         #[cfg(test)]
         work: work.clone(),
     };
-    use crate::diagnostics::progress::{Phase, State};
-    diagnostics.progress("*", Phase::SolveProgramValueFlow, State::Start);
+    use progress::{Phase, State, report};
+    report(observer, "*", Phase::SolveProgramValueFlow, State::Start);
     let values = IterativeInference::new(rules)
-        .observed(diagnostics.metrics())
+        .observed(metrics)
         .solve_values_resumable(0..producer_count);
-    diagnostics.progress("*", Phase::SolveProgramValueFlow, State::End);
-    diagnostics.progress("*", Phase::CloseProgramValueFlow, State::Start);
+    report(observer, "*", Phase::SolveProgramValueFlow, State::End);
+    report(observer, "*", Phase::CloseProgramValueFlow, State::Start);
     #[cfg(test)]
     {
         work.borrow_mut().origin_deliveries = values.delta_deliveries();
@@ -2758,7 +2685,7 @@ fn solve_flow_observed(
     let stats = *work.borrow();
     #[cfg(not(test))]
     let stats = ();
-    diagnostics.progress("*", Phase::CloseProgramValueFlow, State::End);
+    report(observer, "*", Phase::CloseProgramValueFlow, State::End);
     (facts, stats)
 }
 
@@ -3207,7 +3134,7 @@ fn fresh_returned_record_keys(body: &FunctionBody) -> Option<BTreeSet<String>> {
 /// Exact own data fields created by one fresh ordinary object literal.
 /// Spread, computed names, accessors, methods and `__proto__` retain the
 /// conservative getter/proxy classification at the consuming pattern.
-pub(crate) fn own_data_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
+pub fn own_data_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
     let mut keys = BTreeSet::new();
     for prop in &object.props {
         let PropOrSpread::Prop(prop) = prop else {
@@ -4208,7 +4135,7 @@ fn computed_numeric_property(prop: &MemberProp) -> bool {
 
 /// A conservative superset of strings a Number or BigInt can produce through ToPropertyKey.
 /// Prefix checks avoid scanning names on reads; NaN and Infinity are the named Number cases.
-pub(super) fn may_be_numeric_property_key(name: &str) -> bool {
+pub(crate) fn may_be_numeric_property_key(name: &str) -> bool {
     matches!(
         name.as_bytes().first(),
         Some(b'0'..=b'9' | b'+' | b'-' | b'.')
@@ -4456,76 +4383,10 @@ impl Visit for FlowPass<'_> {
     }
 }
 
-struct FlowCallCollector<'a> {
-    flow: &'a ChunkValueFlow,
-    calls: PositionBucketed<BTreeSet<Id>>,
-    complete_ident_calls: PositionBucketed<BTreeSet<Id>>,
-    incomplete_ident_calls: PositionBucketed<BTreeSet<Id>>,
-    position: LazyPosition,
-}
-
-impl LazyBoundary for FlowCallCollector<'_> {
-    fn position(&mut self) -> &mut LazyPosition {
-        &mut self.position
-    }
-}
-
-impl FlowCallCollector<'_> {
-    fn record(&mut self, callee: &Expr) {
-        let targets = self.flow.call_targets(callee);
-        if let Expr::Ident(ident) = callee.unwrap_parens() {
-            let id = ident.to_id();
-            let bucket = if targets.complete {
-                &mut self.complete_ident_calls
-            } else {
-                &mut self.incomplete_ident_calls
-            };
-            bucket.record(&id, self.position);
-        }
-        for binding in targets.bindings {
-            self.calls.record(&binding, self.position);
-        }
-    }
-}
-
-impl Visit for FlowCallCollector<'_> {
-    impl_lazy_optional_path_visits!();
-
-    fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if node.op.may_short_circuit() {
-            lazy_visit_may_skip(self, node);
-        } else {
-            node.visit_children_with(self);
-        }
-    }
-    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_call_expr(&mut self, node: &CallExpr) {
-        if let Callee::Expr(callee) = &node.callee {
-            self.record(callee);
-        }
-        node.visit_children_with(self);
-    }
-
-    fn visit_new_expr(&mut self, node: &NewExpr) {
-        self.record(&node.callee);
-        node.visit_children_with(self);
-    }
-
-    impl_lazy_callable_visits!();
-    impl_lazy_class_visits!();
-
-    fn visit_await_expr(&mut self, node: &AwaitExpr) {
-        node.arg.visit_with(self);
-        if self.position.depth > 0 && self.position.may_skip_await_depth == 0 {
-            self.position.past_await = true;
-        }
-    }
-}
+#[cfg(test)]
+mod value_flow_tests;
+#[cfg(test)]
+mod value_set_tests;
 
 #[cfg(test)]
 mod bitmap_join_tests {

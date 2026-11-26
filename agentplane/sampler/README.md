@@ -32,7 +32,7 @@ JavaScript host is the pinned upstream Codex binary. Python is used only by the 
 `internal/sessionstore` owns durable Session state, transactions, request preparation and recovery.
 The runtime supplies a concrete provider-request recipe; the Store prepares and commits it under
 the existing ownership and context fences before the runtime performs network I/O. History's
-integration tests use the sampler-owned `testing/exportfixture` source without importing Store
+integration tests use the sampler-owned `testing/exporttest` source without importing Store
 internals.
 
 `internal/residentruntime` owns replica scheduling, capacity, recovery scans and coordinated drain.

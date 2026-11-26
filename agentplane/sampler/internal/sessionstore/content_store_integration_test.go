@@ -16,7 +16,7 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wiretest"
 	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -132,7 +132,7 @@ func assertDispatchBoundaryUsesContentReferences(t *testing.T, store *Store, ses
 		if err := json.Unmarshal(boundary.GetPayload(), &payload); err != nil {
 			t.Fatalf("decode sampling dispatch boundary: %v", err)
 		}
-		if string(payload["request_id"]) != string(wirefixture.MustMarshalJSON(t, requestID)) {
+		if string(payload["request_id"]) != string(wiretest.MustMarshalJSON(t, requestID)) {
 			t.Fatalf("dispatch omitted request ID: %s", boundary.GetPayload())
 		}
 		for _, key := range []string{"context_id", "profile_id", "source_context_id", "prefix_ids", "suffix_ids", "body", "wire_request"} {
@@ -173,7 +173,7 @@ func TestProviderRequestStorageHasLinearContextGrowthAndFrozenProfile(t *testing
 		requestID, wire := dispatchStoredResponsesRequest(t, store, owner, request)
 		if turn == 0 {
 			firstID, firstWire, duplicateRequest = requestID, wire, request
-			equivalentJSON(t, wire, wirefixture.MustMarshalJSON(t, request))
+			equivalentJSON(t, wire, wiretest.MustMarshalJSON(t, request))
 		}
 		if turn == turns-1 {
 			lastID, lastWire = requestID, wire
@@ -213,7 +213,7 @@ func TestProviderRequestStorageHasLinearContextGrowthAndFrozenProfile(t *testing
 	if restored.Instructions != storedRequestInstruction {
 		t.Fatalf("restored last request lost frozen profile: instructions=%q tools=%+v", restored.Instructions, restored.Tools)
 	}
-	equivalentJSON(t, restored.Tools, wirefixture.MustMarshalJSON(t, baseTools))
+	equivalentJSON(t, restored.Tools, wiretest.MustMarshalJSON(t, baseTools))
 
 	if got := tableRowCount(t, store, "sampler_context"); got != turns {
 		t.Fatalf("sampler_context rows=%d after %d append-only inputs, want linear count %d", got, turns, turns)
@@ -310,7 +310,7 @@ func responseContextForTest(t *testing.T, items []responses.Item) *responses.Con
 	state := &responses.Context{}
 	records := make([]json.RawMessage, 0, len(items))
 	for _, item := range items {
-		records = append(records, wirefixture.MustMarshalJSON(t, item))
+		records = append(records, wiretest.MustMarshalJSON(t, item))
 	}
 	if err := state.AppendRecords(records); err != nil {
 		t.Fatal(err)

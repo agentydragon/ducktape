@@ -16,6 +16,7 @@ use binding_targets::{
 
 use super::guarded_member_reads::{GuardedSnapshotUse, guarded_snapshot_uses};
 use super::scalar_sequence::{ScalarSequenceUses, scalar_sequence_uses};
+use analysis_domain::item_views::TopLevelItemView;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct MemberReadCertificates {
@@ -38,7 +39,7 @@ impl MemberReadCertificates {
             .contains(&(span.lo.0, span.hi.0, binding.clone()))
     }
 
-    pub(super) fn collect(body: &[super::super::TopLevelItemView<'_>]) -> Self {
+    pub(super) fn collect(body: &[TopLevelItemView<'_>]) -> Self {
         let mut census = FunctionCensus::default();
         for item in body {
             item.as_module_item().visit_with(&mut census);

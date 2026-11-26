@@ -1,5 +1,6 @@
 use super::*;
-use crate::facts::value_flow::Values;
+use crate::Values;
+use analysis_domain::item_views::top_level_item_views;
 use analysis_vocabulary::value::{Kind, Value};
 use swc_common::SyntaxContext;
 
@@ -42,7 +43,7 @@ fn assert_matches_reference(source: &str) -> ChunkValueFlow {
 }
 
 /// Analyzes `source`, checking the result against the reference analysis.
-fn analyze_checked(source: &str) -> (ChunkValueFlow, super::value_flow::FlowWorkStats) {
+fn analyze_checked(source: &str) -> (ChunkValueFlow, crate::FlowWorkStats) {
     let module = raw_js_test_support::parse(source);
     let body = top_level_item_views(&module.body);
     let (flow, stats) = ChunkValueFlow::analyze_with_stats(&body);
@@ -527,7 +528,7 @@ fn argument_evaluations(source: &str) -> usize {
     analyze_checked(source).1.argument_evaluations
 }
 
-fn expression_dependency_stats(source: &str) -> super::value_flow::FlowWorkStats {
+fn expression_dependency_stats(source: &str) -> crate::FlowWorkStats {
     assert_matches_reference(source);
     let module = raw_js_test_support::parse(source);
     let body = top_level_item_views(&module.body);
@@ -1296,7 +1297,7 @@ const next = target;
     }
 }
 
-fn invocation_work(source: &str) -> super::value_flow::FlowWorkStats {
+fn invocation_work(source: &str) -> crate::FlowWorkStats {
     analyze_checked(source).1
 }
 
@@ -1554,9 +1555,10 @@ fn work_bounds_property_rhs_preserves_shared_full_result() {
                             let values = flow
                                 .values_of_property(object, &format!("field{consumer}"))
                                 .unwrap();
-                            if !unique.iter().any(|previous: &&super::value_flow::Values| {
-                                values.shares_bitmap(previous)
-                            }) {
+                            if !unique
+                                .iter()
+                                .any(|previous: &&crate::Values| values.shares_bitmap(previous))
+                            {
                                 unique.push(values);
                             }
                         }
@@ -1747,16 +1749,10 @@ items["2"] = late_value;
 #[test]
 fn numeric_property_key_names_are_a_conservative_superset() {
     for name in ["0", "17", "-1", "+1", ".5", "1e+21", "NaN", "Infinity"] {
-        assert!(
-            super::value_flow::may_be_numeric_property_key(name),
-            "{name}"
-        );
+        assert!(crate::may_be_numeric_property_key(name), "{name}");
     }
     for name in ["props", "ref", "type", "length", "constructor"] {
-        assert!(
-            !super::value_flow::may_be_numeric_property_key(name),
-            "{name}"
-        );
+        assert!(!crate::may_be_numeric_property_key(name), "{name}");
     }
 }
 

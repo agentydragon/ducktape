@@ -1,5 +1,5 @@
-// Package wirefixture encodes provider wire payloads for tests.
-package wirefixture
+// Package wiretest encodes provider wire payloads for tests.
+package wiretest
 
 import (
 	"encoding/json"

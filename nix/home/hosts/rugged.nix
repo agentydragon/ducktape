@@ -15,6 +15,7 @@
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
     ../modules/discord-minimized-autostart.nix
+    ../modules/karere.nix
     ./rugged-opencode.nix
   ];
 

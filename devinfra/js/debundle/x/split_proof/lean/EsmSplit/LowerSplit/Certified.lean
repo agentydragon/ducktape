@@ -299,7 +299,11 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   let .ok source := CoreJS.LinkedInput.decodeSingletonSource src.program spec.entry | return none
   let [original] := source.modules | return none
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
-      match stmt with | .decl .const _ _ => true | _ => false) do return none
+      match stmt with
+      | .decl .const _ _ => true
+      | .decl .let_ _ .undef => false
+      | .decl .let_ _ _ => true
+      | _ => false) do return none
   unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
   let .ok constructed := CoreJS.NamedDeclarationSplit.construct source spec | return none
   try

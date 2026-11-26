@@ -27,9 +27,7 @@ from util.db_url import render_postgresql_url
 # gazelle:include_dep @pypi//protobuf
 
 _SERVICE_BINARY = "ducktape/agentplane/notification_service/cmd/notification-service_/notification-service"
-_DRIVER_BINARY = (
-    "ducktape/agentplane/notification_service/testing/process_fixture/process_contract_test_/process_contract_test"
-)
+_DRIVER_BINARY = "ducktape/agentplane/notification_service/testing/process_contract_test_/process_contract_test"
 _MIGRATION_DATABASE_URL_ENV = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
 _PROCESS_CONFIG_ENV = "DUCKTAPE_NOTIFICATION_PROCESS_CONFIG"
 _STOP_GRACE_SECONDS = 10

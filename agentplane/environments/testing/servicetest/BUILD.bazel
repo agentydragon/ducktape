@@ -1,10 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "servicefixture",
+    name = "servicetest",
     testonly = True,
     srcs = ["launcher.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/environments/testing/servicefixture",
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/testing/servicetest",
     visibility = ["//agentplane/action_service/orchestration_v1:__pkg__"],
     deps = [
         "//agentplane/environments/internal/resume",

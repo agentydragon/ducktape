@@ -126,20 +126,6 @@ impl ProgramValueFlows {
         }
         output
     }
-
-    /// Finish a source census with the same program flow used by capability
-    /// and purity preparation. Missing flow is not a local-analysis fallback.
-    pub fn complete_chunk<'a>(
-        &self,
-        module: &str,
-        source: crate::facts::StructuralChunkSourceFacts<'a>,
-        arguments: &[analysis_vocabulary::inputs::ResolvedArgumentInput],
-    ) -> Option<crate::facts::StructuralChunkAnalysis<'a>> {
-        let flow = self.flows.get(module)?.clone();
-        Some(super::super::analyze::complete_chunk_structural_with_flow(
-            source, arguments, flow,
-        ))
-    }
 }
 
 /// One source occurrence, interned before solving. Local byte offsets and SWC
@@ -714,7 +700,8 @@ impl Rekey<'_> {
 pub fn program_value_flows<'a>(
     bindings: &ProgramBindings,
     modules: impl IntoIterator<Item = ProgramFlowModule<'a>>,
-    diagnostics: &crate::diagnostics::Diagnostics,
+    metrics: &work_metrics::WorkMetrics,
+    observer: Option<&dyn progress::Observer>,
 ) -> ProgramValueFlows {
     let mut programs = Vec::new();
     let mut names = Vec::new();
@@ -922,7 +909,8 @@ pub fn program_value_flows<'a>(
         &candidates,
         native_sets,
         cell_effects,
-        diagnostics,
+        metrics,
+        observer,
     );
     let mut values = CompletedValueStore::with_domains(declared.len(), sites.sources.len());
     #[cfg(test)]

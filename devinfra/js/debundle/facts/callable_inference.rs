@@ -1,7 +1,6 @@
 //! Callable conclusions composed from canonical identity and body candidates.
 
 use crate::facts::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
-use crate::facts::value_flow::Values;
 use analysis_domain::builtins::Row;
 use analysis_domain::integrity::IntrinsicSlot;
 use analysis_vocabulary::inputs::NativeIntrinsic;
@@ -10,6 +9,7 @@ use analysis_vocabulary::value::{Kind, Value};
 use inference::CertificateContext;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
+use value_flow::Values;
 
 #[derive(Debug)]
 pub struct FunctionBindingFacts {

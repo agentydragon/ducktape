@@ -10,6 +10,7 @@
     ../home.nix
     ../modules/forgejo-ssh.nix
     ../modules/github-ssh.nix
+    ../modules/karere.nix
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
   ];

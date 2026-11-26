@@ -16,8 +16,8 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providertest"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wiretest"
 )
 
 func testConfig() Config {
@@ -56,7 +56,7 @@ func TestAuditOmitsTransientEventsAndKeepsProviderMetadata(t *testing.T) {
 		Events:        []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)},
 		ContextTokens: &tokens, HTTPStatus: 200, ProviderRequestID: "req_fixture",
 	}
-	got := string(wirefixture.MustMarshalJSON(t, response.Audit()))
+	got := string(wiretest.MustMarshalJSON(t, response.Audit()))
 	if strings.Contains(got, `"events"`) {
 		t.Fatalf("successful audit retained transient events: %s", got)
 	}
@@ -65,7 +65,7 @@ func TestAuditOmitsTransientEventsAndKeepsProviderMetadata(t *testing.T) {
 			t.Fatalf("successful audit lost %s: %s", marker, got)
 		}
 	}
-	if eventJSON := string(wirefixture.MustMarshalJSON(t, response.Events)); !strings.Contains(eventJSON, `"provider_event_marker":"fixture"`) {
+	if eventJSON := string(wiretest.MustMarshalJSON(t, response.Events)); !strings.Contains(eventJSON, `"provider_event_marker":"fixture"`) {
 		t.Fatalf("transient per-event evidence was lost: %s", eventJSON)
 	}
 }
@@ -83,7 +83,7 @@ func TestCompactionFailureDiagnosticsKeepTransientEvents(t *testing.T) {
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
 	}
-	got := string(wirefixture.MustMarshalJSON(t, known.Evidence["response"]))
+	got := string(wiretest.MustMarshalJSON(t, known.Evidence["response"]))
 	for _, marker := range []string{`"events":[{"type":"message_start"`, `"provider_event_marker":"fixture"`, `"provider_terminal_marker":"fixture"`, `"http_status":200`, `"provider_request_id":"req_fixture"`} {
 		if !strings.Contains(got, marker) {
 			t.Fatalf("compaction failure diagnostics lost %s: %s", marker, got)
@@ -117,7 +117,7 @@ func TestSuccessfulCompactionAuditKeepsReplacementWithoutEvents(t *testing.T) {
 	if replacement.OriginAt(1) != origin || replacement.OriginAt(0) != (protocol.RecordOrigin{Kind: protocol.RecordOriginCompaction, SourceID: "fixture-compaction"}) {
 		t.Fatal("retained environment lost its origin at the replacement ordinal")
 	}
-	got := string(wirefixture.MustMarshalJSON(t, audit))
+	got := string(wiretest.MustMarshalJSON(t, audit))
 	if strings.Contains(got, `"events"`) {
 		t.Fatalf("successful compaction audit retained transient events: %s", got)
 	}
@@ -296,7 +296,7 @@ func TestBuildAnthropicRequestReplaysSignedThinkingBlockUnchanged(t *testing.T) 
 	stored, err := conversation.Records()
 	if err != nil || len(stored) != 1 || !bytes.Contains(stored[0], []byte(`"provider_metadata":{"opaque_sequence":9007199254740993}`)) ||
 		!bytes.Contains(stored[0], []byte(`"provider_usage":{"fixture":true}`)) {
-		t.Fatalf("unknown native response metadata was not retained in storage: records=%s err=%v", wirefixture.MustMarshalJSON(t, stored), err)
+		t.Fatalf("unknown native response metadata was not retained in storage: records=%s err=%v", wiretest.MustMarshalJSON(t, stored), err)
 	}
 	if body.Diagnostics == nil || body.Diagnostics.PreviousMessageID == nil || *body.Diagnostics.PreviousMessageID != "msg_signed" {
 		t.Fatalf("previous message diagnostics were lost: %+v", body.Diagnostics)
@@ -430,7 +430,7 @@ func TestAnthropicContextRejectsUnsupportedAndDuplicateNativeCalls(t *testing.T)
 }
 
 func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t *testing.T) {
-	partial := wirefixture.SSEEventStream(
+	partial := wiretest.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_partial","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_partial","name":"exec","input":{}}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":\"text(1)\""}}`,
@@ -441,7 +441,7 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 		t.Fatalf("partial eager input became executable or lost its retryable provider outcome: response=%+v err=%v", response, err)
 	}
 
-	complete := wirefixture.SSEEventStream(
+	complete := wiretest.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_complete","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_complete","name":"exec","input":{}}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":"}}`,
@@ -465,7 +465,7 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 }
 
 func TestAnthropicTruncatedStreamIsProviderTransient(t *testing.T) {
-	stream := wirefixture.SSEEventStream(`{"type":"message_start","message":{"id":"msg_truncated","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+	stream := wiretest.SSEEventStream(`{"type":"message_start","message":{"id":"msg_truncated","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
 	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false, protocol.ProviderHooks{})
 	var transient *protocol.ProviderTransientError
 	if response != nil || !errors.As(err, &transient) {
@@ -499,7 +499,7 @@ func TestAnthropicRetryableHTTPStatusesCarryRetryAfter(t *testing.T) {
 }
 
 func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
-	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+	server := providertest.SSEServer(t, func(stream providertest.SSEStream, r *http.Request) {
 		stream.Data(`{"type":"message_start","message":{"id":"msg_progress","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
 		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 		for range 5 {
@@ -515,8 +515,8 @@ func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
 		stream.Data(`{"type":"message_stop"}`)
 	})
 
-	ctx, hooks, progress := providerfixture.IdleBudget(t, 70*time.Millisecond)
-	recorder := &providerfixture.EvidenceRecorder{}
+	ctx, hooks, progress := providertest.IdleBudget(t, 70*time.Millisecond)
+	recorder := &providertest.EvidenceRecorder{}
 	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
 	if err != nil {
 		t.Fatal(err)
@@ -530,7 +530,7 @@ func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
 }
 
 func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
-	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+	server := providertest.SSEServer(t, func(stream providertest.SSEStream, r *http.Request) {
 		stream.Data(`{"type":"message_start","message":{"id":"msg_idle","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
 		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 		for index := 0; ; index++ {
@@ -547,8 +547,8 @@ func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
 		}
 	})
 
-	ctx, hooks, progress := providerfixture.IdleBudget(t, 45*time.Millisecond)
-	recorder := &providerfixture.EvidenceRecorder{}
+	ctx, hooks, progress := providertest.IdleBudget(t, 45*time.Millisecond)
+	recorder := &providertest.EvidenceRecorder{}
 	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
 	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
@@ -563,7 +563,7 @@ func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
 }
 
 func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
-	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, _ *http.Request) {
+	server := providertest.SSEServer(t, func(stream providertest.SSEStream, _ *http.Request) {
 		stream.Data(`{"type":"message_start","message":{"id":"msg_compact","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
 		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"summary","signature":"sig_fixture"}}`)
 		stream.Data(`{"type":"content_block_stop","index":0}`)
@@ -573,7 +573,7 @@ func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
 
 	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond)
 	defer stop()
-	recorder := &providerfixture.EvidenceRecorder{}
+	recorder := &providertest.EvidenceRecorder{}
 	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, true, hooks)
 	if err != nil {
 		t.Fatal(err)
@@ -584,7 +584,7 @@ func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
 }
 
 func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
-	stream := wirefixture.SSEEventStream(
+	stream := wiretest.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_unknown","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"tool_unknown"}}`,
 	)
@@ -593,7 +593,7 @@ func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("unsupported output block outcome=%+v err=%v; want a known rejection", response, err)
 	}
-	if got := string(wirefixture.MustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"server_tool_use"`) {
+	if got := string(wiretest.MustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"server_tool_use"`) {
 		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
 }
@@ -604,7 +604,7 @@ func TestAnthropicCompactionRequiresContentAndSignature(t *testing.T) {
 		"missing signature": `{"type":"compaction","content":"summary"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			stream := wirefixture.SSEEventStream(
+			stream := wiretest.SSEEventStream(
 				`{"type":"message_start","message":{"id":"msg_compaction","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 				fmt.Sprintf(`{"type":"content_block_start","index":0,"content_block":%s}`, block),
 				`{"type":"content_block_stop","index":0}`,
@@ -656,7 +656,7 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 	params := RequestParams{Context: conversation, Model: "claude-test", Effort: "high", Instructions: &instructions, Tools: testToolSurface()}
 	config := testConfig()
 	config.Compaction = &CompactionConfig{MaxTokens: 2048, KeepRecentTurns: 1}
-	system := string(wirefixture.MustMarshalJSON(t, protocol.BaseInstructions+"\n\n"+instructions))
+	system := string(wiretest.MustMarshalJSON(t, protocol.BaseInstructions+"\n\n"+instructions))
 	for _, test := range []struct {
 		name string
 		body func() (any, error)
@@ -677,7 +677,7 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := strings.Replace(string(wirefixture.MustMarshalJSON(t, body)), system, `"<system>"`, 1)
+			got := strings.Replace(string(wiretest.MustMarshalJSON(t, body)), system, `"<system>"`, 1)
 			if got != test.want {
 				t.Fatalf("wire body changed:\ngot  %s\nwant %s", got, test.want)
 			}
