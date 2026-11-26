@@ -18,39 +18,34 @@ open Lean EsmSplit.SplitFiles
 
 open CoreJS (Guarantee)
 
-/-- Compiler and project imports supplied by the build for generated proofs. -/
+/-- Compiler and project paths selected by the splitter's build. -/
 structure GeneratedProofToolchain where
   lean : System.FilePath
   sysroot : System.FilePath
-  importArts : Lean.NameMap Lean.ImportArtifacts
+  importArts : Lean.NameMap Lean.ImportArtifacts := {}
+  projectLibrary : Option System.FilePath := none
+  projectSource : Option System.FilePath := none
 
-/-- Check the generated proof with the same toolchain and model as the splitter. -/
-private def checkLean (toolchain : Option GeneratedProofToolchain)
+/-- Use the SDK's default runtime settings and only the build-selected search paths. -/
+private def checkLean (toolchain : GeneratedProofToolchain)
     (work : System.FilePath) (args : Array String) : IO Unit := do
-  let args := #["-DwarningAsError=true", s!"--root={work}"] ++ args
-  let proc ← match toolchain with
-    | some pinned =>
-      IO.Process.output {
-        cmd := pinned.lean.toString
-        args
-        env := #[("LEAN_SYSROOT", some pinned.sysroot.toString), ("LEAN_PATH", none), ("LEAN_SRC_PATH", none)]
-      }
-    | none =>
-      let exe ← IO.appPath
-      if exe.fileName == some "lean" then
-        IO.Process.output { cmd := exe.toString, args }
-      else do
-        -- The native Lake executable is <project>/.lake/build/bin/lowersplit.
-        -- TODO: Consider resolving the project environment once per run (see split_proof/TODO.md).
-        let mut project := exe
-        for _ in [:4] do project := project.parent.getD "."
-        IO.Process.output { cmd := "lake", args := #["env", "lean"] ++ args, cwd := some project }
+  let paths := #[("LEAN_SYSROOT", some toolchain.sysroot.toString),
+    ("LEAN_PATH", toolchain.projectLibrary.map toString),
+    ("LEAN_SRC_PATH", toolchain.projectSource.map toString)]
+  let defaults := #["LEAN_IMPORT_WORKERS", "LEAN_NUM_THREADS", "LEAN_STACK_SIZE_KB",
+    "LEAN_MAIN_USE_THREAD", "LEAN_ABORT_ON_PANIC", "LEAN_ABORT_ON_NONLINEAR",
+    "LEAN_BACKTRACE", "LEAN_BACKTRACE_RAW", "LEAN_TRACE_TASK_GET_BLOCKED"].map (·, none)
+  let proc ← IO.Process.output {
+    cmd := toolchain.lean.toString
+    args := #["-DwarningAsError=true", s!"--root={work}"] ++ args
+    env := paths ++ defaults
+  }
   unless proc.exitCode == 0 do
     let detail := (proc.stdout ++ proc.stderr).trimAscii.take 1200
     let reason := s!"could not prove equivalent linked executions (Lean exited with status {proc.exitCode})"
     throw (IO.userError (if detail.isEmpty then reason else s!"{reason}: {detail}"))
 
-private def checkProofModule (toolchain : Option GeneratedProofToolchain)
+private def checkProofModule (toolchain : GeneratedProofToolchain)
     (work : System.FilePath) (setup : Lean.ModuleSetup)
     (code : String) (args : Array String) : IO Unit := do
   let stem := setup.name.toString
@@ -60,7 +55,7 @@ private def checkProofModule (toolchain : Option GeneratedProofToolchain)
   IO.FS.writeFile config (toJson setup).compress
   checkLean toolchain work (#[s!"--setup={config}"] ++ args ++ #[file.toString])
 
-private def runProofRecipe (toolchain : Option GeneratedProofToolchain)
+private def runProofRecipe (toolchain : GeneratedProofToolchain)
     (timings : Bool) (work : System.FilePath)
     (initialImports : Lean.NameMap Lean.ImportArtifacts) (recipe : CoreJS.LinkedBehavior.ProofRecipe) : IO Unit := do
   let mut importArts := initialImports
@@ -82,12 +77,11 @@ private def writeCertificateData (work : System.FilePath)
   return dataFile
 
 /-- Publication waits for the kernel-checked executions and the exact AST gate. -/
-private def verifyExecution (loadToolchain : Option (IO GeneratedProofToolchain))
+private def verifyExecution (loadToolchain : IO GeneratedProofToolchain)
     (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate)
     (dataFile : System.FilePath) : IO CoreJS.HostPremises := do
-  let toolchain ← loadToolchain.mapM id
-  let imports := (toolchain.map (·.importArts)).getD {}
-  let importArts := imports.insert CertificateData.moduleName (.ofArrays #[#[dataFile]])
+  let toolchain ← loadToolchain
+  let importArts := toolchain.importArts.insert CertificateData.moduleName (.ofArrays #[#[dataFile]])
   let accepted ← match cert.checkpoint with
     | none => pure false
     | some recipe => try
@@ -296,7 +290,7 @@ def prepareSliceEligibility (profile : CoreJS.HostProfile) (source providers fil
 
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
-private def runSingleton (loadToolchain : Option (IO GeneratedProofToolchain))
+private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
     (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
   let request := options.request
@@ -480,7 +474,7 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
     | .error refusal => emitRefusal request.label refusal "linked-structural"
   catch e => emitVerdict request.label (.error e.toString) "linked-structural"
 
-def certified (args : List String) (loadToolchain : Option (IO GeneratedProofToolchain) := none) :
+def certified (args : List String) (loadToolchain : IO GeneratedProofToolchain) :
     IO UInt32 := do
   let (level?, args) := EsmSplit.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label

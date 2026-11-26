@@ -34,4 +34,4 @@ private def loadGeneratedProofToolchain : IO GeneratedProofToolchain := do
 end EsmSplit.LowerSplit
 
 def main : List String → IO UInt32 :=
-  EsmSplit.LowerSplit.mainWithProofToolchain (some EsmSplit.LowerSplit.loadGeneratedProofToolchain)
+  EsmSplit.LowerSplit.main EsmSplit.LowerSplit.loadGeneratedProofToolchain
