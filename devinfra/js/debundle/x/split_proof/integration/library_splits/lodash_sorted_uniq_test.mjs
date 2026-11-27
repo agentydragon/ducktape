@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,8 +14,11 @@ import { split } from "../../translation/testing/split.mjs";
 
 const resolve = createRequire(import.meta.url).resolve;
 const manifest = resolve("lodash-es/package.json");
-const { name, version, type } = JSON.parse(readFileSync(manifest, "utf8"));
+const packageText = readFileSync(manifest, "utf8");
+const packageMetadata = JSON.parse(packageText);
+const { name, version, type } = packageMetadata;
 assert.deepEqual({ name, version, type }, { name: "lodash-es", version: "4.18.1", type: "module" });
+const packageRoot = path.dirname(realpathSync(manifest));
 
 const sources = new Map();
 for (const [file, size, sha256] of [
@@ -24,12 +27,13 @@ for (const [file, size, sha256] of [
   ["sortedUniq.js", 511, "0b23aa21cf887a1db228d20ecc388f5cc4ad6a0f40a3e8935d4aa44410a69c95"],
 ]) {
   const source = resolve("lodash-es/" + file);
+  assert.equal(realpathSync(source), path.join(packageRoot, file));
   const bytes = readFileSync(source);
   assert.equal(bytes.length, size, file);
   assert.equal(createHash("sha256").update(bytes).digest("hex"), sha256, file);
   const parsed = parseModule(bytes.toString("utf8"), acorn.parse, eslintScope);
   assert.deepEqual(parsed.scopes.globalScope.through, [], file);
-  sources.set(file, { source, parsed });
+  sources.set(file, { source, parsed, text: bytes.toString("utf8") });
 }
 
 const entry = "_baseSortedUniq.js";
@@ -101,6 +105,62 @@ copyFileSync(manifest, path.join(prior, "package.json"));
 for (const [file, { source }] of sources) copyFileSync(source, path.join(prior, file));
 const recheck = split({ ...request, out: prior, checkOutput: true });
 assert.deepEqual(recheck.verdict, result.verdict);
+
+// Test the two file sets through the actual staging frontend on an unchanged
+// graph. The explicit premise carries package.json as fixed bytes beside the
+// three .js files. The production split has no way to request that premise.
+const checked = path.join(process.env.TEST_TMPDIR, "checked.json");
+const layout = path.join(process.env.TEST_TMPDIR, "layout.json");
+const fixedModules = Object.fromEntries(
+  [...sources].filter(([file]) => file !== entry).map(([file, { text }]) => [file, text])
+);
+const parts = [{ programs: { [entry]: dumpParsed(target.parsed) }, source: target.text }];
+function checkArtifact(providers, expectedError, dir = prior) {
+  writeFileSync(layout, JSON.stringify({ parts, providers }));
+  const check = spawnSync(process.env.MODULE_IO, ["--check-output", layout, dir, checked], { encoding: "utf8" });
+  if (check.error) throw check.error;
+  assert.equal(check.status, expectedError ? 1 : 0, check.stderr);
+  if (expectedError) assert.match(check.stderr, expectedError);
+}
+
+const withPackage = { ...fixedModules, "package.json": packageText };
+checkArtifact(withPackage);
+const published = path.join(process.env.TEST_TMPDIR, "published");
+renameSync(prior, published);
+checkArtifact(withPackage, undefined, published);
+const staticCall = spawnSync(
+  process.execPath,
+  [
+    "--input-type=module",
+    "--eval",
+    "import sortedUniq from './sortedUniq.js'; if (sortedUniq([NaN, NaN]).length !== 1) process.exitCode = 1;",
+  ],
+  { cwd: published, encoding: "utf8" }
+);
+assert.equal(staticCall.status, 0, staticCall.stderr);
+renameSync(published, prior);
+checkArtifact(fixedModules, /unexpected: package\.json/);
+const outputPackage = path.join(prior, "package.json");
+writeFileSync(outputPackage, JSON.stringify({ ...packageMetadata, type: "commonjs" }));
+checkArtifact(withPackage, /provider package\.json differs from the source graph/);
+const commonjsCheck = spawnSync(process.execPath, ["--check", path.join(prior, "sortedUniq.js")], { encoding: "utf8" });
+assert.equal(commonjsCheck.status, 1, commonjsCheck.stderr);
+assert.match(commonjsCheck.stderr, /Cannot use import statement outside a module/);
+
+const withoutType = { ...packageMetadata };
+delete withoutType.type;
+writeFileSync(outputPackage, JSON.stringify(withoutType));
+checkArtifact(withPackage, /provider package\.json differs from the source graph/);
+rmSync(outputPackage);
+checkArtifact(withPackage, /missing: package\.json/);
+checkArtifact(fixedModules);
+
+copyFileSync(manifest, outputPackage);
+const moved = path.join(prior, "moved");
+mkdirSync(moved);
+renameSync(path.join(prior, entry), path.join(moved, entry));
+checkArtifact(withPackage, /missing: _baseSortedUniq\.js; unexpected: moved\/_baseSortedUniq\.js/);
+
 console.log(
   JSON.stringify({
     workload: "lodash-es/_baseSortedUniq.js",
