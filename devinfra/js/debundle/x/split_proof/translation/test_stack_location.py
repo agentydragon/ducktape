@@ -31,7 +31,7 @@ def test_relocated_stack_key_is_refused(tmp_path: Path) -> None:
     verdict = json.loads(checked.stdout)
     assert verdict["status"] == "refused", checked.stdout
     assert verdict["reason"], checked.stdout
-    assert verdict["reasonCode"] in {"probe_unknown", "linked_input"}, checked.stdout
+    assert verdict["reasonCode"] == "no_constructed_rule", checked.stdout
     assert not out.exists(), "a refused stack observation must not emit modules"
 
 

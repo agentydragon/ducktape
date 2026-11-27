@@ -1,10 +1,8 @@
 # CoreJS differential coverage
 
 [`differential.mjs`](differential.mjs) runs JavaScript in Node and the Lean interpreter.
-Consecutive opaque splits require `all-outcomes` from `lowersplit`, recheck the emitted
-files with `--check-output`, and compare output, endings, and recorded host calls in Node.
-Each fixture or generator records its expected refusal reason, when applicable. The other split comparisons
-run the emitter in diagnostic mode and compare Node and model runs. Run the CI suites with
+It compares original programs, their output, endings and recorded host calls.
+Run the CI suites with
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/model:corejs_differential_test \
@@ -14,10 +12,8 @@ bbr test //devinfra/js/debundle/x/split_proof/model:corejs_differential_test \
 
 The broad CI suite runs the handwritten cases and required generated comparisons
 once with seeds 1 and 2. The binding suite uses seeds 1–12. Run
-`model:corejs_differential_sweep_test` with `--test_tag_filters=manual` for 40 seeds and
-random split plans. Appended `--test_arg=--count --test_arg=N`,
-`--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override
-the target's arguments.
+`model:corejs_differential_sweep_test` with `--test_tag_filters=manual` for 40 seeds. Appended `--test_arg=--count --test_arg=N` and
+`--test_arg=--seed --test_arg=S` override the target's arguments.
 
 | Landed model feature                                              | Hand-written oracle                                                                                                                                    | Generated execution                                                                                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,7 +27,7 @@ the target's arguments.
 | Primitive host calls                                              | `cases.mjs`: string/number/boolean methods, `Math`, parsing, throws, unknown boundaries                                                                | Primitive calls and chains; a caught host exception. Selected functions only.                                                                        |
 | Linked modules                                                    | [`module_cases.mjs`](module_cases.mjs): live bindings, cycles, hoisting/TDZ, import assignment, aliases, defaults, missing exports, evaluation failure | Live diamond, caught TDZ, dependency throw. Default expression, alias, function or class. Import assignment, update and compound assignment.         |
 | Opaque statements and function bodies                             | [`opaque_cases.mjs`](opaque_cases.mjs): binding/property access, callbacks, explicit throws, allocation, construction, engine-error propagation        | Opaque parameter destructuring calls a captured model function, returning normally or throwing into a model catch.                                   |
-| Opaque closure-only moves                                         | `opaque_cases.mjs`: constructor closure                                                                                                                | A closure captures an uninitialized binding, crosses an independent declaration, and is invoked after initialization. Both callback endings execute. |
+| Opaque closures                                                   | `opaque_cases.mjs`: constructor closure                                                                                                                | A closure captures an uninitialized binding, crosses an independent declaration, and is invoked after initialization. Both callback endings execute. |
 
 Generated opaque allocations build prototype chains of varying depths from a fresh ordinary object or a supplied handle, then observe inherited writes and prototype identity.
 
@@ -42,35 +38,15 @@ destructures two to four renamed keys per seed and observes all the resulting va
 Handwritten cases cover null, throwing getters, rebinding the receiver and exports.
 
 [`generate.mjs`](generate.mjs) generates the whole-program families above without
-discarding units or retrying after `unknown`. Every seed must complete in Node and the
-model, and must execute in an accepted reordered split whose model diagnostic finds the
-`moves` condition. This model result does not certify the emitted JavaScript artifacts.
-The test requires every promised family and every generated linked graph
-to run; removing a family cannot leave an empty successful coverage assertion.
-
-The required reorder swaps independent prefix allocations: an object or array for those
-families, a function closure for the others. These counters mean the **program** was
-reordered and its selected family executed. They do not mean a class, loop, exception
-handler or host call crossed another statement. Opaque closure cases move the opaque
-declaration itself. Accepted normal `moves` runs also compare the final model-state
-hash in the bundle's recorded world; the hash omits full function bodies and world state.
-Order-kept splits retain the corresponding check for every ending.
-
-The `corejs_binding_differential_test` (`--bindings-only`) requires
-`moves (certified bindings)` for reordered independent assignments. Each
-assignment stays with its declaration. Seeds cover literals and bindings, binary
-expressions with two writes, heap-free unary operations, and conditional or
-short-circuit branches. The corresponding dependency-bearing plan must be refused.
-The cases also check object-reference copies, the `typeof` boundary and refusal
-after removing an actual Effects write summary. Accepted diagnostic splits
-retain the four-way comparison and the final-state hash check described above.
-[Binding certificates](../docs/footprint_soundness.md#initial-certificate-fragment)
+discarding units or retrying after `unknown`. Every seed must complete in Node and the model. The test requires every promised
+family and every generated linked graph to run; removing a family cannot leave an
+empty successful coverage assertion. The binding suite exercises original programs
+covering literals, binary and unary expressions, and conditional branches.
 
 The separate [general generator](../translation/testing/gen/) sample reports
 units accepted alone and units surviving dependency/unknown-code filtering.
-Those counts measure admission. Use the required family executions above for
-runtime coverage. The sweep's `--splits` argument bounds random plans. The
-dedicated generator's required moves bypass that budget.
+Those counts measure admission; use the required family executions above for
+runtime coverage.
 
 Opaque scripts observe the requests `readVar`, `writeVar`, `initVar`, `get`, `set`,
 `delete`, `has`, `call`, `construct`, `newObject`, `newFunction` and `prim` through Node
@@ -103,12 +79,9 @@ the class's own binding, and composes with the existing allocation move theorem.
 Handwritten cases cover deferred execution, receivers/arguments, class self names,
 nested lexical captures, constructor returns/throws, invocation restrictions,
 accessors, stable part identities, and eager static/field behavior. Each generated
-seed also moves a class across an independent declaration before its captured
-bindings are initialized. The generated class varies member order, receiver,
-captures, and whether it has accessors. Its constructor and each selected method
-or accessor call back into modeled JavaScript after initialization. The harness
-checks that each body runs in the expected order and that the proved split
-preserves both the Node observations and the final model-state hash.
+seed varies member order, receiver, captures and accessors. Its constructor and
+selected methods or accessors call into modeled JavaScript after initialization;
+the test checks the body calls in Node and CoreJS.
 
 ## Default derived classes
 
@@ -137,28 +110,10 @@ object from the base constructor, or catches a value the base throws. Exact
 Node and CoreJS output checks witness argument order, both prototype chains,
 the receiver and field value during base construction, inherited getter dispatch,
 the override, and the selected outcome. The harness counts these generated
-observations separately from handwritten cases. The chain cases also execute
-in a split with independent prefix allocations reordered. The CI target runs 24 seeds over two shards.
+observations separately from handwritten cases. The CI target runs 24 seeds over two shards.
 
-The guarded heritage cases move an anonymous subclass declaration across local
-allocations. Each seed composes an anonymous base and subclass from methods,
-getters, setters and subclass statics. It varies lexical blocks, the intervening
-prefix of inert, allocating or derived declarations, and the number and kinds of
-crossed allocations. The observations exercise the selected class members,
-prefix statements and crossed initializers. They check constructor values with
-positive and negative inputs and both prototype links. At the default seed
-count, each shard checks that successful runs cover multiple shapes in every
-dimension.
-
-The handwritten plan and every generated positive must reach
-`moves (certified class heritage)` with a normal-equivalence verdict, agree in
-the four Node and CoreJS executions, and match the final model-state hash. A
-seeded mutation of each positive adds a base static, aliases or writes the
-superclass, names the pivot, or inserts a crossed assignment. These controls
-reach the heritage guard with valid structural plans and checked footprints.
-They must get a negative guard result while continuing to match runtime
-observations and the final model-state hash. A handwritten control checks the
-structural rejection of a crossed read of the moving subclass.
+The generated heritage cases also exercise anonymous base and subclass members,
+lexical blocks, intervening allocations and mutations on the original inputs.
 
 For a timeout, inspect `progress.log` in Bazel's undeclared outputs. It records
-Node case labels, CoreJS batches, and module-order and split subprocess boundaries.
+Node case labels, CoreJS batches, and module-order subprocess boundaries.

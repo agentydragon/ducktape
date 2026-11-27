@@ -68,7 +68,7 @@ export const GENERATORS = [
   },
   {
     id: "shift",
-    title: "Shift module grammar (`shift_fuzz_test`)",
+    title: "Shift module grammar",
     produce: shiftPrograms({ script: false, modern: false }),
   },
   {

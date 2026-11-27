@@ -3,10 +3,9 @@ import EsmSplit.CoreJS.Declaration.Certificate
 import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.HeritageCertificate
 import EsmSplit.CoreJS.Move
-import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
 
-/-! Report plan checks and model diagnostics and optionally emit an uncertified preview. -/
+/-! Report plan checks and model diagnostics without emitting modules. -/
 
 namespace EsmSplit.LowerSplit
 
@@ -249,7 +248,6 @@ private structure DiagnosticOptions where
   footprintPath : Option String
   planPath : Option String
   moveReportPath : Option String
-  force : Bool
   allConflicts : Bool
 
 private def parseDiagnosticOptions (args : List String) : IO (System.FilePath × System.FilePath × DiagnosticOptions) := do
@@ -260,21 +258,21 @@ private def parseDiagnosticOptions (args : List String) : IO (System.FilePath ×
   if premPath.isSome && footprintPath.isSome then
     throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
   let prem ← Effects.loadPremises premPath
-  let force := args.contains "--force"
+  if args.contains "--force" then throw (IO.userError "diagnostics cannot write modules")
   let allConflicts := args.contains "--all-conflicts"
   if allConflicts && planPath.isNone then throw (IO.userError "--all-conflicts requires --plan")
-  let args := args.filter fun a => a != "--force" && a != "--all-conflicts"
+  let args := args.filter fun a => a != "--all-conflicts"
   let (manifest, out) ← match args with
     | [manifest, out] => pure (manifest, out)
     | _ => do
-      IO.eprintln "usage: lowersplit --diagnostic <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--move-report <file>] [--force]"
+      IO.eprintln "usage: lowersplit --diagnostic <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--move-report <file>]"
       throw (IO.userError "usage")
-  return (manifest, out, { prem, footprintPath, planPath, moveReportPath, force, allConflicts })
+  return (manifest, out, { prem, footprintPath, planPath, moveReportPath, allConflicts })
 
-private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (options : DiagnosticOptions)
+private def runDiagnostic (chunk : DeploymentChunk) (_out : System.FilePath) (options : DiagnosticOptions)
     (work : System.FilePath) : IO UInt32 := do
   let tStart ← IO.monoMsNow
-  let ⟨program, source, input⟩ ← readBundle chunk.source work false false (← IO.ofExcept chunk.sourceHash)
+  let ⟨program, source, _⟩ ← readBundle chunk.source work false false (← IO.ofExcept chunk.sourceHash)
   let t1 ← reportElapsed "read + parse JSON" tStart
   let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
   if let some reason := asts.findSome? unsupportedStatement then
@@ -302,7 +300,7 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
   let P ← planSplit B S false
   let t4 ← reportElapsed "mkPlan" t3
   let ok ← reportPlanChecks B S P
-  let t5 ← reportElapsed "all checks" t4
+  let _ ← reportElapsed "all checks" t4
   let model := modelBody asts
   if let some path := options.moveReportPath then
     let report := model >>= moveReport asts B S P
@@ -322,15 +320,8 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
       ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
       ("orderConflicts", Json.mkObj ([("count", toJson count), ("examples", Json.arr examples)] ++ pairs)),
       ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts)))]).compress
-  if options.force || (ok && !bad) then
-    match ESTreeEmit.programs asts B P source with
-    | .error message => IO.eprintln s!"cannot write output: {message}"; return 3
-    | .ok programs => javascript #["--print"] #[← writeProgramManifest programs work, out, input]
-    let _ ← reportElapsed "render + write" t5
-    IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
   if ok && !bad then return 0
-  let message := if options.force then "rejected; modules written anyway (--force)"
-    else if options.planPath.isSome || options.moveReportPath.isSome then "rejected; report sidecar written; no modules written"
+  let message := if options.planPath.isSome || options.moveReportPath.isSome then "rejected; report sidecar written; no modules written"
     else "rejected; nothing written"
   IO.eprintln message
   return 1
@@ -339,7 +330,7 @@ def diagnostic (args : List String) : IO UInt32 := do
   if args.contains "--require" || args.contains "--check-output" || args.contains "--structural" || args.contains "--deployment-origin" then
     IO.eprintln "certification options cannot be combined with --diagnostic"
     return 1
-  IO.println "Diagnostic run. Any emitted files are an uncertified preview."
+  IO.println "Diagnostic run. No modules will be written."
   IO.FS.withTempDir fun work => do
     let (manifestPath, out, options) ← parseDiagnosticOptions args
     let manifest ← readDeploymentManifest manifestPath

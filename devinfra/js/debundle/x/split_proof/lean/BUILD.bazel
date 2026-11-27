@@ -2,7 +2,6 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load(":executable_test.bzl", "executable_test", "test_runner")
-load(":generated_proof_toolchain.bzl", "generated_proof_toolchain")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
 lean_library(
@@ -1606,37 +1605,6 @@ lean_proof_test(
     deps = [":sparse_checked_artifact"],
 )
 
-lean_library(
-    name = "terminal_export_artifact",
-    srcs = ["EsmSplit/LowerSplit/TerminalExportArtifact.lean"],
-    deps = [
-        ":corejs_link_world",
-        ":corejs_linked_input",
-        ":corejs_linked_pivot_certificate",
-        ":estree_emit",
-        ":lowersplit_input",
-    ],
-)
-
-lean_proof_test(
-    name = "terminal_export_artifact_axioms_test",
-    allow_empty = True,
-    modules = ["EsmSplit.LowerSplit.TerminalExportArtifact"],
-    required_theorems = [
-        "EsmSplit.LowerSplit.TerminalExportArtifact.prepare",
-        "EsmSplit.LowerSplit.TerminalExportArtifact.verify",
-        "EsmSplit.LowerSplit.TerminalExportArtifact.verify_sound",
-    ],
-    deps = [":terminal_export_artifact"],
-)
-
-test_runner(
-    name = "terminal_export_artifact_test_runner",
-    src = "TerminalExportArtifactMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = [":terminal_export_artifact"],
-)
-
 test_runner(
     name = "checked_artifact_test_runner",
     src = "CheckedSplitArtifactMain.lean",
@@ -1678,7 +1646,6 @@ lean_library(
         ":corejs_from_estree",
         ":corejs_heritage_certificate",
         ":corejs_move",
-        ":estree_emit",
         ":lowersplit_input",
     ],
 )
@@ -1704,22 +1671,17 @@ lean_library(
     srcs = ["EsmSplit/LowerSplit/Certified.lean"],
     deps = [
         ":cli",
-        ":corejs_certificate_support",
-        ":corejs_certificates",
         ":corejs_checked_split",
         ":corejs_indexed_checked_split",
         ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
-        ":corejs_joint_static",
         ":corejs_linked_input",
-        ":corejs_move",
         ":corejs_resolved_placement",
-        ":corejs_structural_certificate",
+        ":corejs_terminal_source",
         ":estree_emit",
         ":lowersplit_input",
-        ":lowersplit_slice_certificate",
         ":ordered_const_syntax",
-        ":read_deployment",
+        ":terminal_export_placement",
     ],
 )
 
@@ -1751,55 +1713,12 @@ lean_binary(
     deps = [":lowersplit_diagnostic_core_modules"],
 )
 
-generated_proof_toolchain(
-    name = "lowersplit_generated_proof_config",
-    binary_name = "lowersplit_core",
-    deps = [
-        ":certificate_data",
-        ":cli",
-        ":corejs_binding_certificate",
-        ":corejs_binding_footprint",
-        ":corejs_binding_moves",
-        ":corejs_cell_footprint",
-        ":corejs_certificate_support",
-        ":corejs_declaration_certificate",
-        ":corejs_declaration_group",
-        ":corejs_declaration_input",
-        ":corejs_declaration_program",
-        ":corejs_decode",
-        ":corejs_heritage_certificate",
-        ":corejs_heritage_move",
-        ":corejs_linked_cells",
-        ":corejs_linked_certificate_proof",
-        ":corejs_linked_local_move",
-        ":corejs_primitive_rhs",
-        ":corejs_run",
-        ":corejs_stable_intrinsic_descriptor",
-        ":corejs_state_match",
-        ":correct",
-        ":effects",
-        ":effects_domain",
-        ":fast",
-        ":intrinsic_members",
-        ":intrinsics",
-        ":split",
-        ":translate_input",
-    ],
-)
-
-filegroup(
-    name = "lowersplit_generated_proof_files",
-    srcs = [":lowersplit_generated_proof_config"],
-    output_group = "proof_files",
-)
-
 lean_library(
     name = "lowersplit_core_modules",
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/LowerSplit.lean",
-        ":lowersplit_generated_proof_config",
-        "EsmSplit/LowerSplitBazelMain.lean",
+        "EsmSplit/LowerSplitMain.lean",
     ],
     visibility = ["//visibility:private"],
     deps = [
@@ -1810,7 +1729,6 @@ lean_library(
 
 lean_binary(
     name = "lowersplit_core",
-    data = [":lowersplit_generated_proof_files"],
     visibility = [
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",

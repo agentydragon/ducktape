@@ -144,7 +144,7 @@ The single-arrow move plan records 259 structural source-order conflicts. All
 cross `#1337`, including the conflict with the first source unit after imports.
 The test records them in `scroll-move-report.json` alongside
 `import-boundary.json` and `diagnostic-plans.json`. The reduced case in
-[`host_profile_test.mjs`](../../translation/linked/host_profile_test.mjs) uses a
+[`host_profile_test.mjs`](https://github.com/agentydragon/ducktape/blob/86fdb4774330bc6180bfe09afe107a83893e02ac/devinfra/js/debundle/x/split_proof/translation/linked/host_profile_test.mjs) uses a
 small imported wrapper and reproduces the ambient `Symbol.for` refusal. A
 lexical `Symbol` binding passes strict certification and the Node control in
 the existing local host-binding proof.

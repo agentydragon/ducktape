@@ -207,10 +207,19 @@ const tdz = split({ source, spec, out: tdzOut, require: "all-outcomes" });
 assert.equal(tdz.status, "refused", tdz.log);
 assert(!existsSync(tdzOut));
 
-// Unsupported initializers must not publish anything on this path.
-writeFileSync(source, "const seed = Math.random(); export const result = seed;\n");
+// These placements used to publish via the linked evaluator. A supported
+// placement shape alone cannot justify moving the declaration.
 writeFileSync(spec, JSON.stringify(placement));
-const refusedOut = path.join(root, "refused");
-const refused = split({ source, spec, out: refusedOut, require: "all-outcomes" });
-assert.equal(refused.status, "refused", refused.log);
-assert(!existsSync(refusedOut));
+for (const declaration of [
+  "const seed = Math.random();",
+  "class seed { static value = 1; }",
+  "async function seed() { return 1; }",
+  "function* seed() { yield 1; }",
+]) {
+  writeFileSync(source, declaration + "\nexport const result = seed;\n");
+  const refusedOut = path.join(root, "refused");
+  const refused = split({ source, spec, out: refusedOut });
+  assert.equal(refused.status, "refused", refused.log);
+  assert.equal(refused.reasonCode, "no_constructed_rule", refused.log);
+  assert(!existsSync(refusedOut));
+}

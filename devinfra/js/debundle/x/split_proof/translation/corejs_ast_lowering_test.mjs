@@ -9,7 +9,6 @@ import { coreFromParsed } from "../model/to_core.mjs";
 import { bundleFromParsed } from "./frontend.mjs";
 import { parseModule } from "./scope_metadata.mjs";
 import { writeDeployment } from "./testing/deployment_manifest.mjs";
-import { split as certifySplit } from "./testing/split.mjs";
 import { coreOf } from "./split_dump.mjs";
 
 const dir = process.env.TEST_TMPDIR;
@@ -537,93 +536,6 @@ const coercionNode = spawnSync(process.execPath, ["--input-type=module", "-e", c
 assert.equal(coercionNode.status, 0, coercionNode.stderr);
 assert.equal(coercionNode.stdout, "value\n");
 
-// The default production profile lowers the same syntax with local keys and no host premise.
-const productionSource = `export const result = (() => {
-  let getterOrder = "";
-  const record = {
-    first: 0,
-    get second() { getterOrder = getterOrder + "s"; return "second"; },
-    get first() { getterOrder = getterOrder + "f"; return "first"; },
-    get replace() { return "getter"; },
-    replace: "data",
-    winner: 1,
-    winner: 3,
-    get pair() { return this.saved; },
-    set pair(value) { this.saved = value; },
-    saved: "initial"
-  };
-  const copy = { ...record };
-  record.pair = "updated";
-  const objectKey = "read";
-  const object = {
-    [objectKey]() { return record.winner; },
-    get [2]() { return this.value; },
-    set [2](value) { this.value = value; }
-  };
-  object[2] = "object";
-  const name = "speak";
-  const Box = class {
-    [name]() { return record.winner; }
-    get [1]() { return this.value; }
-    set [1](value) { this.value = value; }
-  };
-  const box = new Box();
-  box[1] = "updated";
-  return [getterOrder, copy.first, copy.second, copy.replace, record.winner, record.pair,
-    object.read(), object.read.name, object[2], box.speak(), box.speak.name, box[1]];
-})();`;
-const productionDir = path.join(dir, "computed-production");
-mkdirSync(productionDir, { recursive: true });
-writeFileSync(path.join(productionDir, "bundle.mjs"), productionSource);
-writeFileSync(
-  path.join(productionDir, "spec.json"),
-  JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"] } })
-);
-const production = await certifyFixture(productionDir);
-const productionReference = await import(`data:text/javascript,${encodeURIComponent(productionSource)}#production`);
-assert.deepEqual(production.result, productionReference.result);
-assert.deepEqual(production.result, [
-  "fs",
-  "first",
-  "second",
-  "data",
-  3,
-  "updated",
-  3,
-  "read",
-  "object",
-  3,
-  "speak",
-  "updated",
-]);
-
-// The browser-page production profile supplies the well-known symbol intrinsics.
-const browserSymbolDir = path.join(dir, "computed-browser-symbol");
-mkdirSync(browserSymbolDir, { recursive: true });
-const browserSymbolSource = `export const result = (() => {
-  const iterator = Symbol.iterator;
-  const object = { [iterator]() { return this.value; }, value: "object" };
-  class Box {
-    [iterator]() { return this.value; }
-    constructor() { this.value = "class"; }
-  }
-  const box = new Box();
-  return [object[iterator](), object[iterator].name, box[iterator](), Box.prototype[iterator].name];
-})();`;
-writeFileSync(path.join(browserSymbolDir, "bundle.mjs"), browserSymbolSource);
-writeFileSync(
-  path.join(browserSymbolDir, "spec.json"),
-  JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"] } })
-);
-const browserContract = path.join(browserSymbolDir, "host.json");
-writeFileSync(browserContract, JSON.stringify({ profile: "browser-page" }));
-const browserSymbols = await certifyFixture(browserSymbolDir, ["--host-contract", browserContract]);
-const browserSymbolReference = await import(
-  `data:text/javascript,${encodeURIComponent(browserSymbolSource)}#browser-symbol`
-);
-assert.deepEqual(browserSymbols.result, browserSymbolReference.result);
-assert.deepEqual(browserSymbols.result, ["object", "[Symbol.iterator]", "class", "[Symbol.iterator]"]);
-
 // The line names its entry, so a provider can import the entry back.
 const cycleFiles = {
   "main.mjs": 'import { read } from "./reader.mjs"; export const value = 7; console.log(read());',
@@ -695,57 +607,6 @@ assert.deepEqual(
   await nodeOutcome(pathToFileURL(path.join(defaultDir, "main.mjs")).href)
 );
 
-function certificationResult(directory, args = []) {
-  const out = path.join(directory, "out");
-  const hostAt = args.indexOf("--host-contract");
-  const result = certifySplit({
-    source: path.join(directory, "bundle.mjs"),
-    spec: path.join(directory, "spec.json"),
-    out,
-    ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
-  });
-  return { out, result };
-}
-
-function certifyFixture(directory, args = []) {
-  const { out, result } = certificationResult(directory, args);
-  assert.equal(result.status, "certified", result.log);
-  return import(pathToFileURL(path.join(out, "entry.mjs")).href);
-}
-
-// A named class expression's inner name must not enable deferred ambient Symbol references in
-// eager class evaluation. The production profile has no Symbol premise, so both forms refuse
-// during certification instead of producing a runtime unknown.
-for (const [name, source] of [
-  ["static-initializer", "export const C = class Named { static value = Symbol.iterator; };"],
-  ["heritage", "export const C = class Named extends Symbol.iterator {};"],
-]) {
-  const directory = path.join(dir, `class-unprofiled-symbol-${name}`);
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(path.join(directory, "bundle.mjs"), source);
-  writeFileSync(
-    path.join(directory, "spec.json"),
-    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"] } })
-  );
-  const { result } = certificationResult(directory);
-  assert.equal(result.status, "refused", source);
-  assert.match(result.reason, /unsupported ambient member Symbol\.iterator/, source);
-}
-
-// A certified split keeps `export default` in the entry and moves the binding it reads.
-const defaultSplit = path.join(dir, "default-split");
-mkdirSync(defaultSplit, { recursive: true });
-writeFileSync(
-  path.join(defaultSplit, "bundle.mjs"),
-  'import value from "./value.mjs"; const doubled = value * 2; export default doubled;\n'
-);
-writeFileSync(path.join(defaultSplit, "value.mjs"), "export default 21;\n");
-writeFileSync(
-  path.join(defaultSplit, "spec.json"),
-  JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2"], "m.mjs": ["#1"] } })
-);
-assert.equal((await certifyFixture(defaultSplit)).default, 42);
-
 // Top-level blocks, loops and switches: a var binds a module cell; let and const stay in the block.
 // A function declaration in a top-level block is still refused (function_declaration_test).
 const blockSource = [
@@ -758,24 +619,6 @@ const [blocks] = run([dumpSource(blockSource)], true);
 const blocksNode = spawnSync(process.execPath, ["--input-type=module", "-e", blockSource], { encoding: "utf8" });
 assert.equal(blocksNode.status, 0, blocksNode.stderr);
 assert.deepEqual([blocks.end, blocks.detail, blocks.out], ["normal", "", blocksNode.stdout.split("\n").slice(0, -1)]);
-
-// A certified split moves a top-level block that updates its module's binding to a worker.
-const blockSplit = path.join(dir, "block-split");
-mkdirSync(blockSplit, { recursive: true });
-writeFileSync(
-  path.join(blockSplit, "bundle.mjs"),
-  "let total = 1;\n{ const step = 2; total += step; }\nexport const result = total;\n"
-);
-writeFileSync(
-  path.join(blockSplit, "spec.json"),
-  JSON.stringify({
-    entry: "entry.mjs",
-    modules: { "worker.mjs": ["#0", "#1"], "entry.mjs": ["#2"] },
-    order: ["worker.mjs"],
-    sequential: true,
-  })
-);
-assert.equal((await certifyFixture(blockSplit)).result, 3);
 
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
@@ -799,9 +642,6 @@ assert.equal(legacyOnly.end, "malformed");
 // Acorn ranges count UTF-16 code units. Exercise both a supplementary
 // character before the declaration and one inside the first declarator.
 split('/*😀*/ export var a = "🌱", b = a;');
-const rendered = readFileSync(path.join(dir, "entry.mjs"), "utf8");
-assert.match(rendered, /export var a = "🌱";/);
-assert.match(rendered, /export var b = a;/);
 const badRange = dumpSource("/*😀*/ var a = 1, b = a;");
 badRange.body[0].declarations[0].start = 3;
 const invalid = file("bad-range.json", JSON.stringify(badRange));
@@ -855,9 +695,7 @@ for (let width = 2; width <= 4; width++) {
     assert.match(log, /Declaration extraction: unsplit declaration lists and the checked CoreJS plan agree/);
     assert.match(log, moved === 0 ? /all modeled outcomes/ : /normally terminating executions/);
     const original = await import(`data:text/javascript,${encodeURIComponent(code)}`);
-    const emitted = await import(`${pathToFileURL(path.join(dir, "entry.mjs")).href}?${width}-${moved}`);
     assert.ok(Object.is(original.result, -0));
-    assert.ok(Object.is(emitted.result, original.result));
   }
 }
 
@@ -876,11 +714,6 @@ assert.deepEqual(await nodeOutcome(`data:text/javascript,${encodeURIComponent(td
   "throw",
   "ReferenceError",
 ]);
-assert.deepEqual(await nodeOutcome(`${pathToFileURL(path.join(dir, "entry.mjs")).href}?tdz-declaration`), [
-  "throw",
-  "ReferenceError",
-]);
-
 file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 assert.match(split("var a; let b;"), /Declaration extraction: .*all modeled outcomes/);
 assert.match(split("export let a = b, b = 1;"), /Declaration extraction: .*all modeled outcomes/);
