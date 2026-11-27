@@ -1,9 +1,18 @@
 """Props test infrastructure package."""
 
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
+load(":exec_properties.bzl", "REGISTRY_CACHE_RECIPE")
 
 package(default_testonly = True)
+
+write_file(
+    name = "registry_cache_recipe",
+    out = "registry_cache_recipe.json",
+    content = [json.encode(REGISTRY_CACHE_RECIPE)],
+    visibility = ["//props:__subpackages__"],
+)
 
 py_library(
     name = "testing",
