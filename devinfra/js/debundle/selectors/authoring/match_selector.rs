@@ -89,10 +89,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
         config.source_root.as_deref(),
         config.chunk.as_deref(),
     )?;
-    let source = std::fs::read_to_string(&source_file)
-        .with_context(|| format!("reading source file {}", source_file.display()))?;
-    let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)
-        .with_context(|| format!("parsing source file {}", source_file.display()))?;
+    let parsed = js_ast::parse_js_module_file(&source_file)?;
     let chunk = selector_resolve::Chunk::analyze("<match-selector>", &parsed.module);
     // The probe is a one-entity spec: its outcome is the resolve's.
     let resolve = |match_source: String| -> Result<Outcome> {
@@ -326,6 +323,28 @@ struct Relaxer<'a> {
 }
 
 impl Relaxer<'_> {
+    /// Spend one relaxation site on the first statement the pass may drop,
+    /// replacing it with an empty statement list.
+    fn drop_target_statement(&mut self, stmts: &mut [Stmt]) {
+        for stmt in stmts {
+            if self.take(is_droppable_stmt(stmt)) {
+                *stmt = stmt_list_stmt();
+                break;
+            }
+        }
+    }
+
+    /// Spend one relaxation site on the first argument the pass may drop,
+    /// replacing it with a call-argument hole.
+    fn drop_target_argument(&mut self, args: &mut Vec<ExprOrSpread>) {
+        for arg in args {
+            if self.take(is_droppable_arg(arg)) {
+                *arg = args_hole();
+                break;
+            }
+        }
+    }
+
     /// Count this site; replace it (returning true) when it is the target index.
     fn take(&mut self, droppable: bool) -> bool {
         if self.done || !droppable {
@@ -345,12 +364,7 @@ impl VisitMut for Relaxer<'_> {
         if self.kind == Relaxation::DropStatement
             && let Some(body) = function.body.as_mut()
         {
-            for stmt in &mut body.stmts {
-                if self.take(is_droppable_stmt(stmt)) {
-                    *stmt = stmt_list_stmt();
-                    break;
-                }
-            }
+            self.drop_target_statement(&mut body.stmts);
         }
         function.visit_mut_children_with(self);
     }
@@ -359,12 +373,7 @@ impl VisitMut for Relaxer<'_> {
         if self.kind == Relaxation::DropStatement
             && let ArrowFunctionBody::FunctionBody(body) = arrow.body.as_mut()
         {
-            for stmt in &mut body.stmts {
-                if self.take(is_droppable_stmt(stmt)) {
-                    *stmt = stmt_list_stmt();
-                    break;
-                }
-            }
+            self.drop_target_statement(&mut body.stmts);
         }
         arrow.visit_mut_children_with(self);
     }
@@ -373,12 +382,7 @@ impl VisitMut for Relaxer<'_> {
         if self.kind == Relaxation::DropStatement
             && let Some(body) = constructor.body.as_mut()
         {
-            for stmt in &mut body.stmts {
-                if self.take(is_droppable_stmt(stmt)) {
-                    *stmt = stmt_list_stmt();
-                    break;
-                }
-            }
+            self.drop_target_statement(&mut body.stmts);
         }
         constructor.visit_mut_children_with(self);
     }
@@ -447,24 +451,14 @@ impl VisitMut for Relaxer<'_> {
 
     fn visit_mut_block_stmt(&mut self, block: &mut BlockStmt) {
         if self.kind == Relaxation::DropStatement {
-            for stmt in block.stmts.iter_mut() {
-                if self.take(is_droppable_stmt(stmt)) {
-                    *stmt = stmt_list_stmt();
-                    break;
-                }
-            }
+            self.drop_target_statement(&mut block.stmts);
         }
         block.visit_mut_children_with(self);
     }
 
     fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
         if self.kind == Relaxation::DropCallArg {
-            for arg in call.args.iter_mut() {
-                if self.take(is_droppable_arg(arg)) {
-                    *arg = args_hole();
-                    break;
-                }
-            }
+            self.drop_target_argument(&mut call.args);
         }
         call.visit_mut_children_with(self);
     }
@@ -473,12 +467,7 @@ impl VisitMut for Relaxer<'_> {
         if self.kind == Relaxation::DropCallArg
             && let Some(args) = new_expr.args.as_mut()
         {
-            for arg in args.iter_mut() {
-                if self.take(is_droppable_arg(arg)) {
-                    *arg = args_hole();
-                    break;
-                }
-            }
+            self.drop_target_argument(args);
         }
         new_expr.visit_mut_children_with(self);
     }
