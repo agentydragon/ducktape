@@ -3,10 +3,8 @@ name: Sync artifact pins
 # Replaces per-commit dispatch from bb_release.py — one commit per cycle
 # regardless of how many releases landed since the last sync.
 #
-# Pushes via the ducktape-automation GitHub App so the commit is bypass-actor
-# eligible for the main-protection ruleset (github-actions can't bypass on
-# personal-account repos). The hardcoded `devel` ref + push target will need
-# to flip to `main` when ducktape's default branch flips.
+# The hardcoded `devel` ref and push target will need to flip to `main` when
+# ducktape's default branch flips.
 "on":
   schedule:
     # GitHub throttles scheduled workflows to ~30 min intervals regardless of cron.
@@ -38,38 +36,12 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
 
-      - name: Commit and push if changed
-        env:
-          APP_TOKEN: ${{ steps.app.outputs.token }}
-          APP_SLUG: ${{ steps.app.outputs.app_slug }}
-          APP_USER_ID: ${{ steps.app.outputs.user_id }}
-        run: |
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git add nix/artifact-pins.json
-          if git diff --cached --quiet; then
-            echo "No pin changes"
-            exit 0
-          fi
-          git commit -m "chore: sync artifact pins (${{ steps.sync.outputs.updated }})"
-          git pull --rebase origin devel
-          # Push as the ducktape-automation App. actions/checkout sets a
-          # basic-auth Authorization header on github.com via an extraheader
-          # in an `includeif.gitdir:*.path` temp file. Replacing it via
-          # `git config --unset-all http.https://github.com/.extraheader`
-          # (PR #1505) was a no-op — `--unset-all` only edits the local
-          # config, not the includeif'd file. Dropping the includeif and
-          # re-setting the extraheader (PR #1508) made git stop sending
-          # any Authorization header at all (the local extraheader didn't
-          # take effect for some reason; pushes failed with "could not
-          # read Username for 'https://github.com'").
-          #
-          # Working approach: push to an explicit URL with the App token as
-          # HTTP Basic auth (`x-access-token:<token>`). This bypasses the
-          # extraheader machinery entirely. `set +x` keeps the token out
-          # of the runner trace.
-          set +x
-          for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
-            git config --local --unset-all "$key"
-          done
-          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:devel"
+      - name: Push pin changes as the automation App
+        uses: ./.github/actions/commit-and-push-as-app
+        with:
+          token: ${{ steps.app.outputs.token }}
+          app_slug: ${{ steps.app.outputs.app_slug }}
+          user_id: ${{ steps.app.outputs.user_id }}
+          paths: nix/artifact-pins.json
+          message: "chore: sync artifact pins (${{ steps.sync.outputs.updated }})"
+          branch: devel

@@ -1,0 +1,32 @@
+name: Install Ansible Galaxy roles
+description: |
+  Install the roles listed in ansible/requirements.yaml, restoring them from the cache
+  shared by the two Ansible gates and refreshing that cache when it missed.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the Ansible Galaxy roles cache
+      id: cache
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/.ansible/roles
+        key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+        restore-keys: ansible-roles-${{ runner.os }}-
+
+    # Both gates need the roles: `ansible-playbook --syntax-check` resolves the
+    # dependencies declared in each role meta/main.yml (e.g. legacy_gui depends on
+    # petermosmans.customize-gnome), and linting reads the same role trees.
+    - name: Install the roles
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd ansible
+        ansible-galaxy role install -r requirements.yaml
+
+    - name: Refresh the roles cache
+      if: always() && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ~/.ansible/roles
+        key: ${{ steps.cache.outputs.cache-primary-key }}

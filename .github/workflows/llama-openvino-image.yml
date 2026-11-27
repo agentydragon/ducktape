@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/ghcr-build-push
+      - uses: ./.github/actions/oci-build-push
         id: build
         with:
           image: ${{ env.IMAGE }}
@@ -62,12 +62,10 @@ jobs:
       - name: Verify the server binary runs
         run: docker run --rm "${{ env.IMAGE }}:${{ github.sha }}" --help
 
-      - name: Resolve pinned digest
+      - name: Report the digest to pin by hand
         run: |
-          DIGEST=$(docker manifest inspect "${{ env.IMAGE }}:${{ steps.build.outputs.pin_tag }}" --verbose | \
-            python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
           {
-            echo "Pinned digest: \`${{ env.IMAGE }}@$DIGEST\`"
+            echo "Pinned digest: \`${{ env.IMAGE }}@${{ steps.build.outputs.digest }}\`"
             echo "Built from llama.cpp @ \`${{ env.LLAMA_CPP_REF }}\`"
             echo ""
             echo "Paste the digest into nix/nixos/hosts/rugged/local_llm_npu.nix's image reference."
