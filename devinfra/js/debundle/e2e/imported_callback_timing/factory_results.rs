@@ -4,7 +4,7 @@ use super::{API_MAKE_PEER, SOURCE, SplitCase, modules, peer_api_callback_factori
 use analysis_vocabulary::report_schema::{CallbackFactoryUseKind, CallbackFactoryUseReport};
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
-use graph::DependencyGraphReport;
+use graph::report::DependencyGraphReport;
 
 const NO_CAUSES: &[&str] = &[];
 

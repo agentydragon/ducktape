@@ -16,13 +16,15 @@ use analysis::reports::author_inputs::AuthorInputLocations;
 use analysis::{BindingId, ModuleId, ModuleRole};
 use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::report_schema::{CallbackFactoryUseReport, ReturnedRecordUseReport};
-use graph::{
-    AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
+use graph::SourceUnitClass;
+use graph::atomic_groups::AtomicGroup;
+use graph::report::{
+    AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
     CallbackFactoryBarrierReport, CallbackFactoryCallArgumentWitnessReport,
     CallbackFactoryContractReport, CallbackFactoryRejectionReport,
     CallbackFactoryWriteWitnessReport, DependencyEdgeReport, DependencyGraphReport,
     ModuleDestinationKind, ModuleEntry, ModuleKey, ModuleQuotientReport, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SourceUnitClass, SourceUnitReport,
+    QuotientEdgeReport, QuotientSccReport, SourceUnitReport,
 };
 use graph::{
     report::CallbackFactoryCallbackSourceReport, report::CommutingStatementsReport,

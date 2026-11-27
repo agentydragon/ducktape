@@ -52,7 +52,8 @@ use anonymous_resolution::{
     resolve_source_claims,
 };
 use anyhow::{Context, Result, bail};
-use graph::{AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphReport};
+use graph::DependencyGraphInput;
+use graph::report::{AtomicGroupConflictReport, DependencyGraphReport};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use serde::Serialize;
 use source_identity::SourceUnitId;
@@ -385,7 +386,7 @@ fn emitted_module_paths(
                 .quotient
                 .nodes
                 .iter()
-                .filter(|module| module.kind == graph::ModuleDestinationKind::Unassigned)
+                .filter(|module| module.kind == graph::report::ModuleDestinationKind::Unassigned)
                 .map(|module| module.path.clone()),
         );
     }
@@ -1104,7 +1105,7 @@ fn gate_post_edit_assignment_with_expected(
                         .source_unit_id(&node.id)
                         .expect("report unit ID is indexed"),
                 ) || (baseline.kind
-                    == graph::ModuleDestinationKind::Specified
+                    == graph::report::ModuleDestinationKind::Specified
                     && !surviving_modules.contains(&baseline.path));
                 if newly_unclaimed {
                     anyhow::ensure!(
@@ -1117,7 +1118,7 @@ fn gate_post_edit_assignment_with_expected(
                     );
                     None
                 } else {
-                    (baseline.kind != graph::ModuleDestinationKind::Entry)
+                    (baseline.kind != graph::report::ModuleDestinationKind::Entry)
                         .then(|| baseline.path.clone())
                 }
             }

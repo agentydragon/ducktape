@@ -13,7 +13,7 @@
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use graph::DependencyGraphReport;
+use graph::report::DependencyGraphReport;
 
 fn trusted_dataflow_opts<'a>(
     source: &'a str,
@@ -28,7 +28,7 @@ fn sequenced_edges_between<'a>(
     graph: &'a DependencyGraphReport,
     a: &str,
     b: &str,
-) -> Vec<&'a graph::DependencyEdgeReport> {
+) -> Vec<&'a graph::report::DependencyEdgeReport> {
     graph
         .edges
         .iter()

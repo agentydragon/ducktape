@@ -469,6 +469,7 @@ _GATE_SRCS = [
 _GATE_DEPS = [
     ":analysis",
     ":analysis_model",
+    ":report_io",
     ":source_identity",
     "//devinfra/js/debundle/analysis_domain",
     "//devinfra/js/debundle/analysis_vocabulary",

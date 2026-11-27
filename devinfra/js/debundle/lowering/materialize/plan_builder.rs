@@ -17,12 +17,13 @@ use anyhow::{Context, Result, bail, ensure};
 use frontend_elaboration::MemberClaimProjection;
 use frontend_elaboration::chunk_ast::{TopLevelDecl, binding_declaration};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
+use graph::SourceUnitClass;
 use graph::assignment_assembly::assemble_assignment_with_source_unit_claims;
-use graph::{
-    DependencyGraphAndAtomicGroups, DestructuringDeclaratorGroup,
-    DestructuringGroupOwnerClassification, NestedVarDestinationClassification, NestedVarStatement,
-    SourceUnitClass, SourceUnitLayout, classify_destructuring_group_owners,
-    classify_nested_var_placement,
+use graph::atomic_groups::DependencyGraphAndAtomicGroups;
+use graph::placement_projection::{
+    DestructuringDeclaratorGroup, DestructuringGroupOwnerClassification,
+    NestedVarDestinationClassification, NestedVarStatement, SourceUnitLayout,
+    classify_destructuring_group_owners, classify_nested_var_placement,
 };
 use ownership_subset::SelectedModule;
 use selector_outcome::{

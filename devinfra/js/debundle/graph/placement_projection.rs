@@ -12,7 +12,8 @@ use swc_ecma_ast::{Id, ModuleItem};
 
 use analysis::{BindingKind, LocalBindings, ModuleId};
 
-use crate::{DependencyGraph, ModuleAssignment, SourceUnitClass};
+use crate::module_assignment::ModuleAssignment;
+use crate::{DependencyGraph, SourceUnitClass};
 
 /// One post-split source unit's location in the retained raw module body.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

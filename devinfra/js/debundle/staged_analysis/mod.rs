@@ -30,10 +30,7 @@ mod request;
 mod saved_program_summary;
 #[cfg(test)]
 mod test_support;
-pub use loader_surface::{
-    ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,
-    LoaderRequestReportTarget, LoaderSite, LoaderSiteWitness,
-};
+use loader_surface::ExportReentryLoaderDerivation;
 pub use request::{AnalyzeRequest, analyze_from_projection};
 
 /// Why the unknown-call fallback includes the chunk's export surface.

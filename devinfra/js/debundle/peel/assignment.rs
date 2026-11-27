@@ -8,11 +8,11 @@ use analysis_domain::item_views::StatementKind;
 use anyhow::{Context, Result, ensure};
 use esm_schedule::EsmImportSchedule;
 use gate::AssignmentValidation;
+use graph::DependencyGraphInput;
 use graph::assignment_assembly::detect_atomic_group_conflict;
-use graph::{
-    AtomicGroup, DependencyGraphInput, ModuleAssignment, ModuleDestinationKind,
-    compute_atomic_groups,
-};
+use graph::atomic_groups::{AtomicGroup, compute_atomic_groups};
+use graph::module_assignment::ModuleAssignment;
+use graph::report::ModuleDestinationKind;
 use serde::{Deserialize, Serialize};
 use spec::{ModulePath, is_residual_namespace_path};
 

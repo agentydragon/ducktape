@@ -220,7 +220,7 @@ fn source_hub_reduction_matches_directed_hamiltonian_path() {
             ));
         }
         let graph = parse_and_build(&source);
-        let atoms = graph::compute_atomic_groups(&graph);
+        let atoms = graph::atomic_groups::compute_atomic_groups(&graph);
         assert_eq!(atoms.len(), 4, "H mask {mask}: {source}");
         assert!(
             atoms.iter().all(|atom| atom.members.len() == 1),

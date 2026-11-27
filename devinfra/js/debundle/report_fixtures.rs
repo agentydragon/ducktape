@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use analysis_domain::item_views::StatementKind;
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::purity::Purity;
-use graph::{
+use graph::report::{
     AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
     DependencyEdgeReport, DependencyGraphReport, LineRange, ModuleDestinationKind, ModuleEntry,
     ModuleKey, ModuleQuotientReport, SourceUnitReport,

@@ -21,7 +21,8 @@ use debundle_e2e_graph_support::{
     FixtureGraphExt, commuting_statements_diagnostics, source_unit_for_binding,
 };
 use debundle_e2e_support::*;
-use graph::{CommutingStatementsDiagnostic, DependencyGraphReport, SequencedCause};
+use graph::report::DependencyGraphReport;
+use graph::{CommutingStatementsDiagnostic, SequencedCause};
 
 const ENTRY: &str = "commuting_statements[0]";
 const CONTRADICTION: &str = "contradicts a source fact";
@@ -155,7 +156,7 @@ fn expect_unused_is_a_warning(
 fn inerted_edges<'a>(
     graph: &'a DependencyGraphReport,
     premise: &CommutingStatementsRef,
-) -> Vec<&'a graph::DependencyEdgeReport> {
+) -> Vec<&'a graph::report::DependencyEdgeReport> {
     let entry = graph
         .commuting_statements
         .iter()

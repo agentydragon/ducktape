@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::atomic_groups::{AtomicGroup, compute_atomic_groups};
 use crate::test_support::build_dependency_graph;
 use crate::*;
 use analysis_model::DepKind;

@@ -46,8 +46,9 @@ use gate_reports::{
     evaluate_and_gate_chunk, evaluate_with_sinks, write_selector_diagnostics,
     write_spec_lint_report,
 };
+use graph::CommutingStatementsDiagnostic;
+use graph::placement_projection::{PlacementProjectionInput, SourceUnitLayout};
 use graph::report::source_unit_key;
-use graph::{CommutingStatementsDiagnostic, PlacementProjectionInput, SourceUnitLayout};
 use js_ast::{ParsedJsModule, format_comment_block_lines};
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, GATE_REJECTED_MARKER};
 use ownership_subset::OwnershipSubset;
@@ -482,17 +483,18 @@ pub(super) fn finish_logical_chunk(
     let local_bindings = assignment_analysis
         .inputs()
         .local_bindings(chunk_id_interned)?;
-    let placement_projection = graph::project_placement(PlacementProjectionInput {
-        graph,
-        assignment,
-        local_bindings,
-        body: &runtime_ast.module.body,
-        layout: &source_unit_layout,
-        whole_statements: &whole_statement_assignment,
-        module_count: module_plans.len(),
-        destructuring_groups: &ast_analysis.destructuring_groups,
-        nested_var_statements: &ast_analysis.nested_var_statements,
-    });
+    let placement_projection =
+        graph::placement_projection::project_placement(PlacementProjectionInput {
+            graph,
+            assignment,
+            local_bindings,
+            body: &runtime_ast.module.body,
+            layout: &source_unit_layout,
+            whole_statements: &whole_statement_assignment,
+            module_count: module_plans.len(),
+            destructuring_groups: &ast_analysis.destructuring_groups,
+            nested_var_statements: &ast_analysis.nested_var_statements,
+        });
     let preflight = gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection);
     if assessment_only {
         let evaluation = evaluate_with_sinks(preflight, &analysis.facts, None, None)?;
@@ -619,7 +621,7 @@ fn build_chunk_graph_or_report_contradiction(
     graph_options: graph::GraphOptions,
     commuting_statements: &[analysis_vocabulary::inputs::ResolvedCommutingStatements],
     builder: &ChunkPlanBuilder,
-) -> Result<graph::DependencyGraphAndAtomicGroups> {
+) -> Result<graph::atomic_groups::DependencyGraphAndAtomicGroups> {
     let ChunkContext {
         chunk_id,
         report_emission,

@@ -26,7 +26,7 @@ use debundle_e2e_graph_support::{
     FixtureGraphExt, source_unit_for_binding, source_unit_for_ordinal,
 };
 use debundle_e2e_support::*;
-use graph::DependencyGraphReport;
+use graph::report::DependencyGraphReport;
 
 /// Assert a `Sequenced` edge `later → earlier` exists (the
 /// "earlier must evaluate first" constraint).

@@ -3,7 +3,7 @@
 use super::{execution, members};
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
-use graph::DependencyGraphReport;
+use graph::report::DependencyGraphReport;
 
 const EXPORTED_RECORD_PROVIDER: &str = r#"class Holder {
   constructor(record) { this.record = record; this.missing = record.missing; }

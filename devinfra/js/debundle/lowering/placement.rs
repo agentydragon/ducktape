@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use analysis::ModuleId;
 use anyhow::{Context, Result, ensure};
 use gate::AssignmentAnalysis;
-use graph::{PlacementProjection, PlacementProjectionViolation};
+use graph::placement_projection::{PlacementProjection, PlacementProjectionViolation};
 use swc_ecma_ast::Id;
 
 /// Immutable placement instructions tied to the exact assignment the shared

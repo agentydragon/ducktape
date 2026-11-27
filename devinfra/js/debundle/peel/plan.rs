@@ -8,7 +8,8 @@ use anyhow::Result;
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
-use graph::{AtomicGroupReport, BindingReport, DependencyGraphInput, DependencyGraphReport};
+use graph::DependencyGraphInput;
+use graph::report::{AtomicGroupReport, BindingReport, DependencyGraphReport};
 
 use crate::output_format::OutputFormat;
 

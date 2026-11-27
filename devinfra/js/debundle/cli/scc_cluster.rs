@@ -130,9 +130,9 @@ pub struct ClusterReport {
 /// These queries need one home module, unlike multi-source unit selection commands.
 /// Never prefer a minified spelling over another source unit's readable spelling.
 fn resolve_one_binding_source_unit<'a>(
-    graph: &'a graph::DependencyGraphReport,
+    graph: &'a graph::report::DependencyGraphReport,
     sym: &str,
-) -> Result<&'a graph::SourceUnitReport> {
+) -> Result<&'a graph::report::SourceUnitReport> {
     let source_units = resolve_binding_source_units(graph, sym);
     match source_units.as_slice() {
         [source_unit] => Ok(source_unit),
@@ -155,7 +155,7 @@ pub fn run_scc(args: SccArgs, output: &mut dyn std::io::Write) -> Result<()> {
     // first; we restrict SCCs to ones containing that destination.
     // Uses the shared `resolve_binding_source_units` helper so minified and
     // readable name forms both resolve.
-    let restrict_to_module: Option<graph::ModuleKey> = if let Some(sym) = &args.binding {
+    let restrict_to_module: Option<graph::report::ModuleKey> = if let Some(sym) = &args.binding {
         let source_unit = resolve_one_binding_source_unit(graph, sym)?;
         Some(source_unit.destination.clone())
     } else {
@@ -289,7 +289,10 @@ pub fn run_cluster(args: ClusterArgs, output: &mut dyn std::io::Write) -> Result
 
 /// Pair an interned module key with its human path label, falling back
 /// to the raw key string when the module table has no entry for it.
-fn resolve_module_ref(graph: &graph::DependencyGraphReport, key: &graph::ModuleKey) -> ModuleRef {
+fn resolve_module_ref(
+    graph: &graph::report::DependencyGraphReport,
+    key: &graph::report::ModuleKey,
+) -> ModuleRef {
     ModuleRef {
         id: key.as_str().to_string(),
         label: graph

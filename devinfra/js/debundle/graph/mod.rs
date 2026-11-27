@@ -40,9 +40,6 @@ mod test_support;
 #[cfg(test)]
 mod tests;
 
-pub use assignment_assembly::{
-    AssemblyOutcome, AtomicGroupConflict, ConflictingClaim, assemble_assignment,
-};
 pub use build::{
     CommutingStatementsDiagnostic, DependencyGraphBuildError, DuplicateTopLevelDeclaration,
     GraphOptions, KnownConflict, PremiseVerdict, build_dependency_graph_with,
@@ -61,31 +58,3 @@ pub use linker_order::{
     chunk_source_import_order_from_adjacency, position_lookup,
 };
 pub use quotient::{EndpointView, assignment_endpoints, project_endpoints};
-
-pub use atomic_groups::{
-    AtomicGroup, AtomicGroupPathOrientation, AtomicGroupPathProjection,
-    DependencyGraphAndAtomicGroups, compute_atomic_groups,
-    compute_dependency_graph_and_atomic_groups_with,
-};
-
-pub use module_assignment::ModuleAssignment;
-
-pub use placement_projection::{
-    DestructuringDeclaratorGroup, DestructuringGroupDestinationCheck,
-    DestructuringGroupOwnerClassification, NestedVarDestinationClassification,
-    NestedVarPlacementCheck, NestedVarStatement, PlacementEmissionMaps, PlacementProjection,
-    PlacementProjectionAssessment, PlacementProjectionInput, PlacementProjectionOutcome,
-    PlacementProjectionViolation, SourceUnitLayout, SourceUnitLayoutIssue, SourceUnitLocation,
-    SourceUnitSyntaxLocation, StructuralPlacementCheck, classify_destructuring_group_owners,
-    classify_nested_var_placement, project_placement,
-};
-pub use report::{
-    AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupConflictWitness,
-    AtomicGroupEdgeReport, AtomicGroupReport, AtomicGroupWitnessClaim, AtomicGroupWitnessPath,
-    AtomicGroupWitnessStep, BindingReport, CallbackFactoryBarrierReport,
-    CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
-    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, ConflictingClaimReport,
-    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
-    ModuleEntry, ModuleKey, ModuleQuotientReport, ProgramGraphReport, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause, SourceUnitReport,
-};

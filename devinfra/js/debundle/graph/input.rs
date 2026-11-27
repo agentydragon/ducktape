@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use source_identity::SourceUnitId;
 
 use super::{DependencyEdgeId, DependencyGraph, GraphReportIdError};
-use crate::DependencyGraphReport;
+use crate::report::{DependencyEdgeReport, DependencyGraphReport, SourceUnitReport};
 
 /// Immutable graph input shared by inspection, planning and edit validation.
 ///
@@ -131,11 +131,11 @@ impl DependencyGraphInput {
     }
 
     /// Typed IDs are assigned in report row order when the input is prepared.
-    pub fn source_unit_report(&self, id: SourceUnitId) -> &crate::SourceUnitReport {
+    pub fn source_unit_report(&self, id: SourceUnitId) -> &SourceUnitReport {
         &self.report.nodes[id.0]
     }
 
-    pub fn edge_report(&self, id: DependencyEdgeId) -> &crate::DependencyEdgeReport {
+    pub fn edge_report(&self, id: DependencyEdgeId) -> &DependencyEdgeReport {
         &self.report.edges[id.0]
     }
 

@@ -9,7 +9,8 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use analysis_vocabulary::execution_evidence::SourceLocation;
-use graph::{DependencyGraphInput, DependencyGraphReport, SourceUnitReport};
+use graph::DependencyGraphInput;
+use graph::report::{DependencyGraphReport, SourceUnitReport};
 use graph_provenance::VerifiedGraphSourceContext;
 use spec_modules::{collect_module_files, module_path_from_file, read_module_claims};
 

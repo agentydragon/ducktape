@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use debundle_e2e_support::*;
-use graph::BindingReport;
+use graph::report::BindingReport;
 
 #[test]
 fn disposal_symbol_method_keys_do_not_block_class_split() {

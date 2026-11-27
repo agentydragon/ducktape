@@ -9,9 +9,11 @@ use thiserror::Error;
 use crate::report_builders::build_dependency_graph_report;
 use analysis::{BindingCatalogue, BindingScopeError, EntryDestination, ModuleId, PlannedModule};
 use graph::module_assignment::ModuleAssignment;
-use graph::{DependencyGraphReport, StructuralPlacementCheck};
+use graph::placement_projection::StructuralPlacementCheck;
+use graph::report::DependencyGraphReport;
 use graph::{assignment_assembly::AtomicGroupConflict, assignment_assembly::assemble_assignment};
 use graph::{atomic_groups::AtomicGroup, atomic_groups::DependencyGraphAndAtomicGroups};
+use report_io::{JsonlReport, write_json};
 use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
@@ -134,7 +136,7 @@ impl<'a> CandidatePreflight<'a> {
     /// The projection must be for this immutable assignment.
     pub fn prepare(
         assignment_analysis: &'a AssignmentAnalysis,
-        projection: &graph::PlacementProjection<'_>,
+        projection: &graph::placement_projection::PlacementProjection<'_>,
     ) -> Self {
         assert!(
             std::ptr::eq(&assignment_analysis.assignment, projection.assignment()),
@@ -345,7 +347,7 @@ pub struct StructuralPlacementAssessment {
     /// uses; diagnostic counts do not reconstruct the emitter's decision.
     pub emission_mappable: bool,
     pub coverage: StructuralPlacementCoverage,
-    pub projection_violations: Vec<graph::PlacementProjectionViolation>,
+    pub projection_violations: Vec<graph::placement_projection::PlacementProjectionViolation>,
     pub cross_destination_rebinds: Vec<CrossDestinationRebindObligation>,
     pub atomic_group_obligations: Vec<AtomicGroupPlacementObligation>,
     pub semantic_order_sccs: Vec<SemanticOrderSccObligation>,
@@ -435,7 +437,7 @@ fn has_legacy_gate_ordering_veto(placement: &StructuralPlacementAssessment) -> b
 fn structural_placement_assessment(
     graph: &graph::DependencyGraph,
     validation: &AssignmentValidation,
-    projection: &graph::PlacementProjection<'_>,
+    projection: &graph::placement_projection::PlacementProjection<'_>,
 ) -> StructuralPlacementAssessment {
     let cross_destination_rebinds: Vec<CrossDestinationRebindObligation> = validation
         .verdict
@@ -861,7 +863,7 @@ pub fn tv_audit_dir() -> Option<&'static std::path::Path> {
 /// and sequence keep the CLI runs of one test apart. Diagnostic only.
 struct TvAudit {
     stem: std::path::PathBuf,
-    conflicts: std::io::BufWriter<std::fs::File>,
+    conflicts: JsonlReport,
 }
 
 impl TvAudit {
@@ -870,33 +872,22 @@ impl TvAudit {
         let dir = tv_audit_dir()?;
         let sequence = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let stem = dir.join(format!("{}-{sequence}", std::process::id()));
-        let path = stem.with_extension("conflicts.jsonl");
-        let conflicts = std::fs::create_dir_all(dir)
-            .and_then(|()| std::fs::File::create(&path))
-            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: create {path:?}: {error}"));
-        Some(Self {
-            stem,
-            conflicts: std::io::BufWriter::new(conflicts),
-        })
+        let conflicts = JsonlReport::create(stem.with_extension("conflicts.jsonl"))
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: {error:#}"));
+        Some(Self { stem, conflicts })
     }
 
     fn conflict(&mut self, row: &EffectConflictDiagnosticRow<'_>) {
-        use std::io::Write;
-        serde_json::to_writer(&mut self.conflicts, row)
-            .map_err(std::io::Error::from)
-            .and_then(|()| writeln!(self.conflicts))
-            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: write {:?}: {error}", self.stem));
+        self.conflicts
+            .write(row)
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: {error:#}"));
     }
 
-    fn finish(mut self, record: TvAuditRecord<'_>) {
-        use std::io::Write;
-        let path = self.stem.with_extension("json");
+    fn finish(self, record: TvAuditRecord<'_>) {
         self.conflicts
-            .flush()
-            .and_then(|()| std::fs::File::create(&path))
-            .map_err(serde_json::Error::io)
-            .and_then(|file| serde_json::to_writer(std::io::BufWriter::new(file), &record))
-            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: write {path:?}: {error}"));
+            .finish()
+            .and_then(|()| write_json(self.stem.with_extension("json"), &record))
+            .unwrap_or_else(|error| panic!("DEBUNDLE_TV_AUDIT: {error:#}"));
     }
 }
 
