@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 use super::statement_facts::{
-    CallbackFactoryBarrierFact, CallbackFactoryUseFact, ConstructorFacts, DataflowOpacityCause,
-    EffectCell, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells,
+    CallbackFactoryBarrierFact, CallbackFactoryUseFact, ChunkFactAnalysis, ConstructorFacts,
+    DataflowOpacityCause, EffectCell, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells,
     LocalRecordFactoryPurityCertificate, ReturnedRecordUseFact, StatementFacts, SynchronousCalls,
 };
 use super::*;

@@ -1,4 +1,6 @@
-use super::statement_facts::{StructuralChunkSourceFacts, StructuralStatementFacts};
+use super::statement_facts::{
+    StructuralChunkAnalysis, StructuralChunkSourceFacts, StructuralStatementFacts,
+};
 use super::*;
 use analysis_domain::dynamic_scope::DynamicScopeFact;
 use js_ast::item_var_decl;
