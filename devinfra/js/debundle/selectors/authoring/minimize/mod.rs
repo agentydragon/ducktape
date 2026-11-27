@@ -555,6 +555,19 @@ fn push_candidate(
     out.len() >= limit
 }
 
+/// The declaration's top-level item in the parsed module the index was built
+/// from. A read-off index can go stale if the module changed under it.
+pub(crate) fn body_item<'m>(
+    index: &ChunkSelectorIndex<'m>,
+    decl: &IndexedDeclaration,
+) -> Result<&'m ModuleItem> {
+    index
+        .module
+        .body
+        .get(decl.body_idx)
+        .context("read-off body index no longer in module")
+}
+
 /// Collect up to `limit` read-off selectors for the target, best-first — minimal
 /// anchor set → individually-discriminating value anchors → multi-feature value
 /// cover → bare scaffold → exact-declaration relaxation → use site →
@@ -584,11 +597,7 @@ fn read_off_candidates(
     render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
     limit: usize,
 ) -> Result<Vec<SpecializedSelector>> {
-    let item = index
-        .module
-        .body
-        .get(decl.body_idx)
-        .context("read-off body index no longer in module")?;
+    let item = body_item(index, decl)?;
 
     let mut out: Vec<SpecializedSelector> = Vec::new();
 

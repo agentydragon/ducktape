@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use readoff_render::kept_spans_for_anchor_sets;
 use source_match_holes::AST_CONTAINS_STRING_PREDICATE;
 use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
@@ -12,6 +12,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 use super::{anchor_quality, render_var_slots};
 use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
 use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use crate::minimize::body_item;
 use crate::proof::prove_synthesized_selector;
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
 use selector_render::{
@@ -131,11 +132,7 @@ pub(crate) fn try_var_read_off_candidates(
         render_var_slots(var, &only_target, &export_for, kept, regex_anchors)
     };
 
-    let item = index
-        .module
-        .body
-        .get(decl.body_idx)
-        .context("read-off body index no longer in module")?;
+    let item = body_item(index, decl)?;
     let no_regex = BTreeMap::new();
 
     // Try the single minimal anchor set first, then — robustness-anchor fallback —
