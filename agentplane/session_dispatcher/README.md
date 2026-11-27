@@ -3,7 +3,9 @@
 Sessions serves Dispatcher and gRPC health at `sessions:8080` for durable Session admission,
 watches, automatic wake and delivery. The TLS listener presents
 `spiffe://agentplane/session-dispatcher` and admits live workload Identity SVIDs, exact service
-SVIDs and explicitly scoped typed service delegation.
+SVIDs and explicitly scoped typed service delegation. Its health reports NOT_SERVING until the
+PolicyService Identity view has completed its first snapshot, so a caller authenticated earlier is not
+refused as UNAVAILABLE; a later PolicyService outage does not change it.
 
 Native delivery calls HarnessHost through the [Environments](../environments/README.md) Service
 at `environments:8082`, presenting `spiffe://agentplane/sessions` and verifying the Sandbox

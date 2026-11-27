@@ -1,4 +1,13 @@
-"""A PolicyService that serves the Identity resources of an API server, for the proxy to read as its Identity source."""
+"""A PolicyService that serves the Identity resources of an API server, for the proxy to read as its Identity source.
+
+TODO: consider replacing this with the real Policy Controller
+(`agentplane/policy_controller/testing/policy_controller_process.py`), as History's and the Dispatcher's component
+tests now do; the Component tier fakes a neighbour only to inject a fault (docs/test_tiers.md). It is kept because
+`egress:test_proxy` cuts and revokes a replica's API access through this fake's own client. The controller reads
+with the replica's kubeconfig (client-go honours its `as` user, which this fake applies by hand), so that user's RBAC
+would need widening to everything the controller caches, and the test would then be exercising the real service's
+response to an API outage.
+"""
 
 from __future__ import annotations
 
