@@ -3588,6 +3588,7 @@ flowchart LR
     ACTION_POLICY_IDENTITY_SUBJECT[Unscheduled decision: read an Identity's Action policy]
     POLICY_SUBJECTS_IDENTITY_ONLY -. ServiceAccount subject shape .-> ACTION_POLICY_IDENTITY_SUBJECT
     ACTION_POLICY_IDENTITY_SUBJECT -. Policies tab Action section .-> SANDBOX_IDENTITY_SURFACES
+    IDENTITY_VIEW_READINESS[Unscheduled: check every Identity-view service reports ready only once the view is current]
     IDENTITY_OWNERSHIP_DESIGN -. cross-store invariants .-> RECORD_COLOCATION_DESIGN
     SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
     SESSION_ACCESS_GROUPING_DESIGN --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox target, grant and migration]
@@ -3790,6 +3791,28 @@ Coordinate with `POLICY_SUBJECTS_IDENTITY_ONLY`: if ServiceAccount subjects reti
 form leaves after the Identity form lands. **Exit:** decision recorded; the Action Service contract and
 [SPEC](../action_service/SPEC.md) accept an Identity subject, and the Policies tab shows an Identity
 Sandbox's effective Action policy.
+
+### `IDENTITY_VIEW_READINESS` — services report ready only once their Identity view is current
+
+**Unscheduled check, found 2026-11-27.** History (#20558) and the Dispatcher (#20597) reported gRPC health
+SERVING as soon as their listener was up, before their `identitycache` view had a first snapshot. A caller
+authenticated in that window was refused as `UNAVAILABLE: workload SVID authentication unavailable`
+(`identity view is not current`), which also hits the first calls of a pod that a rolling deploy has just made
+Ready. Both now call `identitycache.GateHealth(ctx, status, view.WaitCurrent)` (`policy/identitycache/health.go`,
+added in #20597).
+
+The other services that build the same view have not been checked: Action Service
+(`action_service/cmd/main.go`), Notification (`notification_service/cmd/identities.go`), LLM ingress
+(`llm_ingress/internal/server/runtime.go`), MCP edge (`mcp_edge/cmd/callers.go`), Environments
+(`environments/cmd/main.go`, `environments/internal/serving/server.go`) and egress (`egress/cmd/main.go`). For
+each: does its readiness probe pass before the view is current, and does a caller in that window fail as
+UNAVAILABLE? If so, gate its readiness the same way (`GateHealth` for a gRPC health server, `WaitCurrent` for
+another probe). Only the first snapshot gates readiness; a later PolicyService outage is still ridden out by the
+view's grace. Gating makes a new pod wait for the Policy Controller, so a rollout stalls rather than serving
+UNAVAILABLE; check that no service the Policy Controller itself depends on is gated on it.
+
+Waits for #20597 to merge. **Exit:** each service above is gated, or recorded as not needing it (no readiness
+probe, or it cannot receive an Identity-authenticated call before the view is current).
 
 ### `SESSION_SUBAGENT_DELEGATION` — a Session creates and messages a sub-Session
 
