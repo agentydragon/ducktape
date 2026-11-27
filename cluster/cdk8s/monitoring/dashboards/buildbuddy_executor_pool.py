@@ -341,6 +341,49 @@ def _guest_memory_detail() -> list[dashboard.Panel]:
     return [composition, headroom]
 
 
+def _runner_reuse() -> list[dashboard.Panel]:
+    """Reuse of paused (recycled) runners on the selected workers, across every recycling key."""
+    requests = f"buildbuddy_remote_execution_recycle_runner_requests{{{_SELECTED}}}"
+    hits = f'sum(increase(buildbuddy_remote_execution_recycle_runner_requests{{{_SELECTED},status="hit"}}[1h]))'
+    return [
+        _chart(
+            31,
+            "Recycled runner hit rate",
+            "Share of recycling requests in the past hour that resumed a paused runner. Covers every recycling key "
+            "on the pool (test_vm, Firecracker suites and others); per-test reuse is in each run's recycled-runner.json. "
+            "A gap means no recycling request in the hour.",
+            dashboard.GridPos(h=8, w=8, y=73),
+            [("Hit rate", f"100 * ({hits} or vector(0)) / sum(increase({requests}[1h]))")],
+            "percent",
+        ),
+        _chart(
+            32,
+            "Recycling requests and evictions",
+            "Per hour. A miss starts a fresh runner. An eviction discards the oldest paused runner to fit the "
+            "executor's paused-runner count or memory cap (executor.yaml runner_pool).",
+            dashboard.GridPos(h=8, w=8, x=8, y=73),
+            [
+                ("{{status}}", f"sum by (status) (increase({requests}[1h]))"),
+                ("Evictions", f"sum(increase(buildbuddy_remote_execution_runner_pool_evictions{{{_SELECTED}}}[1h]))"),
+            ],
+        ),
+        _chart(
+            33,
+            "Paused runner memory",
+            "Memory BuildBuddy charged to paused runners on each worker, sampled when each runner was paused. "
+            "It counts page cache on cgroup v2. The per-runner and per-worker caps are in executor.yaml runner_pool.",
+            dashboard.GridPos(h=8, w=8, x=16, y=73),
+            [
+                (
+                    "{{pod}}",
+                    f"max by (pod) (buildbuddy_remote_execution_runner_pool_memory_usage_bytes{{{_SELECTED}}} {_CURRENT})",
+                )
+            ],
+            "bytes",
+        ),
+    ]
+
+
 def build_dashboard() -> dashboard.Dashboard:
     return dashboard.Dashboard(
         uid="buildbuddy-executor-pool",
@@ -430,5 +473,7 @@ def build_dashboard() -> dashboard.Dashboard:
             _disk(14, "Work disk headroom", "/buildbuddy", 12),
             dashboard.RowPanel(id_val=25, title="Memory by worker", grid_pos=dashboard.GridPos(h=1, w=24, y=61)),
             *_guest_memory_detail(),
+            dashboard.RowPanel(id_val=30, title="Runner reuse", grid_pos=dashboard.GridPos(h=1, w=24, y=72)),
+            *_runner_reuse(),
         ],
     )
