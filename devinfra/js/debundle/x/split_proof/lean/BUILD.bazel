@@ -1420,6 +1420,9 @@ lean_proof_test(
         "CoreJS.cellFootprint_readVar",
         "CoreJS.cellFootprint_initVar",
         "CoreJS.cellFootprint_writeVar",
+        "CoreJS.BindingAllocation.binding_present",
+        "CoreJS.BindingAllocation.present",
+        "CoreJS.newCells_allocation",
         "CoreJS.newCells_distinct",
         "CoreJS.LinkedCellsExamples.nonempty_allocation",
         "CoreJS.LinkedCellsExamples.names_allow_alias",
@@ -2764,4 +2767,17 @@ lean_proof_test(
         "CoreJS.ExportRows.rows_scope_cells",
     ],
     deps = [":corejs_export_rows_link"],
+)
+
+lean_proof_test(
+    name = "linked_cells_allocation_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedCells"],
+    required_theorems = [
+        "CoreJS.BindingAllocation.binding_present",
+        "CoreJS.BindingAllocation.present",
+        "CoreJS.newCells_allocation",
+        "CoreJS.newCells_fresh",
+    ],
+    deps = [":corejs_certificate_support_base"],
 )
