@@ -228,27 +228,26 @@ export { Holder1, Holder2, instA, instB };
 
 #[test]
 fn trusted_constructor_calls_use_dataflow_summary() {
-    // The default above remains conservative because an unproven
-    // `new` may have arbitrary observable effects. Some real bundle
-    // specs are separately audited and accept the old dataflow
-    // assumption for conservative-but-present summaries: calls/news
-    // stay impure, but they do not become barriers against every
-    // prior impure source_unit. In that trusted mode these two constructor
-    // calls touch disjoint binding cells, so there is no S-edge
-    // between them.
-    let fixture = run_fixture_with_graphs(trusted_dataflow_opts(
-        r#"class Holder1 { constructor() { this.kind = "h1"; } }
-class Holder2 { constructor() { this.kind = "h2"; } }
+    // The unproven constructors of `unproven_constructor_calls_keep_conservative_s_edge`:
+    // audited specs that accept the dataflow assumption keep the calls impure
+    // but drop the S-edge, since their syntactic cell sets are disjoint.
+    let fixture = run_fixture_with_graphs(
+        trusted_dataflow_opts(
+            r#"function kind(value) { return value; }
+class Holder1 { constructor() { this.kind = kind("h1"); } }
+class Holder2 { constructor() { this.kind = kind("h2"); } }
 const instA = new Holder1();
 const instB = new Holder2();
 console.log(instA.kind, instB.kind);
 export { Holder1, Holder2, instA, instB };
 "#,
-        vec![
-            logical_module("mod_a", &binding_members(["Holder1", "instA"])),
-            logical_module("mod_b", &binding_members(["Holder2", "instB"])),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &binding_members(["Holder1", "instA"])),
+                logical_module("mod_b", &binding_members(["Holder2", "instB"])),
+            ],
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
+    );
     assert_split_behavior(
         &fixture,
         "h1 h2\n",
@@ -262,9 +261,8 @@ export { Holder1, Holder2, instA, instB };
     let offending = sequenced_edges_between(&graph, source_unit_a, source_unit_b);
     assert!(
         offending.is_empty(),
-        "trusted dataflow summarization should not add an unrelated S-edge \
-         between constructor calls whose syntactic summaries touch disjoint \
-         binding cells. Offending edges: {offending:#?}\n\nFull graph: {graph:#?}",
+        "trusted dataflow summaries must drop the S-edge between constructor \
+         calls with disjoint syntactic cells. Offending edges: {offending:#?}",
     );
 }
 
