@@ -15,6 +15,7 @@ import (
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -116,7 +117,8 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		defer actionClient.Close()
 	}
 	runtime := residentruntime.New(store, settings, session.NewCodeModeHost(codemode.NewManager(context.Background(), settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second, settings.CodeModeObservationTimeout()), store, actionClient))
-	serverOptions := []grpc.ServerOption{grpc.MaxRecvMsgSize(64 * 1024 * 1024), grpc.MaxSendMsgSize(64 * 1024 * 1024)}
+	// The health-only listener stays untraced: probes would each start a root span.
+	serverOptions := []grpc.ServerOption{grpc.MaxRecvMsgSize(64 * 1024 * 1024), grpc.MaxSendMsgSize(64 * 1024 * 1024), observability.GRPCServerOption()}
 	register := func(server *grpc.Server) {
 		sampler := &samplerrpc.Sampler{Store: store, Runtime: runtime, Settings: settings, Wakeups: hub}
 		sampleradminpb.RegisterSamplerAdminServer(server, &samplerrpc.SamplerAdmin{Sampler: *sampler})
@@ -224,7 +226,14 @@ func main() {
 	flag.Parse()
 	settings, err := samplersettings.LoadSettings(*configuration)
 	if err == nil {
-		err = run(ctx, settings)
+		var shutdownTracing func()
+		shutdownTracing, err = observability.Init(ctx, "central-sampler")
+		if err == nil {
+			err = run(ctx, settings)
+			shutdownTracing()
+		} else {
+			err = atStartupStage("tracing", err)
+		}
 	} else {
 		var validation *samplersettings.ValidationError
 		stage := "load_settings"
