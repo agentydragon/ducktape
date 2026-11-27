@@ -21,8 +21,15 @@ const lib = { ping() { return "pong"; } };
 }
 "#,
     ] {
-        let fixture = run_named_from_module_default_fixture(upstream_source);
-        assert_wrapper_named_from_module_default(&fixture);
+        in_case(upstream_source, || {
+            let fixture = full_swap(
+                "export { x as default };\nconst x = 0;\n",
+                Some(WrapperShape::NamedFromModuleDefault),
+                upstream_source,
+                &[],
+            );
+            assert_wrapper_named_from_module_default(&fixture);
+        });
     }
 }
 
@@ -35,133 +42,257 @@ fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
         &["as default"],
     );
 
-    // Cross-check the resolution manifest: `generated_wrapper_path` is recorded
-    // relative to the manifest's own directory, so resolving it against
-    // `dirname(manifest_path)` must produce the wrapper file's actual
-    // on-disk path.
-    let manifest: Value =
-        serde_json::from_str(&fs::read_to_string(&fixture.manifest_path).expect("manifest exists"))
-            .expect("manifest parses as JSON");
-    let recorded = manifest
-        .get("full")
-        .and_then(|r| r.get(&fixture.chunk_path))
-        .and_then(|r| r.get("generated_wrapper_path"))
-        .and_then(Value::as_str)
+    // `generated_wrapper_path` is recorded relative to the manifest's own
+    // directory, so resolving it there must give the wrapper's on-disk path.
+    let manifest: Value = read_json(&fixture.manifest_path);
+    let recorded = manifest["full"][&fixture.chunk_path]["generated_wrapper_path"]
+        .as_str()
         .expect("manifest records generated_wrapper_path");
     let manifest_dir = fixture
         .manifest_path
         .parent()
         .expect("manifest path has a parent");
-    let resolved = manifest_dir.join(recorded);
     assert_eq!(
-        fs::canonicalize(&resolved).expect("resolved manifest path canonicalizes"),
+        fs::canonicalize(manifest_dir.join(recorded))
+            .expect("resolved manifest path canonicalizes"),
         fs::canonicalize(&fixture.wrapper_path).expect("wrapper path canonicalizes"),
         "manifest's generated_wrapper_path ({recorded}) must resolve to the wrapper file ({:?})",
         fixture.wrapper_path,
     );
 }
 
-fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFixture {
-    run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "export { x as default };\nconst x = 0;\n",
-        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
-        upstream_source,
-        default_export_aliases: &[],
-    })
+struct WrapperCase {
+    name: &'static str,
+    chunk: &'static str,
+    upstream: &'static str,
+    default_export_aliases: &'static [&'static str],
+    /// Probe module run beside the generated wrapper `entry.js`.
+    script: &'static str,
+    expected: &'static str,
+}
+
+fn assert_wrapper_cases(shape: WrapperShape, cases: &[WrapperCase]) {
+    for case in cases {
+        in_case(case.name, || {
+            let fixture = full_swap(
+                case.chunk,
+                Some(shape),
+                case.upstream,
+                case.default_export_aliases,
+            );
+            assert_wrapper_output(&fixture, case.script, case.expected);
+        });
+    }
+}
+
+const PING_PONG_SCRIPT: &str = "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);";
+
+/// `named_from_default` re-exports each key of upstream's object-literal
+/// `export default` as a named export.
+#[test]
+fn named_from_default_wrapper_runtime_surface() {
+    assert_wrapper_cases(
+        WrapperShape::NamedFromDefault,
+        &[
+            WrapperCase {
+                name: "key-value props with identifier names",
+                chunk: "export { ping, pong } from \"lib\";\n",
+                upstream: "export default {\n  ping: () => \"pong\",\n  pong: () => \"ping\",\n};\n",
+                default_export_aliases: &[],
+                script: PING_PONG_SCRIPT,
+                expected: "pong ping true true\n",
+            },
+            // Generated export locals must avoid the upstream bindings
+            // rather than redeclaring them.
+            WrapperCase {
+                name: "shorthand props",
+                chunk: "export { ping, pong } from \"lib\";\n",
+                upstream: "const ping = () => \"pong\";\nconst pong = () => \"ping\";\nexport default { ping, pong };\n",
+                default_export_aliases: &[],
+                script: PING_PONG_SCRIPT,
+                expected: "pong ping true true\n",
+            },
+            WrapperCase {
+                name: "shorthand mixed with a string-named prop",
+                chunk: "export { ping, pong } from \"lib\";\n",
+                upstream: "const ping = () => \"pong\";\nexport default { ping, \"pong\": () => \"ping\" };\n",
+                default_export_aliases: &[],
+                script: PING_PONG_SCRIPT,
+                expected: "pong ping true true\n",
+            },
+            // The wrapper hoists upstream's default into a synthetic local
+            // (historically `_d`); naive injection would redeclare it.
+            WrapperCase {
+                name: "upstream binds the synthetic default local",
+                chunk: "export { ping } from \"lib\";\n",
+                upstream: "const _d = \"taken\";\nexport default { ping: () => _d };\n",
+                default_export_aliases: &[],
+                script: "const m = await import(\"./entry.js\");\nconsole.log(m.ping());\n",
+                expected: "taken\n",
+            },
+            WrapperCase {
+                name: "reserved and string export names",
+                chunk: "const a = 0; export { a as class, a as 'x-y' };",
+                upstream: "export default { class: 1, 'x-y': 2 };",
+                default_export_aliases: &[],
+                script: "import * as m from './entry.js'; console.log(m.class, m['x-y']);",
+                expected: "1 2\n",
+            },
+        ],
+    );
 }
 
 #[test]
-fn named_from_default_accepts_object_literal_prop_forms() {
-    // The wrapper picks up each key of upstream's object-literal
-    // `export default` and re-exports it as a named export. Every prop form
-    // must yield the same values.
-    for upstream_source in [
-        // Canonical accepted shape: `KeyValue` props with `Ident` names.
-        r#"export default {
-  ping: () => "pong",
-  pong: () => "ping",
-};
-"#,
-        // Shorthand props (`{ ping, pong }` — local binding names used
-        // directly as both key and value). Generated export locals must
-        // avoid the upstream bindings rather than redeclaring them.
-        r#"const ping = () => "pong";
-const pong = () => "ping";
-export default { ping, pong };
-"#,
-        // Mixed: `Shorthand` plus a `KeyValue` prop with a `Str` name in the
-        // same default export.
-        r#"const ping = () => "pong";
-export default { ping, "pong": () => "ping" };
-"#,
-    ] {
-        let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
-            upstream_source,
-            chunk_source: "export { ping, pong } from \"lib\";\n",
-        });
+fn named_from_module_default_wrapper_runtime_surface() {
+    assert_wrapper_cases(
+        WrapperShape::NamedFromModuleDefault,
+        &[
+            WrapperCase {
+                name: "upstream binds the synthetic default local",
+                chunk: "export { x as default };\nconst x = 0;\n",
+                upstream: "const __vendor_default__ = \"taken\";\nexport default function getter() { return __vendor_default__; }\n",
+                default_export_aliases: &[],
+                script: "const m = await import(\"./entry.js\");\nconsole.log(m.default());\n",
+                expected: "taken\n",
+            },
+            WrapperCase {
+                name: "chunk proves a named export aliases its default",
+                chunk: "const x = () => \"val\";\nexport { x as default, x as alias };\n",
+                upstream: "export default function f() { return \"val\"; }\n",
+                default_export_aliases: &[],
+                script: "const m = await import(\"./entry.js\");\nconsole.log(m.alias === m.default);\n",
+                expected: "true\n",
+            },
+            // Tana's cytoscape chunk shape: the package default re-exported
+            // under a single minified name with no `default` export; the
+            // author asserts `c` is the package default.
+            WrapperCase {
+                name: "authored default alias",
+                chunk: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
+                upstream: "export default function f() { return \"cy\"; }\n",
+                default_export_aliases: &["c"],
+                script: "const m = await import(\"./entry.js\");\nconsole.log(m.c === m.default && m.c() === \"cy\");\n",
+                expected: "true\n",
+            },
+            WrapperCase {
+                name: "reserved, string and upstream-colliding aliases",
+                chunk: "const x = {}; export { x as class, x as 'x-y', x as existing };",
+                upstream: "const existing = { value: 7 }; export default existing;",
+                default_export_aliases: &["class", "x-y", "existing"],
+                script: "import d, * as m from './entry.js'; console.log(m.class === d, m['x-y'] === d, m.existing.value);",
+                expected: "true true 7\n",
+            },
+        ],
+    );
+}
 
-        assert_wrapper_output(
-            &fixture,
-            "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
-            "pong ping true true\n",
-        );
+#[test]
+fn named_from_json_default_wrapper_runtime_surface() {
+    assert_wrapper_cases(
+        WrapperShape::NamedFromJsonDefault,
+        &[
+            WrapperCase {
+                name: "named pulls from JSON keys",
+                chunk: "export { version, flag } from \"lib\";\n",
+                upstream: "{ \"version\": \"1.2.3\", \"flag\": true }\n",
+                default_export_aliases: &[],
+                script: "const m = await import(\"./entry.js\");\n\
+                         console.log(`${m.version}:${m.flag}:${m.default.version}`);\n",
+                expected: "1.2.3:true:1.2.3\n",
+            },
+            WrapperCase {
+                name: "reserved and string export names",
+                chunk: "const a = 0; export { a as class, a as 'x-y' };",
+                upstream: "{\"class\":1,\"x-y\":2}",
+                default_export_aliases: &[],
+                script: "import * as m from './entry.js'; console.log(m.class, m['x-y']);",
+                expected: "1 2\n",
+            },
+            WrapperCase {
+                name: "__proto__ stays an own data property",
+                chunk: "export const value = 0;",
+                upstream: "{\"value\":1,\"__proto__\":{\"nested\":2}}",
+                default_export_aliases: &[],
+                script: "import data from './entry.js'; console.log(Object.hasOwn(data, '__proto__'), Object.getPrototypeOf(data) === Object.prototype);",
+                expected: "true true\n",
+            },
+            WrapperCase {
+                name: "export names do not shadow JSON or the payload local",
+                chunk: "export const JSON = 0, _d = 0;",
+                upstream: "{\"JSON\":1,\"_d\":2}",
+                default_export_aliases: &[],
+                script: "import * as m from './entry.js'; console.log(m.JSON, m._d);",
+                expected: "1 2\n",
+            },
+        ],
+    );
+}
+
+#[test]
+fn full_swap_rejects_unprovable_export_shapes() {
+    for (name, chunk, shape, upstream, diagnostics) in [
+        // `export default class` is an `ExportDefaultDecl`, so the search
+        // bails before the object-literal check. Out of scope on purpose:
+        // `_d.K` on a class/function default reads static properties, not
+        // the useful surface; such vendors use `named_from_module_default`.
+        (
+            "named_from_default over a class default",
+            "export { ping } from \"lib\";\n",
+            Some(WrapperShape::NamedFromDefault),
+            "export default class {\n  ping() { return \"pong\"; }\n}\n",
+            &["named-from-default: upstream has no export default declaration"][..],
+        ),
+        // `export default x;` (ExportDefaultExpr) participates in the
+        // no-wrapper export-shape check like `export { x as default }`.
+        (
+            "no wrapper, upstream lacks the chunk's default",
+            "const x = 0;\nexport default x;\n",
+            None,
+            "export const unrelated = 1;\n",
+            &["export shape mismatch", "default"],
+        ),
+        // The wrapper emits `export const <name> = <default>;`, which only
+        // holds when the chunk binds `<name>` to its default's local.
+        (
+            "named_from_module_default with an independent named export",
+            "const x = 0;\nconst y = 1;\nexport { x as default, y as other };\n",
+            Some(WrapperShape::NamedFromModuleDefault),
+            "export default function f() { return \"pkg\"; }\n",
+            &["named-from-module-default", "other"],
+        ),
+        // Anchor for the authored-alias wrapper case: without the
+        // assertion the chunk alone cannot prove `c` is the default.
+        (
+            "named_from_module_default single named export without assertion",
+            "const Ft = () => \"cy\";\nexport { Ft as c };\n",
+            Some(WrapperShape::NamedFromModuleDefault),
+            "export default function f() { return \"cy\"; }\n",
+            &["named-from-module-default", "c"],
+        ),
+        (
+            "named_from_json_default name missing from JSON",
+            "export { missing } from \"lib\";\n",
+            Some(WrapperShape::NamedFromJsonDefault),
+            "{ \"version\": \"1.2.3\" }\n",
+            &["named-from-json-default wrapper shape mismatch"],
+        ),
+    ] {
+        in_case(name, || {
+            assert_rejected(&full_swap(chunk, shape, upstream, &[]).result, diagnostics);
+        });
     }
 }
 
 #[test]
-fn named_from_default_rejects_non_object_literal_default() {
-    // `export default class { ... }` is an `ExportDefaultDecl`, not
-    // an `ExportDefaultExpr`, so the search bails with "no export
-    // default declaration" before the object-literal check.
-    //
-    // This is intentionally out-of-scope: the `named_from_default`
-    // wrapper re-exports via `_d.K`, which on a class default would
-    // resolve to STATIC properties only (instance methods sit on
-    // `_d.prototype`). Function defaults are similar — `_d.K` reads
-    // a property on the function object, which is the wrong access
-    // path for anything semantically useful in the common case.
-    // Vendor authors with `export default class` / `export default
-    // function` shapes should use the `named_from_module_default`
-    // wrapper instead (which handles anonymous default fn/class via
-    // `DefaultDecl::{Fn,Class}` — see
-    // `named_from_module_default_accepts_all_upstream_export_forms`).
-    let upstream_source = r#"export default class {
-  ping() { return "pong"; }
-}
-"#;
-
-    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
-        upstream_source,
-        chunk_source: "export { ping } from \"lib\";\n",
-    });
-
-    assert_rejected(
-        &fixture.result,
-        &["named-from-default: upstream has no export default declaration"],
+fn full_swap_without_wrapper_accepts_named_default_alias_when_upstream_has_default() {
+    let fixture = full_swap(
+        "const x = 0;\nexport { x as default };\n",
+        None,
+        "const d = 1;\nexport default d;\n",
+        &[],
     );
+    assert_success(&fixture.result);
 }
-
-struct NamedFromDefaultFixtureArgs<'a> {
-    upstream_source: &'a str,
-    chunk_source: &'a str,
-}
-
-fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> VendorSwapFixture {
-    run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: args.chunk_source,
-        wrapper_shape: Some(WrapperShape::NamedFromDefault),
-        upstream_source: args.upstream_source,
-        default_export_aliases: &[],
-    })
-}
-
-// ─── partial_swap ───────────────────────────────────────────────────────
-//
-// `level: partial_swap` rewrites per-symbol imports out of a chunk that
-// the spec wants to keep on disk (un-swapped symbols stay imported from
-// the chunk). Each rewritten symbol gets its local references replaced
-// with `<namespace>.<upstream_export>` and one
-// `import * as <namespace> from "<package>"` is emitted per file.
 
 #[test]
 fn full_swap_bails_when_mapping_key_is_a_real_export_of_another_local() {
@@ -199,8 +330,6 @@ fn full_swap_bails_when_mapping_key_is_a_real_export_of_another_local() {
     assert_rejected(&result, &["collides", "`a`"]);
 }
 
-// ─── full swap: caller contract + export-shape validation ───────────────
-
 #[test]
 fn full_swap_with_caller_preserves_import_for_removed_chunk() {
     // `level: swap` removes the vendor chunk from the emitted tree and
@@ -225,16 +354,18 @@ fn full_swap_with_caller_preserves_import_for_removed_chunk() {
         "export const ping = () => \"pkg\";\n",
     );
 
-    let spec = ws.transform_spec(json!({
-        CHUNK_PATH: {
-            "level": "swap",
-            "identity": "lib/dist/index.mjs",
-            "package": PACKAGE_NAME,
-            "version": "1.0.0",
-            "subpath": "dist/index.mjs",
-        },
-    }));
-    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
+    let result = ws.run(
+        json!({
+            CHUNK_PATH: {
+                "level": "swap",
+                "identity": "lib/dist/index.mjs",
+                "package": PACKAGE_NAME,
+                "version": "1.0.0",
+                "subpath": "dist/index.mjs",
+            },
+        }),
+        &[(PACKAGE_NAME, &package_root)],
+    );
     assert_success(&result);
 
     assert!(
@@ -246,167 +377,5 @@ fn full_swap_with_caller_preserves_import_for_removed_chunk() {
         &ws.out_root.join("app/static/app/entry.js"),
         &["../lib-X/entry.js"],
         &[],
-    );
-}
-
-#[test]
-fn full_swap_without_wrapper_requires_upstream_default_for_default_export() {
-    // `export default x;` (ExportDefaultExpr) must participate in the
-    // no-wrapper export-shape check the same way `export { x as default }`
-    // does: if the upstream package has no default export, callers that
-    // import the chunk's default would break post-swap.
-    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "const x = 0;\nexport default x;\n",
-        wrapper_shape: None,
-        upstream_source: "export const unrelated = 1;\n",
-        default_export_aliases: &[],
-    });
-    assert_rejected(&fixture.result, &["export shape mismatch", "default"]);
-}
-
-#[test]
-fn full_swap_without_wrapper_accepts_named_default_alias_when_upstream_has_default() {
-    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "const x = 0;\nexport { x as default };\n",
-        wrapper_shape: None,
-        upstream_source: "const d = 1;\nexport default d;\n",
-        default_export_aliases: &[],
-    });
-    assert_success(&fixture.result);
-}
-
-// ─── wrapper synthetic-local collisions ─────────────────────────────────
-
-#[test]
-fn named_from_default_wrapper_avoids_upstream_default_local_collision() {
-    // The wrapper hoists upstream's default into a synthetic local
-    // (historically `_d`). If the upstream module body already binds that
-    // name, naive injection produces a duplicate-declaration SyntaxError.
-    let fixture = run_named_from_default_fixture(NamedFromDefaultFixtureArgs {
-        upstream_source: "const _d = \"taken\";\nexport default { ping: () => _d };\n",
-        chunk_source: "export { ping } from \"lib\";\n",
-    });
-    assert_wrapper_output(
-        &fixture,
-        "const m = await import(\"./entry.js\");\nconsole.log(m.ping());\n",
-        "taken\n",
-    );
-}
-
-#[test]
-fn named_from_module_default_wrapper_avoids_upstream_default_local_collision() {
-    let upstream_source = "const __vendor_default__ = \"taken\";\n\
-                           export default function getter() { return __vendor_default__; }\n";
-    let fixture = run_named_from_module_default_fixture(upstream_source);
-    assert_wrapper_output(
-        &fixture,
-        "const m = await import(\"./entry.js\");\nconsole.log(m.default());\n",
-        "taken\n",
-    );
-}
-
-// ─── named_from_module_default named-export verification ────────────────
-
-#[test]
-fn named_from_module_default_rejects_unverified_named_exports() {
-    // The wrapper emits `export const <name> = <default>;` for every
-    // vendor named export. That equation only holds when the chunk itself
-    // binds `<name>` to the same local as its default export. A genuine
-    // independent export (`export { y as other }`) must make the swap
-    // bail instead of silently re-exporting the upstream default under
-    // an unrelated name.
-    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "const x = 0;\nconst y = 1;\nexport { x as default, y as other };\n",
-        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
-        upstream_source: "export default function f() { return \"pkg\"; }\n",
-        default_export_aliases: &[],
-    });
-    assert_rejected(&fixture.result, &["named-from-module-default", "other"]);
-}
-
-#[test]
-fn named_from_module_default_accepts_verified_default_aliases() {
-    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "const x = () => \"val\";\nexport { x as default, x as alias };\n",
-        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
-        upstream_source: "export default function f() { return \"val\"; }\n",
-        default_export_aliases: &[],
-    });
-    assert_wrapper_output(
-        &fixture,
-        "const m = await import(\"./entry.js\");\nconsole.log(m.alias === m.default);\n",
-        "true\n",
-    );
-}
-
-#[test]
-fn named_from_module_default_rejects_single_named_export_without_assertion() {
-    // Tana's cytoscape chunk shape: the package default is re-exported under
-    // a single minified name (`export { Ft as c }`) with no `default` export
-    // of its own. The static check cannot prove `c` aliases the package
-    // default from the chunk alone, so without an explicit assertion the
-    // swap must bail rather than silently re-export the default under `c`.
-    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
-        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
-        upstream_source: "export default function f() { return \"cy\"; }\n",
-        default_export_aliases: &[],
-    });
-    assert_rejected(&fixture.result, &["named-from-module-default", "c"]);
-}
-
-#[test]
-fn named_from_module_default_admits_authored_default_alias() {
-    // Same chunk shape as above, but the author asserts via
-    // `default_export_aliases` that `c` is the package default. The swap
-    // then succeeds and the wrapper re-exports the package default under `c`.
-    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
-        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
-        upstream_source: "export default function f() { return \"cy\"; }\n",
-        default_export_aliases: &["c"],
-    });
-    assert_wrapper_output(
-        &fixture,
-        "const m = await import(\"./entry.js\");\nconsole.log(m.c === m.default && m.c() === \"cy\");\n",
-        "true\n",
-    );
-}
-
-// ─── named_from_json_default ────────────────────────────────────────────
-
-#[test]
-fn named_from_json_default_generates_named_pulls_from_json_keys() {
-    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "export { version, flag } from \"lib\";\n",
-        wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
-        upstream_source: "{ \"version\": \"1.2.3\", \"flag\": true }\n",
-        default_export_aliases: &[],
-    });
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
-        "const m = await import(\"./entry.js\");\n\
-         console.log(`${m.version}:${m.flag}:${m.default.version}`);\n",
-    );
-    assert_node_output(&probe_path, "1.2.3:true:1.2.3\n", "");
-}
-
-#[test]
-fn named_from_json_default_rejects_names_missing_from_json() {
-    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        chunk_source: "export { missing } from \"lib\";\n",
-        wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
-        upstream_source: "{ \"version\": \"1.2.3\" }\n",
-        default_export_aliases: &[],
-    });
-    assert_rejected(
-        &fixture.result,
-        &["named-from-json-default wrapper shape mismatch"],
     );
 }

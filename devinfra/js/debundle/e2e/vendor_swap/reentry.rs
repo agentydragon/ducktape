@@ -2,23 +2,16 @@
 
 use super::*;
 
-struct VendorRun {
-    result: CommandResult,
-    _root: CaseWorkspace,
-}
-
 /// Three `callWrap(...)` calls in `app`, interleaved across two logical
 /// modules, where `callWrap` comes from `adapter` and `adapter` delegates to the
 /// pure `vendorlib::wrap`. `swap_adapter` fully swaps `adapter`.
-fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> VendorRun {
-    const APP_PATH: &str = "static/app.js";
+fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
     const ADAPTER_PATH: &str = "static/adapter.js";
-    const VENDORLIB_PATH: &str = "static/vendorlib.js";
     const PACKAGE_NAME: &str = "lib";
     let ws = VendorTestWorkspace::new();
     ws.write_chunks(&[
         (
-            APP_PATH,
+            "static/app.js",
             "import { callWrap } from \"./adapter.js\";\n\
          const A = callWrap(() => \"a\");\n\
          const B = callWrap(() => \"b\");\n\
@@ -32,7 +25,7 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> VendorRun {
          export function callWrap(f) { return wrap(f); }\n",
         ),
         (
-            VENDORLIB_PATH,
+            "static/vendorlib.js",
             "export function wrap(f) { return { impl: f }; }\n",
         ),
     ]);
@@ -54,30 +47,18 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> VendorRun {
     } else {
         json!({})
     };
-    let member = |name: &str| json!({"name": name, "selector": {"binding": {"name": name}}});
-    let spec = build_bundled_partial_swap_spec(
-        &ws,
+    let spec = ws.transform_spec_with(
         vendor,
-        Some(json!({
-            "logical_modules": {
-                "static/app": {
-                    "mod_a": {"members": [member("A"), member("C")]},
-                    "mod_b": {"members": [member("B")]},
-                },
-            },
-            "import_order": { "static/app": ["mod_a", "mod_b"] },
-            "unassigned_mode": {"static/app": {"kind": "inline_in_entry"}},
-            "materialize_logical_modules": {
+        materialize_app_modules(
+            &[("mod_a", &["A", "C"]), ("mod_b", &["B"])],
+            json!({
                 "prune_other_chunks": false,
                 "report_out_dir": ws.out_root.join("reports").join("tree"),
                 "target_dir": "modules",
-            },
-        })),
+            }),
+        ),
     );
-    VendorRun {
-        result: ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]),
-        _root: ws.root,
-    }
+    ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)])
 }
 
 /// A full swap promises the package behaves like the bundled chunk, so the
@@ -85,11 +66,16 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> VendorRun {
 /// interleaved calls through `adapter` are pure whether or not it is swapped.
 #[test]
 fn full_swapped_chunk_keeps_cross_module_purity() {
-    assert_success(&run_interleaved_calls_through_adapter(false).result);
-    assert_success(&run_interleaved_calls_through_adapter(true).result);
+    assert_success(&run_interleaved_calls_through_adapter(false));
+    assert_success(&run_interleaved_calls_through_adapter(true));
 }
 
-fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorSwapFixture {
+struct ReentryFixture {
+    result: CommandResult,
+    ws: VendorTestWorkspace,
+}
+
+fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> ReentryFixture {
     const PACKAGE: &str = "factory-kit";
     let (ws, bundle_path) = setup_bundled_partial_swap(
         "factory.js",
@@ -112,38 +98,26 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorS
         "index.js",
         "export default () => 'ready';\n",
     );
-    let member = |name: &str| json!({"name": name, "selector": {"binding": {"name": name}}});
-    let spec = build_bundled_partial_swap_spec(
-        &ws,
+    let mut extra = materialize_app_modules(
+        &[("startup", &["prefix"]), ("values", &["value", "read"])],
+        json!({
+            "prune_other_chunks": false,
+            "report_out_dir": ws.out_root.join("reports/tree"),
+            "target_dir": "modules",
+        }),
+    );
+    extra["host_behavior"] = json!({"synchronous_module_loader": loader});
+    let spec = ws.transform_spec_with(
         json!({"static/vendor.js": bundled_vendor(
             "closed replacement factory",
             &bundle_path,
             &[(PACKAGE, bundled_package("1.0.0", "index.js", "factory", None))],
             &[("factory", swap_symbol(PACKAGE, PartialSwapKind::Default, None, None))],
         )}),
-        Some(json!({
-            "host_behavior": {"synchronous_module_loader": loader},
-            "logical_modules": {"static/app": {
-                "startup": {"members": [member("prefix")]},
-                "values": {"members": [member("value"), member("read")]},
-            }},
-            "import_order": { "static/app": ["startup", "values"] },
-            "unassigned_mode": {"static/app": {"kind": "inline_in_entry"}},
-            "materialize_logical_modules": {
-                "prune_other_chunks": false,
-                "report_out_dir": ws.out_root.join("reports/tree"),
-                "target_dir": "modules",
-            },
-        })),
+        extra,
     );
     let result = ws.run_spec(&spec, &[(PACKAGE, &package_root)]);
-    VendorSwapFixture {
-        result,
-        chunk_path: "static/vendor.js".to_string(),
-        wrapper_path: ws.out_root.join("app/static/app/entry.js"),
-        manifest_path: ws.manifest_path,
-        _root: ws.root,
-    }
+    ReentryFixture { result, ws }
 }
 
 #[test]
@@ -152,34 +126,31 @@ fn closed_bundled_replacement_preserves_browser_export_proof() {
         browser_bundled_reentry_fixture("export const factory = () => 'ready';\n", "none");
     let report: Value = read_json(
         &fixture
-            ._root
-            .path()
-            .join("workspace/out/reports/tree/static/app/export_reentry.json"),
+            .ws
+            .out_root
+            .join("reports/tree/static/app/export_reentry.json"),
     );
     assert_eq!(report["policy"], "no_static_importer_reentry", "{report:#}");
     assert_success(&fixture.result);
-    let probe = fixture.wrapper_path.with_file_name("probe.mjs");
-    write_text_file(
-        &probe,
+    assert_probe_output(
+        &fixture.ws.out_root.join("app/static/app"),
         "import { read } from './entry.js'; console.log(read());\n",
+        "ready\n",
     );
-    assert_node_output(&probe, "ready\n", "");
 }
 
+/// Anchors for the closed-bundle proof above: a bundle that imports the app
+/// or awaits at top level could re-enter, so the split must be refused.
 #[test]
 fn bundled_reentry_proof_requires_closed_bundle() {
-    for (bundle, loader) in [
-        (
-            "import './app.js'; export const factory = () => 'ready';\n",
-            "none",
-        ),
-        (
-            "await Promise.resolve(); export const factory = () => 'ready';\n",
-            "none",
-        ),
+    for bundle in [
+        "import './app.js'; export const factory = () => 'ready';\n",
+        "await Promise.resolve(); export const factory = () => 'ready';\n",
     ] {
-        let fixture = browser_bundled_reentry_fixture(bundle, loader);
-        assert_rejected(&fixture.result, &["atomic-group conflict"]);
+        in_case(bundle, || {
+            let fixture = browser_bundled_reentry_fixture(bundle, "none");
+            assert_rejected(&fixture.result, &["atomic-group conflict"]);
+        });
     }
 }
 
@@ -196,72 +167,58 @@ fn named_swap_cannot_capture_a_source_global() {
         (true, false, false),
         (true, false, true),
     ] {
-        let caller = if materialized {
-            "import { o as wrap } from \"./megachunk.js\";\n\
-             export function read() { return typeof observer + \":\" + wrap(\"X\"); }\n\
-             console.log(read());\n"
-        } else {
-            "import { o as wrap } from \"./megachunk.js\";\n\
-             console.log(typeof observer + \":\" + wrap(\"X\"));\n"
-        };
-        let (ws, package_root) = setup_partial_swap_consumer_fixture(
-            "export const o = (value) => value;\n",
-            caller,
-            PACKAGE_NAME,
-            VERSION,
-            SUBPATH,
-            UPSTREAM,
-        );
-        write_text_file(
-            &ws.snapshot_root.join("package.json"),
-            "{\"type\":\"module\"}\n",
-        );
-        assert_node_output(&ws.snapshot_root.join("static/app.js"), "undefined:X\n", "");
-
-        let vendor = partial_swap_vendor(
-            "megachunk named swap capturing a global",
-            &[(PACKAGE_NAME, partial_package(VERSION, SUBPATH, None))],
-            &[(
-                "o",
-                swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("observer"), None),
-            )],
-        );
-        let mut spec = ws.transform_spec(json!({ "static/megachunk.js": vendor }));
-        if materialized {
-            spec["logical_modules"] = json!({
-                "static/app": {"read": {"members": [
-                    {"name": "read", "selector": {"binding": {"name": "read"}}}
-                ]}}
-            });
-            spec["import_order"] = json!({ "static/app": ["read"] });
-            spec["unassigned_mode"] = json!({"static/app": {"kind": "inline_in_entry"}});
-            spec["materialize_logical_modules"] = json!({"prune_other_chunks": false});
-        }
-        if with_reports {
-            spec["materialize_logical_modules"] =
-                json!({ "report_out_dir": ws.out_root.join("reports/tree") });
-        }
-        let extra_args: &[&str] = if dry_run { &["--dry-run"] } else { &[] };
-        let result = ws.run_spec_with_args(&spec, &[(PACKAGE_NAME, &package_root)], extra_args);
         let case =
             format!("materialized={materialized}, reports={with_reports}, dry_run={dry_run}");
-        assert_rejected_case(&case, &result, &["source global `observer` captured"]);
-        assert!(!ws.out_root.join("app/static/app/entry.js").exists());
-    }
-}
+        in_case(&case, || {
+            let caller = if materialized {
+                "import { o as wrap } from \"./megachunk.js\";\n\
+                 export function read() { return typeof observer + \":\" + wrap(\"X\"); }\n\
+                 console.log(read());\n"
+            } else {
+                "import { o as wrap } from \"./megachunk.js\";\n\
+                 console.log(typeof observer + \":\" + wrap(\"X\"));\n"
+            };
+            let (ws, package_root) = setup_partial_swap_consumer_fixture(
+                "export const o = (value) => value;\n",
+                caller,
+                PACKAGE_NAME,
+                VERSION,
+                SUBPATH,
+                UPSTREAM,
+            );
+            write_text_file(
+                &ws.snapshot_root.join("package.json"),
+                "{\"type\":\"module\"}\n",
+            );
+            assert_node_output(&ws.snapshot_root.join("static/app.js"), "undefined:X\n", "");
 
-#[test]
-fn partial_swap_drops_primitive_array_iteration_without_invoking_typeof_operand() {
-    let fixture = run_island_registration_fixture(
-        "const registry = {};\nfunction dormant() { registry.hit = true; }\nconst entries = [typeof dormant];\nconst all = entries.map(entry => entry);\nexport const e6 = () => all.length > 0;\nexport const keepMe = () => Object.keys(registry).length;\n",
-    );
-    assert_success(&fixture.result);
-    let app_root = emitted_app_root(&fixture);
-    install_node_module(
-        &app_root,
-        "zod",
-        "3.23.8",
-        "export const boolean = () => true;\n",
-    );
-    assert_node_output(&fixture.caller_emitted_path, "true 0\n", "");
+            let vendor = json!({ "static/megachunk.js": partial_swap_vendor(
+                "megachunk named swap capturing a global",
+                &[(PACKAGE_NAME, partial_package(VERSION, SUBPATH, None))],
+                &[(
+                    "o",
+                    swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("observer"), None),
+                )],
+            ) });
+            let mut spec = if materialized {
+                ws.transform_spec_with(
+                    vendor,
+                    materialize_app_modules(
+                        &[("read", &["read"])],
+                        json!({"prune_other_chunks": false}),
+                    ),
+                )
+            } else {
+                ws.transform_spec(vendor)
+            };
+            if with_reports {
+                spec["materialize_logical_modules"] =
+                    json!({ "report_out_dir": ws.out_root.join("reports/tree") });
+            }
+            let extra_args: &[&str] = if dry_run { &["--dry-run"] } else { &[] };
+            let result = ws.run_spec_with_args(&spec, &[(PACKAGE_NAME, &package_root)], extra_args);
+            assert_rejected(&result, &["source global `observer` captured"]);
+            assert!(!ws.out_root.join("app/static/app/entry.js").exists());
+        });
+    }
 }

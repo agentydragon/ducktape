@@ -21,8 +21,10 @@ use spec::vendor_marks::{
 };
 use spec::{PartialSwapKind, WrapperShape};
 use std::fs;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::path::{Path, PathBuf};
 
+#[track_caller]
 fn assert_success(result: &CommandResult) {
     assert!(
         result.status.success(),
@@ -36,15 +38,9 @@ fn assert_success(result: &CommandResult) {
 /// Assert that the debundler refused the input and that stderr contains every diagnostic.
 #[track_caller]
 fn assert_rejected(result: &CommandResult, diagnostics: &[&str]) {
-    assert_rejected_case("debundler", result, diagnostics);
-}
-
-/// [`assert_rejected`] for one case of a table: `case` prefixes the failure messages.
-#[track_caller]
-fn assert_rejected_case(case: &str, result: &CommandResult, diagnostics: &[&str]) {
     assert!(
         !result.status.success(),
-        "{case}: expected a rejection, got exit status {:?}\nstdout:\n{}\nstderr:\n{}",
+        "expected a rejection, got exit status {:?}\nstdout:\n{}\nstderr:\n{}",
         result.status.code(),
         result.stdout,
         result.stderr
@@ -52,18 +48,40 @@ fn assert_rejected_case(case: &str, result: &CommandResult, diagnostics: &[&str]
     for diagnostic in diagnostics {
         assert!(
             result.stderr.contains(diagnostic),
-            "{case}: stderr lacks {diagnostic:?}\nstderr:\n{}",
+            "stderr lacks {diagnostic:?}\nstderr:\n{}",
             result.stderr
         );
     }
 }
 
-struct VendorSwapFixture {
-    result: CommandResult,
-    chunk_path: String,
-    wrapper_path: PathBuf,
-    manifest_path: PathBuf,
-    _root: CaseWorkspace,
+/// Run one case of a table, naming it when an assertion inside fails.
+fn in_case(case: &str, check: impl FnOnce()) {
+    if let Err(panic) = catch_unwind(AssertUnwindSafe(check)) {
+        eprintln!("case {case:?} failed");
+        resume_unwind(panic);
+    }
+}
+
+/// Run `script` as an ES module placed in `dir`.
+fn assert_probe_output(dir: &Path, script: &str, expected: &str) {
+    let probe = dir.join("__probe.mjs");
+    write_text_file(&probe, script);
+    assert_node_output(&probe, expected, "");
+}
+
+/// Provide a minimal ESM `node_modules/<name>` in the emitted app root so
+/// node can resolve the bare package specifiers the swap rewrites emit.
+fn install_node_module(app_root: &Path, name: &str, version: &str, source: &str) {
+    write_text_file(
+        &app_root.join(format!("node_modules/{name}/package.json")),
+        &format!(
+            "{{ \"name\": \"{name}\", \"version\": \"{version}\", \"type\": \"module\", \"main\": \"index.js\" }}\n"
+        ),
+    );
+    write_text_file(
+        &app_root.join(format!("node_modules/{name}/index.js")),
+        source,
+    );
 }
 
 struct VendorTestWorkspace {
@@ -104,22 +122,26 @@ impl VendorTestWorkspace {
         })
     }
 
-    fn write_chunk(&self, chunk_path: &str, source: &str) {
-        write_text_file(&self.snapshot_root.join(chunk_path), source);
+    /// [`Self::transform_spec`] with `extra`'s top-level keys merged in.
+    fn transform_spec_with(&self, vendor: impl serde::Serialize, extra: Value) -> Value {
+        let mut spec = self.transform_spec(vendor);
+        let Value::Object(extras) = extra else {
+            panic!("extra spec keys must be an object: {extra}");
+        };
+        spec.as_object_mut()
+            .expect("spec is JSON object")
+            .extend(extras);
+        spec
     }
 
     fn write_chunks(&self, chunks: &[(&str, &str)]) {
         let mut entries = String::new();
         for (chunk_path, source) in chunks {
-            self.write_chunk(chunk_path, source);
+            write_text_file(&self.snapshot_root.join(chunk_path), source);
             entries.push_str(chunk_path);
             entries.push('\n');
         }
-        self.write_js_list(&entries);
-    }
-
-    fn write_js_list(&self, entries: &str) {
-        write_text_file(&self.js_list_path, entries);
+        write_text_file(&self.js_list_path, &entries);
     }
 
     fn write_upstream_package(
@@ -151,12 +173,10 @@ impl VendorTestWorkspace {
         self.wrapper_root.join(chunk_id).join("entry.js")
     }
 
-    /// Write `source` to `<root>/external-bundles/<filename>` and
-    /// return the absolute bundle path. Used by bundled_partial_swap
-    /// fixtures whose spec carries a `bundle: { path: ... }` block.
+    /// Write `source` to `<root>/external-bundles/<filename>` and return the
+    /// absolute path a `bundled_partial_swap` mark's `bundle.path` names.
     fn write_bundle(&self, filename: &str, source: &str) -> PathBuf {
-        let bundle_root = self.root.path().join("external-bundles");
-        let bundle_path = bundle_root.join(filename);
+        let bundle_path = self.root.path().join("external-bundles").join(filename);
         write_text_file(&bundle_path, source);
         bundle_path
     }
@@ -181,10 +201,8 @@ impl VendorTestWorkspace {
     }
 }
 
-/// Set up a workspace for a bundled_partial_swap fixture, writing the
-/// chunks (`snapshot_root/<path> = source`), the js-list, and the
-/// bundle file. The returned tuple `(ws, bundle_path)` is everything
-/// downstream wiring needs to compose the spec.
+/// Set up a workspace for a bundled_partial_swap fixture: the chunks, the
+/// js-list, and the bundle file whose path the spec names.
 fn setup_bundled_partial_swap(
     bundle_filename: &str,
     bundle_source: &str,
@@ -196,50 +214,141 @@ fn setup_bundled_partial_swap(
     (ws, bundle_path)
 }
 
-/// Build the common `inputs` / `swap_vendor_chunks` / `write_js_tree`
-/// blocks for a bundled_partial_swap spec, given an outer `vendor:`
-/// block authored by the caller. `extra` is merged onto the top-level
-/// spec object — used by the materialization-rewrite test which adds
-/// `logical_modules` / `unassigned_mode` / `materialize_logical_modules`.
-fn build_bundled_partial_swap_spec(
-    ws: &VendorTestWorkspace,
-    vendor: Value,
-    extra: Option<Value>,
-) -> Value {
-    let mut spec = ws.transform_spec(vendor);
-    if let Some(Value::Object(extras)) = extra {
-        let object = spec.as_object_mut().expect("spec is JSON object");
-        for (k, v) in extras {
-            object.insert(k, v);
-        }
+fn member(name: &str) -> Value {
+    json!({"name": name, "selector": {"binding": {"name": name}}})
+}
+
+/// Spec keys materializing `modules` of chunk `static/app` in the listed
+/// import order; the rest of the chunk stays inline in its entry.
+fn materialize_app_modules(modules: &[(&str, &[&str])], materialize: Value) -> Value {
+    let logical: serde_json::Map<String, Value> = modules
+        .iter()
+        .map(|(module, members)| {
+            let members: Vec<Value> = members.iter().map(|name| member(name)).collect();
+            ((*module).to_owned(), json!({ "members": members }))
+        })
+        .collect();
+    let order: Vec<&str> = modules.iter().map(|(module, _)| *module).collect();
+    json!({
+        "logical_modules": { "static/app": logical },
+        "import_order": { "static/app": order },
+        "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
+        "materialize_logical_modules": materialize,
+    })
+}
+
+fn partial_package(version: &str, subpath: &str, namespace: Option<&str>) -> PartialSwapPackage {
+    PartialSwapPackage {
+        version: version.into(),
+        subpath: subpath.into(),
+        namespace: namespace.map(str::to_owned),
     }
-    spec
 }
 
-struct FullSwapFixtureArgs<'a> {
-    chunk_source: &'a str,
-    /// `None` runs the plain (wrapper-less) swap path.
+fn bundled_package(
+    version: &str,
+    subpath: &str,
+    bundle_export: &str,
+    namespace: Option<&str>,
+) -> BundledPartialSwapPackage {
+    BundledPartialSwapPackage {
+        version: version.into(),
+        subpath: subpath.into(),
+        bundle_export: bundle_export.into(),
+        namespace: namespace.map(str::to_owned),
+    }
+}
+
+fn swap_symbol(
+    package: &str,
+    kind: PartialSwapKind,
+    upstream_export: Option<&str>,
+    local: Option<&str>,
+) -> PartialSwapSymbol {
+    PartialSwapSymbol {
+        package: package.into(),
+        kind,
+        upstream_export: upstream_export.map(str::to_owned),
+        local: local.map(str::to_owned),
+    }
+}
+
+fn partial_swap_vendor(
+    identity: &str,
+    packages: &[(&str, PartialSwapPackage)],
+    symbols: &[(&str, PartialSwapSymbol)],
+) -> VendorMark {
+    VendorMark {
+        identity: identity.into(),
+        level: VendorLevel::PartialSwap(PartialSwapMark {
+            packages: packages
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+            symbols: symbols
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+        }),
+    }
+}
+
+fn bundled_vendor(
+    identity: &str,
+    bundle: &Path,
+    packages: &[(&str, BundledPartialSwapPackage)],
+    symbols: &[(&str, PartialSwapSymbol)],
+) -> VendorMark {
+    VendorMark {
+        identity: identity.into(),
+        level: VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
+            bundle: BundledPartialSwapBundle {
+                path: bundle.into(),
+            },
+            packages: packages
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+            symbols: symbols
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+        }),
+    }
+}
+
+// ─── full swap ──────────────────────────────────────────────────────────
+
+struct VendorSwapFixture {
+    result: CommandResult,
+    chunk_path: String,
+    wrapper_path: PathBuf,
+    manifest_path: PathBuf,
+    _root: CaseWorkspace,
+}
+
+/// Fully swap chunk `static/lib-X.js` for package `lib`.
+/// `default_export_aliases` are upstream named exports asserted as
+/// package-default aliases; `wrapper_shape: None` is the wrapper-less path.
+fn full_swap(
+    chunk_source: &str,
     wrapper_shape: Option<WrapperShape>,
-    upstream_source: &'a str,
-    /// Upstream named exports asserted as package-default aliases
-    /// (`SwapMark::default_export_aliases`). Empty for most fixtures.
-    default_export_aliases: &'a [&'a str],
-}
-
-fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
+    upstream_source: &str,
+    default_export_aliases: &[&str],
+) -> VendorSwapFixture {
     const PACKAGE_NAME: &str = "lib";
     const PACKAGE_VERSION: &str = "1.0.0";
     const SUBPATH: &str = "dist/index.mjs";
     const CHUNK_PATH: &str = "static/lib-X.js";
 
     let ws = VendorTestWorkspace::new();
-    ws.write_chunks(&[(CHUNK_PATH, args.chunk_source)]);
+    ws.write_chunks(&[(CHUNK_PATH, chunk_source)]);
     let package_root = ws.write_upstream_package(
         "upstream",
         PACKAGE_NAME,
         PACKAGE_VERSION,
         SUBPATH,
-        args.upstream_source,
+        upstream_source,
     );
 
     let vendor_mark = VendorMark {
@@ -248,12 +357,8 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
             package: PACKAGE_NAME.into(),
             version: PACKAGE_VERSION.into(),
             subpath: SUBPATH.into(),
-            wrapper_shape: args.wrapper_shape,
-            default_export_aliases: args
-                .default_export_aliases
-                .iter()
-                .map(|s| (*s).into())
-                .collect(),
+            wrapper_shape,
+            default_export_aliases: default_export_aliases.iter().map(|s| (*s).into()).collect(),
         }),
     };
     let result = ws.run(
@@ -278,26 +383,27 @@ fn assert_wrapper_output(fixture: &VendorSwapFixture, script: &str, expected: &s
     assert_node_output(&probe, expected, "");
 }
 
-fn run_island_registration_fixture(chunk_source: &str) -> PartialSwapFixture {
-    run_partial_swap_fixture(PartialSwapFixtureArgs {
-        chunk_source,
-        caller_source: "import { e6, keepMe } from '../megachunk/entry.js';\n\
-             console.log(e6(), keepMe());\n",
-        upstream_source: "export const boolean = () => true;\n",
-        symbols: vec![("e6", "zod", "boolean")],
-        upstream_version: "3.23.8",
-    })
-}
+// ─── partial swap ───────────────────────────────────────────────────────
+//
+// `level: partial_swap` rewrites per-symbol imports out of a chunk that
+// the spec wants to keep on disk (un-swapped symbols stay imported from
+// the chunk). Each rewritten symbol gets its local references replaced
+// with `<namespace>.<upstream_export>` and one
+// `import * as <namespace> from "<package>"` is emitted per file.
+//
+// After the consumer side is rewritten, the strip pass drops the swapped
+// names from the vendor chunk's own export surface and sweeps top-level
+// bindings that are no longer reachable, refusing when that would lose an
+// effect residual code observes.
 
-struct PartialSwapFixtureArgs<'a> {
-    chunk_source: &'a str,
-    caller_source: &'a str,
-    upstream_source: &'a str,
-    /// (chunk_export, package_name, upstream_export) tuples. The package
-    /// `zod` is wired by the fixture below.
-    symbols: Vec<(&'a str, &'a str, &'a str)>,
-    upstream_version: &'a str,
-}
+const ZOD_TRUE: &str = "export const boolean = () => true;\n";
+const ZOD_ONE: &str = "export const boolean = () => 1;\n";
+/// Imports swapped `e6` and retained `keepMe` without calling them at load.
+const ALIASED_CALLER: &str = "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean() && kept(); }\n";
+const SWAPPED_ONLY_CALLER: &str = "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean(); }\n";
+/// Prints `e6()` and `keepMe()` at load.
+const LOGGING_CALLER: &str =
+    "import { e6, keepMe } from '../megachunk/entry.js';\nconsole.log(e6(), keepMe());\n";
 
 struct PartialSwapFixture {
     result: CommandResult,
@@ -306,64 +412,107 @@ struct PartialSwapFixture {
     _root: CaseWorkspace,
 }
 
+impl PartialSwapFixture {
+    /// Assert success and install `source` as the emitted app's
+    /// `node_modules/<name>`; returns the emitted app root.
+    #[track_caller]
+    fn install_emitted(&self, name: &str, version: &str, source: &str) -> PathBuf {
+        assert_success(&self.result);
+        let app_root = self
+            .caller_emitted_path
+            .ancestors()
+            .nth(3)
+            .expect("app root above static/app/entry.js")
+            .to_path_buf();
+        install_node_module(&app_root, name, version, source);
+        app_root
+    }
+
+    /// Run the emitted caller entry against `upstream` installed as `zod`.
+    #[track_caller]
+    fn assert_zod_caller_output(&self, upstream: &str, expected: &str) {
+        self.install_emitted("zod", "3.23.8", upstream);
+        assert_node_output(&self.caller_emitted_path, expected, "");
+    }
+}
+
+/// Chunk `static/megachunk.js`, caller `static/app.js`, and the upstream
+/// package installed under `upstream/<package_name>`.
+fn setup_partial_swap_consumer_fixture(
+    chunk_source: &str,
+    caller_source: &str,
+    package_name: &str,
+    version: &str,
+    subpath: &str,
+    upstream_source: &str,
+) -> (VendorTestWorkspace, PathBuf) {
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[
+        ("static/megachunk.js", chunk_source),
+        ("static/app.js", caller_source),
+    ]);
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{package_name}"),
+        package_name,
+        version,
+        subpath,
+        upstream_source,
+    );
+    (ws, package_root)
+}
+
 fn run_partial_swap_with_mark(
     ws: VendorTestWorkspace,
     vendor_spec: impl serde::Serialize,
     packages: &[(&str, &Path)],
 ) -> PartialSwapFixture {
-    const MEGACHUNK_PATH: &str = "static/megachunk.js";
-
-    let result = ws.run(
-        json!({
-            MEGACHUNK_PATH: vendor_spec,
-        }),
-        packages,
-    );
-
-    let caller_emitted_path = ws.out_root.join("app/static/app").join("entry.js");
-    let megachunk_emitted_path = ws.out_root.join("app/static/megachunk").join("entry.js");
-
+    let result = ws.run(json!({ "static/megachunk.js": vendor_spec }), packages);
     PartialSwapFixture {
         result,
-        caller_emitted_path,
-        megachunk_emitted_path,
+        caller_emitted_path: ws.out_root.join("app/static/app/entry.js"),
+        megachunk_emitted_path: ws.out_root.join("app/static/megachunk/entry.js"),
         _root: ws.root,
     }
 }
 
-fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixture {
-    const PACKAGE_NAME: &str = "zod";
+/// Member-swap chunk export `symbol.0` to `z.<symbol.1>` of package `zod`.
+/// The installed package is 3.23.8; `spec_version` is what the mark requests.
+fn run_partial_swap_fixture(
+    chunk_source: &str,
+    caller_source: &str,
+    upstream_source: &str,
+    symbol: (&str, &str),
+    spec_version: &str,
+) -> PartialSwapFixture {
     const SUBPATH: &str = "lib/index.mjs";
-
-    // Keep the installed version fixed: mismatch cases deliberately request
-    // a different version in the spec.
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        args.chunk_source,
-        args.caller_source,
-        PACKAGE_NAME,
+        chunk_source,
+        caller_source,
+        "zod",
         "3.23.8",
         SUBPATH,
-        args.upstream_source,
+        upstream_source,
     );
-    let symbols: Vec<_> = args
-        .symbols
-        .iter()
-        .map(|(export, package, upstream)| {
-            (
-                *export,
-                swap_symbol(package, PartialSwapKind::Member, Some(upstream), None),
-            )
-        })
-        .collect();
     let vendor = partial_swap_vendor(
         "megachunk partial swap fixture",
+        &[("zod", partial_package(spec_version, SUBPATH, Some("z")))],
         &[(
-            PACKAGE_NAME,
-            partial_package(args.upstream_version, SUBPATH, Some("z")),
+            symbol.0,
+            swap_symbol("zod", PartialSwapKind::Member, Some(symbol.1), None),
         )],
-        &symbols,
     );
-    run_partial_swap_with_mark(ws, vendor, &[(PACKAGE_NAME, &package_root)])
+    run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)])
+}
+
+/// The common partial swap: chunk export `e6` → `z.boolean`.
+fn zod_swap(chunk_source: &str, caller_source: &str, upstream_source: &str) -> PartialSwapFixture {
+    run_partial_swap_fixture(
+        chunk_source,
+        caller_source,
+        upstream_source,
+        ("e6", "boolean"),
+        "3.23.8",
+    )
 }
 
 struct PartialSwapKindFixtureArgs<'a> {
@@ -405,136 +554,4 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     );
 
     run_partial_swap_with_mark(ws, vendor, &[(args.package_name, &package_root)])
-}
-
-// ─── analysis of swapped implementations ────────────────────────────────
-//
-// A swap promises the replacement behaves like the bundled implementation
-// (SPEC.md § Vendor swap equivalence), so facts derived from the bundled
-// body justify splits around calls that run the replacement.
-
-fn setup_partial_swap_consumer_fixture(
-    chunk_source: &str,
-    caller_source: &str,
-    package_name: &str,
-    version: &str,
-    subpath: &str,
-    upstream_source: &str,
-) -> (VendorTestWorkspace, PathBuf) {
-    const MEGACHUNK_PATH: &str = "static/megachunk.js";
-    const CALLER_PATH: &str = "static/app.js";
-    let ws = VendorTestWorkspace::new();
-    ws.write_chunks(&[(MEGACHUNK_PATH, chunk_source), (CALLER_PATH, caller_source)]);
-    let package_root = ws.write_upstream_package(
-        &format!("upstream/{package_name}"),
-        package_name,
-        version,
-        subpath,
-        upstream_source,
-    );
-    (ws, package_root)
-}
-
-fn partial_swap_vendor(
-    identity: &str,
-    packages: &[(&str, PartialSwapPackage)],
-    symbols: &[(&str, PartialSwapSymbol)],
-) -> VendorMark {
-    VendorMark {
-        identity: identity.into(),
-        level: VendorLevel::PartialSwap(PartialSwapMark {
-            packages: packages
-                .iter()
-                .map(|(name, value)| ((*name).into(), value.clone()))
-                .collect(),
-            symbols: symbols
-                .iter()
-                .map(|(name, value)| ((*name).into(), value.clone()))
-                .collect(),
-        }),
-    }
-}
-
-fn partial_package(version: &str, subpath: &str, namespace: Option<&str>) -> PartialSwapPackage {
-    PartialSwapPackage {
-        version: version.into(),
-        subpath: subpath.into(),
-        namespace: namespace.map(str::to_owned),
-    }
-}
-
-fn emitted_app_root(fixture: &PartialSwapFixture) -> PathBuf {
-    fixture
-        .caller_emitted_path
-        .ancestors()
-        .nth(3)
-        .expect("app root above static/app/entry.js")
-        .to_path_buf()
-}
-
-/// Provide a minimal ESM `node_modules/<name>` in the emitted app root so
-/// node can resolve the bare package specifiers the swap rewrites emit.
-fn install_node_module(app_root: &Path, name: &str, version: &str, source: &str) {
-    write_text_file(
-        &app_root.join(format!("node_modules/{name}/package.json")),
-        &format!(
-            "{{ \"name\": \"{name}\", \"version\": \"{version}\", \"type\": \"module\", \"main\": \"index.js\" }}\n"
-        ),
-    );
-    write_text_file(
-        &app_root.join(format!("node_modules/{name}/index.js")),
-        source,
-    );
-}
-
-fn bundled_package(
-    version: &str,
-    subpath: &str,
-    bundle_export: &str,
-    namespace: Option<&str>,
-) -> BundledPartialSwapPackage {
-    BundledPartialSwapPackage {
-        version: version.into(),
-        subpath: subpath.into(),
-        bundle_export: bundle_export.into(),
-        namespace: namespace.map(str::to_owned),
-    }
-}
-
-fn swap_symbol(
-    package: &str,
-    kind: PartialSwapKind,
-    upstream_export: Option<&str>,
-    local: Option<&str>,
-) -> PartialSwapSymbol {
-    PartialSwapSymbol {
-        package: package.into(),
-        kind,
-        upstream_export: upstream_export.map(str::to_owned),
-        local: local.map(str::to_owned),
-    }
-}
-
-fn bundled_vendor(
-    identity: &str,
-    bundle: &Path,
-    packages: &[(&str, BundledPartialSwapPackage)],
-    symbols: &[(&str, PartialSwapSymbol)],
-) -> VendorMark {
-    VendorMark {
-        identity: identity.into(),
-        level: VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
-            bundle: BundledPartialSwapBundle {
-                path: bundle.into(),
-            },
-            packages: packages
-                .iter()
-                .map(|(name, value)| ((*name).into(), value.clone()))
-                .collect(),
-            symbols: symbols
-                .iter()
-                .map(|(name, value)| ((*name).into(), value.clone()))
-                .collect(),
-        }),
-    }
 }
