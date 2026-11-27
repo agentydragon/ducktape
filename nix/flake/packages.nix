@@ -37,7 +37,10 @@ ducktapePkgs
   # Default: Rust claude-hook plus Python statusline.
   devtools = pkgs.symlinkJoin {
     name = "ducktape-devtools";
-    paths = devToolPackages ++ localOnlyPackages;
+    # web_setup.sh (profile mode) and Haku's env_setup.sh symlink skills from
+    # share/claude-hooks/skills. Kept out of the devShell: every skill-* pin bump
+    # would otherwise invalidate it (nix/debug/devshell_activation.md).
+    paths = devToolPackages ++ localOnlyPackages ++ [ ducktapePkgs.skills ];
   };
   # BuildBuddy runner VM tools: Bazel via Bazelisk, bazel-diff, and bb for
   # best-effort CI diagnostics. Pre-commit runs in a separate GitHub workflow.
