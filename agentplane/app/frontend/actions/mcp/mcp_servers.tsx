@@ -243,10 +243,8 @@ export function McpServers(): JSX.Element {
   }
 
   const loading = linkages.items === null || health.items === null;
-  const rows = mergeRows(
-    [...(health.items ?? [])].sort((left, right) => left.key.localeCompare(right.key)),
-    linkages.items ?? []
-  );
+  // Rows keep the Action Service's group order.
+  const rows = mergeRows(health.items ?? [], linkages.items ?? []);
 
   return (
     <Stack>
