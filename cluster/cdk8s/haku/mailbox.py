@@ -21,7 +21,13 @@ from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.haku import mailbox_endpoint, namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import (
+    NAMESPACE_LABEL,
+    EgressRule,
+    Entity,
+    IngressRule,
+    NetworkPolicy,
+)
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterExternalSecret,
     ClusterSecretStoreRef,
@@ -352,9 +358,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
         ingress=[
             IngressRule.from_endpoints(_INGRESS_LABELS, ports=[SMTP.pod_port]),
             IngressRule.from_gateway(HTTP.pod_port),
-            IngressRule.from_endpoints(
-                {"k8s:io.kubernetes.pod.namespace": namespace.NAMESPACE}, ports=[_IMAP.pod_port]
-            ),
+            IngressRule.from_endpoints({NAMESPACE_LABEL: namespace.NAMESPACE}, ports=[_IMAP.pod_port]),
         ],
     )
 

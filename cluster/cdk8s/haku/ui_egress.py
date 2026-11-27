@@ -12,7 +12,7 @@ from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.workload_credential import WorkloadCredential
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NAMESPACE_LABEL, IngressRule, NetworkPolicy
 
 SERVICE_ACCOUNT = "haku-ui"
 # The Identity every standing record below names, in the policy namespace; its PolicyBinding
@@ -33,7 +33,7 @@ def add_gateway_resources(scope: Construct, *, namespace: str) -> None:
         endpoint_selector=gateway.pods.selector,
         ingress=[
             IngressRule.from_endpoints(
-                {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT},
+                {NAMESPACE_LABEL: NAMESPACE, "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT},
                 ports=[gateway.pod_port],
             )
         ],

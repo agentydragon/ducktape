@@ -17,7 +17,13 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import loki_endpoints
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import (
+    NAMESPACE_LABEL,
+    EgressRule,
+    Entity,
+    IngressRule,
+    NetworkPolicy,
+)
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.vpa_policy import ContainerPolicy
 
@@ -193,9 +199,7 @@ def chart(app: App) -> Chart:
         ),
         endpoint_selector=SERVICE.pods.selector,
         # Haku agent sandboxes → proxy (namespace-filtered log reads)
-        ingress=[
-            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": "haku-sandbox"}, ports=[SERVICE.pod_port])
-        ],
+        ingress=[IngressRule.from_endpoints({NAMESPACE_LABEL: "haku-sandbox"}, ports=[SERVICE.pod_port])],
         egress=[
             # kube-dns (resolve loki-read.loki.svc)
             cilium.dns_egress(),

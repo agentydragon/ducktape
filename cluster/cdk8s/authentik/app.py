@@ -31,7 +31,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NAMESPACE_LABEL, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -238,7 +238,7 @@ def _http_route(chart: Chart) -> None:
 
 
 def _namespace_source(namespace: str) -> dict[str, str]:
-    return {"k8s:io.kubernetes.pod.namespace": namespace}
+    return {NAMESPACE_LABEL: namespace}
 
 
 def _network_policy(chart: Chart) -> None:

@@ -23,7 +23,7 @@ from cluster.cdk8s.agentplane.service_database import Database, role_secret_name
 from cluster.cdk8s.cnpg import cluster as cnpg  # Local `cluster` parameters shadow the module name.
 from cluster.cdk8s.cnpg.cluster import ClusterPlacement
 from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule
+from cluster.cdk8s.providers.cilium.network_policy import NAMESPACE_LABEL, EgressRule
 
 _CLUSTER_NAME = "postgres"
 
@@ -37,9 +37,7 @@ def postgres(env: Environment) -> cnpg.PostgresRef:
 
 def egress(namespace: str) -> CiliumNetworkPolicySpecEgress:
     """A client's rule reaching the environment's shared Cluster."""
-    return EgressRule.to_endpoints(
-        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": _CLUSTER_NAME}, cnpg.PORT.number
-    )
+    return EgressRule.to_endpoints({NAMESPACE_LABEL: namespace, "k8s:cnpg.io/cluster": _CLUSTER_NAME}, cnpg.PORT.number)
 
 
 def _role_credentials(
