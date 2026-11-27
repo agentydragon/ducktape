@@ -44,7 +44,7 @@ use lowering::{
     GraphReportSelection, MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized,
     ReportEmission, materialize_logical_modules,
 };
-use output_layout::GLOBAL_RESOLUTION_REPORT;
+use output_layout::{GLOBAL_RESOLUTION_REPORT, check_output_dir_is_unused};
 use ownership_subset::OwnershipSubset;
 use prepare_chunks::prepare_js_chunks;
 use reconstruction::{EmittablePlan, RejectedPlan, VendorManifestOutput, validate_reconstruction};

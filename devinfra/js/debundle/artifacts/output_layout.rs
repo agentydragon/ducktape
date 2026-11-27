@@ -49,6 +49,35 @@ pub const TRANSLATION_VALIDATION_REPORT: &str = "translation_validation.json";
 pub const TRANSLATION_VALIDATION_FULL_REPORT: &str = "translation_validation.full.jsonl";
 pub const INDEX_REPORT: &str = "index.json";
 
+/// One output directory belongs to one run: it may not be an existing file,
+/// because debundle writes its tree into it.
+pub fn check_output_dir_is_a_directory(dir: &Path) -> Result<()> {
+    if dir.exists() && !dir.is_dir() {
+        bail!(
+            "Output path exists and is not a directory: {}",
+            dir.display()
+        );
+    }
+    Ok(())
+}
+
+/// ... and when it already exists it must be empty, so a run never leaves its
+/// tree mixed with the output of the run before it. Callers that share a root
+/// with other output check only [`check_output_dir_is_a_directory`].
+pub fn check_output_dir_is_unused(dir: &Path) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    check_output_dir_is_a_directory(dir)?;
+    if fs::read_dir(dir)?.next().is_some() {
+        bail!(
+            "Output directory is not empty: {}. Remove it before running debundle.",
+            dir.display()
+        );
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct DebundleOutputLayout {
     root: PathBuf,
@@ -65,12 +94,7 @@ impl DebundleOutputLayout {
 
     /// Create `app/` and `reports/`; bail if `root` exists and is not a directory.
     pub fn prepare(&self) -> Result<()> {
-        if self.root.exists() && !self.root.is_dir() {
-            bail!(
-                "Output path exists and is not a directory: {}",
-                self.root.display()
-            );
-        }
+        check_output_dir_is_a_directory(&self.root)?;
         fs::create_dir_all(self.app_root())?;
         fs::create_dir_all(self.reports_root())?;
         Ok(())

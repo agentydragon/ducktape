@@ -1,10 +1,10 @@
 use analysis::reports::author_inputs::AuthorInputLocations;
 use analysis_vocabulary::inputs::NativeIntegrity;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use artifact::paths::{path_from_module_path, relative_module_path};
 use graph::ProgramGraphReport;
 use graph_provenance::GraphProvenance;
-use output_layout::{DEPENDENCY_GRAPH_REPORT, PROGRAM_GRAPH_REPORT};
+use output_layout::{DEPENDENCY_GRAPH_REPORT, PROGRAM_GRAPH_REPORT, check_output_dir_is_unused};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -105,20 +105,7 @@ impl<'a> ProgramGraphOutput<'a> {
 }
 
 pub(super) fn prepare_output_dir(out_dir: &Path) -> Result<()> {
-    if out_dir.exists() {
-        if !out_dir.is_dir() {
-            bail!(
-                "Output path exists and is not a directory: {}",
-                out_dir.display()
-            );
-        }
-        if fs::read_dir(out_dir)?.next().is_some() {
-            bail!(
-                "Output directory is not empty: {}. Remove it before running debundle.",
-                out_dir.display()
-            );
-        }
-    }
+    check_output_dir_is_unused(out_dir)?;
     fs::create_dir_all(out_dir)?;
     Ok(())
 }

@@ -108,21 +108,7 @@ pub(super) fn preflight_roots(mut roots: Vec<PathBuf>) -> Result<()> {
     roots.sort();
     roots.dedup();
     for root in roots {
-        if !root.exists() {
-            continue;
-        }
-        if !root.is_dir() {
-            bail!(
-                "Output path exists and is not a directory: {}",
-                root.display()
-            );
-        }
-        if fs::read_dir(&root)?.next().is_some() {
-            bail!(
-                "Output directory is not empty: {}. Remove it before running debundle.",
-                root.display()
-            );
-        }
+        check_output_dir_is_unused(&root)?;
     }
     Ok(())
 }
