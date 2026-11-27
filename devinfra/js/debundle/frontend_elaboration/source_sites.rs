@@ -2,7 +2,7 @@
 //! source declarations their selectors name.
 
 use super::{FrontendChunk, ResolvedMemberSite};
-use analysis::facts::StructuralChunkSourceFacts;
+use analysis::facts::statement_facts::StructuralChunkSourceFacts;
 use analysis_projection::{
     self, AnalysisNativeOperationInput, AnalysisSourceSites, ProjectedChunkOptions,
 };

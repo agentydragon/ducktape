@@ -602,7 +602,8 @@ pub(super) fn resolve_argument_inputs(
             declarations.len() == options.argument_inputs.len(),
             "{prefix} source-site count does not match authored inputs"
         );
-        let source_facts = analysis::facts::collect_chunk_source_facts_from_items(facts.body, None);
+        let source_facts =
+            analysis::facts::analyze::collect_chunk_source_facts_from_items(facts.body, None);
         let mut selected = Vec::new();
         for (input_index, (contract, declaration)) in
             options.argument_inputs.iter().zip(declarations).enumerate()

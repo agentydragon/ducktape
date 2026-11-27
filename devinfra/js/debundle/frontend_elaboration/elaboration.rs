@@ -5,7 +5,7 @@
 //! callers consume.
 
 use crate::chunk_ast::ChunkAstAnalysis;
-use analysis::facts::StructuralChunkSourceFacts;
+use analysis::facts::statement_facts::StructuralChunkSourceFacts;
 use analysis_projection::{self, AnalysisProjection, AnalysisSpec, ChunkGraphInputs};
 use analysis_vocabulary::inputs::{AnalysisAssumptions, SourceDeclaration};
 use anyhow::{Context, Result, ensure};

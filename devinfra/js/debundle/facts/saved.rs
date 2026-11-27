@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 use super::statement_facts::{
-    ConstructorFacts, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells, SynchronousCalls,
+    CallbackFactoryBarrierFact, CallbackFactoryUseFact, ConstructorFacts, DataflowOpacityCause,
+    EffectCell, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells,
+    LocalRecordFactoryPurityCertificate, ReturnedRecordUseFact, StatementFacts, SynchronousCalls,
 };
 use super::*;
 use crate::facts::binding_effect_coverage::SavedBindingEffectCoverage;
@@ -501,13 +503,15 @@ struct SavedSynchronousCalls<'a> {
         Cow<'a, Option<analysis_vocabulary::report_schema::InitializerExternalEffectsUse>>,
     completed_initialization:
         Cow<'a, Option<super::initialization_effects::CompletedInitialization>>,
-    initialization_coverage_refusal:
-        Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
-    root_attempt: Option<crate::facts::RootAttempt>,
+    initialization_coverage_refusal: Cow<
+        'a,
+        Option<crate::facts::initialization_effects::OwnerInitializationCoverageRefusalReason>,
+    >,
+    root_attempt: Option<crate::facts::initialization_effects::RootAttempt>,
     evaluation_effects: Cow<'a, super::evaluation_effects::EvaluationEffects>,
     local_record_factory_uses: Vec<SavedLocalRecordFactoryUse<'a>>,
     local_record_factory_rejections: Vec<SavedLocalRecordFactoryRejection<'a>>,
-    local_record_factory_purity: Cow<'a, Option<super::LocalRecordFactoryPurityCertificate>>,
+    local_record_factory_purity: Cow<'a, Option<LocalRecordFactoryPurityCertificate>>,
     #[serde(default)]
     proven_private_own_field_reads: Cow<'a, [(SourceUnitOrdinal, swc_common::Span)]>,
     local_record_factory_heap_call: Option<swc_common::Span>,
@@ -531,8 +535,8 @@ struct SavedSynchronousCalls<'a> {
     imported_primitive_array_spread_input_uses:
         Cow<'a, [analysis_vocabulary::inputs::ImportedPrimitiveArraySpreadInputUse]>,
     inference_uses: Cow<'a, [analysis_vocabulary::provenance::InferenceUse]>,
-    callback_factory_uses: Cow<'a, [super::CallbackFactoryUseFact]>,
-    returned_record_uses: Cow<'a, [super::ReturnedRecordUseFact]>,
+    callback_factory_uses: Cow<'a, [CallbackFactoryUseFact]>,
+    returned_record_uses: Cow<'a, [ReturnedRecordUseFact]>,
     author_host_contract_uses: Vec<SavedReentryFreeOperationUse<'a>>,
     purity_disagreement: Option<SavedPurityDisagreement>,
 }

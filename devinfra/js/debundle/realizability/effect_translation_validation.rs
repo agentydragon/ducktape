@@ -8,11 +8,13 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, btree_map};
 use std::ops::Bound::{Excluded, Unbounded};
 
-use analysis::facts::{
-    CellOverlap, CellOverlapIndex, EffectCell, InitializationEffectEvidence, InitializationEffects,
-    OwnerInitializationCoverageRefusal, OwnerInitializationCoverageRefusalReason, RootAttempt,
-    RootAttemptCounts, StatementFacts, UnknownEffectCoverage,
+use analysis::facts::cell_overlap::{CellOverlap, CellOverlapIndex};
+use analysis::facts::initialization_effects::{
+    InitializationEffectEvidence, InitializationEffects, OwnerInitializationCoverageRefusal,
+    OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptCounts,
+    UnknownEffectCoverage,
 };
+use analysis::facts::statement_facts::{EffectCell, StatementFacts};
 use analysis::ids::ModuleId;
 use analysis_vocabulary::inputs::{CommutingStatementsRef, ProofDependencies};
 use analysis_vocabulary::report_schema::EffectCellReport;
@@ -1011,7 +1013,7 @@ fn push_range<'participants>(
 mod observed_access_tests {
     use super::*;
 
-    use analysis::facts::CellOverlapLaw;
+    use analysis::facts::cell_overlap::CellOverlapLaw;
     use analysis_vocabulary::inputs::AnalysisInputs;
     use analyze::analyze_chunk;
     use source_identity::SourceUnitId;

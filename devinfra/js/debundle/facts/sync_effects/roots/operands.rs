@@ -6,7 +6,7 @@ use super::super::interpreter::{
     CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
 };
 use super::super::native::array_iteration::{admitted_callback, supported_row};
-use analysis::facts::OwnerInitializationCoverageRefusalReason;
+use analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use analysis::facts::statement_facts::StatementFacts;
 use analysis_domain::item_views::StatementKind;

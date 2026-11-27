@@ -1,3 +1,4 @@
+use super::statement_facts::DataflowOpacityCause;
 use super::*;
 
 /// Collect reads, rebinds and calls by syntactic position in one AST pass

@@ -171,7 +171,7 @@ impl<'a> CandidatePreflight<'a> {
     /// evidence without retaining a second copy of its rows.
     pub fn evaluate<E>(
         self,
-        facts: &[analysis::facts::StatementFacts],
+        facts: &[analysis::facts::statement_facts::StatementFacts],
         translation_validation_visitor: Option<
             &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
         >,
@@ -771,7 +771,7 @@ impl AssignmentAnalysis {
     /// The effect report and typed effect assessment come from one sweep.
     fn effect_assessment<E>(
         &self,
-        facts: &[analysis::facts::StatementFacts],
+        facts: &[analysis::facts::statement_facts::StatementFacts],
         legacy: &TranslationValidationResult,
         emitted_order: &CandidateEmittedOrder,
         visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,

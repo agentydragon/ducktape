@@ -1,3 +1,4 @@
+use super::statement_facts::{DataflowOpacityCause, StatementFacts, StructuralStatementFacts};
 use super::*;
 use inference::{FactContext, IterativeInference, IterativeRules};
 
