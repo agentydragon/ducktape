@@ -14,7 +14,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from testcontainers.core import testcontainers_config
 
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
@@ -26,7 +25,8 @@ from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import session_pb2
 from devinfra.oci.oci import load_oci_image
 from testing.container_logs import LoggedContainer
-from third_party.containers import debian_slim, ryuk
+from testing.ryuk import load_ryuk_image
+from third_party.containers import debian_slim
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -97,7 +97,7 @@ def pid1_container(
     command: list[str], directory: Path, environment: dict[str, str], allow_user_namespaces: bool = False
 ) -> LoggedContainer:
     """Run the production Runtime and its pinned harnesses in a private Pod-like PID namespace."""
-    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    load_ryuk_image()
     debian_image = load_oci_image(debian_slim.LAYOUT_RLOCATION)
     config = json.loads(Path(command[2]).read_text())
     runtime = Path(command[0]).absolute()

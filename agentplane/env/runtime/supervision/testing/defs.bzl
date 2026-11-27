@@ -29,11 +29,10 @@ def pid1_go_test(name, srcs, embed, deps, git = False, size = "small", **kwargs)
         requires_docker = True,
         deps = [
             "//:conftest",
-            "//third_party/containers:ryuk",
             "//devinfra/oci:oci",
             "@rules_python//python/runfiles",
             "//testing:container_logs",
+            "//testing:ryuk",
             "@pypi//pytest_bazel",
-            "@pypi//testcontainers",
         ] + (["//agentplane/env/runtime/supervision/testing:git_tools"] if git else ["//third_party/containers:debian_slim"]),
     )

@@ -11,14 +11,14 @@ from pathlib import Path
 
 import docker
 import httpx
-from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from grafana.visual_tests.recorded import prepare_recorded_dashboard_fixture
 from testing.container_logs import LoggedContainer
-from third_party.containers import grafana_visual, prometheus_visual, ryuk
+from testing.ryuk import load_ryuk_image
+from third_party.containers import grafana_visual, prometheus_visual
 
 TEST_PASSWORD = "isolated-synthetic-grafana"
 
@@ -101,12 +101,12 @@ def grafana_dashboard(
     record_stage("loading isolated service images")
     with ThreadPoolExecutor(max_workers=3) as executor:
         grafana_image = executor.submit(load_oci_image, grafana_visual.LAYOUT_RLOCATION)
-        ryuk_image = executor.submit(load_oci_image, ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+        ryuk_future = executor.submit(load_ryuk_image)
         prometheus_image = (
             None if prometheus_samples is None else executor.submit(load_oci_image, prometheus_visual.LAYOUT_RLOCATION)
         )
         grafana_ref = grafana_image.result()
-        ryuk_image.result()
+        ryuk_future.result()
         prometheus_ref = prometheus_image.result() if prometheus_image is not None else None
     with Network(docker_network_kw={"internal": True}) as network, ExitStack() as services:
         if prometheus_samples is not None:
