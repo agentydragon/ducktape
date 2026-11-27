@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::analyze_chunk;
-use analysis::StatementFacts;
 use analysis::facts::statement_facts::EffectCell;
+use analysis::facts::statement_facts::StatementFacts;
 use analysis_domain::item_views::StatementKind;
 use analysis_test_support::{
     analyze_facts, analyze_facts_with_hints, hints_with_decorate_helper, test_id,

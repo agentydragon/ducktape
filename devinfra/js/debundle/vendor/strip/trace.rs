@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use analysis::EffectCell;
+use analysis::facts::statement_facts::EffectCell;
 use swc_common::sync::Lrc;
 use swc_common::{DUMMY_SP, SourceMap};
 use swc_ecma_ast::*;

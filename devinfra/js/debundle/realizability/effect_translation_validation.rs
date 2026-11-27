@@ -295,7 +295,7 @@ pub struct EffectConflictDiagnosticRow<'a> {
 #[derive(Serialize)]
 pub struct EffectOpacity<'a> {
     pub unknown_coverage: &'a BTreeSet<UnknownEffectCoverage>,
-    pub dataflow_opacity: &'a BTreeSet<analysis::DataflowOpacityCause>,
+    pub dataflow_opacity: &'a BTreeSet<analysis::facts::statement_facts::DataflowOpacityCause>,
     pub incomplete_execution: bool,
     pub execution_losses: &'a [analysis_vocabulary::execution_evidence::ExecutionPrecisionLoss],
     pub opaque_heap: bool,

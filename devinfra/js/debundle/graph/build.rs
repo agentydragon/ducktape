@@ -12,10 +12,10 @@ use analysis::facts::cell_overlap::{
 };
 use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
 use analysis::facts::statement_facts::{EffectCell, HeapContentCells};
+use analysis::facts::statement_facts::{StatementEffectSummary, StatementFacts};
 use analysis::reports::spec_lint::{
     CommutingStatementsUnused, UnusedCommutingEndpoint, UnusedPremiseReason,
 };
-use analysis::{StatementEffectSummary, StatementFacts};
 use analysis_domain::item_views::StatementKind;
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::inputs::{CommutingEndpoint, ResolvedCommutingStatements};

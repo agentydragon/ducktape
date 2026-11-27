@@ -22,14 +22,6 @@ pub mod ids;
 pub mod loader_closure;
 pub mod reports;
 
-pub use facts::analyze::analyze_chunk_structural;
-pub use facts::cell_overlap::{CellOverlap, CellOverlapIndex, CellOverlapLaw};
-pub use facts::local_effects::local_namespace_iife_target;
-pub use facts::statement_facts::{
-    CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
-    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, StatementEffectSummary, StatementFacts,
-    StructuralChunkAnalysis, StructuralStatementFacts,
-};
 pub use ids::{
     BindingCatalogue, BindingId, BindingKind, BindingScopeError, EntryDestination,
     ImportedSourceTarget, LocalBindings, ModuleId, ModuleRole, PlannedModule, top_level_id,
