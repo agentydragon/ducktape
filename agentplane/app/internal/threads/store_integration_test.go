@@ -216,6 +216,7 @@ func TestCommandNoticeAcknowledgementsRemainScopedToExactRevisions(t *testing.T)
 	old := NoticeRevision{CommandID: "same-command", Version: 37}
 	changed := NoticeRevision{CommandID: old.CommandID, Version: old.Version + 1}
 	other := NoticeRevision{CommandID: "other-command", Version: 39}
+	execution := NoticeRevision{CommandID: old.CommandID, OutcomeCursor: old.Version}
 	for _, notice := range []NoticeRevision{old, old, other} {
 		if err := store.AcknowledgeNotice(ctx, session, notice); err != nil {
 			t.Fatal(err)
@@ -226,6 +227,18 @@ func TestCommandNoticeAcknowledgementsRemainScopedToExactRevisions(t *testing.T)
 		t.Fatalf("exact revisions: %v, %v", found, err)
 	}
 	ackTime := found[0].AcknowledgedAt
+	if err := store.AcknowledgeNotice(ctx, session, execution); err != nil {
+		t.Fatal(err)
+	}
+	found, err = store.FindNoticeAcknowledgements(ctx, session, []NoticeRevision{
+		old, execution, {CommandID: execution.CommandID, OutcomeCursor: execution.OutcomeCursor + 1},
+	})
+	if err != nil || len(found) != 2 {
+		t.Fatalf("independent delivery and execution revisions: %v, %v", found, err)
+	}
+	if rows, err := store.FindNoticeAcknowledgements(ctx, secondOperator, []NoticeRevision{execution}); err != nil || len(rows) != 0 {
+		t.Fatalf("another operator's execution lookup: %v, %v", rows, err)
+	}
 	if rows, err := store.ListNoticeAcknowledgements(ctx, secondOperator, nil, 1); err != nil || len(rows) != 0 {
 		t.Fatalf("another operator's history: %v, %v", rows, err)
 	}

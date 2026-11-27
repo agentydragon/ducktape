@@ -149,11 +149,7 @@ impl LocalExecutionContext<'_, '_, '_> {
                 span,
             );
         }
-        let call = self
-            .calls()
-            .iter()
-            .find(|call| call.kind == execution_index::CallKind::Call && call.span == span)
-            .expect("a source-covered call has its canonical call record");
+        let call = self.canonical_call_at(span);
         let Some(caller) = self.executor.local_body_identity_for_call(call) else {
             return Err(RemainderDisposition::NeedsSummary);
         };

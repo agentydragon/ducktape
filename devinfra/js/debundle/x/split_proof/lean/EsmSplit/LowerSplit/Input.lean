@@ -157,6 +157,10 @@ def linkedLayoutBundle (asts units : Array Json) : Bundle :=
       lazy := (Effects.dedupeArr t.rawLazy).toList, assigns := Effects.assignedNames t declared,
       exports := published ast, hoisted := t.hoisted }
 
+/-- Build the planner bundle from all checked source nodes, including export metadata. -/
+def sourceBundle (nodes : Array Json) : EsmSplit.Bundle :=
+  linkedLayoutBundle nodes (Effects.footprintUnits nodes)
+
 /-- The entry module keeps the published interface and loads outside imports before the rest of the bundle. -/
 def entryPlacementProblem (B : Bundle) (S : Spec) (ast : Json) (i : Nat) : Option String :=
   let t := Lower.typ ast

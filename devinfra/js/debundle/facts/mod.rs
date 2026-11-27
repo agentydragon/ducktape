@@ -46,9 +46,10 @@ pub(crate) use analysis_vocabulary::inputs::{
 };
 pub(crate) use analysis_vocabulary::purity::Purity;
 pub(crate) use purity::{
-    ChunkCodeGraph, LocalClassConstructionShapes, LocalClassHeapProof, RedundantPureMemberHint,
-    RedundantPurityHint, SetIterableProof, SetIterableShapes, StableArraySpreadShapes,
-    classify_class_static_purity, classify_expr_purity, classify_var_decl_purity,
+    ChunkCodeGraph, LocalClassConstructionShapes, LocalClassHeapProof, PurityScope,
+    RedundantPureMemberHint, RedundantPurityHint, SetIterableProof, SetIterableShapes,
+    StableArraySpreadShapes, classify_class_static_purity, classify_expr_purity,
+    classify_var_decl_purity,
 };
 
 pub mod analyze;

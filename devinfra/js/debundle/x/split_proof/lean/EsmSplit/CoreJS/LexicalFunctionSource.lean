@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.LinkedBehavior
+import EsmSplit.CoreJS.SingleModule
 
 /-! Source linking for a lexical cell followed by two hoisted ordinary functions.
 The lexical declaration is initialized by execution, not linking. -/
@@ -55,8 +55,8 @@ theorem execute_let_undefined (w : World) (fuel : Nat) (env : Env) (name : Name)
     execStmt (fuel + 2) env (.decl .let_ name .undef) s =
       .ok .normal { s with cells := (s.cells.modify addr.region
         (fun bs => bs.modify addr.index (fun binding => { binding with value := some .undef }))) } := by
-  simp only [execStmt, evalExpr, initVar, lookup]
-  rfl
+  simpa [State.assign] using
+    execute_lexical (fuel + 1) env .let_ (Or.inl rfl) name .undef addr lookup s s .undef rfl
 
 /-- A check against the original decoded program. Bodies, initializer and
 export metadata come from the source; only the supported declaration shape is

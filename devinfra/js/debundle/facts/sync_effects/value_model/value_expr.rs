@@ -74,6 +74,15 @@ impl ValueExpr {
         }
     }
 
+    /// The alternatives of a value that can branch. Callers reach this from an
+    /// arm that already matched one of the three branching shapes, so the list
+    /// is there by construction; an empty option means a branching shape was
+    /// added without extending `result_alternatives`.
+    pub fn branching_alternatives(&self) -> &[Self] {
+        self.result_alternatives()
+            .expect("alternative expression: conditional, sequence and alternatives values carry their arms")
+    }
+
     pub fn from_expr(expr: &Expr) -> Self {
         Self::from_expr_with_coverage(expr).0
     }
@@ -463,8 +472,7 @@ impl ValueExpr {
                 false
             }
             Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
-                .result_alternatives()
-                .expect("alternative expression")
+                .branching_alternatives()
                 .iter()
                 .any(|value| value.carries_namespace(id, aliases)),
             Self::Member(object, _, _, _) => {
@@ -553,8 +561,7 @@ impl ValueExpr {
                 possible
             }
             Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
-                .result_alternatives()
-                .expect("alternative expression")
+                .branching_alternatives()
                 .iter()
                 .any(|value| value.may_equal_namespace(id, aliases, facts, visiting)),
             Self::Member(object, Some(property), MemberKey::Static, _) => {
@@ -599,11 +606,8 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }),
-            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
-                .result_alternatives()
-                .expect("alternative expression")
-                .iter()
-                .any(|value| {
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => {
+                self.branching_alternatives().iter().any(|value| {
                     value.may_publish_namespace_inner(
                         id,
                         aliases,
@@ -611,7 +615,8 @@ impl ValueExpr {
                         visiting_bindings,
                         visiting_classes,
                     )
-                }),
+                })
+            }
             Self::Member(object, property, is_static, _) => {
                 let projected = property
                     .as_deref()
@@ -751,18 +756,16 @@ impl ValueExpr {
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
-                .result_alternatives()
-                .expect("alternative expression")
-                .iter()
-                .any(|value| {
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => {
+                self.branching_alternatives().iter().any(|value| {
                     value.may_be_namespace_mutation_receiver_with_alias_query(
                         id,
                         aliases,
                         receiver_alias,
                         facts,
                     )
-                }),
+                })
+            }
             Self::Member(object, property, is_static, _) => {
                 if let Some(value) = property
                     .as_deref()

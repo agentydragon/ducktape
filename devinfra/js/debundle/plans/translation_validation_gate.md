@@ -11,15 +11,18 @@ validation of the candidate emit:
 4. check the independent structural placement obligations of the same candidate.
 
 Neither pass survives as a verdict. The author-supplied chunk import priority
-remains required; this migration does not add schedule-existence search.
+remains required; this migration adds no schedule-existence search and
+revives no retired refinement/decomposition command (residual extraction stays
+the bounded constructive workflow in <../docs/module_proposals.md>).
 The ESM loader model becomes a plain, exact component: it
 evaluates the emitted import lists as ECMA-262 does, cyclic or not, and it
 always runs on the real emitted order, never on a fallback order.
 
 The architecture this serves is <target_architecture.md>. This plan contains
-the remaining migration. The report-only candidate assessment pairs effect
-conflicts with typed placement evidence for the same finalized assignment; the
-shared projection also supplies emission's checked placement maps. Plan-building
+the remaining migration. The report-only candidate assessment (`bindings`
+and `modules` apply commands, explicit `import_order`) pairs effect conflicts
+with typed placement evidence for the same finalized assignment; the shared
+projection also supplies emission's checked placement maps. Plan-building
 refusals before a final assignment remain outside that assessment. The legacy
 gate remains authoritative on `devel`. Closed-unmerged #14552 is a reference
 implementation with the flip already applied; the landing order that keeps the
@@ -197,8 +200,6 @@ swapped conflicting pairs, not only the first.
   - TV runs in `debundle_apply` on the saved `debundle_analysis` facts,
     which must carry the effect sets. They already carry `StatementFacts`.
   - Commuting resolution already sits in `debundle_apply`.
-  - The graph build shrinks: it emits only the hard edges, and the full edge
-    set becomes a tooling view built on demand.
   - Assignment edits, the agent loop, still never rerun `debundle_analysis`.
 - **Tooling** (atomic groups, `peel`, `modules propose`, `gate describe`,
   `per_atomic_group` / `coarse_atomic_groups`): these read `dependency_graph.json.gz` edges
@@ -231,12 +232,7 @@ the complete conflict enumeration.
      For each such case, prove the read cannot run at initialization or retain
      the conflict. Existing pair premises and legacy acceptance do not prove
      that a callback is deferred.
-2. **Candidate assessment.** Assess the exact assignment and supplied chunk
-   priority. Preserve the verdict and swapped-pair comparisons for that
-   concrete witness. Compose with the bounded constructive residual workflow
-   in <../docs/module_proposals.md>; do not add arbitrary order search or
-   revive the retired refinement/decomposition commands.
-3. **Flip.** TV decides; today's gate becomes a report section for one
+2. **Flip.** TV decides; today's gate becomes a report section for one
    release, then goes, Pass 1's cycle verdict and Pass 2's degraded-order
    fallback with it. `commuting_statements` diagnostics move to the
    effect-set definition of "unused".
@@ -249,8 +245,6 @@ the complete conflict enumeration.
      obligations can be represented. An assessment's empty blocker list does
      not cover requests that never reached it. Preserve the shared projection's
      distinction between structural blockers and semantic-order SCC vetoes.
-4. **Slim.** The graph build materializes hard edges only, and the full edge
-   set moves behind the tooling queries that still need it.
 
 The comparison runs in e2e as differential tests
 (`e2e/translation_validation_differential_test.rs`, plus the oracle in every

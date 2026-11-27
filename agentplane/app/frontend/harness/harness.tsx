@@ -1803,6 +1803,8 @@ function commandProgressRows(threadId: string): Record<string, unknown>[] {
   const effected = command(5, "progress-effected", Operation.CHANGE_MODEL, ThreadCommandOutcome.EFFECTED, {
     requestedValue: "applied-model",
   });
+  const input =
+    "Please review this change before it goes out. Check the tests and report any unexpected results or regressions.";
   return [
     { ...viewState(5, "t-progress"), thread_id: threadId },
     model,
@@ -1810,10 +1812,14 @@ function commandProgressRows(threadId: string): Record<string, unknown>[] {
     noop,
     effected,
     command(9, "progress-applied-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.EFFECTED, {
-      text: "Applied input.",
+      text: input,
     }),
     command(6, "progress-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.PENDING, {
-      text: "Please review this change.",
+      text: input,
+    }),
+    command(8, "progress-failed-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.FAILED, {
+      text: input,
+      reason: "The harness stopped before processing the message.",
     }),
     command(7, "progress-noop-input", Operation.SUBMIT_INPUT, ThreadCommandOutcome.NOOP, {
       reason: "Nothing to do",
@@ -2488,7 +2494,7 @@ const queuedReasons = new Map<string, string>();
 const LEGACY_DISPATCH_WITH_LONG_REASON = "5034baaf-0000-4000-8000-000000000001";
 const dispatchWorksets = new Map<string, Record<string, unknown>>();
 const dispatchDetails = new Map<string, Record<string, unknown>>();
-type NoticeRevision = { commandId: string; receiptVersion: string };
+type NoticeRevision = { commandId: string; receiptVersion?: string; outcomeCursor?: string };
 const noticeAcknowledgements = new Map<string, Array<{ notice: NoticeRevision; acknowledgedAt: string }>>();
 
 function dispatchWorkset(withNoticeVersions = false): void {
@@ -3493,7 +3499,9 @@ routes.push(
   [
     "GET",
     /^\/upstream\/app\/v1\/threads\/([^/]+)\/notice-acknowledgements$/,
-    (match) => ({ acknowledgements: noticeAcknowledgements.get(match[1]) ?? [] }),
+    (match) => ({
+      acknowledgements: (noticeAcknowledgements.get(match[1]) ?? []).filter(({ notice }) => notice.receiptVersion),
+    }),
   ],
   [
     "POST",
@@ -3501,7 +3509,12 @@ routes.push(
     (match, _query, _signal, body) => {
       const { notices } = JSON.parse(body ?? "{}") as { notices: NoticeRevision[] };
       const acknowledgements = (noticeAcknowledgements.get(match[1]) ?? []).filter(({ notice }) =>
-        notices.some((item) => item.commandId === notice.commandId && item.receiptVersion === notice.receiptVersion)
+        notices.some(
+          (item) =>
+            item.commandId === notice.commandId &&
+            item.receiptVersion === notice.receiptVersion &&
+            item.outcomeCursor === notice.outcomeCursor
+        )
       );
       return { acknowledgements };
     },

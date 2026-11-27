@@ -134,14 +134,13 @@ private theorem replayPremisedEquivalentFor {premises : HostPremises} {source ca
 #audit_linked_programs CheckedProbePair.sameExports
 
 inductive RefusalCode where
-  | probeMismatch | probeThrow | probeUnknown | probeFuel | proofPreparation
+  | probeMismatch | probeThrow | probeUnknown | probeFuel
 
 def RefusalCode.label : RefusalCode → String
   | .probeMismatch => "probe_mismatch"
   | .probeThrow => "probe_throw"
   | .probeUnknown => "probe_unknown"
   | .probeFuel => "probe_fuel"
-  | .proofPreparation => "proof_preparation"
 
 structure Refusal where
   code : RefusalCode

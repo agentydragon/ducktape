@@ -385,7 +385,7 @@ func TestArchiveThreadWithoutHistoryCannotBypassDispatcher(t *testing.T) {
 // The App stores the operator's attention only after it establishes access to the requested Session.
 func TestNoticeAcknowledgementScope(t *testing.T) {
 	id := uuid.New()
-	notice := &apppb.CommandNoticeRevision{CommandId: "c", ReceiptVersion: 40000000000000001}
+	notice := &apppb.CommandNoticeRevision{CommandId: "c", ReceiptVersion: proto.Int64(40000000000000001)}
 	for _, tc := range []struct {
 		name    string
 		session *dispatcherpb.Session

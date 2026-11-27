@@ -22,11 +22,13 @@ import {
   button,
   mount,
   renderLive,
+  reopen,
   request,
   send,
   sshExec,
   unmountLast,
 } from "./testing/harness";
+import { actionRequestUpsertProtoJson, actionRequestsSnapshotProtoJson } from "./testing/proto_fixtures";
 
 describe("ActionRequests", () => {
   it("shows a refused decision's structured error", async () => {
@@ -216,6 +218,23 @@ describe("ActionRequests", () => {
     expect(stream?.url).toBe(ACTION_REQUEST_WATCH);
     await unmountLast();
     expect(stream?.signal?.aborted).toBe(true);
+  });
+
+  it("keeps the last snapshot through a reconnect's replay and fails an upsert sent before it completes", async () => {
+    const kept = request(ActionState.DECISION_PENDING, 1);
+    const early = create(ActionRequestSchema, {
+      ...request(ActionState.DECISION_PENDING, 2),
+      title: "test early request",
+    });
+    const container = await renderLive(<ActionRequests />, [kept]);
+    const replay = await reopen(ACTION_REQUEST_WATCH);
+    await act(async () => {
+      replay.sendRaw(JSON.stringify({ result: actionRequestsSnapshotProtoJson([kept]) }));
+      replay.sendRaw(JSON.stringify({ result: actionRequestUpsertProtoJson(early) }));
+    });
+    await vi.waitFor(() => expect(replay.signal?.aborted).toBe(true));
+    expect(container.textContent).toContain("Pending (1)");
+    expect(container.textContent).not.toContain(early.title);
   });
 
   it("keeps a dropped stream's requests without comment until it has been down a minute", async () => {

@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.Move
+import EsmSplit.CoreJS.Reachability
 import EsmSplit.CoreJS.Split
 
 namespace CoreJS
@@ -59,44 +60,92 @@ theorem runProgram_singleModuleMetadata (body : List (Nat × CoreJS.Stmt))
 
 #print axioms runProgram_singleModuleMetadata
 
-theorem declareConstTops_ok {W : World} (tops : List (Nat × Stmt))
-    (consts : ∀ p ∈ tops, ∃ name value, p.2 = .decl .const name value) (s : State W)
+/-- A reached lexical initializer writes the value returned by its actual
+evaluation. Effects of evaluation remain in the returned state. -/
+theorem execute_lexical {W : World} (fuel : Nat) (env : Env) (kind : DeclKind)
+    (lexical : kind = .let_ ∨ kind = .const) (name : Name) (expr : Expr) (addr : Addr)
+    (lookup : env.vars.lookup name = some addr) (s t : State W) (value : Val)
+    (evaluated : evalExpr fuel env expr s = .ok value t) :
+    execStmt (fuel + 1) env (.decl kind name expr) s = .ok .normal (t.assign addr value) := by
+  rcases lexical with letKind | constKind <;> subst kind <;>
+    simp only [execStmt, M.bind_apply, evaluated, initVar, lookup] <;> rfl
+
+/-- If the reached cell exists after evaluation, it is initialized with the
+actual value, retains mutability, and no other cell is changed by the write. -/
+theorem execute_lexical_initialized {W : World} (fuel : Nat) (env : Env) (kind : DeclKind)
+    (lexical : kind = .let_ ∨ kind = .const) (name : Name) (expr : Expr) (addr : Addr)
+    (lookup : env.vars.lookup name = some addr) (s t : State W) (value : Val) (binding : Binding)
+    (evaluated : evalExpr fuel env expr s = .ok value t) (present : t.cellAt addr = some binding) :
+    execStmt (fuel + 1) env (.decl kind name expr) s = .ok .normal (t.assign addr value) ∧
+      (t.assign addr value).cellAt addr = some { binding with value := some value } ∧
+      ∀ other, other ≠ addr → (t.assign addr value).cellAt other = t.cellAt other := by
+  refine ⟨execute_lexical fuel env kind lexical name expr addr lookup s t value evaluated, ?_, ?_⟩
+  · simp [State.cellAt_assign_self, present]
+  · intro other different
+    exact State.cellAt_assign_other t addr value other different
+
+/-- Declaration allocation succeeds for any list of original identities whose
+regions exist. Const and let allocate uninitialized cells; var allocates an
+initialized mutable cell. Initializer expressions are not evaluated here. -/
+theorem declareDeclTops_ok {W : World} (tops : List (Nat × Stmt))
+    (decls : ∀ p ∈ tops, ∃ kind name value, p.2 = .decl kind name value) (s : State W)
     (regions : ∀ p ∈ tops, p.1 + 1 < s.cells.size) :
     ∃ frames ready, declareTops tops s = .ok frames ready ∧ ready.cells.size = s.cells.size := by
   induction tops generalizing s with
   | nil => exact ⟨[], s, rfl, rfl⟩
   | cons p rest ih =>
     obtain ⟨id, statement⟩ := p
-    obtain ⟨name, value, rfl⟩ := consts (id, statement) (by simp)
-    have inside := regions (id, .decl .const name value) (by simp)
+    obtain ⟨kind, name, value, rfl⟩ := decls (id, statement) (by simp)
+    have inside := regions (id, .decl kind name value) (by simp)
     let cells := s.cells[id + 1]'inside
-    let next : State W := { s with cells := s.cells.set! (id + 1) (cells.push ⟨none, false⟩), region := 0 }
+    let binding : Binding := ⟨if kind == .var then some .undef else none, kind != .const⟩
+    let next : State W := { s with cells := s.cells.set! (id + 1) (cells.push binding), region := 0 }
     have size : next.cells.size = s.cells.size := by simp [next, Array.set!]
     let frame := [(name, (⟨id + 1, cells.size⟩ : Addr))]
-    have allocated : inRegion id (newCells (Stmt.decl .const name value).bindings) s = .ok frame next := by
-      change inRegion id (newCells [(name, ⟨none, false⟩)]) s = .ok frame next
+    have bindings : (Stmt.decl kind name value).bindings = [(name, binding)] := by
+      cases kind <;> rfl
+    have allocated : inRegion id (newCells (Stmt.decl kind name value).bindings) s = .ok frame next := by
+      rw [bindings]
       simp [inRegion, newCells, newCell, M.bind_apply, modifyState, pure,
         Array.getElem?_eq_getElem inside, cells, frame, next] <;> rfl
     obtain ⟨frames, ready, tail, readySize⟩ := ih
-      (fun p hp => consts p (List.mem_cons_of_mem _ hp)) next
+      (fun p hp => decls p (List.mem_cons_of_mem _ hp)) next
       (fun p hp => size.symm ▸ regions p (List.mem_cons_of_mem _ hp))
     refine ⟨(id, frame) :: frames, ready, ?_, readySize.trans size⟩
     rw [declareTops, M.bind_apply, allocated]
     change (declareTops rest >>= fun frames => pure ((id, frame) :: frames)) next = _
     rw [M.bind_apply, tail] <;> rfl
 
-private theorem initFunctions_const {W : World} (units : List LinkedUnit)
-    (consts : ∀ u ∈ units, ∃ name value, u.stmt = .decl .const name value) :
+/-- The const-only case uses the same declaration allocation proof. -/
+theorem declareConstTops_ok {W : World} (tops : List (Nat × Stmt))
+    (consts : ∀ p ∈ tops, ∃ name value, p.2 = .decl .const name value) (s : State W)
+    (regions : ∀ p ∈ tops, p.1 + 1 < s.cells.size) :
+    ∃ frames ready, declareTops tops s = .ok frames ready ∧ ready.cells.size = s.cells.size := by
+  apply declareDeclTops_ok tops _ s regions
+  intro p hp
+  obtain ⟨name, value, shape⟩ := consts p hp
+  exact ⟨.const, name, value, shape⟩
+
+theorem initFunctions_declarations {W : World} (units : List LinkedUnit)
+    (decls : ∀ u ∈ units, ∃ kind name value, u.stmt = .decl kind name value) :
     (initFunctions units : M W Unit) = pure () := by
   induction units with
   | nil => rfl
   | cons u rest ih =>
     obtain ⟨id, statement, env⟩ := u
-    obtain ⟨name, value, eq⟩ := consts (id, statement, env) (by simp)
-    change statement = .decl .const name value at eq
+    obtain ⟨kind, name, value, eq⟩ := decls (id, statement, env) (by simp)
+    change statement = .decl kind name value at eq
     subst statement
     simp only [initFunctions, initFunction, M.pure_bind,
-      ih (fun u hu => consts u (List.mem_cons_of_mem _ hu))]
+      ih (fun u hu => decls u (List.mem_cons_of_mem _ hu))]
+
+private theorem initFunctions_const {W : World} (units : List LinkedUnit)
+    (consts : ∀ u ∈ units, ∃ name value, u.stmt = .decl .const name value) :
+    (initFunctions units : M W Unit) = pure () := by
+  apply initFunctions_declarations units
+  intro u member
+  obtain ⟨name, value, shape⟩ := consts u member
+  exact ⟨.const, name, value, shape⟩
 
 /-- Link the original singleton declaration module with its explicit public/local
 export table. Its actual allocation frames are available to compare entry lookups
@@ -152,6 +201,10 @@ theorem link_singleModuleConst (name : Name) (exports : List (Name × Name))
     rw [scopes, lift, M.pure_bind, sorted_units sorted, hoists, M.pure_bind] <;> rfl
   exact ⟨frames, ⟨[(m, env)], ready, equation⟩, allocated, declareTops_names _ allocated, rfl⟩
 
+#print axioms execute_lexical
+#print axioms execute_lexical_initialized
+#print axioms initFunctions_declarations
+#print axioms declareDeclTops_ok
 #print axioms declareConstTops_ok
 #print axioms link_singleModuleConst
 
