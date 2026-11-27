@@ -534,16 +534,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && captured
                 .as_ref()
                 .is_none_or(|context| context.values.is_empty());
-        // Implicit arguments can alias any actual input even without a
-        // corresponding formal parameter. Invalidate input capabilities before
-        // consulting cached outcomes, including calls outside array iteration.
         if unsupported_inputs {
-            for values in &args {
-                self.taint_objects(values);
-            }
-            if self.state.array_iteration_depth > 0 {
-                self.state.array_iteration_unsupported = true;
-            }
+            self.taint_unsupported_inputs(&args);
         }
         let captured_context =
             self.materialize_captures(captured.as_ref().map(|context| context.values.as_ref()));
@@ -561,34 +553,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             prefix_revision: self.state.world.revision.prefix,
             top_owner: self.state.current_top_owner,
         };
-        if self.state.array_iteration_depth == 0
-            && !self.state.world.native.tainted_functions.contains(&key)
-            && let Some(point) = self.state.invocation_memos.get(&signature)
-        {
-            let outcome = self.queries.invocation_memo(point);
-            self.evaluation_effects
-                .extend(&outcome.effects.evaluation_effects);
+        if let Some(outcome) = self.memoized_invocation(key, &signature) {
             return outcome;
         }
         let active_invocation = ActiveInvocation {
             callable: key,
             top_owner: self.state.current_top_owner,
         };
-        if self.state.active.contains(&active_invocation)
-            || self.state.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
-            || self.state.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
-        {
-            let reason = if self.state.active.contains(&active_invocation) {
-                ExecutionPrecisionLossReason::RecursiveInvocation
-            } else if self.state.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH {
-                ExecutionPrecisionLossReason::InvocationDepthLimit {
-                    limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
-                }
-            } else {
-                ExecutionPrecisionLossReason::InvocationExpansionLimit {
-                    limit: MAX_SYNCHRONOUS_INVOCATIONS,
-                }
-            };
+        if let Some(reason) = self.invocation_bound_reason(&active_invocation) {
             let reach = self.invocation_reach(key, callable_owner, &args, &captured_context);
             return self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
                 owner: callable_owner,
@@ -615,7 +587,177 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let ordered_prologue = covered_prologue
             && !unsupported_inputs
             && !reads_arguments
-            && self.state.array_iteration_depth == 0
+            && self.ordered_prologue_admitted(callable, &env);
+        self.bind_parameters(callable, &args, ordered_prologue, &mut env);
+        let unsupported_before = self.state.array_iteration_unsupported;
+        if self.state.array_iteration_depth > 0 {
+            self.check_iteration_body_inputs(key, callable, &env);
+        }
+        if let Some(body) = self.ordered_lane_body(
+            key,
+            callable,
+            &env,
+            unsupported_inputs || reads_arguments,
+            ordered_prologue,
+        ) {
+            let mut outcome = self.execute_local_body(
+                body,
+                env,
+                ordered_prologue.then(|| {
+                    args.iter()
+                        .cloned()
+                        .zip(argument_selections.iter().cloned())
+                        .map(|(values, selection)| SelectedValue { values, selection })
+                        .collect()
+                }),
+                callable.owner,
+                LocalActivation::Callable(key),
+            );
+            if !covered_prologue || (!callable.params.is_empty() && !ordered_prologue) {
+                outcome.effect_coverage = EffectCoverageFragment::default();
+            }
+            outcome.body_invoked = true;
+            self.end_invocation(&active_invocation, signature, &outcome);
+            return outcome;
+        }
+        self.prepare_summary_environment(callable, reads_arguments, &args, &mut env);
+        let mut outcome = Outcome {
+            complete: true,
+            ..Outcome::default()
+        };
+        outcome.executed_owners.insert(callable.owner);
+        self.iterate_parameters(callable, &args, &env, &mut outcome);
+        if callable.generator {
+            self.create_summary_generator(key, callable, &args, &env, &mut outcome);
+            self.end_invocation(&active_invocation, signature, &outcome);
+            return outcome;
+        }
+        self.record_summary_body_bindings(callable, &mut outcome);
+        let (fresh_data_writes, mut certified_data_receivers) = self.apply_summary_body_writes(
+            key,
+            callable,
+            &env,
+            fresh_checked_constructor,
+            &mut outcome,
+        );
+        self.execute_summary_body_calls(callable, &mut env, &mut outcome);
+        // The lane is flow-insensitive: iterate after the body's writes and
+        // calls, so the published pool holds what they install.
+        self.iterate_callable_sources(callable, &env, &mut outcome);
+        self.forfeit_unsettled_data_receivers(&mut certified_data_receivers);
+        self.collect_summary_body_returns(callable, &env, &mut outcome);
+        self.promote_summary_body_member_writes(
+            key,
+            callable,
+            fresh_checked_constructor
+                || fresh_data_writes.is_some()
+                || !certified_data_receivers.is_empty(),
+            &mut outcome,
+        );
+        if unsupported_inputs
+            || (self.state.array_iteration_depth > 0
+                && self.state.array_iteration_unsupported
+                && !unsupported_before)
+        {
+            self.promote_unsupported_summary_body(callable, unsupported_inputs, &mut outcome);
+        }
+        self.end_invocation(&active_invocation, signature, &outcome);
+        outcome
+    }
+
+    /// Leaves the active invocation and memoizes its outcome.
+    fn end_invocation(
+        &mut self,
+        active_invocation: &ActiveInvocation,
+        signature: InvocationSignature,
+        outcome: &Outcome,
+    ) {
+        self.state.active.remove(active_invocation);
+        self.state.invocation_depth -= 1;
+        self.remember_invocation(signature, outcome);
+    }
+
+    /// Implicit arguments can alias any actual input even without a
+    /// corresponding formal parameter. Invalidate input capabilities before
+    /// consulting cached outcomes, including calls outside array iteration.
+    fn taint_unsupported_inputs(&mut self, args: &[Values]) {
+        for values in args {
+            self.taint_objects(values);
+        }
+        if self.state.array_iteration_depth > 0 {
+            self.state.array_iteration_unsupported = true;
+        }
+    }
+
+    /// Replays a memoized outcome for this exact signature outside array
+    /// iteration, unless the callable's native effects are tainted.
+    fn memoized_invocation(
+        &mut self,
+        key: u32,
+        signature: &InvocationSignature,
+    ) -> Option<Outcome> {
+        if self.state.array_iteration_depth == 0
+            && !self.state.world.native.tainted_functions.contains(&key)
+            && let Some(point) = self.state.invocation_memos.get(signature)
+        {
+            let outcome = self.queries.invocation_memo(point);
+            self.evaluation_effects
+                .extend(&outcome.effects.evaluation_effects);
+            return Some(outcome);
+        }
+        None
+    }
+
+    /// Generator parameter initializers run at call time, although the body
+    /// waits for the first iteration. Their effects are not separated in the
+    /// index, so retain the conservative path.
+    fn create_summary_generator(
+        &mut self,
+        key: u32,
+        callable: &Callable,
+        args: &[Values],
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
+        outcome.unsupported(
+            &self.inputs.metrics,
+            ExecutionOperation::GeneratorParameters,
+            callable.owner,
+            DUMMY_SP,
+        );
+        self.create_generator(key, args, env, outcome);
+    }
+
+    /// The precision loss bounding this invocation: recursion, depth or
+    /// total expansion. `None` admits it.
+    fn invocation_bound_reason(
+        &self,
+        active_invocation: &ActiveInvocation,
+    ) -> Option<ExecutionPrecisionLossReason> {
+        if self.state.active.contains(active_invocation)
+            || self.state.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
+            || self.state.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
+        {
+            let reason = if self.state.active.contains(active_invocation) {
+                ExecutionPrecisionLossReason::RecursiveInvocation
+            } else if self.state.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH {
+                ExecutionPrecisionLossReason::InvocationDepthLimit {
+                    limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
+                }
+            } else {
+                ExecutionPrecisionLossReason::InvocationExpansionLimit {
+                    limit: MAX_SYNCHRONOUS_INVOCATIONS,
+                }
+            };
+            return Some(reason);
+        }
+        None
+    }
+
+    /// Whether the shared kernel can run the parameter prologue of the
+    /// callable's ordered plan in `env`.
+    fn ordered_prologue_admitted(&self, callable: &Callable, env: &Context) -> bool {
+        self.state.array_iteration_depth == 0
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && callable.member_value_writes.is_empty()
             && callable.body_facts.ordered_plan().is_some_and(|body| {
@@ -635,7 +777,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 && NativeIntrinsic::for_global_binding(binding.0.as_ref())
                                     .is_some())
                     })
-            });
+            })
+    }
+
+    /// Binds actual arguments, with evaluated defaults, to the formal
+    /// parameters unless the ordered prologue binds them.
+    fn bind_parameters(
+        &mut self,
+        callable: &Callable,
+        args: &[Values],
+        ordered_prologue: bool,
+        env: &mut Context,
+    ) {
         for (index, param) in callable
             .params
             .iter()
@@ -650,56 +803,68 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 && may_be_undefined(&values)
             {
                 values.remove(&AbstractValue::UNDEFINED);
-                values.extend(self.evaluate(default, &env, &env));
+                values.extend(self.evaluate(default, env, env));
             }
             if let Some(binding) = &param.binding {
                 env.insert(binding.clone(), values);
             }
         }
-        let unsupported_before = self.state.array_iteration_unsupported;
-        if self.state.array_iteration_depth > 0 {
-            if callable.reads.iter().any(|id| id.0.as_ref() == "arguments") {
-                self.state.array_iteration_unsupported = true;
-            }
-            if let Some(reads) = self.inputs.index.callable_member_reads.get(&key) {
-                for (receiver, property) in reads.clone() {
-                    let values = self.evaluate(&receiver, &env, &env);
-                    if property.is_none()
-                        || values.is_empty()
-                        || values.iter().any(|value| match value {
-                            AbstractValue::Value(Value::Prim(_)) => false,
-                            AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
-                                (!self.inputs.index.plain_data_objects.contains(object)
-                                    && !self
-                                        .state
-                                        .world
-                                        .surface
-                                        .ordinary_spread_copies
-                                        .contains(object)
-                                    && !self.state.world.arrays.dense.contains_key(object))
-                                    || !self.state.world.object_properties_are_settled(*object)
-                                    || !self
-                                        .state
-                                        .world
-                                        .surface
-                                        .prefix_object_properties
-                                        .get(object)
-                                        .is_some_and(|properties| {
-                                            properties.contains_key(&property)
-                                        })
-                            }
-                            AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
-                                self.class_may_run_on_borrowed_receiver(*key)
-                                    || !self.known_local_instance_member(*key, property.as_deref())
-                            }
-                            _ => true,
-                        })
-                    {
-                        self.state.array_iteration_unsupported = true;
-                    }
+    }
+
+    /// Inside an array iteration, marks the iteration unsupported when the
+    /// body reads `arguments` or a member the prefix has not settled.
+    fn check_iteration_body_inputs(&mut self, key: u32, callable: &Callable, env: &Context) {
+        if callable.reads.iter().any(|id| id.0.as_ref() == "arguments") {
+            self.state.array_iteration_unsupported = true;
+        }
+        if let Some(reads) = self.inputs.index.callable_member_reads.get(&key) {
+            for (receiver, property) in reads.clone() {
+                let values = self.evaluate(&receiver, env, env);
+                if property.is_none()
+                    || values.is_empty()
+                    || values.iter().any(|value| match value {
+                        AbstractValue::Value(Value::Prim(_)) => false,
+                        AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                            (!self.inputs.index.plain_data_objects.contains(object)
+                                && !self
+                                    .state
+                                    .world
+                                    .surface
+                                    .ordinary_spread_copies
+                                    .contains(object)
+                                && !self.state.world.arrays.dense.contains_key(object))
+                                || !self.state.world.object_properties_are_settled(*object)
+                                || !self
+                                    .state
+                                    .world
+                                    .surface
+                                    .prefix_object_properties
+                                    .get(object)
+                                    .is_some_and(|properties| properties.contains_key(&property))
+                        }
+                        AbstractValue::Instance(key, _, InstanceOrigin::Constructed) => {
+                            self.class_may_run_on_borrowed_receiver(*key)
+                                || !self.known_local_instance_member(*key, property.as_deref())
+                        }
+                        _ => true,
+                    })
+                {
+                    self.state.array_iteration_unsupported = true;
                 }
             }
         }
+    }
+
+    /// The ordered plan the shared kernel executes for this invocation, or
+    /// `None` for the source-summary lane.
+    fn ordered_lane_body<'callable>(
+        &mut self,
+        key: u32,
+        callable: &'callable Callable,
+        env: &Context,
+        summary_inputs: bool,
+        ordered_prologue: bool,
+    ) -> Option<&'callable LocalBody> {
         // CLEANUP(added 2026-11-09): the source-summary lane after this block
         // is the flat lane for bodies that have an ordered plan. Each gate
         // below routes such a body there until the kernel has the rule named;
@@ -716,8 +881,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // - `established_writes`: member-write proofs (fresh local records,
         //   borrowed parameters, array iteration) in the kernel's own-data
         //   store.
-        if !unsupported_inputs
-            && !reads_arguments
+        if !summary_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = callable.body_facts.ordered_plan()
             // A default-bearing plan must execute its prologue in the shared
@@ -763,31 +927,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 .any(|(binding, _)| binding == &write.receiver)
                         }));
             if !established_writes {
-                let mut outcome = self.execute_local_body(
-                    body,
-                    env,
-                    ordered_prologue.then(|| {
-                        args.iter()
-                            .cloned()
-                            .zip(argument_selections.iter().cloned())
-                            .map(|(values, selection)| SelectedValue { values, selection })
-                            .collect()
-                    }),
-                    callable.owner,
-                    LocalActivation::Callable(key),
-                );
-                if !covered_prologue || (!callable.params.is_empty() && !ordered_prologue) {
-                    outcome.effect_coverage = EffectCoverageFragment::default();
-                }
-                outcome.body_invoked = true;
-                self.state.active.remove(&active_invocation);
-                self.state.invocation_depth -= 1;
-                self.remember_invocation(signature, &outcome);
-                return outcome;
+                return Some(body);
             }
         }
-        // Source-summary lanes pre-evaluate assignments and flatten control flow.
-        // They cannot preserve a live mutable capture's ordered value proof.
+        None
+    }
+
+    /// Source-summary lanes pre-evaluate assignments and flatten control
+    /// flow. They cannot preserve a live mutable capture's ordered value
+    /// proof.
+    fn prepare_summary_environment(
+        &mut self,
+        callable: &Callable,
+        reads_arguments: bool,
+        args: &[Values],
+        env: &mut Context,
+    ) {
         let cells: Vec<_> = self.state.world.active_cells.values().copied().collect();
         self.havoc_cells(cells);
         for (binding, cell) in &self.state.world.active_cells {
@@ -797,14 +952,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             );
         }
         seed_undefined_before_assignment(
-            &mut env,
+            env,
             &callable.undefined_before_assignment,
             &callable.local_assignments,
         );
-        self.widen_untracked_locals(callable, &mut env);
-        self.escape_untracked_environment(callable, reads_arguments, &args, &mut env);
+        self.widen_untracked_locals(callable, env);
+        self.escape_untracked_environment(callable, reads_arguments, args, env);
         for (id, value) in &callable.local_assignments {
-            let values = self.evaluate(value, &env, &env);
+            let values = self.evaluate(value, env, env);
             // A chunk binding read later in this prefix must see the assigned
             // callable, not only the opaque value `apply_rebind_effects` adds:
             // calling that opaque value cannot reach an unescaped closure.
@@ -831,29 +986,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             env.entry(id.clone()).or_default().extend(values);
         }
-        self.publish_sources(callable, &env);
-        let mut outcome = Outcome {
-            complete: true,
-            ..Outcome::default()
-        };
-        outcome.executed_owners.insert(callable.owner);
-        self.iterate_parameters(callable, &args, &env, &mut outcome);
-        if callable.generator {
-            // Generator parameter initializers run at call time, although
-            // the body waits for the first iteration. Their effects are not
-            // separated in the index, so retain the conservative path.
-            outcome.unsupported(
-                &self.inputs.metrics,
-                ExecutionOperation::GeneratorParameters,
-                callable.owner,
-                DUMMY_SP,
-            );
-            self.create_generator(key, &args, &env, &mut outcome);
-            self.state.active.remove(&active_invocation);
-            self.state.invocation_depth -= 1;
-            self.remember_invocation(signature, &outcome);
-            return outcome;
-        }
+        self.publish_sources(callable, env);
+    }
+
+    /// Records the summary body's invocation, opacity and top-level binding
+    /// reads and rebinds.
+    fn record_summary_body_bindings(&self, callable: &Callable, outcome: &mut Outcome) {
         outcome.body_invoked = true;
         if callable.opaque {
             outcome.unsupported(
@@ -876,11 +1014,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.effects.rebinds.insert((id.clone(), callable.owner));
             }
         }
+    }
+
+    /// Applies the summary body's member writes. Returns its fresh data
+    /// write objects and the receivers certified to hold only data.
+    fn apply_summary_body_writes(
+        &mut self,
+        key: u32,
+        callable: &Callable,
+        env: &Context,
+        fresh_checked_constructor: bool,
+        outcome: &mut Outcome,
+    ) -> (Option<BTreeSet<u32>>, BTreeSet<u32>) {
         // The visitor stores value-bearing member writes separately from call
         // nodes. Make same-owner callback publication visible before nested
         // opaque calls; if source order put a write afterward, this only adds
         // a conservative callback possibility.
-        let fresh_data_writes = self.fresh_data_writes(callable, &env);
+        let fresh_data_writes = self.fresh_data_writes(callable, env);
         if let Some(objects) = &fresh_data_writes {
             self.state
                 .world_mut()
@@ -888,22 +1038,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .parameter_initialized_objects
                 .extend(objects.iter().copied());
         }
-        let mut certified_data_receivers = self.fresh_primitive_write_receivers(callable, &env);
+        let mut certified_data_receivers = self.fresh_primitive_write_receivers(callable, env);
         let fresh_record_receiver = self.fresh_local_record_receiver(key, callable);
         if let Some(object) = fresh_record_receiver {
             certified_data_receivers.insert(object);
         }
         self.apply_member_value_writes(
             &callable.member_value_writes,
-            &env,
-            &env,
+            env,
+            env,
             &certified_data_receivers,
             false,
         );
         self.publish_destructuring_target_receivers(
             &callable.destructuring_member_receivers,
-            &env,
-            &env,
+            env,
+            env,
         );
         // local_constructor checked every assignment as a static property
         // write to a fresh `this`, with a safe right-hand value and no
@@ -914,15 +1064,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !fresh_checked_constructor {
             self.promote_callback_result_writes(
                 &callable.callback_result_writes,
-                &env,
-                &env,
+                env,
+                env,
                 callable.owner,
-                &mut outcome,
+                outcome,
                 &certified_data_receivers,
             );
         }
+        (fresh_data_writes, certified_data_receivers)
+    }
+
+    /// Executes the summary body's calls, forfeiting exact local aliases
+    /// after any skipped operation.
+    fn execute_summary_body_calls(
+        &mut self,
+        callable: &Callable,
+        env: &mut Context,
+        outcome: &mut Outcome,
+    ) {
         for call in &callable.calls {
-            if !self.execute_call(call, &env, &env, &mut outcome) {
+            if !self.execute_call(call, env, env, outcome) {
                 // Local initializers are pre-evaluated for capability reach.
                 // A skipped operation may precede their real evaluation and
                 // change even a primitive member value into an object.
@@ -946,9 +1107,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
-        // The lane is flow-insensitive: iterate after the body's writes and
-        // calls, so the published pool holds what they install.
-        self.iterate_callable_sources(callable, &env, &mut outcome);
+    }
+
+    /// Taints and forgets the certified data receivers once an iteration,
+    /// array intrinsic or property settlement no longer supports them.
+    fn forfeit_unsettled_data_receivers(&mut self, certified_data_receivers: &mut BTreeSet<u32>) {
         if !certified_data_receivers.is_empty()
             && (self.state.array_iteration_unsupported
                 || !self.array_intrinsics_intact()
@@ -963,8 +1126,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .extend(certified_data_receivers.iter().copied());
             certified_data_receivers.clear();
         }
+    }
+
+    /// Evaluates the summary body's return expressions into the outcome.
+    fn collect_summary_body_returns(
+        &mut self,
+        callable: &Callable,
+        env: &Context,
+        outcome: &mut Outcome,
+    ) {
         for expr in callable.body_facts.value_flow().returns() {
-            let returned = self.evaluate(expr, &env, &env);
+            let returned = self.evaluate(expr, env, env);
             for value in &returned {
                 if let AbstractValue::OwnDescriptorMap(site) = value {
                     self.invalidate_own_descriptor_map(*site);
@@ -975,7 +1147,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if callable.may_fall_through {
             outcome.returns.insert(AbstractValue::UNDEFINED);
         }
+    }
 
+    /// Promotes the summary body's member writes unless a constructor or data
+    /// write proof (`proven_writes`) already covers them.
+    fn promote_summary_body_member_writes(
+        &mut self,
+        key: u32,
+        callable: &Callable,
+        proven_writes: bool,
+        outcome: &mut Outcome,
+    ) {
         let mut writes: Vec<_> = callable
             .member_writes
             .iter()
@@ -985,43 +1167,38 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if callable.dynamic_property_effect {
             writes.push((None, None));
         }
-        if !fresh_checked_constructor
-            && fresh_data_writes.is_none()
-            && certified_data_receivers.is_empty()
-        {
-            self.promote_property_writes(&writes, callable.owner, &mut outcome);
+        if !proven_writes {
+            self.promote_property_writes(&writes, callable.owner, outcome);
         }
-        if unsupported_inputs
-            || (self.state.array_iteration_depth > 0
-                && self.state.array_iteration_unsupported
-                && !unsupported_before)
-        {
-            let inputs = self.inputs;
-            let fact = &inputs.facts[callable.owner.0];
-            let operation = if unsupported_inputs {
-                ExecutionOperation::CallableInputs
-            } else {
-                ExecutionOperation::ArrayIteration
-            };
-            // What this execution reached stays observed; the rest of the
-            // body is assumed.
-            let effect_owner = self.state.current_top_owner.unwrap_or(callable.owner);
-            self.assuming(
-                AssumedEffectReason::WholeBodyPromotion { operation },
-                |this| {
-                    this.promote_lazy_effects(
-                        &fact.reads.lazy,
-                        &fact.rebinds.lazy,
-                        effect_owner,
-                        &mut outcome,
-                    )
-                },
-            );
-            outcome.unsupported(&self.inputs.metrics, operation, callable.owner, DUMMY_SP);
-        }
-        self.state.active.remove(&active_invocation);
-        self.state.invocation_depth -= 1;
-        self.remember_invocation(signature, &outcome);
-        outcome
+    }
+
+    /// What this execution reached stays observed; the rest of the body is
+    /// assumed.
+    fn promote_unsupported_summary_body(
+        &mut self,
+        callable: &Callable,
+        unsupported_inputs: bool,
+        outcome: &mut Outcome,
+    ) {
+        let inputs = self.inputs;
+        let fact = &inputs.facts[callable.owner.0];
+        let operation = if unsupported_inputs {
+            ExecutionOperation::CallableInputs
+        } else {
+            ExecutionOperation::ArrayIteration
+        };
+        let effect_owner = self.state.current_top_owner.unwrap_or(callable.owner);
+        self.assuming(
+            AssumedEffectReason::WholeBodyPromotion { operation },
+            |this| {
+                this.promote_lazy_effects(
+                    &fact.reads.lazy,
+                    &fact.rebinds.lazy,
+                    effect_owner,
+                    outcome,
+                )
+            },
+        );
+        outcome.unsupported(&self.inputs.metrics, operation, callable.owner, DUMMY_SP);
     }
 }
