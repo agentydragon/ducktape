@@ -109,6 +109,9 @@ statements 104 and 105. The concrete-checker trials lower the module-level
 in statement 354 and leave the output directory absent.
 Each target records the source filename, placement spec and verdict.
 
+See [the current first-refusal replay](scroll_refusal.md) for the ordinary CLI's
+empty-profile lowering boundary and dependency-closed reductions.
+
 One target needs the existing editor module record. Unit `#1751` imports
 `image-GAAHSSAO-YDUOJAAS.js`, which statically imports `ok`, `pk` and `qk`
 from `chunk-PN7KOLDJ.js`. This unit follows the moved scroll function in both
