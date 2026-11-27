@@ -98,9 +98,6 @@ inputs:
     default: ""
 
 outputs:
-  log_path:
-    description: "Path to the captured bb remote log on the GitHub Actions runner"
-    value: ${{ steps.bb-remote.outputs.log_path }}
   linkage_json_path:
     description: "Path to the emitted bb remote linkage JSON on the GitHub Actions runner"
     value: ${{ steps.bb-remote.outputs.linkage_json_path }}
@@ -144,7 +141,6 @@ runs:
         LOG_PATH="${RUNNER_TEMP:-/tmp}/bb-remote-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${safe_job}.log"
         LINKAGE_JSON_PATH="${RUNNER_TEMP:-/tmp}/bb-remote-linkage-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${safe_job}.json"
         mkdir -p "$(dirname "$LOG_PATH")"
-        echo "log_path=$LOG_PATH" >> "$GITHUB_OUTPUT"
         echo "linkage_json_path=$LINKAGE_JSON_PATH" >> "$GITHUB_OUTPUT"
 
         ENV_ARGS=()
