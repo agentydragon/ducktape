@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use readoff_render::{
     kept_spans_for_anchor_set, kept_spans_for_anchor_sets, unindexed_literal_spans,
 };
@@ -17,6 +17,7 @@ use super::{
 };
 use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
 use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use crate::minimize::body_item;
 use crate::proof::prove_synthesized_selector;
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
 use selector_render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, holes_present, node_holds_anchor};
@@ -173,11 +174,7 @@ fn try_var_group_read_off(
             .find(|target| target.runtime_binding == runtime)
             .map(|target| target.selector_local.clone())
     };
-    let item = index
-        .module
-        .body
-        .get(decl.body_idx)
-        .context("read-off body index no longer in module")?;
+    let item = body_item(index, decl)?;
     let ranked_anchor_sets: Vec<_> = index
         .shape_index
         .scored_features(decl.body_idx)
