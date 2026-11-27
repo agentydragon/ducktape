@@ -179,21 +179,43 @@
         "$recorded_ref": "value_022"
       }
     },
-    "memory_free": {
-      "values": [
-        {
-          "$recorded_ref": "value_003"
-        },
-        [
-          4479934464, 4479475712, 4478242816, 4477239296, 4477022208, 4476764160, 4476764160, 4476506112, 152096768,
-          169656320, 1502261248, 6031581184, 3398660096, 192229376, 634195968, 204288000, 6189342720, 128245760,
-          188379136, 134053888, 159993856, 547311616, 142475264, 186286080, 174419968
-        ]
-      ]
+    "value_023": [
+      {
+        "name": "Time",
+        "type": "time",
+        "config": {
+          "interval": 3600000
+        }
+      },
+      {
+        "name": "Value",
+        "type": "number",
+        "config": {
+          "displayNameFromDS": "Free"
+        }
+      }
+    ],
+    "value_026": [
+      4479934464, 4479475712, 4478242816, 4477239296, 4477022208, 4476764160, 4476764160, 4476506112, 152096768,
+      169656320, 1502261248, 6031581184, 3398660096, 192229376, 634195968, 204288000, 6189342720, 128245760, 188379136,
+      134053888, 159993856, 547311616, 142475264, 186286080, 174419968
+    ],
+    "value_025": [
+      {
+        "$recorded_ref": "value_003"
+      },
+      {
+        "$recorded_ref": "value_026"
+      }
+    ],
+    "value_024": {
+      "values": {
+        "$recorded_ref": "value_025"
+      }
     }
   },
   "fixture": {
-    "_note": "Synthetic KVM worker scaling, task and filesystem data for the visual preview. Guest RAM panels use 25 consecutive five-minute samples from one guest. Host RAM uses observed usage-to-request ratios scaled to the preview pool.",
+    "_note": "Synthetic KVM worker scaling, task and filesystem data for the visual preview. Guest RAM panels use 25 consecutive five-minute samples from one guest. Host RAM uses observed usage-to-request ratios scaled to the preview pool. Runner reuse panels (31-33) are hourly samples recorded from the live pool for 2026-11-26 12:00 to 2026-11-27 12:00 UTC, placed on the preview's hourly timestamps; worker pod names are placeholders.",
     "variables": {
       "worker": ["0", "1", "2"],
       "memory_worker": ["0", "1", "2"]
@@ -833,13 +855,27 @@
               "schema": {
                 "refId": "D",
                 "fields": [
-                  { "name": "Time", "type": "time", "config": { "interval": 3600000 } },
-                  { "name": "Value", "type": "number", "config": { "displayNameFromDS": "Host RAM used" } }
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "Host RAM used"
+                    }
+                  }
                 ]
               },
               "data": {
                 "values": [
-                  { "$recorded_ref": "value_003" },
+                  {
+                    "$recorded_ref": "value_003"
+                  },
                   [
                     14282775876, 16307470174, 14494677691, 13513193300, 14098458221, 12933484126, 22978324935,
                     22633260941, 24572137229, 26290155608, 26657471228, 25538416776, 24644628437, 26525877228,
@@ -1266,31 +1302,57 @@
             {
               "schema": {
                 "refId": "G",
-                "fields": [
-                  {
-                    "name": "Time",
-                    "type": "time",
-                    "config": {
-                      "interval": 3600000
-                    }
-                  },
-                  {
-                    "name": "Value",
-                    "type": "number",
-                    "config": {
-                      "displayNameFromDS": "Free"
-                    }
-                  }
-                ]
+                "fields": {
+                  "$recorded_ref": "value_023"
+                }
               },
               "data": {
-                "$recorded_ref": "memory_free"
+                "$recorded_ref": "value_024"
               }
             }
           ]
         }
       },
       "24": {
+        "A": {
+          "frames": [
+            {
+              "schema": {
+                "$recorded_ref": "value_019"
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_003"
+                  },
+                  [
+                    7741644800, 7741292544, 7740203008, 7739273216, 7739203584, 7738978304, 7739019264, 7738818560,
+                    5775478784, 5699182592, 6302724096, 6920097792, 6456242176, 6144811008, 6770860032, 6222368768,
+                    6828523520, 4468473856, 3120533504, 5908418560, 3373297664, 4405334016, 4160585728, 3068637184,
+                    1025572864
+                  ]
+                ]
+              }
+            }
+          ]
+        },
+        "B": {
+          "frames": [
+            {
+              "schema": {
+                "refId": "B",
+                "fields": {
+                  "$recorded_ref": "value_023"
+                }
+              },
+              "data": {
+                "$recorded_ref": "value_024"
+              }
+            }
+          ]
+        }
+      },
+      "31": {
         "A": {
           "frames": [
             {
@@ -1308,7 +1370,7 @@
                     "name": "Value",
                     "type": "number",
                     "config": {
-                      "displayNameFromDS": "Available"
+                      "displayNameFromDS": "Hit rate"
                     }
                   }
                 ]
@@ -1319,10 +1381,130 @@
                     "$recorded_ref": "value_003"
                   },
                   [
-                    7741644800, 7741292544, 7740203008, 7739273216, 7739203584, 7738978304, 7739019264, 7738818560,
-                    5775478784, 5699182592, 6302724096, 6920097792, 6456242176, 6144811008, 6770860032, 6222368768,
-                    6828523520, 4468473856, 3120533504, 5908418560, 3373297664, 4405334016, 4160585728, 3068637184,
-                    1025572864
+                    33.722,
+                    47.048,
+                    35.329,
+                    30.024,
+                    null,
+                    null,
+                    null,
+                    52.109,
+                    null,
+                    36.843,
+                    32.618,
+                    40.0,
+                    29.441,
+                    44.888,
+                    39.447,
+                    49.924,
+                    0.0,
+                    0.0,
+                    14.256,
+                    0.0,
+                    37.18,
+                    42.462,
+                    null,
+                    null,
+                    50.345
+                  ]
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "32": {
+        "A": {
+          "frames": [
+            {
+              "schema": {
+                "refId": "A",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "hit"
+                    },
+                    "labels": {
+                      "status": "hit"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_003"
+                  },
+                  [
+                    3.105,
+                    8.132,
+                    11.186,
+                    3.051,
+                    0.0,
+                    null,
+                    null,
+                    1.107,
+                    0.0,
+                    7.12,
+                    1.015,
+                    4.068,
+                    5.089,
+                    8.284,
+                    13.263,
+                    2.028,
+                    null,
+                    null,
+                    2.029,
+                    0.0,
+                    3.051,
+                    3.051,
+                    0.0,
+                    null,
+                    2.074
+                  ]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "miss"
+                    },
+                    "labels": {
+                      "status": "miss"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_003"
+                  },
+                  [
+                    6.102, 9.153, 20.477, 7.11, 0.0, 0.0, 0.0, 1.017, 0.0, 12.206, 2.097, 6.102, 12.196, 10.17, 20.359,
+                    2.034, 5.085, 4.059, 12.206, 5.146, 5.155, 4.134, 0.0, 0.0, 2.046
                   ]
                 ]
               }
@@ -1346,13 +1528,201 @@
                     "name": "Value",
                     "type": "number",
                     "config": {
-                      "displayNameFromDS": "Free"
+                      "displayNameFromDS": "Evictions"
                     }
                   }
                 ]
               },
               "data": {
-                "$recorded_ref": "memory_free"
+                "values": [
+                  {
+                    "$recorded_ref": "value_003"
+                  },
+                  [
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0, 0.0
+                  ]
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "33": {
+        "A": {
+          "frames": [
+            {
+              "schema": {
+                "refId": "A",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "virt-launcher-buildbuddy-kvm-worker-0-placeholder"
+                    },
+                    "labels": {
+                      "pod": "virt-launcher-buildbuddy-kvm-worker-0-placeholder"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_003"
+                  },
+                  [
+                    null,
+                    null,
+                    0.0,
+                    1230016512.0,
+                    1230016512.0,
+                    1230016512.0,
+                    1230016512.0,
+                    1230016512.0,
+                    1230016512.0,
+                    1458315264.0,
+                    1458315264.0,
+                    0.0,
+                    1478836224.0,
+                    1478836224.0,
+                    1325723648.0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                  ]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "virt-launcher-buildbuddy-kvm-worker-1-placeholder"
+                    },
+                    "labels": {
+                      "pod": "virt-launcher-buildbuddy-kvm-worker-1-placeholder"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_003"
+                  },
+                  [
+                    1239658496.0,
+                    1239658496.0,
+                    1308880896.0,
+                    1308880896.0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                  ]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "virt-launcher-buildbuddy-kvm-worker-2-placeholder"
+                    },
+                    "labels": {
+                      "pod": "virt-launcher-buildbuddy-kvm-worker-2-placeholder"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_003"
+                  },
+                  [
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    1227644928.0,
+                    1227644928.0,
+                    1227644928.0,
+                    1247125504.0,
+                    1298452480.0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                  ]
+                ]
               }
             }
           ]
