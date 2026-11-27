@@ -1429,6 +1429,8 @@ exports_files(
     [
         "cases/emission/catchall_export_consumer/app.js",
         "cases/emission/catchall_export_consumer/read.probe.mjs",
+        "cases/emission/return_object_provider_import/main.js",
+        "cases/emission/return_object_provider_import/provider_module.js",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
 )
