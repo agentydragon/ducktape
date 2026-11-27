@@ -216,6 +216,14 @@ pub struct ExportReentryLoaderFailure {
     pub first: LoaderClosureWitness<LoaderSiteWitness>,
 }
 
+/// Stamp a loader site with the chunk whose runtime facts produced it.
+fn stamp_loader_site(source_chunk: &str) -> impl Fn(LoaderSite) -> LoaderSiteWitness + '_ {
+    move |site| LoaderSiteWitness {
+        source_chunk: source_chunk.to_string(),
+        site,
+    }
+}
+
 /// One source site that keeps a target open. Ordered by chunk name, then
 /// site, so the reported first witness is deterministic.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -596,10 +604,7 @@ pub fn loader_surfaces(
         let source = chunk.chunk_id;
         let source_chunk = artifact.chunk_table.name(source).to_string();
         let runtime = &chunk.analysis.runtime_facts;
-        let witness = |site| LoaderSiteWitness {
-            source_chunk: source_chunk.clone(),
-            site,
-        };
+        let witness = stamp_loader_site(&source_chunk);
         let mut surface = ChunkLoaderSurface {
             static_targets: BTreeSet::new(),
             requests: Vec::new(),
@@ -672,10 +677,7 @@ fn classify_static_requests(
     source_chunk: &str,
     runtime: &ChunkRuntimeFacts,
 ) -> Result<()> {
-    let witness = |site| LoaderSiteWitness {
-        source_chunk: source_chunk.to_string(),
-        site,
-    };
+    let witness = stamp_loader_site(source_chunk);
     for request in &runtime.static_requests {
         let resolved = classifier.resolve(&request.specifier, source)?;
         let static_witness = || {
@@ -715,10 +717,7 @@ fn classify_namespace_requests(
     source_chunk: &str,
     runtime: &ChunkRuntimeFacts,
 ) -> Result<()> {
-    let witness = |site| LoaderSiteWitness {
-        source_chunk: source_chunk.to_string(),
-        site,
-    };
+    let witness = stamp_loader_site(source_chunk);
     for request in &runtime.namespace_requests {
         if is_loader_factory(&request.specifier) {
             // The namespace carries `createRequire` and the loader hooks.
@@ -760,10 +759,7 @@ fn classify_interop_uses(
     runtime: &ChunkRuntimeFacts,
     alias_definitions: &BTreeSet<(ChunkId, Span)>,
 ) -> Result<()> {
-    let witness = |site| LoaderSiteWitness {
-        source_chunk: source_chunk.to_string(),
-        site,
-    };
+    let witness = stamp_loader_site(source_chunk);
     for site in &runtime.interop_uses {
         let interop_witness = |resolved_target| {
             witness(LoaderSite::Interop {
@@ -855,10 +851,7 @@ fn classify_loader_bindings(
     runtime: &ChunkRuntimeFacts,
     aliases: &BTreeSet<(ChunkId, String)>,
 ) -> Result<()> {
-    let witness = |site| LoaderSiteWitness {
-        source_chunk: source_chunk.to_string(),
-        site,
-    };
+    let witness = stamp_loader_site(source_chunk);
     for binding in &runtime.loader_bindings {
         let use_witness = |loader_use: &LoaderBindingUse, resolved_target| {
             witness(LoaderSite::LoaderBindingUse {
