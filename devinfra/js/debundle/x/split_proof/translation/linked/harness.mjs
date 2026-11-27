@@ -371,13 +371,3 @@ export function structuralSplit(name, source, modules, provider = "") {
 export function structuralFixture(name, source, moved, kept, provider = "") {
   return structuralSplit(name, source, { [entry]: kept, "scroll.mjs": moved }, provider);
 }
-
-// A diagnostic preview must exhibit the specific behavior change that certification rejected.
-export function assertRejectedResultChange(test, before, after) {
-  assert.equal(test.run("linked-structural").status, "rejected");
-  assert(!existsSync(test.out));
-  const preview = path.join(test.dir, "preview");
-  forcePreview(test, preview);
-  assert.deepEqual(observe(test.sourceFile, "result"), before);
-  assert.deepEqual(observe(path.join(preview, entry), "result"), after);
-}
