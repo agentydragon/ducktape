@@ -11,7 +11,7 @@ import {
   type Connection,
 } from "../../../mcp_edge/api/connection/connection_service_pb";
 import { Code } from "../../../proto/google/rpc/code_pb";
-import { IdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
+import { IdentitySchema } from "../../../proto/identity_pb";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { Connections } from "./management";
 import { sampleConnection } from "./testing/fixture";
@@ -302,15 +302,6 @@ it("expands grants for the exact live bound Identity", async () => {
 });
 
 it.each([
-  {
-    label: "a paused legacy Connection",
-    row: create(ConnectionSchema, {
-      ...sampleConnection(),
-      boundIdentity: undefined,
-      identityBindingRequired: true,
-      legacyBoundCaller: create(ServiceAccountSchema, { namespace: "legacy", name: "other" }),
-    }),
-  },
   {
     label: "a same-name replacement with a different UID",
     row: create(ConnectionSchema, {

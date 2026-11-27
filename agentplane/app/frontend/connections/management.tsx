@@ -224,19 +224,7 @@ export function Connections(): JSX.Element {
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      {row.identityBindingRequired && (
-                        <Alert color="orange" title="Identity binding required">
-                          <Text size="sm">
-                            This legacy Connection is paused. Its ServiceAccount binding is retained only as historical
-                            attribution
-                            {row.legacyBoundCaller
-                              ? ` (${row.legacyBoundCaller.namespace}/${row.legacyBoundCaller.name})`
-                              : ""}
-                            . Choose a live Identity and confirm the rebind to resume its existing grants.
-                          </Text>
-                        </Alert>
-                      )}
-                      {row.boundIdentity || row.identityBindingRequired ? (
+                      {row.boundIdentity ? (
                         <Stack gap={2}>
                           <Text className="agentplane-connection-mobile-label" size="xs" fw={600}>
                             Identity
@@ -282,22 +270,20 @@ export function Connections(): JSX.Element {
                               {expandedGrants === row.id ? "Hide grants" : "View grants"}
                             </Button>
                           )}
-                          {rebinding?.row.id === row.id &&
-                            (rebinding.target !== currentKey || row.identityBindingRequired) &&
-                            !rebinding.confirm && (
-                              <Group gap="xs">
-                                <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
-                                  Cancel
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  disabled={busy}
-                                  onClick={() => setRebinding({ ...rebinding, confirm: true })}
-                                >
-                                  Apply
-                                </Button>
-                              </Group>
-                            )}
+                          {rebinding?.row.id === row.id && rebinding.target !== currentKey && !rebinding.confirm && (
+                            <Group gap="xs">
+                              <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
+                                Cancel
+                              </Button>
+                              <Button
+                                size="xs"
+                                disabled={busy}
+                                onClick={() => setRebinding({ ...rebinding, confirm: true })}
+                              >
+                                Apply
+                              </Button>
+                            </Group>
+                          )}
                           {rebinding?.confirm && rebinding.row.id === row.id && (
                             <Alert color="orange" title={`Change ${row.displayName}'s Identity?`}>
                               <Text size="sm">
