@@ -634,14 +634,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         });
         // Promoted getters may mutate another captured object or rebind a
         // captured cell before the next operation in this same statement.
-        let reached: Values = outcome
-            .effects
-            .reads
-            .iter()
-            .filter_map(|(binding, _)| self.state.world.module.prefix_values.get(binding))
-            .flatten()
-            .cloned()
-            .collect();
+        let reached =
+            self.retained_prefix_values(outcome.effects.reads.iter().map(|(binding, _)| binding));
         self.unsettle(&reached);
         self.apply_rebind_effects(&outcome.effects.rebinds);
         self.invoke_possible_callbacks_at(

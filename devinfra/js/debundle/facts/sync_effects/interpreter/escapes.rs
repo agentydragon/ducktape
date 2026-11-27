@@ -259,6 +259,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().invalidate_writable(object);
     }
 
+    /// The values the module prefix retained for each name: the heap those
+    /// names reach, which is what an unrun execution may already have changed.
+    pub(crate) fn retained_prefix_values<'names>(
+        &self,
+        names: impl IntoIterator<Item = &'names Id>,
+    ) -> Values {
+        names
+            .into_iter()
+            .filter_map(|name| self.state.world.module.prefix_values.get(name))
+            .flatten()
+            .cloned()
+            .collect()
+    }
+
     /// Code the interpreter did not run may have reached `values`: every
     /// object they reach, through stored references or through what a
     /// reachable body reads, may since hold anything.
