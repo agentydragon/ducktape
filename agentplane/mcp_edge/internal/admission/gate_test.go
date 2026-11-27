@@ -439,7 +439,7 @@ func TestOperatorServiceSVIDAddsATLSCheckWithoutReplacingOIDC(t *testing.T) {
 	healthpb.RegisterHealthServer(server, healthServer)
 	serverAddr := grpcserver.Serve(t, server)
 
-	call := func(t *testing.T, serviceID, token, delegation string) error {
+	dial := func(t *testing.T, serviceID string) *grpc.ClientConn {
 		t.Helper()
 		clientSVID := ca.Issue(t, serviceID)
 		clientTLS, err := clientSVID.ClientTLSConfig(peertls.MCPEdgeURI)
@@ -451,6 +451,20 @@ func TestOperatorServiceSVIDAddsATLSCheckWithoutReplacingOIDC(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = client.Close() })
+		return client
+	}
+	for _, tc := range []struct {
+		id   string
+		want codes.Code
+	}{{peertls.AppURI, codes.OK}, {peertls.ActionsURI, codes.PermissionDenied}} {
+		_, err := healthpb.NewHealthClient(dial(t, tc.id)).Check(context.Background(), &healthpb.HealthCheckRequest{})
+		if status.Code(err) != tc.want {
+			t.Errorf("health check as %s: %v, want %s", tc.id, err, tc.want)
+		}
+	}
+	call := func(t *testing.T, serviceID, token, delegation string) error {
+		t.Helper()
+		client := dial(t, serviceID)
 		ctx := context.Background()
 		if token != "" {
 			ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
@@ -458,7 +472,7 @@ func TestOperatorServiceSVIDAddsATLSCheckWithoutReplacingOIDC(t *testing.T) {
 		if delegation != "" {
 			ctx = metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, delegation)
 		}
-		_, err = pb.NewConnectionServiceClient(client).ListConnections(ctx, &pb.ListConnectionsRequest{})
+		_, err := pb.NewConnectionServiceClient(client).ListConnections(ctx, &pb.ListConnectionsRequest{})
 		return err
 	}
 

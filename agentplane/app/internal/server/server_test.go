@@ -50,7 +50,7 @@ func TestSystemStatusUsesConnectionServiceAppSVID(t *testing.T) {
 		NotificationsURL: "http://" + plainTarget,
 		EgressAdminURL:   "http://" + plainTarget,
 	}
-	checker, connections, err := newSystemStatus(config, &http.Client{})
+	checker, connections, err := newSystemStatus(config, &http.Client{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -99,28 +99,8 @@ func (g *Gate) authenticate(ctx context.Context) (operator.Subject, error) {
 	if len(md.Get(auth.DelegationMetadataKey)) > 0 {
 		return operator.Subject{}, unauthenticated
 	}
-	if peertls.HasSVIDPeer(ctx) {
-		if len(g.operatorServices) == 0 {
-			return operator.Subject{}, unauthenticated
-		}
-		remote, ok := peer.FromContext(ctx)
-		if !ok {
-			return operator.Subject{}, unauthenticated
-		}
-		info, ok := remote.AuthInfo.(credentials.TLSInfo)
-		if !ok || len(info.State.PeerCertificates) == 0 {
-			return operator.Subject{}, unauthenticated
-		}
-		id, err := peertls.PeerIdentityFromTLSState(info.State, x509.ExtKeyUsageClientAuth)
-		if err != nil {
-			return operator.Subject{}, unauthenticated
-		}
-		if !peertls.IsServiceURI(id) {
-			return operator.Subject{}, status.Error(codes.PermissionDenied, "operator service is not admitted")
-		}
-		if _, allowed := g.operatorServices[id]; !allowed {
-			return operator.Subject{}, status.Error(codes.PermissionDenied, "operator service is not admitted")
-		}
+	if err := g.checkServicePeer(ctx); err != nil {
+		return operator.Subject{}, err
 	}
 	token, err := auth.BearerToken(md.Get("authorization"))
 	if err != nil || g.operators == nil || !g.operators.MatchesUnverifiedIssuer(token) {
@@ -131,6 +111,33 @@ func (g *Gate) authenticate(ctx context.Context) (operator.Subject, error) {
 		return operator.Subject{}, unauthenticated
 	}
 	return principal, nil
+}
+
+func (g *Gate) checkServicePeer(ctx context.Context) error {
+	if peertls.HasSVIDPeer(ctx) {
+		if len(g.operatorServices) == 0 {
+			return unauthenticated
+		}
+		remote, ok := peer.FromContext(ctx)
+		if !ok {
+			return unauthenticated
+		}
+		info, ok := remote.AuthInfo.(credentials.TLSInfo)
+		if !ok || len(info.State.PeerCertificates) == 0 {
+			return unauthenticated
+		}
+		id, err := peertls.PeerIdentityFromTLSState(info.State, x509.ExtKeyUsageClientAuth)
+		if err != nil {
+			return unauthenticated
+		}
+		if !peertls.IsServiceURI(id) {
+			return status.Error(codes.PermissionDenied, "operator service is not admitted")
+		}
+		if _, allowed := g.operatorServices[id]; !allowed {
+			return status.Error(codes.PermissionDenied, "operator service is not admitted")
+		}
+	}
+	return nil
 }
 
 // rejectUnauthenticatedPeer prevents health and unknown RPCs from bypassing the configured TLS peer allowlist.
@@ -145,6 +152,10 @@ func (g *Gate) rejectUnauthenticatedPeer(ctx context.Context) error {
 				return unauthenticated
 			}
 			return nil
+		}
+		// A health probe presents the App SVID without an operator session.
+		if len(md.Get("authorization")) == 0 {
+			return g.checkServicePeer(ctx)
 		}
 		_, err := g.authenticate(ctx)
 		return err

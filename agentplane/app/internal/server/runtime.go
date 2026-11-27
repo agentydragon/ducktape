@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"time"
 
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
+
 	"github.com/agentydragon/ducktape/agentplane/app/internal/journalcache"
 	statspb "github.com/agentydragon/ducktape/agentplane/proto/journalstatspb"
 
@@ -166,6 +168,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	}
 	defer closeConnections([]*grpc.ClientConn{actionConnection})
 	linkageClient := linkage_servicepb.NewLinkageServiceClient(actionConnection)
+	var samplerHealth healthpb.HealthClient
 	var samplerStats statspb.JournalStatsServiceClient
 	if peer := config.SamplerStats; peer != nil {
 		conn, err := bearer.Dial(peer.Target, "", 30*time.Second, peer.TLS)
@@ -173,6 +176,7 @@ func Run(ctx context.Context, config settings.Config) error {
 			return fmt.Errorf("configure sampler journal stats: %w", err)
 		}
 		defer conn.Close()
+		samplerHealth = healthpb.NewHealthClient(conn)
 		samplerStats = statspb.NewJournalStatsServiceClient(conn)
 	}
 	facadeContext, stopFacades := context.WithCancel(context.WithoutCancel(ctx))
@@ -181,7 +185,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Sandbox console client: %w", err)
 	}
-	serviceStatus, healthConnections, err := newSystemStatus(config, baseClient)
+	serviceStatus, healthConnections, err := newSystemStatus(config, baseClient, samplerHealth)
 	if err != nil {
 		return err
 	}
@@ -235,10 +239,15 @@ func (s threadEpochStore) CurrentEpoch(ctx context.Context, rawID string) (strin
 	return s.history.CurrentEpoch(ctx, id)
 }
 
-func newSystemStatus(config settings.Config, httpClient *http.Client) (*status.Checker, []*grpc.ClientConn, error) {
+func newSystemStatus(config settings.Config, httpClient *http.Client, samplerHealth healthpb.HealthClient) (*status.Checker, []*grpc.ClientConn, error) {
 	probes := make([]status.Probe, 0, 7)
 	connections := make([]*grpc.ClientConn, 0, 5)
-	dialHealth := func(name, target string, tls *peertls.ClientTLS) error {
+	if samplerHealth != nil {
+		probe := status.GRPCHealthProbe("Sampler", samplerHealth)
+		probe.JournalStore = apppb.JournalStore_JOURNAL_STORE_SAMPLER
+		probes = append(probes, probe)
+	}
+	dialHealth := func(name, target string, tls *peertls.ClientTLS, store apppb.JournalStore) error {
 		credentials, err := tls.Credentials()
 		if err != nil {
 			return err
@@ -249,16 +258,19 @@ func newSystemStatus(config settings.Config, httpClient *http.Client) (*status.C
 			return fmt.Errorf("configure %s health client: %w", name, err)
 		}
 		connections = append(connections, connection)
-		probes = append(probes, status.GRPCHealthProbe(name, healthpb.NewHealthClient(connection)))
+		probe := status.GRPCHealthProbe(name, healthpb.NewHealthClient(connection))
+		probe.JournalStore = store
+		probes = append(probes, probe)
 		return nil
 	}
 	for _, endpoint := range []struct {
 		name, target string
+		store        apppb.JournalStore
 		tls          *peertls.ClientTLS
 	}{
-		{"Environments", config.RunnerGatewayTarget, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, config.HistoryServiceTLS},
+		{"Environments", config.RunnerGatewayTarget, apppb.JournalStore_JOURNAL_STORE_UNSPECIFIED, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, apppb.JournalStore_JOURNAL_STORE_HISTORY, config.HistoryServiceTLS},
 	} {
-		if err := dialHealth(endpoint.name, endpoint.target, endpoint.tls); err != nil {
+		if err := dialHealth(endpoint.name, endpoint.target, endpoint.tls, endpoint.store); err != nil {
 			closeConnections(connections)
 			return nil, nil, err
 		}
@@ -277,7 +289,7 @@ func newSystemStatus(config settings.Config, httpClient *http.Client) (*status.C
 			closeConnections(connections)
 			return nil, nil, fmt.Errorf("configure %s health target: %w", endpoint.name, err)
 		}
-		if err := dialHealth(endpoint.name, target, endpoint.tls); err != nil {
+		if err := dialHealth(endpoint.name, target, endpoint.tls, apppb.JournalStore_JOURNAL_STORE_UNSPECIFIED); err != nil {
 			closeConnections(connections)
 			return nil, nil, err
 		}

@@ -8,20 +8,24 @@ import (
 	"net/http"
 	"time"
 
+	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
+
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 )
 
 type ComponentStatus struct {
-	Name      string    `json:"name"`
-	State     string    `json:"state"`
-	Detail    *string   `json:"detail"`
-	CheckedAt time.Time `json:"checked_at"`
+	JournalStore apppb.JournalStore
+	Name         string    `json:"name"`
+	State        string    `json:"state"`
+	Detail       *string   `json:"detail"`
+	CheckedAt    time.Time `json:"checked_at"`
 }
 
 type Probe struct {
-	Name  string
-	Check func(context.Context) error
+	JournalStore apppb.JournalStore
+	Name         string
+	Check        func(context.Context) error
 }
 
 func GRPCHealthProbe(name string, connection healthpb.HealthClient) Probe {
@@ -81,7 +85,7 @@ func (c *Checker) CheckAll(ctx context.Context) []ComponentStatus {
 			checkCtx, cancel := context.WithTimeout(ctx, c.timeout)
 			err := probe.Check(checkCtx)
 			cancel()
-			result := ComponentStatus{Name: probe.Name, State: "ok", CheckedAt: c.now().UTC()}
+			result := ComponentStatus{JournalStore: probe.JournalStore, Name: probe.Name, State: "ok", CheckedAt: c.now().UTC()}
 			if err != nil {
 				result.State = "down"
 				detail := errorDetail(err, c.timeout)

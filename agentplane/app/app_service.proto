@@ -139,7 +139,15 @@ message GetSystemStatusResponse {
   repeated SystemComponentStatus components = 1;
 }
 
+enum JournalStore {
+  JOURNAL_STORE_UNSPECIFIED = 0;
+  JOURNAL_STORE_HISTORY = 1;
+  JOURNAL_STORE_SAMPLER = 2;
+}
+
 message SystemComponentStatus {
+  // Identifies the optional storage measurement belonging to this component.
+  JournalStore journal_store = 5;
   string name = 1;
   SystemComponentState state = 2;
   optional string detail = 3;

@@ -104,7 +104,7 @@ flowchart LR
     browser -->|HTTPS, one origin| httpsGateway
     httpsGateway -->|HTML, assets and service worker| frontend
     httpsGateway -->|API, auth and streams| app
-    app -->|App SVID mTLS: aggregate journal storage measurement| sampler
+    app -->|App SVID mTLS: health and aggregate journal storage measurement| sampler
     app -->|App SVID mTLS via sessions:8080: Dispatcher commands, WatchSessions and archive GetSession| gw
     app -->|App SVID mTLS via environments:8082: EnvironmentService, diagnostics and health| sandboxctl
     app -->|service SVID mTLS: History reads| hs

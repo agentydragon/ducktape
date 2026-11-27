@@ -4,7 +4,7 @@ import { type JSX, useEffect, useState } from "react";
 
 import { displayableError } from "../transport/client";
 import { getJournalStats, getSystemStatus, type CheckedComponentStatus } from "./system_status_client";
-import { SystemComponentState, type GetJournalStatsResponse } from "../../app_service_pb";
+import { JournalStore, SystemComponentState, type GetJournalStatsResponse } from "../../app_service_pb";
 import { TimeAgo } from "../ui/time_ago";
 import { TopbarTitle } from "../shell/topbar";
 import "./system.css";
@@ -13,6 +13,7 @@ const REFRESH_SECONDS = 15;
 
 /** Whether each service the app depends on answers a health check, as the app itself sees it. */
 export function SystemStatus(): JSX.Element {
+  const journal = useJournalStats();
   const [components, setComponents] = useState<CheckedComponentStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,39 +68,53 @@ export function SystemStatus(): JSX.Element {
               <Table.Th>Checked</Table.Th>
             </Table.Tr>
           </Table.Thead>
-          <Table.Tbody>
-            {components.map((component) => (
-              <Table.Tr key={component.name}>
-                <Table.Td className="agentplane-system-status-component">{component.name}</Table.Td>
-                <Table.Td className="agentplane-system-status-state">
-                  <span className="agentplane-system-status-mobile-label">Status: </span>
-                  {/* Keep the status readable if its table cell gets narrower than the badge label. */}
-                  <Badge color={component.state === SystemComponentState.OK ? "green" : "red"} miw="max-content">
-                    {component.state === SystemComponentState.OK ? "ok" : "down"}
-                  </Badge>
-                </Table.Td>
-                <Table.Td
-                  className="agentplane-system-status-detail"
-                  data-empty={component.detail === undefined ? "true" : "false"}
-                  style={{ overflowWrap: "anywhere" }}
-                >
-                  {component.detail !== undefined && (
-                    <>
-                      <span className="agentplane-system-status-mobile-label">Detail: </span>
-                      {component.detail}
-                    </>
-                  )}
-                </Table.Td>
-                <Table.Td className="agentplane-system-status-checked">
-                  <span className="agentplane-system-status-mobile-label">Checked: </span>
-                  <TimeAgo value={timestampDate(component.checkedAt)} />
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
+          {components.map((component) => {
+            const store =
+              component.journalStore === JournalStore.HISTORY
+                ? "history"
+                : component.journalStore === JournalStore.SAMPLER
+                  ? "sampler"
+                  : undefined;
+            return (
+              <Table.Tbody key={component.name}>
+                <Table.Tr>
+                  <Table.Td className="agentplane-system-status-component">{component.name}</Table.Td>
+                  <Table.Td className="agentplane-system-status-state">
+                    <span className="agentplane-system-status-mobile-label">Status: </span>
+                    {/* Keep the status readable if its table cell gets narrower than the badge label. */}
+                    <Badge color={component.state === SystemComponentState.OK ? "green" : "red"} miw="max-content">
+                      {component.state === SystemComponentState.OK ? "ok" : "down"}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td
+                    className="agentplane-system-status-detail"
+                    data-empty={component.detail === undefined ? "true" : "false"}
+                    style={{ overflowWrap: "anywhere" }}
+                  >
+                    {component.detail !== undefined && (
+                      <>
+                        <span className="agentplane-system-status-mobile-label">Detail: </span>
+                        {component.detail}
+                      </>
+                    )}
+                  </Table.Td>
+                  <Table.Td className="agentplane-system-status-checked">
+                    <span className="agentplane-system-status-mobile-label">Checked: </span>
+                    <TimeAgo value={timestampDate(component.checkedAt)} />
+                  </Table.Td>
+                </Table.Tr>
+                {store !== undefined && (
+                  <Table.Tr className="agentplane-system-storage-row">
+                    <Table.Td colSpan={4}>
+                      <JournalStorage store={store} journal={journal} />
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+              </Table.Tbody>
+            );
+          })}
         </Table>
       )}
-      <JournalStorage />
     </Stack>
   );
 }
@@ -119,7 +134,8 @@ function bytes(n: bigint | undefined): string {
   return `${tenths / 10n}.${tenths % 10n} ${units[unit]}`;
 }
 
-function JournalStorage(): JSX.Element {
+type JournalRead = { stats: GetJournalStatsResponse | undefined; error: string | undefined };
+function useJournalStats(): JournalRead {
   const [stats, setStats] = useState<GetJournalStatsResponse>();
   const [error, setError] = useState<string>();
   useEffect(() => {
@@ -144,81 +160,79 @@ function JournalStorage(): JSX.Element {
       window.clearTimeout(timer);
     };
   }, []);
+  return { stats, error };
+}
+
+function JournalStorage({
+  store,
+  journal: { stats, error },
+}: {
+  store: "sampler" | "history";
+  journal: JournalRead;
+}): JSX.Element {
+  const m = stats?.[store];
+  const at = m?.measuredAt && timestampDate(m.measuredAt);
   return (
-    <Stack gap="sm">
-      <Title order={2} size="h4">
+    <Stack gap={4}>
+      <Text fw={600} size="sm">
         Journal storage
-      </Title>
-      <Text size="sm" c="dimmed">
-        Measured every five minutes. Stored sizes include block headers. APB includes new and compacted blocks.
       </Text>
       {error !== undefined && (
         <Text size="sm" c="red" role="alert">
           Could not refresh journal storage: {error}
         </Text>
       )}
-      {stats === undefined
-        ? error === undefined && <Text size="sm">Loading journal storage…</Text>
-        : (["sampler", "history"] as const).map((store) => {
-            const m = stats[store];
-            const at = m?.measuredAt && timestampDate(m.measuredAt);
-            return (
-              <Stack key={store} gap={4}>
-                <Title order={3} size="sm">
-                  {store === "sampler" ? "Sampler" : "History"}
-                </Title>
-                {m === undefined || at === undefined ? (
-                  <Text size="sm" c="dimmed">
-                    No measurement available
-                  </Text>
-                ) : (
-                  <>
-                    <Text size="sm">
-                      {m.sessions.toLocaleString()} sessions · {m.legacySessions.toLocaleString()} with legacy gzip ·
-                      Measured <TimeAgo value={at} />
-                      {Date.now() - at.getTime() > 10 * 60_000 && " (stale)"}
-                    </Text>
-                    <Table aria-label={store + " journal storage"}>
-                      <Table.Thead>
-                        <Table.Tr>
-                          {["Format", "Blocks", "Stored", "Uncompressed"].map((h) => (
-                            <Table.Th key={h}>{h}</Table.Th>
-                          ))}
-                        </Table.Tr>
-                      </Table.Thead>
-                      <Table.Tbody>
-                        {(
-                          [
-                            ["APB v1", m.apbBlocks, m.apbBytes, m.apbUncompressedBytes],
-                            ["Legacy gzip", m.legacyBlocks, m.legacyBytes, m.legacyUncompressedBytes],
-                            [
-                              "All formats",
-                              m.blocks,
-                              m.storedBytes,
-                              m.classifiedBlocks === m.blocks &&
-                              m.apbUncompressedBytes !== undefined &&
-                              m.legacyUncompressedBytes !== undefined
-                                ? m.apbUncompressedBytes + m.legacyUncompressedBytes
-                                : undefined,
-                            ],
-                          ] as const
-                        ).map(([format, count, stored, raw]) => (
-                          <Table.Tr key={format}>
-                            <Table.Th>{format}</Table.Th>
-                            <Table.Td>{count.toLocaleString()}</Table.Td>
-                            <Table.Td title={stored.toLocaleString() + " bytes"}>{bytes(stored)}</Table.Td>
-                            <Table.Td title={raw === undefined ? undefined : raw.toLocaleString() + " bytes"}>
-                              {bytes(raw)}
-                            </Table.Td>
-                          </Table.Tr>
-                        ))}
-                      </Table.Tbody>
-                    </Table>
-                  </>
-                )}
-              </Stack>
-            );
-          })}
+      {stats === undefined ? (
+        error === undefined && <Text size="sm">Loading journal storage…</Text>
+      ) : m === undefined || at === undefined ? (
+        <Text size="sm" c="dimmed">
+          No measurement available
+        </Text>
+      ) : (
+        <>
+          <Text size="sm">
+            {m.sessions.toLocaleString()} sessions · {m.legacySessions.toLocaleString()} with legacy gzip · Measured{" "}
+            <TimeAgo value={at} />
+            {Date.now() - at.getTime() > 10 * 60_000 && " (stale)"}
+          </Text>
+          <Table horizontalSpacing="xs" aria-label={store + " journal storage"}>
+            <Table.Thead>
+              <Table.Tr>
+                {["Format", "Blocks", "Stored", "Uncompressed"].map((h) => (
+                  <Table.Th key={h}>{h}</Table.Th>
+                ))}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {(
+                [
+                  ["APB v1", m.apbBlocks, m.apbBytes, m.apbUncompressedBytes],
+                  ["Legacy gzip", m.legacyBlocks, m.legacyBytes, m.legacyUncompressedBytes],
+                  [
+                    "All formats",
+                    m.blocks,
+                    m.storedBytes,
+                    m.classifiedBlocks === m.blocks &&
+                    m.apbUncompressedBytes !== undefined &&
+                    m.legacyUncompressedBytes !== undefined
+                      ? m.apbUncompressedBytes + m.legacyUncompressedBytes
+                      : undefined,
+                  ],
+                ] as const
+              ).map(([format, count, stored, raw]) => (
+                <Table.Tr key={format}>
+                  <Table.Th>{format}</Table.Th>
+                  <Table.Td>{count.toLocaleString()}</Table.Td>
+                  <Table.Td title={stored.toLocaleString() + " bytes"}>{bytes(stored)}</Table.Td>
+                  <Table.Td title={raw === undefined ? undefined : raw.toLocaleString() + " bytes"}>
+                    {bytes(raw)}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </>
+      )}
     </Stack>
   );
 }
