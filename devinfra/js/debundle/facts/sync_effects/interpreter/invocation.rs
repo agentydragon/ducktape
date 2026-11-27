@@ -124,6 +124,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         );
     }
 
+    /// The values a parameter receives: the argument in its position, or
+    /// `undefined` when the call passed fewer arguments, plus whatever its default
+    /// evaluates to once the incoming value can still be `undefined`.
+    fn parameter_values(
+        &mut self,
+        parameter: &Parameter,
+        args: &[Values],
+        index: usize,
+        env: &Context,
+    ) -> Values {
+        let mut values = args
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
+        if let Some(default) = &parameter.default
+            && may_be_undefined(&values)
+        {
+            values.remove(&AbstractValue::UNDEFINED);
+            values.extend(self.evaluate(default, env, env));
+        }
+        values
+    }
+
     /// A parameter's incoming value, or a captured value, enters the
     /// environment without a store; publish it where the binding is
     /// untracked, as a store would. A pattern parameter's bindings have no
@@ -153,16 +176,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if parameter.binding.is_some() {
                 continue;
             }
-            let mut values = args
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
-            if let Some(default) = &parameter.default
-                && may_be_undefined(&values)
-            {
-                values.remove(&AbstractValue::UNDEFINED);
-                values.extend(self.evaluate(default, env, env));
-            }
+            let values = self.parameter_values(parameter, args, index, env);
             // Bind each pattern binding to its projection of the incoming
             // value. A part the pattern or the projection loses to unknown
             // is published with the whole value.
@@ -205,16 +219,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if !parameter.pattern_iterates {
                 continue;
             }
-            let mut values = args
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
-            if let Some(default) = &parameter.default
-                && may_be_undefined(&values)
-            {
-                values.remove(&AbstractValue::UNDEFINED);
-                values.extend(self.evaluate(default, env, env));
-            }
+            let values = self.parameter_values(parameter, args, index, env);
             self.run_iterator_protocol(&values, callable.owner, outcome);
             if parameter.pattern_iterates_part {
                 self.run_iterator_protocol(&unknown(), callable.owner, outcome);
@@ -795,16 +800,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .enumerate()
             .filter(|_| !ordered_prologue)
         {
-            let mut values = args
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| Values::from([AbstractValue::UNDEFINED]));
-            if let Some(default) = &param.default
-                && may_be_undefined(&values)
-            {
-                values.remove(&AbstractValue::UNDEFINED);
-                values.extend(self.evaluate(default, env, env));
-            }
+            let values = self.parameter_values(param, args, index, env);
             if let Some(binding) = &param.binding {
                 env.insert(binding.clone(), values);
             }
