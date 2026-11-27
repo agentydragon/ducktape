@@ -8,6 +8,13 @@ and delete this file when it is empty.
 Deferred by the operator: ACTIONS-6 / CROSS-8 (`reader.KubernetesIdentities` is test-only), which waits for the
 consolidation of the PolicyService Identity test fakes.
 
+Rejected by the operator, do not re-propose:
+
+- INFRA-1 (refuse `..`/`%2F` paths under path-scoped egress rules, #20377): the rule writer constrains paths when a
+  target is vulnerable to traversal.
+- CROSS-10 (generate the Go SPIFFE service roster from Python `config.py`, #20407): wrong direction. Python configures
+  Go and must not be Go's source of truth; the subsystem is expected to move to proto configs.
+
 ## `env/`
 
 ### ENV-6 `Runtime.facts()` has an always-true branch, duplicated blocker appends, and two sources for "Admission"
