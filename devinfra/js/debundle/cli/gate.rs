@@ -840,10 +840,7 @@ pub(crate) fn load_blocking_sccs(path: &Path) -> Result<Vec<BlockingSccEntry>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let text =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_str(&text)
-        .with_context(|| format!("parsing blocking-SCC report {}", path.display()))
+    report_io::read_json(path)
 }
 
 fn run_list(args: GateListArgs, output: &mut dyn std::io::Write) -> Result<()> {

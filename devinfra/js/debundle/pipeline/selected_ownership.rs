@@ -58,7 +58,7 @@ impl SelectedOwnershipProgram {
             .filter(|(_, modules)| !modules.is_empty())
             .map(|(chunk, _)| chunk.clone())
             .collect();
-        let mut options = audit_options();
+        let mut options = TransformRunOptions::dry_run();
         options.ownership_subset = Some(baseline);
         options.ownership_subset_input = Some(OwnershipSubsetInput {
             path: path.to_path_buf(),

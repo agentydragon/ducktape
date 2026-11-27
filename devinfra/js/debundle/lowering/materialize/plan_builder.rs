@@ -8,7 +8,7 @@ use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
 use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
 use crate::plans::ModulePlan;
-use crate::util::target_file_for_request;
+use crate::target_paths::target_file_for_request;
 use analysis::{
     BindingCatalogue, BindingKind, EntryDestination, ImportedSourceTarget, ModuleId, ModuleRole,
     top_level_id,

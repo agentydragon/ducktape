@@ -24,15 +24,15 @@ use anyhow::{Context, Result, anyhow, bail};
 use selector_outcome::SelectorKind;
 use serde::Deserialize;
 
-use crate::candidate_assessment::{EffectAssessmentUnavailable, ResolvedCandidateEffectAssessment};
+use candidate_assessment::{EffectAssessmentUnavailable, ResolvedCandidateEffectAssessment};
 use spec::annotations::{BindingAnnotation, SourceMatchBinding, SourceMatchClaim};
 use spec::member_selectors::{Member, MemberSelectorSpec};
 use spec::{LogicalModule, ModulePath, SourceMatchBindingDetail, is_residual_namespace_path};
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 use yaml_edit::write_yaml_atomic;
 
-use crate::edit_gate::{CheckedImportOrder, Gate, post_edit_spec_from_docs};
-use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
+use edit_gate::{CheckedImportOrder, Gate, ModuleDocs, load_module_docs, post_edit_spec_from_docs};
+use outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 /// The source of a binding's current spec identity.
 ///
@@ -80,21 +80,21 @@ pub struct BindingLabel {
 }
 
 impl BindingLabel {
-    pub(crate) fn new(identity: BindingIdentity, readable_name: Option<String>) -> Self {
+    pub fn new(identity: BindingIdentity, readable_name: Option<String>) -> Self {
         Self {
             identity,
             readable_name,
         }
     }
 
-    pub(crate) fn effective_name(&self) -> &str {
+    pub fn effective_name(&self) -> &str {
         self.readable_name
             .as_deref()
             .or_else(|| self.identity.selector_identifier())
             .expect("a listed binding has an identity or readable name")
     }
 
-    pub(crate) fn is_renamed(&self) -> bool {
+    pub fn is_renamed(&self) -> bool {
         self.readable_name.is_some()
     }
 
@@ -139,20 +139,6 @@ impl BindingLocation {
     }
 }
 
-pub(crate) type ModuleDocs = BTreeMap<String, (PathBuf, LogicalModule)>;
-
-/// Load one planning snapshot for resolution, collision checks, and edits.
-/// Batch persistence compares against this same pre-edit snapshot.
-pub fn load_module_docs(modules_root: &Path) -> Result<ModuleDocs> {
-    let mut docs = BTreeMap::new();
-    for file in collect_module_files(modules_root)? {
-        let module_path = module_path_from_file(&file, modules_root);
-        let doc = read_module_file(&file)?;
-        docs.insert(module_path, (file, doc));
-    }
-    Ok(docs)
-}
-
 /// Compare typed semantics so omitted defaults do not rewrite unrelated files.
 fn apply_module_edit(
     file: &Path,
@@ -170,7 +156,7 @@ fn apply_module_edit(
     Ok(true)
 }
 
-pub(crate) fn binding_matches_in_doc(
+pub fn binding_matches_in_doc(
     file: &Path,
     module_path: &str,
     doc: &LogicalModule,
@@ -233,18 +219,18 @@ pub(crate) fn binding_matches_in_doc(
     out
 }
 
-pub(crate) fn binding_effective_name(label: &BindingLabel) -> &str {
+pub fn binding_effective_name(label: &BindingLabel) -> &str {
     label.effective_name()
 }
 
-pub(crate) fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
+pub fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
     match binding {
         SourceMatchBinding::Local(_) => None,
         SourceMatchBinding::Detailed(detail) => detail.name.clone().filter(|name| !name.is_empty()),
     }
 }
 
-pub(crate) fn matches_in_docs(docs: &ModuleDocs, sym: &str) -> Vec<BindingMatch> {
+pub fn matches_in_docs(docs: &ModuleDocs, sym: &str) -> Vec<BindingMatch> {
     let mut matches = Vec::new();
     for (module, (file, doc)) in docs {
         matches.extend(binding_matches_in_doc(file, module, doc));
@@ -936,7 +922,7 @@ pub fn run_bindings_assign(
             if no_moves {
                 GateOutcome::NotRequired
             } else {
-                gate.outcome()
+                GateOutcome::from(&gate)
             },
             effect_relocation_assessment.as_ref(),
             files_written,
@@ -992,7 +978,7 @@ impl PulledBinding {
 /// [`ModulePath::parse`] normalization the spec pipeline applies
 /// (lowercasing, traversal rejection), so `UI/Widgets` and
 /// `ui/widgets` cannot fork into two case-variant files.
-pub(crate) fn canonical_module_path(raw: &str) -> Result<String> {
+pub fn canonical_module_path(raw: &str) -> Result<String> {
     Ok(ModulePath::parse(raw, "")
         .map_err(|err| anyhow!("invalid destination module: {err}"))?
         .as_str()
@@ -1003,7 +989,7 @@ pub(crate) fn canonical_module_path(raw: &str) -> Result<String> {
 /// set, else the direct `selector.binding.name`. `bindings rename` and
 /// `bindings assign` share this predicate so both treat the current spec
 /// identity as a claimed name.
-pub(crate) fn member_effective_name(member: &Member) -> Option<String> {
+pub fn member_effective_name(member: &Member) -> Option<String> {
     member
         .name
         .clone()
@@ -1011,7 +997,7 @@ pub(crate) fn member_effective_name(member: &Member) -> Option<String> {
         .or_else(|| member_selector_binding_name(member))
 }
 
-pub(crate) fn insert_annotation(
+pub fn insert_annotation(
     doc: &mut LogicalModule,
     export_name: &str,
     annotation: Option<BindingAnnotation>,
@@ -1045,7 +1031,7 @@ fn member_selector_binding_name(member: &Member) -> Option<String> {
 /// carries a module-level `comment:` or `note:`, `source_matches:`, `annotations:`,
 /// or `anonymous_statements:` (all of which are spec content the sweep must
 /// not destroy).
-pub(crate) fn drained_source_modules(
+pub fn drained_source_modules(
     docs: &ModuleDocs,
     move_sources: &BTreeSet<String>,
 ) -> BTreeSet<String> {
@@ -1068,7 +1054,7 @@ pub(crate) fn drained_source_modules(
 /// FIRST, then delete the drained sources — so an interrupted batch
 /// can never lose a member that was not yet spliced into its
 /// destination on disk.
-pub(crate) fn apply_doc_changes(
+pub fn apply_doc_changes(
     original_docs: &ModuleDocs,
     docs: &ModuleDocs,
     to_delete: &BTreeSet<String>,
@@ -1098,7 +1084,7 @@ pub(crate) fn apply_doc_changes(
 
 /// Extract entries of one per-module list (`list` selects it) by snapshot
 /// identity without null sentinels or repeated Vec removals.
-pub(crate) fn take_indexed<T>(
+pub fn take_indexed<T>(
     docs: &mut ModuleDocs,
     identities: impl IntoIterator<Item = (String, usize)>,
     list: impl Fn(&mut LogicalModule) -> &mut Vec<T>,
@@ -1126,7 +1112,7 @@ pub(crate) fn take_indexed<T>(
 /// indices. The unselected bindings remain in the source claim. A fully moved
 /// claim disappears, while each selected binding carries its original template
 /// and claim-level note for destination grouping.
-pub(crate) fn take_source_match_bindings(
+pub fn take_source_match_bindings(
     docs: &mut ModuleDocs,
     identities: impl IntoIterator<Item = (String, usize, usize)>,
 ) -> BTreeMap<(String, usize, usize), SourceMatchClaim> {
@@ -1319,7 +1305,7 @@ pub fn run_bindings_unassign(
             if no_symbols {
                 GateOutcome::NotRequired
             } else {
-                gate.outcome()
+                GateOutcome::from(&gate)
             },
             effect_relocation_assessment.as_ref(),
             files_written,

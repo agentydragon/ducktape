@@ -431,7 +431,7 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
 /// would attribute `B`'s read of `X` to `mod_a` (the first
 /// declared name's source_unit), inventing or hiding cycles. The
 /// emitter splits the same comma-lists separately at lower-time
-/// (`split_var_decl` in `lowering/util.rs`); this pre-split
+/// (`split_var_decl` in `lowering/declaration_split.rs`); this pre-split
 /// just teaches the analyzer the same view.
 pub fn analyze_chunk(
     module: &Module,
