@@ -4074,3 +4074,26 @@ lean_proof_test(
     required_theorems = ["CoreJS.LinkedPrimitiveAwait.noCuts_agree"],
     deps = [":corejs_linked_primitive_await"],
 )
+
+lean_library(
+    name = "corejs_primitive_await_correspondence",
+    srcs = ["EsmSplit/CoreJS/PrimitiveAwaitCorrespondence.lean"],
+    deps = [
+        ":corejs_primitive_await",
+        ":corejs_scope",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_primitive_await_correspondence_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PrimitiveAwaitCorrespondence"],
+    required_theorems = [
+        "CoreJS.PrimitiveAwait.Job.capture_corresponds",
+        "CoreJS.PrimitiveAwait.drain_corresponds",
+        "CoreJS.PrimitiveAwait.onResume_capture",
+        "CoreJS.PrimitiveAwait.onResume_corresponds",
+        "CoreJS.PrimitiveAwait.runJob_corresponds",
+    ],
+    deps = [":corejs_primitive_await_correspondence"],
+)

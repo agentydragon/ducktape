@@ -81,6 +81,10 @@ private def runPair : IO Json := do
   let duringTurn ← traceAt env caller
   unless isPending caller.state left && isPending caller.state right do
     throw (IO.userError "the caller did not see two pending promises")
+  let [first, second] := caller.jobs | throw (IO.userError "expected both queued jobs")
+  unless first.env.vars.lookup "marker" == none && second.env.vars.lookup "payload" == none &&
+      first.env.vars.lookup "payload" == some cell && second.env.vars.lookup "marker" == some marker do
+    throw (IO.userError "queued continuation did not keep precisely its live binding addresses")
   -- End the caller's allocation phase. Resume in the saved region, then restore this one.
   let caller := { caller with state := { caller.state with region := 2 } }
   let (.paused, one) ← expectOk (drain 60 1 caller) | throw (IO.userError "expected one remaining job")
@@ -96,6 +100,21 @@ private def runPair : IO Json := do
   return Json.mkObj [("duringTurn", toJson duringTurn), ("afterDrain", toJson afterDrain),
     ("fresh", toJson (left != right)), ("rejectionIdentity", toJson (reason == payload)),
     ("value", toJson value)]
+
+private def refusalKeepsTail : IO Unit := do
+  let (env, turn) ← withTrace
+  let (.obj first, turn) ← expectOk
+    (launchFrom env "a" (.num 0) [addTrace "A", .ret (.obj [])] turn) |
+    throw (IO.userError "expected first pending Promise")
+  let (.obj second, turn) ← expectOk
+    (launchFrom env "b" (.num 0) [addTrace "B"] turn) |
+    throw (IO.userError "expected second pending Promise")
+  let .unknown "async object resolution requires thenable semantics" refused :=
+    drain 60 2 turn | throw (IO.userError "unsupported settlement must stop the drain")
+  let [tail] := refused.jobs | throw (IO.userError "refusal lost or ran the remaining job")
+  unless tail.promise == second && isPending refused.state first && isPending refused.state second &&
+      (← traceAt env refused) == "abA" do
+    throw (IO.userError "refusal did not retain the writes and FIFO tail")
 
 private def unsupported : IO Unit := do
   let (env, turn) ← withTrace
@@ -115,6 +134,7 @@ private def unsupported : IO Unit := do
 
 def main : IO Unit := do
   unsupported
+  refusalKeepsTail
   let single ← runSingle
   let pair ← runPair
   IO.println (Json.mkObj [("single", single), ("pair", pair)]).compress

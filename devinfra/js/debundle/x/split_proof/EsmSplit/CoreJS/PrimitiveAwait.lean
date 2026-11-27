@@ -7,7 +7,7 @@ runs the prefix synchronously and keeps the returned pending Promise and the
 queue. Only a separate drain runs a continuation. This scheduler is not a
 host checkpoint and is not wired into ordinary module evaluation.
 
-The continuation is a statement list and the activation's live environment,
+The continuation is a statement list and the activation's live captures,
 not a snapshot of the heap or a Lean closure. The awaiting activation keeps
 its allocation region across the cut. Awaited objects, including thenables
 and Promises, have no rule here.
@@ -27,6 +27,11 @@ structure Job where
   region : Nat
   env : Env
   body : List Stmt
+
+/-- Keep the continuation's receiver and home object, and the addresses of
+the bindings referenced by its remaining code. No binding value is copied. -/
+def Job.capture (job : Job) : Job :=
+  { job with env := job.env.capture (freeStmts job.body) }
 
 structure Turn (W : World) where
   state : State W
@@ -60,7 +65,9 @@ private def suspend (promise : Addr) (operand : Val) (env : Env) (body : List St
     .unknown "await operand requires thenable semantics" turn
   else if !isPending turn.state promise then
     .unknown "model: await requires a pending promise" turn
-  else .ok (.obj promise) { turn with jobs := turn.jobs ++ [⟨promise, turn.state.region, env, body⟩] }
+  else
+    let job : Job := ⟨promise, turn.state.region, env, body⟩
+    .ok (.obj promise) { turn with jobs := turn.jobs ++ [job.capture] }
 
 /-- Allocate once, then run the prefix at smaller fuel. A synchronous throw
 rejects the returned Promise and does not enqueue a continuation. -/
@@ -126,7 +133,7 @@ theorem launch_suspends {prototype promise : Addr} {run : Nat → M W Prefix} {f
     (reached : run fuel allocated = .ok (.suspended operand env body) post)
     (primitive : isPrimitive operand = true) (pending : isPending post promise = true) :
     launch prototype run (fuel + 1) turn =
-      .ok (.obj promise) ⟨post, turn.jobs ++ [⟨promise, post.region, env, body⟩]⟩ := by
+      .ok (.obj promise) ⟨post, turn.jobs ++ [(Job.mk promise post.region env body).capture]⟩ := by
   simp [launch, fresh, reached, suspend, primitive, pending]
 
 theorem drain_paused (fuel : Nat) (s : State W) (job : Job) (rest : List Job) :

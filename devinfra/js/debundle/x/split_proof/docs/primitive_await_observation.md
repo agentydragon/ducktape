@@ -48,3 +48,18 @@ The linked differential also refuses an object operand that would need
 thenable assimilation. The placement test requires the production splitter
 to refuse the authored plan without publishing files. Await admission
 and an end-to-end certificate for an emitted placement are future work.
+
+`PrimitiveAwait.drain_corresponds` now gives the drain part of this claim
+from equal immediate states and ordered corresponding jobs. A corresponding
+job has the same remaining statement list, allocation region and Promise
+address. The shared scope theorem requires the same receiver and home object,
+and equality of the binding addresses used by the remaining code. The
+enqueue rule retains those addresses, not snapshots of their values.
+At every quota and evaluator bound, the drain lemma preserves the outcome,
+complete state (including writes before a rejection or refusal), and any
+remaining ordered queue.
+
+The missing step is to derive the drain lemma's input from linking and
+evaluating the actual published module graph, including correspondence for
+the residual code and its binding addresses. The swapped-call control has
+a different queue order despite the same in-turn observation.
