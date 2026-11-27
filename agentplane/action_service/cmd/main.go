@@ -14,11 +14,8 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"slices"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -60,6 +57,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/servicemain"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
@@ -71,8 +69,6 @@ import (
 )
 
 const (
-	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
-	shutdownGrace = 5 * time.Second
 	// maxConnections and idleConnections size the pool: four kept and two more under load.
 	maxConnections  = 6
 	idleConnections = 4
@@ -667,51 +663,25 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		defer close(worked)
 		dispatcher.Run(working, wakeups)
 	}()
-	failed := make(chan error, 1)
-	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(listener)) }()
-	var result error
-	select {
-	case result = <-failed:
-	case <-ctx.Done():
-		result = ctx.Err()
-	}
-	health.Drain()
-	admission.Drain()
-	drain()
-	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
-	defer cancel()
-	graceful.Stop(stopped, grpcServer)
+	result := graceful.Serve(ctx, graceful.Group{
+		GRPC: []graceful.GRPC{{Name: "gRPC", Server: grpcServer, Listener: listener}},
+		Drain: func() {
+			health.Drain()
+			admission.Drain()
+			drain()
+		},
+	})
 	<-worked
 	supervising.Wait()
 	return result
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	handled, err := migrate.RunOnly(ctx, os.Args[1:], databaseURLSecretEnv, migrations.Up)
-	if err != nil {
-		slog.Error("Action Service migration failed", "error", err)
-		os.Exit(1)
-	}
-	if handled {
-		return
-	}
-	c, err := loadConfig()
-	if err != nil {
-		slog.Error("invalid Action Service configuration", "error", err)
-		os.Exit(2)
-	}
-	shutdownTracing, err := observability.Init(ctx, "action-service")
-	if err != nil {
-		slog.Error("Action Service tracing setup failed", "error", err)
-		os.Exit(1)
-	}
-	err = run(ctx, c)
-	shutdownTracing()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("Action Service stopped", "error", err)
-		os.Exit(1)
-	}
+	servicemain.Main(servicemain.Service[config]{
+		Name:       "Action Service",
+		TraceName:  "action-service",
+		Migrations: servicemain.Migrations{DatabaseURLEnv: databaseURLSecretEnv, Up: migrations.Up},
+		Load:       loadConfig,
+		Run:        run,
+	})
 }

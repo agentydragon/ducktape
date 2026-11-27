@@ -11,9 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -34,12 +32,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/servicemain"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
-
-const shutdownGrace = 5 * time.Second
 
 type readiness struct {
 	*probes.Probes
@@ -147,25 +144,15 @@ func serve(ctx context.Context, c config, rpcTLSListener, httpListener net.Liste
 		defer connection.Close()
 	}
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: 10 * time.Second}
-	failed := make(chan error, 2)
-	go func() { failed <- fmt.Errorf("HTTP listener: %w", server.Serve(httpListener)) }()
-	go func() { failed <- fmt.Errorf("TLS gRPC listener: %w", tlsServer.Serve(rpcTLSListener)) }()
-	var result error
-	select {
-	case result = <-failed:
-	case <-ctx.Done():
-		result = ctx.Err()
-	}
-	health.Drain()
-	gate.Drain()
-	tlsGate.Drain()
-	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
-	defer cancel()
-	if err := server.Shutdown(stopped); err != nil {
-		server.Close()
-	}
-	graceful.Stop(stopped, tlsServer)
-	return result
+	return graceful.Serve(ctx, graceful.Group{
+		GRPC: []graceful.GRPC{{Name: "TLS gRPC", Server: tlsServer, Listener: rpcTLSListener}},
+		HTTP: []graceful.HTTP{{Name: "HTTP", Server: server, Listener: httpListener}},
+		Drain: func() {
+			health.Drain()
+			gate.Drain()
+			tlsGate.Drain()
+		},
+	})
 }
 
 func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB, connectionStore *connections.Store) (*grpc.ClientConn, error) {
@@ -218,30 +205,11 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], databaseURLEnv, migrations.Up); handled {
-		if err != nil {
-			slog.Error("MCP edge migration failed", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
-	c, err := loadConfig()
-	if err != nil {
-		slog.Error("invalid MCP edge configuration", "error", err)
-		os.Exit(2)
-	}
-	shutdownTracing, err := observability.Init(ctx, "mcp-edge")
-	if err != nil {
-		slog.Error("MCP edge tracing setup failed", "error", err)
-		os.Exit(1)
-	}
-	err = run(ctx, c)
-	shutdownTracing()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("MCP edge stopped", "error", err)
-		os.Exit(1)
-	}
+	servicemain.Main(servicemain.Service[config]{
+		Name:       "MCP edge",
+		TraceName:  "mcp-edge",
+		Migrations: servicemain.Migrations{DatabaseURLEnv: databaseURLEnv, Up: migrations.Up},
+		Load:       loadConfig,
+		Run:        run,
+	})
 }

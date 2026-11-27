@@ -50,6 +50,7 @@ go_library(
         "//agentplane/postgres/wakeups",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
+        "//agentplane/servicemain",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "@com_github_lib_pq//:pq",
         "@io_k8s_apimachinery//pkg/runtime",
