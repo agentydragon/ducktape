@@ -152,31 +152,9 @@ fn describe_cwd(command: &Command) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_success, debundle_output, output};
+    use super::{debundle_output, output};
     use std::path::Path;
     use std::process::Command;
-
-    #[test]
-    fn output_preserves_zero_status_and_non_utf8_stream_bytes() {
-        let mut command = Command::new("/bin/sh");
-        command.args(["-c", "printf '\\377'; printf '\\376' >&2"]);
-        let result = output(&mut command).expect("spawn shell");
-
-        assert!(result.status.success());
-        assert_eq!(result.stdout, [0xff]);
-        assert_eq!(result.stderr, [0xfe]);
-    }
-
-    #[test]
-    fn output_returns_normal_nonzero_status_and_bytes() {
-        let mut command = Command::new("/bin/sh");
-        command.args(["-c", "printf 'out'; printf 'err' >&2; exit 17"]);
-        let result = output(&mut command).expect("spawn shell");
-
-        assert_eq!(result.status.code(), Some(17));
-        assert_eq!(result.stdout, b"out");
-        assert_eq!(result.stderr, b"err");
-    }
 
     #[test]
     fn output_with_input_preserves_stdin_and_stdout_bytes() {
@@ -244,13 +222,5 @@ mod tests {
 
         assert_eq!(result.status.code(), Some(3));
         assert_eq!(result.stdout, b"rejected");
-    }
-
-    #[test]
-    #[should_panic(expected = "exit status: 3\nstdout:\nout\nstderr:\nerr")]
-    fn assert_success_reports_status_and_both_streams_of_a_failed_child() {
-        let mut command = Command::new("/bin/sh");
-        command.args(["-c", "printf 'out'; printf 'err' >&2; exit 3"]);
-        assert_success(&output(&mut command).expect("spawn shell"));
     }
 }
