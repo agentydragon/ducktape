@@ -105,3 +105,21 @@ js_test(
     entry_point = "placement_routing_test.mjs",
     env = {"DEBUNDLE_RESOLVER": "$(rootpath //devinfra/js/debundle:debundle_resolve_placement)"},
 )
+
+js_test(
+    name = "prefix_readback_test",
+    size = "medium",
+    data = _RUNNER_DATA + [
+        "run_cases.mjs",
+        "//devinfra/js/debundle",
+        "//devinfra/js/debundle/x/split_proof:prefix_readback_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    entry_point = "prefix_readback_test.mjs",
+    env = dict(
+        _RUNNER_ENV,
+        DEBUNDLE = "$(rootpath //devinfra/js/debundle:debundle)",
+        PREFIX_READBACK = "$(rootpath //devinfra/js/debundle/x/split_proof:prefix_readback_test_runner)",
+        SPLIT_PROOF_MODULE_IO = "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    ),
+)
