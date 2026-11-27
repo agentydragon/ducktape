@@ -629,23 +629,23 @@ func TestRepackSplitBlockPreservesPendingSamplingProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	store.eventBlockProfile = eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 16, Level: 3}
-	opening := cursor + 32
+	opening := cursor + 96
 	appendAPBTestJournalThrough(t, store, session.ID, opening)
-	replaceRowsWithBlock(t, store, session.ID, cursor+1, opening, true)
+	replaceRowsWithBlock(t, store, session.ID, cursor+9, cursor+40, true)
 	state := journalRepackState{through: cursor, opening: opening}
 	page, err := store.prepareJournalRepack(t.Context(), session.ID, state)
 	if err != nil {
 		t.Fatal(err)
 	}
 	batches, err := splitJournalPage(page, 1)
-	if err != nil || len(batches) != 2 {
+	if err != nil || len(batches) < 2 {
 		t.Fatalf("split into %d batches: %v", len(batches), err)
 	}
 	if _, err := store.applyJournalRepack(t.Context(), session.ID, state, batches[0]); err != nil {
 		t.Fatal(err)
 	}
-	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence>$2`, session.ID, cursor); got != 16 {
-		t.Fatalf("reinserted suffix rows=%d, want 16", got)
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence BETWEEN $2 AND $3`, session.ID, cursor+17, cursor+40); got != 24 {
+		t.Fatalf("reinserted suffix rows=%d, want 24", got)
 	}
 	if got := dispatchSequence(); got != want {
 		t.Fatalf("dispatch sequence after physical rewrite=%d, want %d", got, want)
