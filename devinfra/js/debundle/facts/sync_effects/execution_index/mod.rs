@@ -1,9 +1,12 @@
 //! AST collection for synchronous execution: callables, roots, writes, and source order.
 
+mod assignments;
 pub mod bundle_globals;
 pub mod callable_capabilities;
 mod callback_arguments;
+mod calls;
 mod class_value_facts;
+mod declarators;
 mod deferred_global_publication;
 mod foreign_call;
 mod fresh_values;
@@ -17,6 +20,7 @@ pub mod native_operation;
 mod native_point_effects;
 mod native_write_census;
 pub mod noninvoking_initialization;
+mod object_literals;
 pub mod patterns;
 mod property_keys;
 mod prototype_properties;
