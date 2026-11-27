@@ -80,6 +80,11 @@ private def entryFunc : Nat → Func → Bool
 
 end
 
+/-- The concrete statement fragment shared with the adjacent hoist rule.
+It excludes deferred bodies while allowing ordinary calls to modeled values. -/
+def concreteRetainedStatement (stmt : Stmt) : Bool :=
+  entryStmt 128 stmt
+
 private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSplit.Spec)
     (helper : String) (readerOwner : Option String) : Except String Unit := do
   let authored owner (row : Nat × Stmt) := request.claimants B row.1 == [owner]

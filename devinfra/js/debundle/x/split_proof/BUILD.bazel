@@ -1672,6 +1672,7 @@ lean_library(
         ":corejs_constructed_output",
         ":corejs_indexed_checked_split",
         ":corejs_indexed_exported_function",
+        ":corejs_indexed_hoisted_swap",
         ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
         ":corejs_linked_input",
@@ -1889,6 +1890,33 @@ lean_proof_test(
     deps = [":corejs_hoisted_adjacent_swap"],
 )
 
+lean_library(
+    name = "corejs_indexed_hoisted_swap",
+    srcs = ["EsmSplit/CoreJS/IndexedHoistedSwap.lean"],
+    deps = [
+        ":corejs_constructed_output",
+        ":corejs_hoisted_adjacent_swap",
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_exported_function",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+        ":corejs_linked_pivot_check",
+        ":corejs_state_match",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_hoisted_swap_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedHoistedSwap"],
+    required_theorems = [
+        "CoreJS.IndexedHoistedSwap.Construction.checkReadback",
+        "CoreJS.IndexedHoistedSwap.checkBehavior",
+        "CoreJS.IndexedHoistedSwap.construct",
+    ],
+    deps = [":corejs_indexed_hoisted_swap"],
+)
+
 test_runner(
     name = "acorn_hoisted_cycle_test_runner",
     src = "AcornHoistedCycleTest.lean",
@@ -1896,12 +1924,10 @@ test_runner(
     deps = [
         ":cli",
         ":corejs_constructed_output",
-        ":corejs_hoisted_adjacent_swap",
+        ":corejs_indexed_hoisted_swap",
         ":corejs_indexed_input_checks",
         ":corejs_indexed_source_schedule",
         ":corejs_link_world",
-        ":corejs_linked_pivot_check",
-        ":corejs_state_match",
         ":lowersplit_input",
     ],
 )

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -233,7 +233,77 @@ async function checkMiswiredArtifact(request, owner) {
   assert(reread.reason.includes(owner), reread.log);
 }
 
-const acceptedOut = path.join(tmp, "cli-A");
+// Change only the entry export's local cell. The scanner still asks for
+// isNewLine and the two files still form the same cycle.
+function checkScannerCycle(request) {
+  const imports = (file) =>
+    parse(readFileSync(path.join(request.out, file), "utf8"))
+      .ast.body.filter((node) => node.type === "ImportDeclaration")
+      .map((node) => [node.source.value, node.specifiers.map((sp) => [sp.imported.name, sp.local.name])]);
+  assert.deepEqual(imports(scanner), [["./entry.mjs", [["isNewLine", "isNewLine"]]]]);
+  assert.deepEqual(imports(entry), [["./scanner.mjs", [["nextLineBreak", "nextLineBreak"]]]]);
+
+  const wrong = request.out + "-wrong-cell";
+  cpSync(request.out, wrong, { recursive: true });
+  const file = path.join(wrong, entry);
+  const originalBytes = readFileSync(file, "utf8");
+  const exportSpec = parse(originalBytes)
+    .ast.body.find((node) => node.type === "ExportNamedDeclaration")
+    .specifiers.find((sp) => sp.exported.name === "isNewLine");
+  const changed =
+    originalBytes.slice(0, exportSpec.start) + "getLineInfo as isNewLine" + originalBytes.slice(exportSpec.end);
+  writeFileSync(file, changed);
+  const wrongResult = split({ ...request, out: wrong, checkOutput: true });
+  assert.equal(wrongResult.status, "refused", wrongResult.log);
+  assert.match(wrongResult.reason, /entry\.mjs differs from its generated ESTree/);
+  cpSync(wrong, path.join(artifacts, "B-wrong-cell"), { recursive: true });
+  return wrongResult.verdict;
+}
+
+function checkEagerCycle(request, modules, order) {
+  const call = 'getLineInfo("a\\nb", 2);\n';
+  const eagerSource = path.join(artifacts, "B-eager-source.mjs");
+  writeFileSync(eagerSource, code + call);
+  const eagerSpec = path.join(artifacts, "B-eager-spec.json");
+  writeFileSync(
+    eagerSpec,
+    JSON.stringify(
+      { entry, modules: { ...modules, [scanner]: [...modules[scanner], "#6"] }, order, sequential: true },
+      null,
+      2
+    )
+  );
+
+  // Use real emitted files as the basis for the eager control.
+  const eagerDir = path.join(artifacts, "B-eager-node");
+  cpSync(request.out, eagerDir, { recursive: true });
+  const file = path.join(eagerDir, scanner);
+  writeFileSync(file, 'import { getLineInfo } from "./entry.mjs";\n' + readFileSync(file, "utf8") + "\n" + call);
+  const run = (main) => spawnSync(process.execPath, [main], { encoding: "utf8" });
+  const flat = run(eagerSource);
+  const early = run(path.join(eagerDir, entry));
+  assert.ifError(flat.error);
+  assert.ifError(early.error);
+  assert.equal(flat.status, 0, flat.stderr);
+  assert.equal(early.status, 1, early.stderr);
+  assert.match(early.stderr, /TypeError: Position is not a constructor/);
+
+  const refusals = [false, true].map((checkOutput) => {
+    // split snapshots the previous certified B tree and checks that every
+    // byte and file timestamp is unchanged on refusal.
+    const result = split({ ...request, source: eagerSource, spec: eagerSpec, allowExistingOut: true, checkOutput });
+    assert.equal(result.status, "refused", result.log);
+    assert.equal(result.scope, "indexed-hoisted-swap", result.log);
+    assert.equal(result.reasonCode, "no_constructed_rule", result.log);
+    assert.match(
+      result.reason,
+      /authored plan (failed validity checks|changes ordinals beyond the adjacent declaration swap)/
+    );
+    return result.verdict;
+  });
+  return { flatNodeStatus: flat.status, eagerNodeStatus: early.status, refusals };
+}
+
 const results = [];
 for (const [name, moved] of [
   ["A", [a]],
@@ -262,16 +332,20 @@ for (const [name, moved] of [
   writeFileSync(spec, JSON.stringify({ entry, modules, order, sequential: true }, null, 2));
   const request = { source: input, spec, out: path.join(tmp, "cli-" + name), require: "all-outcomes" };
   const result = split(request);
-  if (name !== "B") {
-    assert.equal(result.status, "certified", result.log);
-    assert.equal(result.scope, "indexed-exported-function", result.log);
-    assert.deepEqual(result.files, name === "A" ? [entry, newline] : [entry, newline, scanner]);
-    assert.equal(result.verdict.strategy, "compiled-constructor", result.log);
-    assert.equal(result.guarantee, "all-outcomes", result.log);
-    assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
-    const actual = await readModule(path.join(request.out, entry));
-    assert.deepEqual(Object.keys(actual), publicNames);
-    assert.deepEqual(observe(actual), expected);
+  assert.equal(result.status, "certified", result.log);
+  assert.equal(result.scope, name === "B" ? "indexed-hoisted-swap" : "indexed-exported-function", result.log);
+  assert.deepEqual(result.files, [entry, ...order.toSorted()]);
+  assert.equal(result.verdict.strategy, "compiled-constructor", result.log);
+  assert.equal(result.guarantee, "all-outcomes", result.log);
+  assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
+  const actual = await readModule(path.join(request.out, entry));
+  assert.deepEqual(Object.keys(actual), publicNames);
+  assert.deepEqual(observe(actual), expected);
+  let controls;
+  if (name === "B") {
+    cpSync(request.out, path.join(artifacts, "B-emitted"), { recursive: true });
+    controls = { wrongCell: checkScannerCycle(request), eager: checkEagerCycle(request, modules, order) };
+  } else {
     if (name === "A+B") {
       checkUnionGraph(request.out);
       const swappedSpec = path.join(tmp, "union-swapped-priority.json");
@@ -281,17 +355,8 @@ for (const [name, moved] of [
       assert.equal(swapped.reasonCode, "no_constructed_rule", swapped.log);
     }
     await checkMiswiredArtifact(request, name === "A" ? entry : scanner);
-    assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
-  } else {
-    assert.equal(result.status, "refused", result.log);
-    assert.equal(result.reasonCode, "no_constructed_rule", result.log);
-    assert.equal(result.guarantee, null);
-    // The split helper snapshots the valid A tree during both refusals.
-    for (const checkOutput of [false, true]) {
-      const againstA = split({ ...request, out: acceptedOut, allowExistingOut: true, checkOutput });
-      assert.equal(againstA.status, "refused", againstA.log);
-    }
   }
+  assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
   const row = {
     name,
     sourceSha256,
@@ -302,6 +367,7 @@ for (const [name, moved] of [
     sourceDecoded: true,
     verdict: result.verdict,
     files: result.files,
+    controls,
   };
   results.push(row);
   console.log(JSON.stringify(row));

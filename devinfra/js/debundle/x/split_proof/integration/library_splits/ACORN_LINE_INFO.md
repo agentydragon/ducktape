@@ -50,7 +50,7 @@ and every direct `isNewLine` result, but changes the CRLF result from
 line 2, column 0 to line 1, column 3. The handwritten layouts serve only as
 Node controls. If the CLI certifies, the fixture rechecks the emitted files
 from disk and repeats the same observations through the emitted entry.
-No emitted artifact was available on the measured revisions.
+No emitted artifact was available on the baseline revisions above.
 
 With the ordered predicate extraction constructor, A certifies at
 `all-outcomes` on the same projection and owners. The entry keeps all four
@@ -63,16 +63,31 @@ A+B also certifies with one additional concrete, hoisted function in the
 second owner. The original order remains #22, #23, #35, #36, #38, #446.
 The entry imports the live `isNewLine` and `nextLineBreak` cells; the scanner
 imports the same `isNewLine` cell from the first owner. A and A+B use the same
-ordered execution and exact export proofs. B still refuses because moving
-the scanner alone changes the source order and introduces an entry cycle.
+ordered execution and exact export proofs.
 
-The test checks the physical import aliases, source statements, and public
-export row of the union. Both accepted layouts pass Node and disk readback.
-Replacing the callee identifier with the scanner's own name leaves declarations
-and imports intact and direct `isNewLine` results unchanged, but it changes
-the CRLF position. The disk checker rejects the edited artifact. Reversed
-union priority and the B request both leave an existing certified tree intact.
+With the separate hoisted swap rule, B also certifies at `all-outcomes`.
+The planner and the file graph both evaluate the scanner first: the scanner
+imports the entry's already initialized `isNewLine`, while the entry imports
+the scanner's `nextLineBreak`. The full ordinal schedule is
+`[1, 0, 2, 3, 4, 5]`, including the unchanged export row in the entry. Both
+real links start with equal heaps and cells. In particular, the scanner keeps
+its capture of `isNewLine` at `(1, 0)`, and `getLineInfo` keeps its captures
+of `nextLineBreak` at `(2, 0)` and `Position` at `(3, 0)`. The proof applies
+at the same fuel, even zero, and the stage and disk checks verify the actual
+files and their public live cells.
+
+All three emitted layouts pass the same Node observations and disk readback.
+The test rejects a changed export clause in B that binds the scanner to
+`getLineInfo` instead of `isNewLine`. It also rejects a B request moving an
+extra eager `getLineInfo` call into the scanner: the flat source executes, but
+on the cycle the call reaches `Position` before its initialization. Neither
+negative changes the tree it checks. The independent cycle test reproduces
+the eager difference in CoreJS at fuel 128 and checks the changed capture.
+The A and union controls still reject modified artifacts, and reversed union
+priority still refuses.
 
 ```sh
-bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:acorn_line_info --test_output=all
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p/integration/library_splits:acorn_line_info" "$p/integration/library_splits:acorn_hoisted_cycle_test" \
+  "$p:corejs_indexed_hoisted_swap_axioms_test" --test_output=all
 ```

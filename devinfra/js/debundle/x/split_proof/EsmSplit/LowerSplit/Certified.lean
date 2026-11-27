@@ -3,6 +3,7 @@ import EsmSplit.Cli
 import EsmSplit.CoreJS.ConstructedOutput
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedExportedFunction
+import EsmSplit.CoreJS.IndexedHoistedSwap
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.CoreJS.LinkedInput
@@ -234,6 +235,29 @@ private def rejectDuplicateTerminalSelectors (chunk : DeploymentChunk)
         "terminal-declarations")
     return none
 
+/-- Only the separate exact-swap rule may handle this inversion. Use the
+same authored plan for emission and the independently reparsed modules. -/
+private def runHoistedSwap (spec : Spec) (src : BundleInput)
+    (decoded : CoreJS.AuthenticatedSource.IndexedSource) (bundle : Bundle)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
+  let scope := "indexed-hoisted-swap"
+  let built ← match CoreJS.IndexedHoistedSwap.construct decoded bundle spec with
+    | .ok built => pure built
+    | .error reason =>
+      return ← emitRefusal options.request.label { reason, reasonCode := some "no_constructed_rule" } scope
+  try
+    let programs ← IO.ofExcept (ESTreeEmit.programs decoded.nodes bundle built.plan src.source spec.entry)
+    let part : OutputPart := { programs, source := src.source, input := src.input, work }
+    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+      pure do
+        let _ ← (built.checkReadback files).mapError fun reason => ({ reason } : CertificationRefusal)
+        return ()
+    if let .error refusal := checked then
+      return ← emitRefusal options.request.label refusal scope
+    return ← emitVerdict options.request.label (.ok .allOutcomes) scope [("strategy", toJson "compiled-constructor")]
+  catch e =>
+    return ← emitVerdict options.request.label (.error e.toString) scope
+
 /-- Preserve the original declaration and export row through the staged AST
 check, then decode the reread program before issuing the guarantee. -/
 private def tryExportedFunction (spec : Spec) (src : BundleInput)
@@ -246,7 +270,10 @@ private def tryExportedFunction (spec : Spec) (src : BundleInput)
   let bundle := sourceBundle decoded.nodes
   let built ← match CoreJS.IndexedExportedFunction.construct decoded bundle spec with
     | .ok built => pure built
-    | .error reason => return some (← emitRefusal options.request.label
+    | .error reason =>
+      if CoreJS.IndexedHoistedSwap.recognises decoded bundle spec then
+        return some (← runHoistedSwap spec src decoded bundle out work options timings)
+      return some (← emitRefusal options.request.label
         { reason, reasonCode := some "no_constructed_rule" } scope)
   try
     let programs ← IO.ofExcept (ESTreeEmit.programs decoded.nodes bundle built.schedule.plan src.source spec.entry)

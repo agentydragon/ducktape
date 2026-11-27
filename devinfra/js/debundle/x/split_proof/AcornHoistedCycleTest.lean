@@ -1,34 +1,13 @@
 import EsmSplit.CoreJS.ConstructedOutput
-import EsmSplit.CoreJS.HoistedAdjacentSwap
+import EsmSplit.CoreJS.IndexedHoistedSwap
 import EsmSplit.CoreJS.IndexedInputChecks
 import EsmSplit.CoreJS.IndexedSourceSchedule
 import EsmSplit.CoreJS.LinkWorld
-import EsmSplit.CoreJS.LinkedPivotCheck
-import EsmSplit.CoreJS.StateMatch
 import EsmSplit.Cli
 import EsmSplit.LowerSplit.Input
 
 open Lean (Json toJson)
 open EsmSplit CoreJS CoreJS.LinkedBehavior
-
-/-- Reuse both actual linker equations. The probe's full-state comparator
-certifies equality for every world, including closures and their captures. -/
-private def proveHeadSwap {source candidate : Program} (pair : CheckedProbePair source candidate) :
-    Except String (PLift ((∀ w fuel, runProgram w fuel source = runProgram w fuel candidate) ∧
-      SameExports source candidate)) := do
-  match original : unitsOf pair.before.linked with
-  | (a, .funDecl f, envF) :: (b, .funDecl g, envG) :: tail =>
-    let some ⟨swapped⟩ := sameUnits? ((b, .funDecl g, envG) :: (a, .funDecl f, envF) :: tail)
-        (unitsOf pair.after.linked) |
-      throw "candidate is not the adjacent transposition with identical statement captures"
-    let some ⟨ready⟩ := StateMatch.probe pair.before.ready pair.after.ready |
-      throw "linked ready states differ"
-    if exports : exportsMatchFrom pair.before pair.after = true then
-      return ⟨fun w fuel => HoistedAdjacentSwap.runProgram_eq fuel
-        (pair.before.forWorld w) (pair.after.forWorld w) (congrArg (linkState w) ready)
-        [] tail a b f g envF envG original swapped, pair.sameExports exports⟩
-    else throw "entry exports do not resolve to the same live cells"
-  | _ => throw "source does not begin with two function declarations"
 
 private def expect (pass : Bool) (reason : String) : Except String Unit :=
   unless pass do throw reason
@@ -81,8 +60,7 @@ private def checkEager (input : Json) (candidate : Program) : Except String Json
   let layout : Program := { candidate with modules := candidate.modules.map fun m =>
     if m.name == "scanner.mjs" then { m with body := m.body ++ [(6, stmt)] } else m }
   let eager ← ConstructedOutput.decodeConstructedOutput (← input.getObjVal? "eagerFiles") layout
-  let pair ← checkProbePair source.program eager
-  let reason ← match proveHeadSwap pair with
+  let reason ← match IndexedHoistedSwap.checkBehavior source.program eager with
     | .error reason => pure reason
     | .ok _ => throw "accepted an eager call across Position initialization"
   let fuel := 128
@@ -114,7 +92,7 @@ private def check (input : Json) : Except String Json := do
   expect (decide (candidate.regions = decoded.program.regions)) "allocation regions differ"
   let _ ← ConstructedOutput.checkConstructedOutput (← input.getObjVal? "files") candidate
   let pair ← checkProbePair decoded.program candidate
-  let _ ← proveHeadSwap pair
+  let _ ← IndexedHoistedSwap.checkBehavior decoded.program candidate
   let sourceCells ← audit pair.before "entry.mjs"
   let candidateCells ← audit pair.after "scanner.mjs"
   let wrong ← ConstructedOutput.decodeConstructedOutput (← input.getObjVal? "wrongFiles") candidate
@@ -124,7 +102,7 @@ private def check (input : Json) : Except String Json := do
   let wrongClosure ← closureAt wrongPair.after.ready scan
   expect (decide (wrongCapture = ⟨5, 0⟩ ∧ wrongClosure.vars.lookup "isNewLine" = some wrongCapture))
     "wrong-cell control did not capture getLineInfo"
-  let wrongReason ← match proveHeadSwap wrongPair with
+  let wrongReason ← match IndexedHoistedSwap.checkBehavior decoded.program wrong with
     | .error reason => pure reason
     | .ok _ => throw "accepted the wrong-cell control"
   let guardReason ← match IndexedSourceSchedule.check decoded bundle spec with
