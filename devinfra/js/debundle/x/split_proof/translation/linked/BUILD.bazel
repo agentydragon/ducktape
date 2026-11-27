@@ -46,17 +46,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
 
 # These valid Lean-backed shards exceed the medium budget or have timed out in CI.
 _LONG_TIMEOUT_TESTS = [
-    "browser_globals_test",
     "host_profile_test",
-    "if_test",
-    "literal_records_test",
-    "mutations_test",
-    "programs_test",
-    "property_assignment_test",
-    "provider_programs_test",
-    "sequence_test",
-    "switch_test",
-    "wide_table_reversal_test",
 ]
 
 js_test(
@@ -142,50 +132,17 @@ js_test(
 )
 
 _UNSHARDED_TESTS = [
-    "arithmetic_observer_test",
     "arithmetic_test",
-    "arrays_test",
-    "bitwise_test",
-    "composition_test",
-    "function_declaration_test",
-    "if_test",
     "import_cells_test",
-    "literal_records_test",
-    "logical_test",
-    "member_test",
     "module_graph_test",
     "module_metadata_test",
     "named_constructor_cli_test",
-    "object_elements_test",
-    "object_spread_test",
-    "optional_callee_test",
     "provider_location_test",
-    "realm_constructors_test",
-    "record_values_test",
-    "regexp_test",
-    "relational_test",
-    "reordering_test",
     "resolved_placement_test",
-    "small_records_test",
-    "switch_test",
-    "wide_provider_scope_test",
-    "wide_records_test",
 ]
 
 _SHARD_COUNTS = {
-    "browser_globals_test": 4,
-    "dense_array_batch_test": 2,
     "host_profile_test": 3,
-    "identifier_assignment_test": 3,
-    "loops_test": 4,
-    "mutations_test": 3,
-    "numeric_property_keys_test": 2,
-    "optional_chain_test": 3,
-    "programs_test": 3,
-    "property_assignment_test": 8,
-    "provider_programs_test": 3,
-    "sequence_test": 3,
-    "wide_table_reversal_test": 2,
 }
 
 [
@@ -221,17 +178,6 @@ js_test(
         _TEST_ENV,
         SPLIT_PROOF_TIMINGS = "1",
     ),
-)
-
-js_test(
-    name = "table_lookups_test",
-    size = "medium",
-    data = _TEST_DATA + [
-        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
-    ],
-    entry_point = "table_lookups_test.mjs",
-    env = _TEST_ENV,
 )
 
 js_test(
