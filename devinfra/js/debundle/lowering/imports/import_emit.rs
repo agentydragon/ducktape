@@ -1,5 +1,5 @@
 use crate::imports::EntryExport;
-use artifact::paths::relative_module_specifier;
+use artifact::paths::{module_path_dirname, relative_module_specifier};
 use js_ast::import_decl_module_item;
 use rename_ledger::{RenameLedger, RenameScope};
 use std::collections::BTreeMap;
@@ -90,12 +90,7 @@ pub(crate) fn preserve_export_specifier_names(item: &mut ModuleItem, renames: &B
 }
 
 pub(crate) fn relative_source(from_file: &str, target_file: &str) -> String {
-    let from_dir = std::path::Path::new(from_file)
-        .parent()
-        .and_then(|parent| parent.to_str())
-        .unwrap_or("")
-        .replace('\\', "/");
-    relative_module_specifier(&from_dir, target_file)
+    relative_module_specifier(&module_path_dirname(from_file), target_file)
 }
 
 pub(crate) fn import_decl_for_plan(
