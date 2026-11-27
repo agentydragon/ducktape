@@ -36,6 +36,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// idleTimeout ends a client connection, or a tunnel, idle between requests. It outlasts the
+// sidecar's 1-minute pool and Go's 90s default, so a client rarely reuses one as it closes.
+const idleTimeout = 2 * time.Minute
+
 // Options is everything the proxy needs to run; none of it has a default.
 type Options struct {
 	TLSPassthroughTargets []string
@@ -80,7 +84,9 @@ func New(options Options) (*Proxy, error) {
 		upstreams: newUpstreams(options.UpstreamRoots),
 	}
 	p.server = &http.Server{
-		Handler: observability.HTTPHandler(http.HandlerFunc(p.serve)), ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
+		Handler: observability.HTTPHandler(http.HandlerFunc(p.serve)), ReadHeaderTimeout: 30 * time.Second,
+		// A hijacked CONNECT has no deadline: idleTimeout applies only between plain requests.
+		IdleTimeout: idleTimeout, ErrorLog: log.New(io.Discard, "", 0),
 		ConnContext: func(ctx context.Context, _ net.Conn) context.Context {
 			return context.WithValue(ctx, connectionIDKey{}, uuid.NewString())
 		},
@@ -217,6 +223,9 @@ func (p *Proxy) serveTunnel(conn net.Conn, buffered *bufio.Reader, authority str
 	protocols.SetUnencryptedHTTP2(true)
 	inner := &http.Server{
 		Protocols: protocols, ErrorLog: log.New(io.Discard, "", 0), ReadHeaderTimeout: 30 * time.Second,
+		// Ends the tunnel once no request has been in flight for idleTimeout; an SSE, WebSocket or
+		// other long response is in flight.
+		IdleTimeout: idleTimeout,
 		Handler: observability.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.Method == http.MethodConnect {
 				http.Error(w, "CONNECT inside a tunnel", http.StatusMethodNotAllowed)

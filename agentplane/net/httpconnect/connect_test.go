@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 )
@@ -58,19 +57,26 @@ func TestOpenPreservesBytesFollowingSuccessfulResponse(t *testing.T) {
 	cancel()
 }
 
-func TestOpenClosesConnectionWhenProxyRefuses(t *testing.T) {
+func TestOpenReturnsTheRefusalAndClosesTheConnection(t *testing.T) {
 	client, server := net.Pipe()
 	defer server.Close()
 	go func() {
 		_, _ = http.ReadRequest(bufio.NewReader(server))
-		_, _ = io.WriteString(server, "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n")
+		_, _ = io.WriteString(server, "HTTP/1.1 407 Proxy Authentication Required\r\nX-Test-Reason: denied\r\nContent-Length: 6\r\n\r\nrefuse")
 	}()
 
-	if _, err := Open(context.Background(), client, "service.test:443", nil); err == nil || !strings.Contains(err.Error(), "407 Proxy Authentication Required") {
+	_, err := Open(context.Background(), client, "service.test:443", nil)
+	var refused *RefusedError
+	if !errors.As(err, &refused) || refused.Response.StatusCode != http.StatusProxyAuthRequired ||
+		refused.Response.Header.Get("X-Test-Reason") != "denied" {
 		t.Fatalf("Open refusal error = %v", err)
 	}
 	if _, err := server.Read(make([]byte, 1)); err == nil {
 		t.Fatal("proxy connection remained open after refusal")
+	}
+	// The body was read before the connection closed.
+	if body, err := io.ReadAll(refused.Response.Body); err != nil || string(body) != "refuse" {
+		t.Fatalf("refusal body = %q, %v", body, err)
 	}
 }
 

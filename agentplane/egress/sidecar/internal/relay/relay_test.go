@@ -40,9 +40,11 @@ type testProxyRequest struct {
 type testCentralProxy struct {
 	listener net.Listener
 	// client is the workload SVID a test sidecar presents, and peer its URI.
-	client      peertls.Config
-	peer        string
-	requests    chan testProxyRequest
+	client   peertls.Config
+	peer     string
+	requests chan testProxyRequest
+	// stallEnded receives once the sidecar closes a hop whose CONNECT to stall.test went unanswered.
+	stallEnded  chan struct{}
 	connections atomic.Int64
 	acceptDone  chan struct{}
 
@@ -77,6 +79,7 @@ func startTestCentralProxy(t *testing.T) *testCentralProxy {
 		client:     ca.IssueWithUsage(t, peer, x509.ExtKeyUsageClientAuth),
 		peer:       peer,
 		requests:   make(chan testProxyRequest, 32),
+		stallEnded: make(chan struct{}, 1),
 		acceptDone: make(chan struct{}),
 		active:     make(map[net.Conn]struct{}),
 	}
@@ -143,6 +146,11 @@ func (p *testCentralProxy) handle(conn net.Conn) {
 		}
 		p.requests <- observed
 		if observed.method == http.MethodConnect {
+			if strings.HasPrefix(observed.target, "stall.test") {
+				_, _ = reader.ReadByte()
+				p.stallEnded <- struct{}{}
+				return
+			}
 			if strings.HasPrefix(observed.target, "refused.test") {
 				_, _ = io.WriteString(conn, "HTTP/1.1 403 Forbidden\r\nx-agentplane-egress: denied; reason=no-rule\r\n\r\n")
 				return
@@ -248,7 +256,7 @@ func serveTestSidecar(t *testing.T, s *sidecar, middleware ...func(http.Handler)
 	for _, wrap := range middleware {
 		handler = wrap(handler)
 	}
-	s.proxyServer = &http.Server{Handler: handler, MaxHeaderBytes: maxHeadBytes}
+	s.proxyServer = newProxyServer(handler)
 	finished := make(chan error, 1)
 	go func() { finished <- s.proxyServer.Serve(&trackingListener{Listener: listener, sidecar: s}) }()
 	t.Cleanup(func() {
@@ -731,6 +739,22 @@ func TestSidecarConnectRefusalIsRelayedAndEndsTheConnection(t *testing.T) {
 	}
 	if _, err := reader.ReadByte(); err != io.EOF {
 		t.Fatalf("after refusal, ReadByte error = %v, want EOF", err)
+	}
+}
+
+func TestSidecarConnectHandshakeEndsWhenTheWorkloadHangsUp(t *testing.T) {
+	central := startTestCentralProxy(t)
+	address := startTestSidecar(t, central)
+	conn := dialSidecar(t, address)
+	if _, err := io.WriteString(conn, "CONNECT stall.test:443 HTTP/1.1\r\nHost: stall.test:443\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	central.nextRequest(t)
+	_ = conn.Close()
+	select {
+	case <-central.stallEnded:
+	case <-time.After(5 * time.Second):
+		t.Fatal("sidecar kept the hop open after the workload hung up")
 	}
 }
 
