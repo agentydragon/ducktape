@@ -40,6 +40,26 @@ graphs. The ordinary CLI certified **0/2** on
 Both returned `no_constructed_rule` without writing a destination. The earlier
 six-row projection's 2/3 result is a separate measurement.
 
+The four-file layout now certifies with exactly the authored priority:
+`newline.mjs`, `scanner.mjs`, `locations.mjs`, then `entry.mjs`.
+The scanner imports `isNewLine`; the locations module has no imports and
+exports the two original constructor bindings for the entry. `getLineInfo`
+uses the imported `Position`, the installed `offset` method captures that
+same binding, and `Node` uses the imported `SourceLocation`. The entry keeps
+the original public row; neither constructor becomes an entry export.
+
+The constructor admits the third owner only for adjacent concrete constructor
+initializations with their prototype write in between. The write runs after
+`Position` is assigned, at its original ordinal. The ordered link and
+execution proof preserves the captured cells and the public table at every
+fuel bound. Swapping the scanner and locations priorities changes the full
+ordinal schedule from `[0,1,2,3,4,5,6,7]` to `[0,2,3,4,1,5,6,7]` and is refused.
+
+The four files pass Node and disk readback. Two disk edits are rejected:
+rebinding `Node` to an equal-valued copy of `SourceLocation` breaks constructor
+identity, and running the prototype write before `Position` initializes
+throws in Node. The wrong-priority request also leaves the valid tree intact.
+
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:acorn_node_location --test_output=all
 ```
