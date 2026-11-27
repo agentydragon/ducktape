@@ -99,6 +99,8 @@ rust_library(
     srcs = [
         "rename_ledger.rs",
         "rename_ledger_proptest.rs",
+        "rename_ledger_seal_checks.rs",
+        "rename_ledger_tests.rs",
     ],
     crate_root = "rename_ledger.rs",
     edition = "2024",
