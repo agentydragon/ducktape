@@ -4,7 +4,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
     newTag: devel-20261126231530-6ac1ef9 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
-    newTag: devel-20261126234746-197b6f4 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
+    newTag: devel-20261127012617-cf1e2de # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environments
     newTag: devel-20261126234750-197b6f4 # {"$imagepolicy": "flux-system:agentplane-environments:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
