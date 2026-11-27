@@ -1868,6 +1868,44 @@ test_runner(
     ],
 )
 
+lean_library(
+    name = "corejs_hoisted_adjacent_swap",
+    srcs = ["EsmSplit/CoreJS/HoistedAdjacentSwap.lean"],
+    deps = [
+        ":corejs_linked_behavior",
+        ":corejs_split",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_hoisted_adjacent_swap_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.HoistedAdjacentSwap"],
+    required_theorems = [
+        "CoreJS.HoistedAdjacentSwap.runUnit_funDecl",
+        "CoreJS.HoistedAdjacentSwap.runUnits_swap",
+        "CoreJS.HoistedAdjacentSwap.runProgram_eq",
+    ],
+    deps = [":corejs_hoisted_adjacent_swap"],
+)
+
+test_runner(
+    name = "acorn_hoisted_cycle_test_runner",
+    src = "AcornHoistedCycleTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":cli",
+        ":corejs_constructed_output",
+        ":corejs_hoisted_adjacent_swap",
+        ":corejs_indexed_input_checks",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+        ":corejs_linked_pivot_check",
+        ":corejs_state_match",
+        ":lowersplit_input",
+    ],
+)
+
 test_runner(
     name = "linked_input_test_runner",
     src = "LinkedInputTest.lean",
