@@ -21,7 +21,7 @@ mod spec_lint;
 mod static_imports;
 
 use analyze_command::AnalyzeArgs;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
 use command_output::{ReportOutputError, write_report};
 use graph_provenance::{CurrentRoots, GraphMismatch};
@@ -48,6 +48,16 @@ use graph_compatibility::{
     GraphCompatibilityScope, VerifiedGraphContexts, verify_graph_compatibility,
     verify_graph_compatibility_with_scope,
 };
+
+/// `--limit 0` is not a smaller request but a request for every row, which
+/// these commands spell `--all`. Their Clap wiring already makes the two flags
+/// conflict, so a zero limit can only be an explicit `--limit 0`.
+pub(crate) fn ensure_explicit_limit(limit: Option<usize>, exhaustive: bool) -> Result<()> {
+    if limit == Some(0) && !exhaustive {
+        bail!("--limit must be greater than zero; use --all for exhaustive results");
+    }
+    Ok(())
+}
 
 fn single_graph_context(
     context: Option<graph_provenance::VerifiedGraphSourceContext>,
