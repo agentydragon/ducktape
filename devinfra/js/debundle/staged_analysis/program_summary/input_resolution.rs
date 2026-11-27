@@ -23,10 +23,8 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use analysis_projection::{AnalysisNativeOperationInput, ChunkAnalysisInputs};
 
-use super::{
-    ProgramSummaryOptions, ResolvedStaticDependencies, chunk_allowed,
-    resolved_closure_precedes_importer,
-};
+use super::static_dependencies::{ResolvedStaticDependencies, resolved_closure_precedes_importer};
+use super::{ProgramSummaryOptions, chunk_allowed};
 
 pub(super) fn resolve_initializer_call_effect_inputs(
     artifact: &ChunkBundle,
