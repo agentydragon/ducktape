@@ -568,40 +568,30 @@ fn read_bytes_with_role(path: &Path, role: ReadRole<'_>) -> Result<Vec<u8>> {
             path: relative,
             sha256: sha256(&bytes),
         };
-        if let Some(previous) = provenance
-            .files
-            .iter()
-            .find(|f| f.root == entry.root && f.path == entry.path)
-        {
-            if previous.sha256 != entry.sha256 {
-                bail!(
-                    "input {} changed during graph analysis; rerun on a stable snapshot",
-                    path.display()
-                );
-            }
-        } else {
-            provenance.files.push(entry);
-        }
+        provenance.record_file(entry, path)?;
     }
     Ok(bytes)
 }
 
+/// Text for bytes already recorded as an input, naming the path the caller read.
+fn to_text(bytes: Vec<u8>, path: &Path) -> Result<String> {
+    String::from_utf8(bytes).with_context(|| format!("{} is not UTF-8", path.display()))
+}
+
 pub fn read_to_string(path: &Path) -> Result<String> {
-    String::from_utf8(read_bytes(path)?).with_context(|| format!("{} is not UTF-8", path.display()))
+    to_text(read_bytes(path)?, path)
 }
 
 /// Source-list and JS chunk reads carry an explicit role when spec and source
 /// roots overlap, so moving only the source root does not silently reuse them.
 pub fn read_source_to_string(path: &Path) -> Result<String> {
-    String::from_utf8(read_bytes_with_role(path, ReadRole::Source)?)
-        .with_context(|| format!("{} is not UTF-8", path.display()))
+    to_text(read_bytes_with_role(path, ReadRole::Source)?, path)
 }
 
 /// Package reads retain the resolver's semantic package name when multiple
 /// names happen to point at the same physical directory.
 pub fn read_package_to_string(name: &str, path: &Path) -> Result<String> {
-    String::from_utf8(read_bytes_with_role(path, ReadRole::Package(name))?)
-        .with_context(|| format!("{} is not UTF-8", path.display()))
+    to_text(read_bytes_with_role(path, ReadRole::Package(name))?, path)
 }
 
 /// Capture the package subpath kind and, for files, its opaque bytes even when
@@ -650,21 +640,7 @@ pub fn record_package_input(name: &str, path: &Path) -> Result<()> {
     let provenance = guard
         .as_mut()
         .context("graph capture ended before package input check")?;
-    if let Some(previous) = provenance
-        .files
-        .iter()
-        .find(|file| file.root == entry.root && file.path == entry.path)
-    {
-        if previous.sha256 != entry.sha256 {
-            bail!(
-                "input {} changed during graph analysis; rerun on a stable snapshot",
-                path.display()
-            );
-        }
-    } else {
-        provenance.files.push(entry);
-    }
-    Ok(())
+    provenance.record_file(entry, path)
 }
 
 pub fn record_chunk_source(
@@ -712,6 +688,27 @@ pub fn yaml_files(directory: &Path) -> Result<Vec<PathBuf>> {
 }
 
 impl GraphProvenance {
+    /// Record one captured input file. The same root and path must keep the same
+    /// bytes for the whole run: a different hash means the tree moved while the
+    /// pipeline was reading it, and the captured graph would not replay.
+    fn record_file(&mut self, entry: InputFile, path: &Path) -> Result<()> {
+        let already_recorded = self
+            .files
+            .iter()
+            .position(|file| file.root == entry.root && file.path == entry.path);
+        match already_recorded {
+            Some(index) if self.files[index].sha256 != entry.sha256 => bail!(
+                "input {} changed during graph analysis; rerun on a stable snapshot",
+                path.display()
+            ),
+            Some(_) => Ok(()),
+            None => {
+                self.files.push(entry);
+                Ok(())
+            }
+        }
+    }
+
     /// The authored flat-spec or tree-config path recorded when the graph was
     /// captured. Flat specs do not populate `config_path`; their canonical
     /// `--spec` argument is retained in the generation command and is already
@@ -729,39 +726,39 @@ impl GraphProvenance {
         Ok(PathBuf::from(spec_arg))
     }
 
-    fn classify_package(&self, name: &str, path: &Path) -> Result<(InputRoot, PathBuf)> {
+    /// Where a read belongs relative to one captured root: bytes inside the
+    /// root are recorded relative to it, and anything else - a symlink leading
+    /// outside, a file that predates the capture - is recorded under its actual
+    /// absolute path, which isolated snapshots reject.
+    fn classify_under(
+        &self,
+        root: InputRoot,
+        root_dir: &Path,
+        path: &Path,
+    ) -> Result<(InputRoot, PathBuf)> {
         let absolute = absolute(path)?;
+        if let Ok(relative) = absolute.strip_prefix(root_dir) {
+            return Ok((root, relative.to_path_buf()));
+        }
+        Ok((InputRoot::Absolute, absolute))
+    }
+
+    fn classify_package(&self, name: &str, path: &Path) -> Result<(InputRoot, PathBuf)> {
         let (root_name, root) = self
             .roots
             .packages
             .get_key_value(name)
             .or_else(|| self.roots.packages.get_key_value(SHARED_PACKAGES_ROOT))
             .with_context(|| format!("missing captured root for package {name}"))?;
-        if let Ok(relative) = absolute.strip_prefix(root) {
-            return Ok((
-                InputRoot::Package(root_name.clone()),
-                relative.to_path_buf(),
-            ));
-        }
-        // A symlink can lead outside the package directory. Record the bytes
-        // under the actual absolute path, which isolated snapshots reject.
-        Ok((InputRoot::Absolute, absolute))
+        self.classify_under(InputRoot::Package(root_name.clone()), root, path)
     }
 
     fn classify_source(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
-        let absolute = absolute(path)?;
-        if let Ok(relative) = absolute.strip_prefix(&self.roots.source) {
-            return Ok((InputRoot::Source, relative.to_path_buf()));
-        }
-        Ok((InputRoot::Absolute, absolute))
+        self.classify_under(InputRoot::Source, &self.roots.source, path)
     }
 
     fn classify_spec(&self, path: &Path) -> Result<(InputRoot, PathBuf)> {
-        let absolute = absolute(path)?;
-        if let Ok(relative) = absolute.strip_prefix(&self.roots.spec) {
-            return Ok((InputRoot::Spec, relative.to_path_buf()));
-        }
-        Ok((InputRoot::Absolute, absolute))
+        self.classify_under(InputRoot::Spec, &self.roots.spec, path)
     }
 
     pub fn resolve(

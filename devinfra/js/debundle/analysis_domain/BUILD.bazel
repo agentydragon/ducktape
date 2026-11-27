@@ -10,6 +10,7 @@ rust_library(
     deps = [
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:js_ast",
         "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/inference",
         "@crates//:serde",

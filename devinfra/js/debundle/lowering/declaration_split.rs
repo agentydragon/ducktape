@@ -1,6 +1,7 @@
 //! Split top-level declarations between the modules that claim their bindings.
 
 use binding_targets::{binding_names, declaration_ids};
+use js_ast::VarDeclShape;
 use std::collections::HashMap;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
@@ -52,20 +53,16 @@ fn split_var_decl(
     for declarator in &var.decls {
         let ids: Vec<Id> = binding_names(&declarator.name).collect();
         if let Some(module_index) = assigned_module_for_ids(&ids, binding_assignment) {
-            let selected_var = VarDecl {
-                // Binding comments are anchored by statement span `lo`
-                // (`js_ast::emit_js_module_with_comments`), so statements split
-                // from one comma list must not all inherit the list's `lo`.
-                span: if var.decls.len() > 1 {
-                    declarator.span
-                } else {
-                    var.span
-                },
-                ctxt: var.ctxt,
-                kind: var.kind,
-                declare: var.declare,
-                decls: vec![declarator.clone()],
+            // Binding comments are anchored by statement span `lo`
+            // (`js_ast::emit_js_module_with_comments`), so statements split
+            // from one comma list must not all inherit the list's `lo`.
+            let split_span = if var.decls.len() > 1 {
+                declarator.span
+            } else {
+                var.span
             };
+            let selected_var =
+                VarDeclShape::of(var).with_decls(split_span, vec![declarator.clone()]);
             selected_by_module[module_index].push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(
                 Box::new(selected_var),
             ))));
@@ -76,13 +73,7 @@ fn split_var_decl(
     if residual_decls.is_empty() {
         return None;
     }
-    let residual_var = VarDecl {
-        span: var.span,
-        ctxt: var.ctxt,
-        kind: var.kind,
-        declare: var.declare,
-        decls: residual_decls,
-    };
+    let residual_var = VarDeclShape::of(var).with_decls(var.span, residual_decls);
     if was_exported {
         Some(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
             span: DUMMY_SP,
