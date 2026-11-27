@@ -71,7 +71,8 @@ The app is a client of each service for its distinct operation. The browser's pu
 use the generated ProtoJSON HTTP surface under `/upstream/history/v1/`; the app forwards them to
 History over gRPC using its App service SVID. History grants that exact SVID its configured read
 scope, while browser-session authorization stays at the App boundary. These reads do not require an
-app Thread row. The app's Thread metadata and Electric routes have their own checks.
+app Thread row. The app's Thread metadata and Electric routes have their own checks. History watches and
+Electric live shapes end when the app drains and, for a browser session, when it logs out.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
 sessions and its `thread` table: each Thread, keyed by its Session's ID, with the name and archive
 state an operator sets; like any state the app holds, these are candidates to move into a dedicated

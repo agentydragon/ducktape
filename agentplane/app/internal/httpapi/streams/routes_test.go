@@ -165,6 +165,53 @@ func TestUpstreamFacadeForwarderPassesCancellation(t *testing.T) {
 	}
 }
 
+// A History summaries watch and an Electric live shape must end at drain, not at the HTTP
+// server's shutdown timeout.
+func TestHistoryAndElectricStreamsEndAtDrain(t *testing.T) {
+	cases := map[string]func(*streamingRoutes, http.ResponseWriter, *http.Request, chan<- struct{}){
+		"history": func(routes *streamingRoutes, w http.ResponseWriter, request *http.Request, entered chan<- struct{}) {
+			routes.deps.HistoryHTTP = &streamTestUpstream{forward: func(_ http.ResponseWriter, _ *http.Request, ctx context.Context, _, _ string) error {
+				close(entered)
+				<-ctx.Done()
+				return ctx.Err()
+			}}
+			request.SetPathValue("path", "v1/session-summaries:watch")
+			routes.historyFacade(w, request)
+		},
+		"electric": func(routes *streamingRoutes, w http.ResponseWriter, request *http.Request, entered chan<- struct{}) {
+			routes.deps.Electric = http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+				close(entered)
+				<-request.Context().Done()
+			})
+			routes.electric(w, request)
+		},
+	}
+	for name, serve := range cases {
+		t.Run(name, func(t *testing.T) {
+			drain := make(chan struct{})
+			routes := newStreamingRoutes(drain, Dependencies{})
+			request := httptest.NewRequest(http.MethodGet, "/stream", nil)
+			entered := make(chan struct{})
+			done := make(chan struct{})
+			go func() {
+				serve(routes, httptest.NewRecorder(), request, entered)
+				close(done)
+			}()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("stream was not opened")
+			}
+			close(drain)
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("stream outlived drain")
+			}
+		})
+	}
+}
+
 type streamingRecorder struct {
 	mu      sync.Mutex
 	header  http.Header
