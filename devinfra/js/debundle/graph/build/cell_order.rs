@@ -152,37 +152,30 @@ pub(super) fn emit_heap_content_order(
     );
 }
 
+/// The cells whose contents live on the heap, as opposed to a binding slot.
+fn heap_content(cells: &BTreeSet<EffectCell>) -> BTreeSet<EffectCell> {
+    cells
+        .iter()
+        .filter(|cell| {
+            matches!(
+                cell,
+                EffectCell::ArrayContents(_)
+                    | EffectCell::SetContents(_)
+                    | EffectCell::ObjectShape(_)
+                    | EffectCell::OwnProperty { .. }
+            )
+        })
+        .cloned()
+        .collect()
+}
+
 pub(super) fn heap_content_cells(
     reads: &BTreeSet<EffectCell>,
     writes: &BTreeSet<EffectCell>,
 ) -> analysis::facts::statement_facts::StatementEffectSummary {
     analysis::facts::statement_facts::StatementEffectSummary {
-        reads: reads
-            .iter()
-            .filter(|cell| {
-                matches!(
-                    cell,
-                    EffectCell::ArrayContents(_)
-                        | EffectCell::SetContents(_)
-                        | EffectCell::ObjectShape(_)
-                        | EffectCell::OwnProperty { .. }
-                )
-            })
-            .cloned()
-            .collect(),
-        writes: writes
-            .iter()
-            .filter(|cell| {
-                matches!(
-                    cell,
-                    EffectCell::ArrayContents(_)
-                        | EffectCell::SetContents(_)
-                        | EffectCell::ObjectShape(_)
-                        | EffectCell::OwnProperty { .. }
-                )
-            })
-            .cloned()
-            .collect(),
+        reads: heap_content(reads),
+        writes: heap_content(writes),
     }
 }
 
