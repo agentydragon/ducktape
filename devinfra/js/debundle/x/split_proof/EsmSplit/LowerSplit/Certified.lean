@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.AuthenticatedSource
+import EsmSplit.CoreJS.CallableDefaultProvider
 import EsmSplit.Cli
 import EsmSplit.CoreJS.ConstructedOutput
 import EsmSplit.CoreJS.IndexedCheckedSplit
@@ -18,6 +19,7 @@ import EsmSplit.CoreJS.TerminalExportPlacement
 import EsmSplit.CoreJS.TerminalSource
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
+import EsmSplit.OwnedNodePackage
 
 /-! Certify a proposed split and publish its output or verify the existing tree. -/
 
@@ -356,6 +358,34 @@ private def tryOrderedHelper (spec : Spec) (src : BundleInput)
     | .error refusal => return some (← emitRefusal options.request.label refusal "ordered-helper")
   catch e => return some (← emitVerdict options.request.label (.error e.toString) "ordered-helper")
 
+private def runOwnedNodePackage (pkg : OwnedNodePackage.Spec) (chunk : DeploymentChunk)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
+  let scope := "owned-node-callable-provider"
+  let refuse := fun reason =>
+    emitRefusal options.request.label { reason, reasonCode := some "no_constructed_rule" } scope
+  unless options.request.label == Guarantee.allOutcomes.label do
+    return ← refuse "owned_node_package requires --require all-outcomes"
+  let .authored spec := chunk.placement | return ← refuse "owned_node_package requires an authored placement"
+  unless chunk.path == pkg.entry && chunk.source == pkg.root / pkg.entry do
+    return ← refuse "chunk source must be the declared package entry route"
+  try
+    let captured ← OwnedNodePackage.check pkg work
+    let classified ← IO.ofExcept
+      (CoreJS.AuthenticatedSource.decodeSourceClassification captured.entryAst captured.entryText pkg.entry)
+    let providerText ← IO.ofExcept (captured.providerAst.getObjValAs? String "sourceText")
+    let provider ← IO.ofExcept
+      (CoreJS.AuthenticatedSource.decodeIndexedSource captured.providerAst providerText pkg.provider)
+    let built ← IO.ofExcept (CoreJS.CallableDefaultProvider.construct classified provider spec)
+    let programs ← IO.ofExcept (built.programs captured.entryText)
+    let result ← OwnedNodePackage.certify captured programs out work options.checkOnly timings fun files =>
+      pure do
+        let _ ← built.checkReadback files |>.mapError fun reason => ({ reason } : CertificationRefusal)
+        return ()
+    if let .error failure := result then
+      return ← emitRefusal options.request.label failure scope
+    emitVerdict options.request.label (.ok .allOutcomes) scope [("strategy", toJson "compiled-constructor")]
+  catch e => refuse e.toString
+
 /-- Both emission and readback must start from a successful construction. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
@@ -392,10 +422,13 @@ def certified (args : List String) : IO UInt32 := do
     let [manifestPath, dest] := args.filter (· != "--check-output")
       | throw (IO.userError "usage: lowersplit <deployment.json> <outdir> [--require LEVEL] [--check-output]")
     let out ← IO.ofExcept (outputDirectory dest)
-    let manifest ← readDeploymentManifest manifestPath
+    let manifest ← readDeploymentManifest manifestPath (allowOwnedPackage := true)
     let [chunk] := manifest.chunks | return ← noConstructor label "no constructor supports multi-chunk deployments"
     let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
-    IO.FS.withTempDir fun work => runSingleton chunk out work { request, checkOnly } timings
+    IO.FS.withTempDir fun work =>
+      match manifest.ownedNodePackage with
+      | some pkg => runOwnedNodePackage pkg chunk out work { request, checkOnly } timings
+      | none => runSingleton chunk out work { request, checkOnly } timings
   catch e => emitVerdict label (.error e.toString)
 
 end EsmSplit.LowerSplit

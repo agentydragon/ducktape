@@ -199,11 +199,25 @@ function readNodePackage(dir, result, entry, provider, caller) {
   };
   const manifest = readFixed("package.json");
   if (JSON.parse(manifest)?.type !== "module") throw new Error('package.json must explicitly declare "type": "module"');
+  const callerText = readFixed(caller);
+  const requests = linkedProgram(callerText).body.filter(
+    (node) => ["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration"].includes(node.type) && node.source
+  );
+  const [request] = requests;
+  if (
+    requests.length !== 1 ||
+    request.type !== "ImportDeclaration" ||
+    request.source.value !== `./${entry}` ||
+    request.attributes?.length ||
+    request.specifiers.length !== 1 ||
+    request.specifiers[0].type !== "ImportDefaultSpecifier"
+  )
+    throw new Error("expected the fixed caller to import only the original entry default");
   writeJson(result, {
     manifest,
     entry: linkedProgram(readFixed(entry)),
     provider: linkedProgram(readFixed(provider)),
-    caller: readFixed(caller),
+    caller: callerText,
   });
 }
 

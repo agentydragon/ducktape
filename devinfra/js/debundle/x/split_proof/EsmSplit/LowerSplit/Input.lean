@@ -1,6 +1,7 @@
 import EsmSplit.Cli
 import EsmSplit.CoreJS.Split
 import EsmSplit.Effects
+import EsmSplit.OwnedNodePackage
 import EsmSplit.SplitFiles
 
 /-! Source, footprints and placement shared by the certified split and the diagnostic preview. -/
@@ -42,17 +43,28 @@ structure DeploymentChunk where
 structure DeploymentManifest where
   entry : String
   chunks : List DeploymentChunk
+  ownedNodePackage : Option OwnedNodePackage.Spec := none
 
 private def relativeTo (manifest : System.FilePath) (value : String) : System.FilePath :=
   let path : System.FilePath := value
   if path.isAbsolute then path else manifest.parent.getD "." / path
 
-def readDeploymentManifest (path : System.FilePath) : IO DeploymentManifest := do
+def readDeploymentManifest (path : System.FilePath) (allowOwnedPackage : Bool := false) : IO DeploymentManifest := do
   let json ← readJson path
   let fields ← IO.ofExcept json.getObj?
-  unless fields.toList.all (fun (field, _) => ["entry", "chunks"].contains field) do
+  unless fields.toList.all (fun (field, _) =>
+      ["entry", "chunks"].contains field || (allowOwnedPackage && field == "owned_node_package")) do
     throw (IO.userError "unexpected deployment manifest field")
   let entry ← IO.ofExcept (json.getObjValAs? String "entry")
+  let ownedNodePackage : Option OwnedNodePackage.Spec ← (fields.get? "owned_node_package").mapM fun pkg => do
+    let fields ← IO.ofExcept pkg.getObj?
+    unless fields.toList.all (fun (field, _) => ["root", "provider", "caller"].contains field) do
+      throw (IO.userError "unexpected owned_node_package field")
+    let root : System.FilePath := ⟨← IO.ofExcept (pkg.getObjValAs? String "root")⟩
+    unless root.isAbsolute do throw (IO.userError "owned_node_package requires an absolute source root")
+    let provider ← IO.ofExcept (pkg.getObjValAs? String "provider")
+    let caller ← IO.ofExcept (pkg.getObjValAs? String "caller")
+    return ⟨root, entry, provider, caller⟩
   let chunks ← (← IO.ofExcept (json.getObjValAs? (List Json) "chunks")).mapM fun chunk => do
     let route ← IO.ofExcept (chunk.getObjValAs? String "path")
     let fields ← IO.ofExcept chunk.getObj?
@@ -81,7 +93,7 @@ def readDeploymentManifest (path : System.FilePath) : IO DeploymentManifest := d
   IO.ofExcept (validateModulePaths routes)
   unless routes.Nodup do throw (IO.userError "duplicate original chunk path")
   unless routes.contains entry do throw (IO.userError "deployment entry must name an original chunk")
-  return { entry, chunks }
+  return { entry, chunks, ownedNodePackage }
 
 def DeploymentChunk.spec (chunk : DeploymentChunk) (unitCount : Nat) : Except String Spec := do
   match chunk.placement with

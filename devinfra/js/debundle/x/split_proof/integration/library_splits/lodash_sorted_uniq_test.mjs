@@ -219,11 +219,133 @@ symlinkSync(manifest, unverifiedManifest);
 ownedPackage(unverified, failed, "publish", /expected a regular package file: package\.json/);
 assert.equal(existsSync(failed), false);
 
+// Run the original authored plan through the ordinary CLI with an explicit
+// package deployment. The files in the destination are the files Node loads.
+const declaration = {
+  entry,
+  chunks: [{ path: entry, source: path.join(packageRoot, entry), spec }],
+  owned_node_package: { root: packageRoot, provider: "eq.js", caller: "sortedUniq.js" },
+};
+function deployment(manifest, caseName = "package") {
+  const file = path.join(process.env.TEST_TMPDIR, caseName + ".deployment.json");
+  writeFileSync(file, JSON.stringify(manifest));
+  return file;
+}
+const cli = {
+  manifest: deployment(declaration),
+  out: path.join(process.env.TEST_TMPDIR, "certified"),
+  require: "all-outcomes",
+};
+const certified = split(cli);
+assert.equal(certified.status, "certified", certified.log);
+assert.equal(certified.scope, "owned-node-callable-provider");
+assert.equal(certified.guarantee, "all-outcomes");
+assert.equal(certified.verdict.every_ending_matches, true);
+assert.deepEqual(certified.files, [entry, "eq.js", "package.json", "sorted-uniq.mjs", "sortedUniq.js"]);
+assert.deepEqual(split({ ...cli, checkOutput: true }).verdict, certified.verdict);
+for (const [file, text] of Object.entries(withPackage)) {
+  assert.deepEqual(readFileSync(path.join(cli.out, file)), Buffer.from(text));
+}
+
+execFileSync(
+  process.execPath,
+  [
+    "--input-type=module",
+    "--eval",
+    `
+      import assert from "node:assert/strict";
+      import sortedUniq from "./sortedUniq.js";
+      import callee from "./_baseSortedUniq.js";
+      import { baseSortedUniq } from "./sorted-uniq.mjs";
+      assert.equal(callee, baseSortedUniq);
+      const a = { value: 1 }, b = { value: 1 };
+      const input = [-0, 0, NaN, NaN, a, a, b, b];
+      const output = sortedUniq(input);
+      assert.deepEqual(output, [0, NaN, a, b]);
+      assert.equal(Object.is(output[0], +0), true);
+      assert.equal(output[2], a);
+      assert.equal(output[3], b);
+      assert.notEqual(output, input);
+      assert.deepEqual(input, [-0, 0, NaN, NaN, a, a, b, b]);
+      assert.notEqual(sortedUniq([]), sortedUniq([]));
+    `,
+  ],
+  { cwd: cli.out }
+);
+
+function expectRefusal(options, reason) {
+  const result = split({ ...cli, ...options });
+  assert.equal(result.status, "refused", result.log);
+  assert.match(result.reason, reason);
+}
+expectRefusal({ allowExistingOut: true }, /owned package destination must not exist/);
+expectRefusal({ require: "normal-completion", out: failed }, /owned_node_package requires --require all-outcomes/);
+expectRefusal(
+  {
+    manifest: deployment(
+      { ...declaration, chunks: [{ ...declaration.chunks[0], source: sources.get("eq.js").source }] },
+      "wrong-source"
+    ),
+    out: failed,
+  },
+  /chunk source must be the declared package entry route/
+);
+for (const [field, reason] of [
+  ["provider", /expected the unchanged closed provider for the default import/],
+  ["caller", /expected the fixed caller to import only the original entry default/],
+]) {
+  expectRefusal(
+    {
+      manifest: deployment(
+        { ...declaration, owned_node_package: { ...declaration.owned_node_package, [field]: "identity.js" } },
+        "wrong-" + field
+      ),
+      out: failed,
+    },
+    reason
+  );
+}
+
+const wrongSpec = path.join(process.env.TEST_TMPDIR, "misplaced-snapshot.json");
+const authored = JSON.parse(readFileSync(spec, "utf8"));
+writeFileSync(
+  wrongSpec,
+  JSON.stringify({ ...authored, modules: { [entry]: ["#0"], "sorted-uniq.mjs": ["#1", "#2"] } })
+);
+const wrongOwner = deployment(
+  { ...declaration, chunks: [{ ...declaration.chunks[0], spec: wrongSpec }] },
+  "wrong-owner"
+);
+expectRefusal({ manifest: wrongOwner, out: failed }, /only the original function declaration may move/);
+expectRefusal({ manifest: wrongOwner, allowExistingOut: true }, /only the original function declaration may move/);
+
+for (const [file, tamper, reason] of [
+  ["eq.js", (text) => text + "\n", /provider eq\.js differs from the source graph/],
+  ["package.json", () => wrongBytes, /provider package\.json differs from the source graph/],
+  ["sortedUniq.js", (text) => text + "\n", /provider sortedUniq\.js differs from the source graph/],
+  [
+    entry,
+    (text) => text.replace("export default baseSortedUniq;", "export { baseSortedUniq as default };"),
+    /_baseSortedUniq\.js differs from its generated ESTree/,
+  ],
+]) {
+  const out = path.join(process.env.TEST_TMPDIR, "tampered-" + file);
+  cpSync(cli.out, out, { recursive: true });
+  const dest = path.join(out, file);
+  const before = readFileSync(dest, "utf8");
+  const after = tamper(before);
+  assert.notEqual(after, before);
+  writeFileSync(dest, after);
+  expectRefusal({ out, checkOutput: true }, reason);
+}
+assert.deepEqual(split({ ...cli, checkOutput: true }).verdict, certified.verdict);
+
 console.log(
   JSON.stringify({
     workload: "lodash-es/_baseSortedUniq.js",
     decoded: observed,
     split: result.verdict,
     recheck: recheck.verdict,
+    ownedPackage: certified.verdict,
   })
 );
