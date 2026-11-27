@@ -46,8 +46,6 @@ mod graph_purity_tests;
 mod initializer_overlay_tests;
 #[cfg(test)]
 mod redundant_hints_tests;
-#[cfg(test)]
-mod test_support;
 
 /// Compute the policy-dependent half of the chunk analysis from the
 /// pre-computed structural layer and a set of `AnalysisInputs`. Builds

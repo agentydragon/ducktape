@@ -7,8 +7,8 @@ use swc_ecma_ast::Decl;
 use swc_ecma_ast::ModuleItem;
 use swc_ecma_ast::Stmt;
 
-use crate::test_support::{analyze_facts, test_id};
 use analysis_domain::item_views::{compute_shadowed_globals, top_level_item_views};
+use analysis_test_support::{analyze_facts, test_id};
 use analysis_vocabulary::purity::{Purity, PurityRule};
 use purity::*;
 

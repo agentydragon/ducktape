@@ -1010,6 +1010,21 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "analysis_test_support",
+    testonly = True,
+    srcs = ["analysis_test_support.rs"],
+    crate_root = "analysis_test_support.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
+        "//devinfra/js/debundle/analyze",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
 py_test(
     name = "perf_wrapper_test",
     srcs = ["perf_wrapper_test.py"],

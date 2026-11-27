@@ -8,11 +8,11 @@ use analysis_vocabulary::inputs::{AnalysisAssumptions, AnalysisInputs, KnownEffe
 
 /// Construct a test binding ID using the empty syntax context. The shared parser
 /// does not run SWC's resolver; production chunks use their top-level mark instead.
-pub(crate) fn test_id(name: &str) -> Id {
+pub fn test_id(name: &str) -> Id {
     (name.into(), SyntaxContext::empty())
 }
 
-pub(crate) fn hints_with_decorate_helper(name: &str) -> AnalysisInputs {
+pub fn hints_with_decorate_helper(name: &str) -> AnalysisInputs {
     AnalysisInputs {
         assumptions: AnalysisAssumptions {
             known_effects: BTreeMap::from([(
@@ -25,13 +25,10 @@ pub(crate) fn hints_with_decorate_helper(name: &str) -> AnalysisInputs {
     }
 }
 
-pub(crate) fn analyze_facts_with_hints(
-    module: &Module,
-    hints: &AnalysisInputs,
-) -> Vec<StatementFacts> {
-    crate::analyze_chunk(module, hints, None).facts
+pub fn analyze_facts_with_hints(module: &Module, hints: &AnalysisInputs) -> Vec<StatementFacts> {
+    analyze::analyze_chunk(module, hints, None).facts
 }
 
-pub(crate) fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
+pub fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
     analyze_facts_with_hints(module, &AnalysisInputs::default())
 }
