@@ -1,6 +1,6 @@
 import EsmSplit.Cli
 import EsmSplit.CoreJS.DynamicImports
-import EsmSplit.CoreJS.IndexedInlinePlan
+import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.ModuleLocation
@@ -155,8 +155,8 @@ private def indexedInlinePlan (input : Json) : Except String Json := do
   let request ← EsmSplit.parseSpec (← input.getObjVal? "spec")
   let decoded ← CoreJS.LinkedInput.decodeIndexedSource sourceAst sourceText request.entry
   let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
-  let checked ← CoreJS.IndexedInlinePlan.check decoded bundle request
-  let output := CoreJS.splitProgramIndexed decoded.source.body bundle checked.schedule.plan
+  let constructed ← CoreJS.IndexedInlineConstructor.construct decoded bundle request
+  let output := constructed.program
   let ownerChecks := output.fileUnitPlacements.all fun (ordinal, owner) =>
     request.claimants bundle ordinal == [owner]
   return .arr #[
