@@ -21,6 +21,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 	all := flags.Bool("all", false, "compact every retained sampler Session")
 	apply := flags.Bool("apply", false, "commit journal replacements")
 	dryRun := flags.Bool("dry-run", false, "preview journal replacements without writing")
+	fromFirstLegacy := flags.Bool("from-first-legacy-block", false, "skip the current-format prefix when resuming a block migration")
 	maxBlocks := flags.Int("max-blocks-per-txn", sessionstore.DefaultJournalBlocksPerTxn, "maximum output blocks per journal replacement transaction")
 	batchDelay := flags.Duration("batch-delay", 50*time.Millisecond, "minimum delay between completed batches")
 	pauseFile := flags.String("pause-file", "", "pause at batch boundaries while this file exists")
@@ -61,7 +62,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 		EventBlockProfile: profile,
 	})
 	options := sessionstore.JournalCompactionOptions{
-		MaxBlocksPerTxn: *maxBlocks, BatchDelay: *batchDelay, PauseFile: *pauseFile,
+		FromFirstLegacyBlock: *fromFirstLegacy, MaxBlocksPerTxn: *maxBlocks, BatchDelay: *batchDelay, PauseFile: *pauseFile,
 		ContentionRetries: *busyRetries, RetryDelay: *retryDelay,
 	}
 	run := func(id string) error {
@@ -72,7 +73,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 		}
 		level(ctx, "sampler journal repack", "session_id", id, "apply", *apply,
 			"profile_target_bytes", profile.TargetBytes, "profile_target_entries", profile.TargetEntries, "profile_level", profile.Level,
-			"opening_cursor", result.OpeningCursor, "completed", result.Completed, "batches", result.Batches, "max_blocks_per_txn", *maxBlocks,
+			"opening_cursor", result.OpeningCursor, "skipped_through", result.SkippedThrough, "completed", result.Completed, "batches", result.Batches, "max_blocks_per_txn", *maxBlocks,
 			"events", result.Events, "blocks", result.Blocks, "stored_bytes", result.StoredBytes,
 			"output_bytes", result.OutputBytes, "retained_legacy_blocks", result.RetainedLegacyBlocks,
 			"packed_bytes", result.PackedBytes, "lock_hold_total_ms", result.LockHoldTotal.Milliseconds(),
