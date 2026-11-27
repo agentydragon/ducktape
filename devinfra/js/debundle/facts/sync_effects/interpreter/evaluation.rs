@@ -867,11 +867,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .fallback(
                         &join_frames(frames),
                         Values::new(),
-                        ExecutionPrecisionLossReason::UnsupportedOperation {
-                            operation: ExecutionOperation::OpaqueExecution,
-                            ordered_field_read_refusal: None,
-                            ordered_call_admission_refusal: None,
-                        },
+                        ExecutionPrecisionLossReason::unsupported_operation(
+                            ExecutionOperation::OpaqueExecution,
+                        ),
                         span,
                     );
                     outcome.effect_coverage = EffectCoverageFragment::default();
@@ -949,11 +947,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .fallback(
                     &frame,
                     Values::new(),
-                    ExecutionPrecisionLossReason::UnsupportedOperation {
-                        operation: ExecutionOperation::OpaqueExecution,
-                        ordered_field_read_refusal: None,
-                        ordered_call_admission_refusal: None,
-                    },
+                    ExecutionPrecisionLossReason::unsupported_operation(
+                        ExecutionOperation::OpaqueExecution,
+                    ),
                     span,
                 );
             }

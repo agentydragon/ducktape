@@ -359,11 +359,7 @@ impl Outcome {
     ) {
         self.lose_precision(
             metrics,
-            ExecutionPrecisionLossReason::UnsupportedOperation {
-                operation,
-                ordered_field_read_refusal: None,
-                ordered_call_admission_refusal: None,
-            },
+            ExecutionPrecisionLossReason::unsupported_operation(operation),
             HavocReach::Global {
                 cause: GlobalReachCause::UnmodelledOperation,
             },
