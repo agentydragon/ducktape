@@ -3484,6 +3484,25 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "split_declarator_schedule",
+    srcs = ["SplitDeclaratorSchedule.lean"],
+    deps = [":corejs_linked_behavior"],
+)
+
+lean_proof_test(
+    name = "split_declarator_schedule_axioms_test",
+    modules = ["SplitDeclaratorSchedule"],
+    required_theorems = [
+        "CoreJS.SplitDeclaratorSchedule.console_argument",
+        "CoreJS.SplitDeclaratorSchedule.dependency_schedule",
+        "CoreJS.SplitDeclaratorSchedule.prefix_outcomes",
+        "CoreJS.SplitDeclaratorSchedule.terminal_exports",
+        "CoreJS.SplitDeclaratorSchedule.with_console",
+    ],
+    deps = [":split_declarator_schedule"],
+)
+
+lean_library(
     name = "literal_reorder_link",
     srcs = ["EsmSplit/CoreJS/LiteralReorderLink.lean"],
     deps = [
