@@ -77,21 +77,20 @@ func TestChangesOutsideTheSetLeaveTheFrameUnchanged(t *testing.T) {
 	}
 }
 
-func TestAnEmptySetSendsWholeSummaries(t *testing.T) {
-	fields, err := newSummaryFields(nil)
-	if err != nil {
-		t.Fatal(err)
+func TestASetThatNamesNoSummaryFieldIsRefused(t *testing.T) {
+	sets := map[string]*fieldmaskpb.FieldMask{
+		"absent":                   nil,
+		"empty":                    {},
+		"unknown":                  {Paths: []string{"last_event_at", "no_such_field"}},
+		"unknown nested":           {Paths: []string{"last_event_at", "attached.no_such_field"}},
+		"through a scalar":         {Paths: []string{"attached.spec.model.length"}},
+		"JSON spelling, not proto": {Paths: []string{"lastEventAt"}},
 	}
-	if got, want := fields.apply(summary(9, 7, 7, time.Unix(100, 0), "model-a")), summary(9, 7, 7, time.Unix(100, 0), "model-a"); !proto.Equal(got, want) {
-		t.Fatalf("got %v, want the whole summary %v", got, want)
-	}
-}
-
-func TestPathsThatAreNotSummaryFieldsAreRefused(t *testing.T) {
-	for _, path := range []string{"no_such_field", "attached.no_such_field", "attached.spec.model.length", "lastEventAt"} {
-		_, err := newSummaryFields(&fieldmaskpb.FieldMask{Paths: []string{"last_event_at", path}})
-		if status.Code(err) != codes.InvalidArgument {
-			t.Errorf("%q: got %v, want InvalidArgument", path, err)
-		}
+	for name, set := range sets {
+		t.Run(name, func(t *testing.T) {
+			if _, err := newSummaryFields(set); status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("got %v, want InvalidArgument", err)
+			}
+		})
 	}
 }

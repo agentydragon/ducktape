@@ -12,17 +12,14 @@ import (
 // summaryFields is the set of SessionSummary fields a selected watch sends. A watch compares and sends only
 // these, so a change to any other field is invisible to it.
 type summaryFields struct {
-	// mask is empty for the legacy empty set, which keeps whole summaries.
 	mask fmutils.NestedMask
 }
 
-// newSummaryFields validates the request's field mask: unknown paths, and paths through a repeated field, are
-// INVALID_ARGUMENT. `session_id` is always included, since a frame must say which summary it is.
+// newSummaryFields validates the request's field mask: an empty set, unknown paths, and paths through a repeated
+// field are INVALID_ARGUMENT. `session_id` is always included, since a frame must say which summary it is.
 func newSummaryFields(requested *fieldmaskpb.FieldMask) (summaryFields, error) {
 	if len(requested.GetPaths()) == 0 {
-		// CLEANUP(added 2026-11-26): reject the empty set instead
-		// (SESSION_SUMMARY_WATCH_FIELD_MASK stage 3, agentplane/plans/task_dag.md).
-		return summaryFields{}, nil
+		return summaryFields{}, status.Error(codes.InvalidArgument, "selected summaries need a field_mask naming the SessionSummary fields to watch")
 	}
 	mask := proto.Clone(requested).(*fieldmaskpb.FieldMask)
 	if !mask.IsValid(&historypb.SessionSummary{}) {

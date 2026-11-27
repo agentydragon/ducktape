@@ -500,9 +500,7 @@ message SelectedSessionSummaries {
   // The `SessionSummary` fields to send, as proto field paths such as `last_event_at` or
   // `attached.spec.model`. A summary frame is sent only when one of these fields changes, and carries
   // the current value of each; `session_id` is always sent. Unknown paths and paths through a repeated
-  // field are INVALID_ARGUMENT. Empty sends whole summaries on every change.
-  // CLEANUP(added 2026-11-26): reject an empty set once every reader sends one
-  // (SESSION_SUMMARY_WATCH_FIELD_MASK stage 3, agentplane/plans/task_dag.md).
+  // field, and an empty set, are INVALID_ARGUMENT.
   google.protobuf.FieldMask field_mask = 2;
 }
 
