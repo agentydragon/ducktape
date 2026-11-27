@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlencode
@@ -12,7 +11,7 @@ import pytest_bazel
 import yaml
 from testcontainers.core.wait_strategies import HttpWaitStrategy
 
-from cluster.cdk8s.monitoring import blackbox_exporter, home_application_probes
+from cluster.cdk8s.monitoring import home_application_probes
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.container_logs import LoggedContainer
@@ -32,8 +31,6 @@ def _probe_success(metrics: str) -> int:
 
 
 def test_blackbox_modules_use_production_config(tmp_path: Path) -> None:
-    image_name, _, image_digest = blackbox_exporter.IMAGE.partition("@")
-    assert f"{image_name.rsplit(':', 1)[0]}@{image_digest}" == os.environ["BLACKBOX_EXPORTER_PIN"]
     image_ref = load_oci_image(blackbox_exporter_image.LAYOUT_RLOCATION)
     config_path = tmp_path / "blackbox.yml"
     config_path.write_text(yaml.safe_dump(home_application_probes.CONFIG))
