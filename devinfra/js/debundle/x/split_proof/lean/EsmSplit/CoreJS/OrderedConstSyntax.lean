@@ -99,10 +99,5 @@ example : (checkEarlierReads [] [(0, .decl .const "a" (.var "b")),
 
 example : (checkBody [(0, .decl .const "a" (.host "console"))]).isSome = false := by decide
 
-#print axioms rhs_free
-#print axioms checkBody
-#print axioms all_const
-#print axioms checkEarlierReads
-#print axioms dense_runs
 
 end CoreJS.OrderedConstSyntax

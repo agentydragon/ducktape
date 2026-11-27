@@ -149,7 +149,5 @@ theorem checkOutput_sound {source spec requested decoded}
     (same : decoded = checked.program) : Sound source spec requested decoded :=
   same ▸ checked.sound
 
-#print axioms checkedSplit_sound
-#print axioms checkOutput_sound
 
 end CoreJS.CheckedSplit

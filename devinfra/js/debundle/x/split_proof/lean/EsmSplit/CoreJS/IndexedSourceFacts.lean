@@ -25,6 +25,5 @@ def SourceFacts.fromSequence {decoded : LinkedInput.IndexedSource} {B : EsmSplit
   have inRows : row.ordinal ∈ decoded.localExports.map (·.ordinal) := List.mem_map.mpr ⟨row, member, rfl⟩
   exact disjoint row.ordinal inBody row.ordinal inRows rfl
 
-#print axioms SourceFacts.fromSequence
 
 end CoreJS.IndexedCheckedSplit

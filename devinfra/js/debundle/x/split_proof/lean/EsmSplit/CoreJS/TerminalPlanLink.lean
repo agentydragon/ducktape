@@ -126,10 +126,5 @@ theorem candidate_link_of_modules (name : Name) (exports : List (Name × Name)) 
     units_of_modules ss B P frames (hmodules frames hframes)
   exact candidate_link name exports ss B P coverage scopes w before
 
-#print axioms source_statements
-#print axioms scopes_of_units
-#print axioms units_of_modules
-#print axioms candidate_link
-#print axioms candidate_link_of_modules
 
 end CoreJS.TerminalPlanLink

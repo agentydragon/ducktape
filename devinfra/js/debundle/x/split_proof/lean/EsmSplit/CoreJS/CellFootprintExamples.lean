@@ -97,10 +97,5 @@ theorem unit_resets_region :
     inRegion 4 (writeCell first (.bool true)) (store (some (.bool false))) =
       .ok () { store (some (.bool true)) with region := 0 } := rfl
 
-#print axioms copy_footprint
-#print axioms independent_units
-#print axioms omitted_write_rejected
-#print axioms omitted_read_rejected
-#print axioms dependent_read_does_not_commute
 
 end CoreJS.CellFootprintExamples

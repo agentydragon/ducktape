@@ -171,7 +171,6 @@ theorem order_kept_preserves {P P' : Program} (hregions : P.regions = P'.regions
   ⟨fun _ ⟨n, hn, hr⟩ => ⟨n, run_same hregions htops hscopes n ▸ hn, hr⟩,
     fun _ ⟨n, hn, hr⟩ => ⟨n, (run_same hregions htops hscopes n).symm ▸ hn, hr⟩⟩
 
-#print axioms order_kept_preserves
 
 /-! ## The split of a bundle by a plan
 
@@ -958,6 +957,5 @@ theorem valid_order_kept_preserves {W : World} {ss : List Stmt} {B : EsmSplit.Bu
     (split_holds_statements (orderKept_perm horder)).2
     (split_scopes_agree hvalid hfootprints horder)
 
-#print axioms valid_order_kept_preserves
 
 end CoreJS

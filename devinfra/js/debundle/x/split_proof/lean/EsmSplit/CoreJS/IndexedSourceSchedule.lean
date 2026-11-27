@@ -248,13 +248,5 @@ theorem assignmentOwnerIsAuthored {decoded bundle request}
     request.claimants bundle ordinal = [owner] :=
   CoreJS.PlanPlacement.authored_owner evidence.valid.2.2.1 owned
 
-#print axioms checkSequence
-#print axioms sourceInductionFacts
-#print axioms check
-#print axioms constructedRows
-#print axioms constructedPlacementOwner
-#print axioms metadataOmitted
-#print axioms uniquePlanOwner
-#print axioms assignmentOwnerIsAuthored
 
 end CoreJS.IndexedSourceSchedule

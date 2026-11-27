@@ -128,11 +128,5 @@ theorem effectThenThrow :
       some (.error .reference "cannot access 'x' before initialization", #["before"]) := by
   constructor <;> cbv
 
-#print axioms linkedOrder
-#print axioms initializedRead
-#print axioms forwardReference_changes_throw
-#print axioms effectThenThrow
-#print axioms allOutcomes
-#print axioms sameExports
 
 end CoreJS.TwoConstBoundary

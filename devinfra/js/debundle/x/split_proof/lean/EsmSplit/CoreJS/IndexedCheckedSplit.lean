@@ -237,7 +237,5 @@ theorem construct_sound {source B S rows requested} (built : Construction source
       ScheduleEquivalent requested (fun _ => True) source built.program :=
   ⟨built.placement, built.sameExports, built.behavior⟩
 
-#print axioms construct
-#print axioms construct_sound
 
 end CoreJS.IndexedCheckedSplit

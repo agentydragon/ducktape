@@ -235,12 +235,5 @@ theorem shadowConstructionUnknown (fuel : Nat) :
       .unknown "host function user Error is constructed" (identityState W) := by
   rfl
 
-#print axioms movedWithReachedReads
-#print axioms exampleWithOverride
-#print axioms syntheticIdentityOnly
-#print axioms aliasShadowAndLookalike
-#print axioms ordinaryPrototypeLookalike
-#print axioms aliasConstructionUnknown
-#print axioms shadowConstructionUnknown
 
 end CoreJS.StackReadComposition

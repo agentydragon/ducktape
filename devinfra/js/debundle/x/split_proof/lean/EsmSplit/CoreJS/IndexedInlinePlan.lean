@@ -144,10 +144,5 @@ theorem placementOwner {decoded B S} (checked : Checked decoded B S)
   apply IndexedSourceSchedule.constructedPlacementOwner checked.schedule
   simpa [checked.scheduleSource] using member
 
-#print axioms checkSource
-#print axioms check
-#print axioms allOutcomes
-#print axioms sameExports
-#print axioms placementOwner
 
 end CoreJS.IndexedInlinePlan

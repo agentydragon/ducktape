@@ -1261,11 +1261,6 @@ theorem moves_preserve {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : E
   ⟨fun ⟨n, h, hr⟩ => ⟨n, (moves_preserve_run hvalid hfp hmove n s).1 h, hr⟩,
     fun ⟨n, h, hr⟩ => ⟨n, (moves_preserve_run hvalid hfp hmove n s).2 h, hr⟩⟩
 
-#print axioms moves_preserve
-#print axioms local_evalMembers_literal
-#print axioms selfScope_within
-#print axioms local_evalStaticInitializers
-#print axioms allocOnly_local
 
 /-- `moves_preserve` with its last hypothesis decided by `movesOk`, as `lowersplit` decides it. -/
 theorem moves_preserve_of_movesOk {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
@@ -1274,6 +1269,5 @@ theorem moves_preserve_of_movesOk {W : World} {ss : List Stmt} {B : EsmSplit.Bun
     Ends W (Program.single ss) (.ok () s) ↔ Ends W (splitProgram ss B P) (.ok () s) :=
   moves_preserve hvalid hfp ((movesOk_iff ss _).1 hmove) s
 
-#print axioms moves_preserve_of_movesOk
 
 end CoreJS

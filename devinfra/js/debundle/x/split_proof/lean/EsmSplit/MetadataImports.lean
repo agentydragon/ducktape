@@ -33,6 +33,5 @@ theorem external_use_imported {B : Bundle} {S : Spec} {P : Plan} (valid : Valid 
       simp [ok] at h
       exact ⟨e, inImports, contains, h⟩
 
-#print axioms external_use_imported
 
 end EsmSplit.MetadataImports

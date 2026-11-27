@@ -63,7 +63,5 @@ instance (ss : List Stmt) (B : EsmSplit.Bundle) (row : EsmSplit.LocalExportUnit)
   unfold RowLocalsDefined
   infer_instance
 
-#print axioms footprints_iff
-#print axioms row_footprint_iff
 
 end CoreJS.MetadataCells

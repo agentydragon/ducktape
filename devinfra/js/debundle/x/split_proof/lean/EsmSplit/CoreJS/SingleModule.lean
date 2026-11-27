@@ -58,7 +58,6 @@ theorem runProgram_singleModuleMetadata (body : List (Nat × CoreJS.Stmt))
         (R := fun a b : CoreJS.LinkedUnit => a.1 ≤ b.1)).2 hbody
   exact CoreJS.run_same hregions htops hscopes fuel
 
-#print axioms runProgram_singleModuleMetadata
 
 /-- A reached lexical initializer writes the value returned by its actual
 evaluation. Effects of evaluation remain in the returned state. -/
@@ -201,11 +200,5 @@ theorem link_singleModuleConst (name : Name) (exports : List (Name × Name))
     rw [scopes, lift, M.pure_bind, sorted_units sorted, hoists, M.pure_bind] <;> rfl
   exact ⟨frames, ⟨[(m, env)], ready, equation⟩, allocated, declareTops_names _ allocated, rfl⟩
 
-#print axioms execute_lexical
-#print axioms execute_lexical_initialized
-#print axioms initFunctions_declarations
-#print axioms declareDeclTops_ok
-#print axioms declareConstTops_ok
-#print axioms link_singleModuleConst
 
 end CoreJS

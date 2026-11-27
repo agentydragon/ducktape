@@ -177,12 +177,6 @@ def test : IO Unit := do
   | .fuel, .fuel => pure ()
   | _, _ => throw (IO.userError "the split changed fuel exhaustion")
 
-#print axioms compactPlacement
-#print axioms sourcePlacement
-#print axioms noCompactSound
-#print axioms build
-#print axioms build_sound
-#print axioms checkOutput_sound
 
 end SparseConstruct
 

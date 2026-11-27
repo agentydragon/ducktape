@@ -155,11 +155,5 @@ theorem exact_entry_exports {B : EsmSplit.Bundle} {owner : EsmSplit.Module}
   simp only [noGlue, List.nil_append, EsmSplit.Bundle.toArray_getD]
   rw [fold_entry_exports B rows owner.stmts unitMatches, orderedRows]
 
-#print axioms fold_entry_exports
-#print axioms exact_entry_exports
-#print axioms row_locals_declared
-#print axioms locals_declared_iff
-#print axioms singleton_selection
-#print axioms singleton_matches
 
 end CoreJS.ExportRows

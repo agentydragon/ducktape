@@ -64,9 +64,5 @@ theorem same_exports (value : String) : SameExports (source value) (planned valu
 theorem authored_order (value : String) :
     (planned value).evalOrder = request.order ++ [request.entry] := by cbv
 
-#print axioms placement
-#print axioms exact_cell
-#print axioms same_exports
-#print axioms authored_order
 
 end CoreJS.TerminalReaderConstruction
