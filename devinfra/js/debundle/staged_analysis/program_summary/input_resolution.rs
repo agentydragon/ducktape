@@ -71,19 +71,12 @@ pub(super) fn resolve_initializer_call_effect_inputs(
             .enumerate()
         {
             let request = format!("{prefix}[{index}]");
-            for (field, digest) in [
-                ("audited_source_sha256", &contract.audited_source_sha256),
-                ("audited_provider_sha256", &contract.audited_provider_sha256),
-            ] {
-                ensure!(
-                    digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()),
-                    "{request}.{field} must be a 64-character SHA-256 digest"
-                );
-            }
-            ensure!(
-                &contract.audited_source_sha256 == source_sha,
-                "{request} has stale audited_source_sha256"
-            );
+            require_pinned_digest(
+                &request,
+                "audited_source_sha256",
+                &contract.audited_source_sha256,
+                source_sha,
+            )?;
             let provider_source = provenance
                 .chunk_sources
                 .iter()
@@ -91,10 +84,12 @@ pub(super) fn resolve_initializer_call_effect_inputs(
                 .with_context(|| {
                     format!("{request}.provider_chunk has no parser-input provenance")
                 })?;
-            ensure!(
-                contract.audited_provider_sha256 == provider_source.sha256,
-                "{request} has stale audited_provider_sha256"
-            );
+            require_pinned_digest(
+                &request,
+                "audited_provider_sha256",
+                &contract.audited_provider_sha256,
+                &provider_source.sha256,
+            )?;
             let provider = modules
                 .get(&contract.provider_chunk)
                 .with_context(|| format!("{request}.provider_chunk has no analyzed entry"))?;
@@ -343,22 +338,14 @@ pub(super) fn resolve_value_inputs(
         for (input_index, (contract, declaration)) in
             options.value_inputs.iter().zip(declarations).enumerate()
         {
-            ensure!(
-                contract.audited_source_sha256.len() == 64
-                    && contract
-                        .audited_source_sha256
-                        .bytes()
-                        .all(|byte| byte.is_ascii_hexdigit()),
-                "chunk_analysis_options.{chunk_name}.value_inputs[{input_index}].audited_source_sha256 must be a 64-character SHA-256 digest"
-            );
-            ensure!(
-                contract.audited_source_sha256 == source.sha256,
-                "chunk_analysis_options.{chunk_name}.value_inputs[{input_index}] has stale audited_source_sha256: expected parser input {}, found {}",
-                source.sha256,
-                contract.audited_source_sha256
-            );
             let request_id =
                 format!("chunk_analysis_options.{chunk_name}.value_inputs[{input_index}]");
+            require_pinned_digest(
+                &request_id,
+                "audited_source_sha256",
+                &contract.audited_source_sha256,
+                &source.sha256,
+            )?;
             let body_index = declaration.body_index;
             let selected_binding = declaration.binding.clone();
             if let Some(export_name) = &contract.expected_export {
@@ -504,19 +491,12 @@ pub(super) fn resolve_native_operation_inputs(
             operation,
         ) in contracts
         {
-            ensure!(
-                audited_source_sha256.len() == 64
-                    && audited_source_sha256
-                        .bytes()
-                        .all(|byte| byte.is_ascii_hexdigit()),
-                "{request_id}.audited_source_sha256 must be a 64-character SHA-256 digest"
-            );
-            ensure!(
-                audited_source_sha256 == &source.sha256,
-                "{request_id} has stale audited_source_sha256: expected parser input {}, found {}",
-                source.sha256,
-                audited_source_sha256
-            );
+            require_pinned_digest(
+                &request_id,
+                "audited_source_sha256",
+                audited_source_sha256,
+                &source.sha256,
+            )?;
             let body_index = declaration.body_index;
             let selected_binding = declaration.binding;
             let selected_statement_span = facts
@@ -557,6 +537,26 @@ pub(super) fn resolve_native_operation_inputs(
 /// What every analysis-input family that reads a provider chunk checks before it
 /// looks at that provider's facts: loaded, inside the analyzed closure, analyzed.
 /// `prefix` is the family's request id, which each refusal names.
+/// An authored input pins the parser input its audit ran against with a SHA-256
+/// digest, and that digest has to survive to this run: right shape, and still the
+/// parser input it was audited against. `field` says which pin the message names.
+fn require_pinned_digest(
+    request: &str,
+    field: &str,
+    digest: &str,
+    parser_input: &str,
+) -> Result<()> {
+    ensure!(
+        digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "{request}.{field} must be a 64-character SHA-256 digest"
+    );
+    ensure!(
+        digest == parser_input,
+        "{request} has stale {field}: expected parser input {parser_input}, found {digest}"
+    );
+    Ok(())
+}
+
 fn analyzed_provider<'a, 'b>(
     artifact: &'b ChunkBundle,
     modules: &'a BTreeMap<String, ModulePurityFacts<'a>>,
@@ -615,20 +615,12 @@ pub(super) fn resolve_argument_inputs(
             options.argument_inputs.iter().zip(declarations).enumerate()
         {
             let request_id = format!("{prefix}[{input_index}]");
-            ensure!(
-                contract.audited_source_sha256.len() == 64
-                    && contract
-                        .audited_source_sha256
-                        .bytes()
-                        .all(|b| b.is_ascii_hexdigit()),
-                "{request_id}.audited_source_sha256 must be a 64-character SHA-256 digest"
-            );
-            ensure!(
-                contract.audited_source_sha256 == source.sha256,
-                "{request_id} has stale audited_source_sha256: expected parser input {}, found {}",
-                source.sha256,
-                contract.audited_source_sha256
-            );
+            require_pinned_digest(
+                &request_id,
+                "audited_source_sha256",
+                &contract.audited_source_sha256,
+                &source.sha256,
+            )?;
             ensure!(
                 contract.parameter_index < contract.exact_arity,
                 "{request_id} parameter_index exceeds exact_arity"
