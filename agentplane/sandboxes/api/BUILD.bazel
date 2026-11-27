@@ -1,5 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path", "go_test")
-load("//devinfra/go:controller_gen.bzl", "controller_crds", "controller_deepcopy")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//agentplane/crds:api_codegen.bzl", "agentplane_api_codegen")
 
 go_library(
     name = "api",
@@ -45,21 +45,7 @@ go_library(
     ],
 )
 
-go_path(
-    name = "deepcopy_gopath",
-    mode = "copy",
-    deps = [":deepcopy_inputs"],
-)
-
-controller_deepcopy(
-    name = "deepcopy",
-    gopath = ":deepcopy_gopath",
+agentplane_api_codegen(
+    src = ":deepcopy_inputs",
     importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/api",
-)
-
-controller_crds(
-    name = "generated_crds",
-    gopath = ":deepcopy_gopath",
-    importpath = "github.com/agentydragon/ducktape/agentplane/sandboxes/api",
-    visibility = ["//agentplane/crds:__pkg__"],
 )
