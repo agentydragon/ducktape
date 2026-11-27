@@ -136,7 +136,7 @@ export function DispatchReceiptProgress({
       ? unknownDeliveryStage(item.reason, item.journalAdmitted)
       : (receiptStage[item.state] ?? "unknown");
   return (
-    <Group gap={4} wrap="nowrap" className="agentplane-command-delivery">
+    <Stack gap={4} align="flex-end" className="agentplane-command-delivery">
       <CommandProgress
         stage={stage}
         subject={subject}
@@ -151,7 +151,7 @@ export function DispatchReceiptProgress({
         }
       />
       <AcknowledgeDeliveryIssue item={item} attention={delivery.attention} />
-    </Group>
+    </Stack>
   );
 }
 export function useDispatchOriginals(

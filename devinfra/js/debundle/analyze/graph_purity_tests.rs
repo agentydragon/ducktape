@@ -1,6 +1,7 @@
 use crate::analyze_chunk;
 use analysis_vocabulary::inputs::AnalysisAssumptions;
 use analysis_vocabulary::inputs::AnalysisInputs;
+use purity::PurityScope;
 use purity::classifier::classify_expr_purity;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Decl;
@@ -105,9 +106,12 @@ fn fn_purity_call_inherits_chunk_local_function_purity() {
     };
     let init = var.decls[0].init.as_deref().expect("init");
     assert!(
-        classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
-            .kinds()
-            .is_empty()
+        classify_expr_purity(
+            init,
+            &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph)
+        )
+        .kinds()
+        .is_empty()
     );
 }
 

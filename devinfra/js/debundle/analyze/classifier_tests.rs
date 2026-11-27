@@ -3,6 +3,7 @@ use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::CoerceSite;
 use analysis_vocabulary::effect::Effect;
 use analysis_vocabulary::effect::InvokeSite;
+use purity::PurityScope;
 use purity::classifier::classify_class_static_purity;
 use purity::classifier::classify_expr_purity;
 use purity::classifier::classify_var_decl_purity;
@@ -38,10 +39,11 @@ fn classify(src: &str) -> Vec<Effect> {
     let init = var.decls[0].init.as_deref().expect("init expected");
     classify_expr_purity(
         init,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &ChunkCodeGraph::default(),
+        &PurityScope::chunk_top(
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &ChunkCodeGraph::default(),
+        ),
     )
     .kinds()
 }
@@ -82,7 +84,10 @@ fn classify_with_graph(
 ) -> Vec<Effect> {
     classify_last_const(prefix, expr_src, |body, shadowed, init| {
         let graph = build(body, shadowed);
-        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+        classify_expr_purity(
+            init,
+            &PurityScope::chunk_top(shadowed, &BTreeSet::new(), &graph),
+        )
     })
 }
 
@@ -160,10 +165,7 @@ fn classify_with_module(prefix: &str, expr_src: &str) -> Vec<Effect> {
     classify_last_const(prefix, expr_src, |_, shadowed, init| {
         classify_expr_purity(
             init,
-            shadowed,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            &ChunkCodeGraph::default(),
+            &PurityScope::chunk_top(shadowed, &BTreeSet::new(), &ChunkCodeGraph::default()),
         )
     })
 }
@@ -195,10 +197,7 @@ fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) 
     classify_last_const(prefix, expr_src, |_, shadowed, init| {
         classify_expr_purity(
             init,
-            shadowed,
-            &BTreeSet::new(),
-            &declared_pure,
-            &ChunkCodeGraph::default(),
+            &PurityScope::chunk_top(shadowed, &declared_pure, &ChunkCodeGraph::default()),
         )
     })
 }
@@ -677,10 +676,12 @@ fn body_local_proxy_binding_shadows_the_intrinsic() {
     let effects = classify_last_const("", "new Proxy({}, {})", |_, shadowed, init| {
         classify_expr_purity(
             init,
-            shadowed,
-            &local_shadowed,
-            &BTreeSet::new(),
-            &ChunkCodeGraph::default(),
+            &PurityScope::function_body(
+                shadowed,
+                &local_shadowed,
+                &BTreeSet::new(),
+                &ChunkCodeGraph::default(),
+            ),
         )
     });
     assert_eq!(
@@ -808,10 +809,11 @@ fn class_effects(src: &str) -> Vec<Effect> {
         .expect("expected a class declaration");
     classify_class_static_purity(
         class,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &ChunkCodeGraph::default(),
+        &PurityScope::chunk_top(
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &ChunkCodeGraph::default(),
+        ),
     )
     .kinds()
 }
@@ -1070,7 +1072,10 @@ fn fluent_root_body_local_shadow_defeats_trust() {
                 &BTreeSet::new(),
                 &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
             );
-            classify_expr_purity(init, shadowed, &local_shadowed, &BTreeSet::new(), &graph)
+            classify_expr_purity(
+                init,
+                &PurityScope::function_body(shadowed, &local_shadowed, &BTreeSet::new(), &graph),
+            )
         },
     );
     assert_eq!(effects, [CALL]);
@@ -1209,10 +1214,7 @@ fn classify_built(prefix: &str, expr_src: &str) -> Vec<Effect> {
     };
     classify_expr_purity(
         result.decls[0].init.as_deref().unwrap(),
-        &structural.shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&structural.shadowed, &BTreeSet::new(), &graph),
     )
     .kinds()
 }
@@ -1400,7 +1402,10 @@ fn imported_purity_effects(prefix: &str, expr_src: &str, imports: &[(&str, Purit
             &BTreeSet::new(),
             &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         );
-        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+        classify_expr_purity(
+            init,
+            &PurityScope::chunk_top(shadowed, &BTreeSet::new(), &graph),
+        )
     })
 }
 
@@ -1466,10 +1471,7 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
     assert_eq!(
         classify_class_static_purity(
             &class.class,
-            &shadowed,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            &graph,
+            &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph)
         )
         .project()
         .dependencies(),
@@ -1488,25 +1490,19 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
     let initializer = result.decls[0].init.as_deref().unwrap();
     let purity = classify_expr_purity(
         initializer,
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
     )
     .project();
     assert_eq!(purity.dependencies(), Some(&dependencies));
     assert_eq!(
         classify_var_decl_purity(
             result,
-            &shadowed,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            &graph,
+            &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
             &FreshRecordDestructuringContext {
                 flow: &ChunkValueFlow::default(),
                 dynamic_scope: DynamicScopeFact::default(),
                 rebindings: &BTreeSet::new(),
-            },
+            }
         )
         .project()
         .dependencies(),
@@ -1531,10 +1527,7 @@ fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
     };
     let certified = classify_expr_purity(
         certified.decls[0].init.as_deref().unwrap(),
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
     )
     .project();
     assert_eq!(certified.dependencies(), Some(&dependencies));
@@ -1544,10 +1537,7 @@ fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
     };
     let independent = classify_expr_purity(
         independent.decls[0].init.as_deref().unwrap(),
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
     )
     .project();
     assert!(independent.is_pure());
@@ -1592,7 +1582,10 @@ fn nested_conditioned_arguments_keep_dependencies_across_pure_builtins() {
             "const values = [1]; function make() { return new Set(values); }",
             expression,
             |_, _, init| {
-                classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+                classify_expr_purity(
+                    init,
+                    &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
+                )
             },
         )
         .project();
@@ -1657,10 +1650,7 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
     };
     let purity = classify_expr_purity(
         result.decls[0].init.as_deref().unwrap(),
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
     )
     .project();
     assert!(purity.is_pure());

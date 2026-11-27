@@ -112,15 +112,10 @@
 
 /* Keep feedback beside the bubble, even when its content wraps. */
 .transcript-user-message-aside:has(.agentplane-command-progress-inline) {
-  max-width: 100%;
   flex-direction: column;
   align-items: flex-end;
   align-self: center;
   row-gap: 0.25rem;
-}
-
-.transcript-user-message-aside:has(.agentplane-command-progress-inline) + .transcript-user-bubble {
-  max-width: min(34rem, calc(100% - clamp(10rem, 53%, 14rem) - var(--mantine-spacing-xs)));
 }
 
 .transcript-user-message-aside .agentplane-command-progress-inline {
@@ -132,12 +127,26 @@
 
 .agentplane-command-delivery {
   min-width: 0;
+  max-width: 100%;
+}
+
+/* Actions also wrap within the gutter when a wide bubble leaves little room. */
+.transcript-user-message-aside .mantine-Button-root {
+  max-width: 100%;
+  height: auto;
+  min-height: 1.5rem;
+  padding-inline: 0.25rem;
+}
+
+.transcript-user-message-aside .mantine-Button-label {
+  white-space: normal;
+  text-align: right;
 }
 
 .agentplane-command-details-trigger {
   font: inherit;
   color: inherit;
-  text-align: left;
+  text-align: right;
   text-decoration: underline dotted;
   text-underline-offset: 0.15em;
   min-width: 0;

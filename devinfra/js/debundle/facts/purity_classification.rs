@@ -30,15 +30,7 @@ pub enum NativeOwnDataReadDiagnostic {
 impl StatementPurityContext<'_> {
     pub fn statement_effects(&self, fact: &StatementFacts) -> Effects {
         let item = self.body[fact.ordinal.0].as_module_item();
-        let mut effects = item_purity(
-            item,
-            fact.kind,
-            self.shadowed,
-            self.hints,
-            self.graph,
-            &self.proofs,
-            !fact.local_effects.is_empty(),
-        );
+        let mut effects = item_purity(item, fact.kind, self, !fact.local_effects.is_empty());
         // An author assertion about this statement covers its reads.
         let author_asserted = !fact.local_effects.is_empty()
             || (fact.kind == StatementKind::VarDecl
@@ -181,12 +173,15 @@ pub struct ItemPurityProofs<'a> {
 pub(crate) fn item_purity(
     item: &ModuleItem,
     kind: StatementKind,
-    shadowed: &BTreeSet<&'static str>,
-    hints: &AnalysisInputs,
-    graph: &ChunkCodeGraph,
-    proofs: &ItemPurityProofs<'_>,
+    context: &StatementPurityContext<'_>,
     has_local_effect: bool,
 ) -> Effects {
+    // Statement purity is classified in the chunk's top-level scope.
+    let scope = PurityScope::chunk_top(
+        context.shadowed,
+        &context.hints.assumptions.declared_pure,
+        context.graph,
+    );
     match kind {
         StatementKind::Import | StatementKind::FnDecl => Effects::none(),
         // `export { ... }` / `export * from ...` / `export default
@@ -196,33 +191,20 @@ pub(crate) fn item_purity(
         // keys), so those route through the regular classifiers.
         StatementKind::Export => match item {
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) => {
-                classify_expr_purity(
-                    &default_expr.expr,
-                    shadowed,
-                    &BTreeSet::new(),
-                    &hints.assumptions.declared_pure,
-                    graph,
-                )
+                classify_expr_purity(&default_expr.expr, &scope)
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_)) => match class_of_item(item) {
-                Some(class) => classify_class_static_purity(
-                    class,
-                    shadowed,
-                    &BTreeSet::new(),
-                    &hints.assumptions.declared_pure,
-                    graph,
-                ),
+                Some(class) => classify_class_static_purity(class, &scope),
                 None => Effects::none(),
             },
             _ => Effects::none(),
         },
-        StatementKind::VarDecl if has_trusted_initializer_purity(item, hints) => Effects::none(),
+        StatementKind::VarDecl if has_trusted_initializer_purity(item, context.hints) => {
+            Effects::none()
+        }
         StatementKind::VarDecl if has_local_effect => Effects::none(),
-        // Top-level (non-function-body) scope: a chunk-top read of a
-        // PlainData const is legitimately pure, so no PlainData name is
-        // lexically shadowed here.
         StatementKind::VarDecl => {
-            if let Some(input) = native_pure_initializer(item, proofs.native_operations) {
+            if let Some(input) = native_pure_initializer(item, context.proofs.native_operations) {
                 return Effects::none().with_dependencies(
                     &analysis_vocabulary::inputs::ProofDependencies {
                         native_operation_inputs: BTreeSet::from([input.evidence.reference.clone()]),
@@ -232,36 +214,17 @@ pub(crate) fn item_purity(
             }
             var_decl_of_item(item)
                 .map(|var| {
-                    classify_var_decl_purity(
-                        var,
-                        shadowed,
-                        &BTreeSet::new(),
-                        &hints.assumptions.declared_pure,
-                        graph,
-                        proofs.fresh_record_destructuring,
-                    )
+                    classify_var_decl_purity(var, &scope, context.proofs.fresh_record_destructuring)
                 })
                 .unwrap_or(Effects::none())
         }
         StatementKind::ClassDecl => match class_of_item(item) {
-            Some(class) => classify_class_static_purity(
-                class,
-                shadowed,
-                &BTreeSet::new(),
-                &hints.assumptions.declared_pure,
-                graph,
-            ),
+            Some(class) => classify_class_static_purity(class, &scope),
             None => Effects::none(),
         },
         StatementKind::SideEffect if has_local_effect => Effects::none(),
         StatementKind::SideEffect => match item {
-            ModuleItem::Stmt(Stmt::Expr(expr)) => classify_expr_purity(
-                &expr.expr,
-                shadowed,
-                &BTreeSet::new(),
-                &hints.assumptions.declared_pure,
-                graph,
-            ),
+            ModuleItem::Stmt(Stmt::Expr(expr)) => classify_expr_purity(&expr.expr, &scope),
             // Bare blocks, control flow, loops, etc. — soundness-first.
             _ => Effects::of(Effect::Havoc(HavocCause::ControlFlow), item.span()),
         },

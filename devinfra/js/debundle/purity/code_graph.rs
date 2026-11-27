@@ -840,13 +840,11 @@ fn classify_function_body(
         .iter()
         .filter_map(|pat| param_destructuring_purity(pat))
         .fold(Effects::none(), Effects::then);
+    let scope = PurityScope::function_body(shadowed, local_shadowed, declared_pure, graph);
     let mut collector = BodyPurityCollector {
         effects: Effects::none(),
         fresh_record: graph.fresh_record_proof(function.key),
-        shadowed,
-        local_shadowed,
-        declared_pure,
-        graph,
+        scope,
     };
     function.visit_body_with(&mut collector);
     param_purity
@@ -923,15 +921,7 @@ pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Effects> {
 struct BodyPurityCollector<'a> {
     effects: Effects,
     fresh_record: Option<&'a FreshRecordProof>,
-    shadowed: &'a BTreeSet<&'static str>,
-    /// Every name bound by the function whose body is being walked
-    /// (its params / body declarations). References to such names
-    /// must not resolve through any global table, chunk-graph
-    /// binding, or spec annotation — the lexical binding is a
-    /// different value than the outer one those describe.
-    local_shadowed: &'a BTreeSet<String>,
-    declared_pure: &'a BTreeSet<String>,
-    graph: &'a ChunkCodeGraph,
+    scope: PurityScope<'a>,
 }
 
 impl Visit for BodyPurityCollector<'_> {
@@ -956,13 +946,7 @@ impl Visit for BodyPurityCollector<'_> {
         } else {
             expr
         };
-        let p = classify_expr_purity(
-            classified,
-            self.shadowed,
-            self.local_shadowed,
-            self.declared_pure,
-            self.graph,
-        );
+        let p = classify_expr_purity(classified, &self.scope);
         self.effects = std::mem::take(&mut self.effects).then(p);
     }
 

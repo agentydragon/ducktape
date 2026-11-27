@@ -26,9 +26,6 @@ def classify (ids : List Nat) (nodes : Array Json) : Except String (List Nat) :=
       metadata := metadata ++ [ordinal]
   return metadata
 
-def sourceBundle (nodes : Array Json) : EsmSplit.Bundle :=
-  linkedLayoutBundle nodes (Effects.footprintUnits nodes)
-
 def withMetadata (request : EsmSplit.Spec) (metadata : List Nat) : EsmSplit.Spec :=
   { request with modules := request.modules.map fun (owner, selectors) =>
     (owner, if owner == request.entry then selectors ++ metadata.map .stmt else selectors) }

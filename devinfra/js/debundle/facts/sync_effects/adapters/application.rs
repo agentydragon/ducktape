@@ -103,6 +103,16 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         }
     }
 
+    /// The canonical record of the source-covered call at `span`. The
+    /// execution index keeps a call record for every call the source coverage
+    /// admitted, so a missing record means this span was never admitted.
+    pub(crate) fn canonical_call_at(&self, span: Span) -> &'source Arc<Call> {
+        self.calls()
+            .iter()
+            .find(|call| call.kind == CallKind::Call && call.span == span)
+            .expect("a source-covered call has its canonical call record")
+    }
+
     fn binding_values<'a>(&'a self, binding: &Id, frame: &'a LocalFrame) -> Option<&'a Values> {
         if self.executor.inputs.top_bindings.contains(binding) {
             self.executor.state.world.module.prefix_values.get(binding)
@@ -629,11 +639,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 .iter()
                 .map(|argument| argument.values.clone())
                 .collect();
-            let call = self
-                .calls()
-                .iter()
-                .find(|call| call.kind == CallKind::Call && call.span == span)
-                .expect("a source-covered call has its canonical call record");
+            let call = self.canonical_call_at(span);
             let Some(caller) = self.executor.local_body_identity_for_call(call) else {
                 return Err(RemainderDisposition::NeedsSummary);
             };
@@ -691,12 +697,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
             .extend(self.executor.reachable_objects(&reached));
         // Reuse the canonical call's source policy and proof sites, while
         // transporting the operands selected by the ordered kernel.
-        let call = self
-            .calls()
-            .iter()
-            .find(|call| call.kind == CallKind::Call && call.span == span)
-            .expect("a source-covered call has its canonical call record")
-            .clone();
+        let call = self.canonical_call_at(span).clone();
         let audited_input =
             self.outcome
                 .root_binding_effect_identity

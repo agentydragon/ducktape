@@ -29,6 +29,74 @@ def decl (name : Name) (value : Literal) : Stmt := .decl .const name value.expr
 theorem literal_closed (value : Literal) : value.expr.free = [] := by
   cases value <;> rfl
 
+/-- A literal left operand determines the branch without evaluating or
+rewriting the right operand. The selected branch retains the evaluator's
+remaining fuel. This is an equality of computations, including every state
+and every modeled outcome. -/
+theorem eval_logical_literal {W : World} (n : Nat) (env : Env) (op : LogOp)
+    (left : Literal) (right : Expr) :
+    evalExpr (W := W) (n + 2) env (.logical op left.expr right) =
+      (do
+        if ← lift (shortCircuits op left.value) then pure left.value
+        else evalExpr (n + 1) env right) := by
+  cases left <;> simp only [Literal.expr, Literal.value, evalExpr, M.pure_bind]
+
+/-- When the literal short-circuits, the original right-hand syntax cannot
+read a binding, throw, allocate or make a world request. -/
+theorem eval_logical_literal_skipped {W : World} (n : Nat) (env : Env) (op : LogOp)
+    (left : Literal) (right : Expr) (skips : shortCircuits op left.value = .ok true) :
+    evalExpr (W := W) (n + 2) env (.logical op left.expr right) = pure left.value := by
+  rw [eval_logical_literal, skips]
+  simp only [lift, M.pure_bind, ↓reduceIte]
+
+/-- When the literal selects the right operand, its effects, failures and
+fuel use are exactly those of evaluating that operand at the remaining fuel. -/
+theorem eval_logical_literal_selected {W : World} (n : Nat) (env : Env) (op : LogOp)
+    (left : Literal) (right : Expr) (selects : shortCircuits op left.value = .ok false) :
+    evalExpr (W := W) (n + 2) env (.logical op left.expr right) = evalExpr (n + 1) env right := by
+  rw [eval_logical_literal, selects]
+  simp only [lift, M.pure_bind, Bool.false_eq_true, ↓reduceIte]
+
+/-- At insufficient fuel neither operand produces an outcome. -/
+theorem eval_logical_literal_low_fuel {W : World} (env : Env) (op : LogOp)
+    (left : Literal) (right : Expr) :
+    evalExpr (W := W) 0 env (.logical op left.expr right) = outOfFuel ∧
+      evalExpr (W := W) 1 env (.logical op left.expr right) = outOfFuel := by
+  constructor <;> rfl
+
+/-- A short-circuited logical expression has no binding reads or writes in
+its successful executions. The exact equations above cover other outcomes. -/
+theorem logical_skipped_footprint {W : World} (fuel : Nat) (env : Env) (op : LogOp)
+    (left : Literal) (right : Expr) (skips : shortCircuits op left.value = .ok true) :
+    CellFootprint (fun _ => False) (fun _ => False)
+      (evalExpr (W := W) fuel env (.logical op left.expr right)) := by
+  cases fuel with
+  | zero => exact cellFootprint_outOfFuel
+  | succ n =>
+    cases n with
+    | zero =>
+      rw [(eval_logical_literal_low_fuel (W := W) env op left right).2]
+      exact cellFootprint_outOfFuel
+    | succ n =>
+      rw [eval_logical_literal_skipped n env op left right skips]
+      exact cellFootprint_pure left.value
+
+/-- A skipped operand does not require its free names to resolve during this
+expression's evaluation, even when the two environments differ. -/
+theorem logical_skipped_env_independent {W : World} (fuel : Nat) (first second : Env)
+    (op : LogOp) (left : Literal) (right : Expr)
+    (skips : shortCircuits op left.value = .ok true) :
+    evalExpr (W := W) fuel first (.logical op left.expr right) =
+      evalExpr fuel second (.logical op left.expr right) := by
+  cases fuel with
+  | zero => rfl
+  | succ n =>
+    cases n with
+    | zero => rfl
+    | succ n =>
+      rw [eval_logical_literal_skipped n first op left right skips,
+        eval_logical_literal_skipped n second op left right skips]
+
 /-- Once linked to its own cell, this unit always initializes it without host effects.
 The evaluator uses two fuel levels for the declaration and literal. -/
 theorem run_literal {W : World} (n id : Nat) (env : Env) (name : Name) (value : Literal)
@@ -37,6 +105,17 @@ theorem run_literal {W : World} (n id : Nat) (env : Env) (name : Name) (value : 
       .ok .normal { s.assign cell value.value with region := 0 } := by
   cases value <;> simp [runUnit, inRegion, decl, Literal.expr, Literal.value, execStmt,
     evalExpr, initVar, linked, State.assign, modifyState, M.bind_apply, pure] <;> rfl
+
+/-- A declaration whose literal left operand short-circuits has the same
+cell effect as that literal, without evaluating its original right operand. -/
+theorem run_logical_skipped {W : World} (n id : Nat) (env : Env) (name : Name)
+    (op : LogOp) (left : Literal) (right : Expr) (cell : Addr)
+    (skips : shortCircuits op left.value = .ok true)
+    (linked : env.vars.lookup name = some cell) (s : State W) :
+    runUnit (n + 3) env id (.decl .const name (.logical op left.expr right)) s =
+      .ok .normal { s.assign cell left.value with region := 0 } := by
+  simp [runUnit, inRegion, execStmt, eval_logical_literal_skipped n env op left right skips,
+    initVar, linked, State.assign, modifyState, M.bind_apply, pure] <;> rfl
 
 /-- Two linked literal declarations with distinct cells commute in any state.
 The tail is arbitrary, including throws and host effects. -/
@@ -60,6 +139,38 @@ theorem swap_literals {W : World} (fuel i j : Nat) (env1 env2 : Env)
         simpa only [State.assign] using congrArg (fun t : State W => { t with region := 0 })
           (State.assign_comm s c1 c2 v1.value v2.value distinct)
       rw [same]
+
+/-- A skipped logical initializer commutes with an independent literal
+declaration. The RHS remains the original syntax, and the equality includes
+fuel exhaustion as well as every outcome of the unchanged suffix. -/
+theorem swap_skipped_literal {W : World} (fuel i j : Nat) (env1 env2 : Env)
+    (name1 name2 : Name) (op : LogOp) (left : Literal) (right : Expr) (value : Literal)
+    (c1 c2 : Addr) (skips : shortCircuits op left.value = .ok true)
+    (h1 : env1.vars.lookup name1 = some c1) (h2 : env2.vars.lookup name2 = some c2)
+    (distinct : c1 ≠ c2) (tail : List LinkedUnit) (s : State W) :
+    runUnits fuel ((i, .decl .const name1 (.logical op left.expr right), env1) ::
+        (j, decl name2 value, env2) :: tail) s =
+      runUnits fuel ((j, decl name2 value, env2) ::
+        (i, .decl .const name1 (.logical op left.expr right), env1) :: tail) s := by
+  cases fuel with
+  | zero => rfl
+  | succ fuel =>
+    cases fuel with
+    | zero => rfl
+    | succ fuel =>
+      cases fuel with
+      | zero =>
+        simp only [runUnits, M.bind_apply, run_literal 0 j env2 name2 value c2 h2]
+        rfl
+      | succ n =>
+        simp only [runUnits, M.bind_apply, run_logical_skipped n i env1 name1 op left right c1 skips h1,
+          run_literal (n + 1) j env2 name2 value c2 h2]
+        have same :
+            { ({ s.assign c1 left.value with region := 0 }).assign c2 value.value with region := 0 } =
+              { ({ s.assign c2 value.value with region := 0 }).assign c1 left.value with region := 0 } := by
+          simpa only [State.assign] using congrArg (fun t : State W => { t with region := 0 })
+            (State.assign_comm s c1 c2 left.value value.value distinct)
+        rw [same]
 
 /-- Actual top-level allocation gives distinct cells to distinct resolved names. -/
 theorem linked_distinct {W : World} {ss : List Stmt} {frames : List (Nat × List (Name × Addr))}
@@ -397,6 +508,14 @@ end AuthoredFixture
 #print axioms swap_in_context
 #print axioms swap_literals
 #print axioms literal_closed
+#print axioms eval_logical_literal
+#print axioms eval_logical_literal_skipped
+#print axioms eval_logical_literal_selected
+#print axioms eval_logical_literal_low_fuel
+#print axioms logical_skipped_footprint
+#print axioms logical_skipped_env_independent
+#print axioms run_logical_skipped
+#print axioms swap_skipped_literal
 #print axioms run_literal
 
 end CoreJS.ExactLiteralMove

@@ -3,7 +3,8 @@ import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 
-import { answerApi, mount, send, sendUpserts } from "../testing/harness";
+import { answerApi, mount, reopen, send, sendUpserts } from "../testing/harness";
+import { actionGroupUpsertProtoJson, actionGroupsSnapshotProtoJson } from "../testing/proto_fixtures";
 import {
   ActionGroupSchema,
   ExecutorKind,
@@ -252,4 +253,26 @@ it("does not repeat a linkage wait under a refresh failure that already explains
   );
   expect(container.textContent).toContain("test-only refusal");
   expect(container.textContent).not.toContain("test-only linkage wait");
+});
+
+it("keeps the last health snapshot through a reconnect's replay and fails an upsert sent before it completes", async () => {
+  const group = (key: string): ActionGroup =>
+    create(ActionGroupSchema, {
+      key,
+      title: key,
+      description: "",
+      executorKind: ExecutorKind.MCP,
+      executorDescription: key,
+      available: true,
+      health: { state: McpLifecycle.AVAILABLE, failures: 0 },
+    });
+  const container = await render([], [group("test-kept-group")]);
+  const replay = await reopen(HEALTH);
+  await act(async () => {
+    replay.sendRaw(JSON.stringify({ result: actionGroupsSnapshotProtoJson([group("test-kept-group")]) }));
+    replay.sendRaw(JSON.stringify({ result: actionGroupUpsertProtoJson(group("test-early-group")) }));
+  });
+  await vi.waitFor(() => expect(replay.signal?.aborted).toBe(true));
+  expect(container.textContent).toContain("test-kept-group");
+  expect(container.textContent).not.toContain("test-early-group");
 });

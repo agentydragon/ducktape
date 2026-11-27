@@ -208,8 +208,7 @@ pub(super) fn receiver_uses_intrinsic_alias(
         ValueExpr::Member(base, ..) => receiver_uses_intrinsic_alias(base, aliases),
         ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
             value
-                .result_alternatives()
-                .expect("alternative expression")
+                .branching_alternatives()
                 .iter()
                 .any(|option| receiver_uses_intrinsic_alias(option, aliases))
         }
@@ -435,7 +434,7 @@ pub(super) fn intrinsic_roots_read(
             out
         }
         ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
-            let options = value.result_alternatives().expect("alternative expression");
+            let options = value.branching_alternatives();
             let mut combined = NativeReceiverRoots::new();
             let mut unknown_arm = false;
             let mut ordinary_refs = BTreeSet::new();

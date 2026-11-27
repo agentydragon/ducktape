@@ -37,11 +37,14 @@ function followCollection<T extends { identity?: PolicyResourceIdentity }, S>(
   snapshotItems: (chunk: S) => T[],
   onChange: (state: CollectionState<T>) => void
 ): () => void {
-  const collection = new WatchCollection<T, PolicyResourceIdentity>(
+  const collection = new WatchCollection<T, PolicyResourceIdentity>({
     kind,
-    (item) => item.identity,
-    (identity) => identity.name
-  );
+    key: (item) => (item.identity?.uid ? item.identity.name : undefined),
+    removal: {
+      key: (identity) => (identity.uid ? identity.name : undefined),
+      matches: (held, identity) => held.identity?.uid === identity.uid,
+    },
+  });
   return followWatch(url, {
     onOpen: () => {
       collection.beginSnapshot();

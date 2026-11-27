@@ -2637,9 +2637,46 @@ it.each([
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress-hit")?.getAttribute("aria-label")).toBe(
     outcome === "effected" ? status : undefined
   );
-  expect(bubble?.parentElement?.querySelector("button[aria-label='Dismiss']")).toBeNull();
+  expect(buttonIn(bubble!.parentElement!, "Dismiss") !== undefined).toBe(outcome === "failed");
   expect(container.querySelector(`.transcript-user-bubble[data-message-phase="${phase}"]`)).not.toBeNull();
 });
+
+it.each([Operation.SUBMIT_INPUT, Operation.CHANGE_MODEL])(
+  "dismisses only the exact History failure for %s and keeps its reason",
+  async (operation) => {
+    const stored: { commandId: string; outcomeCursor: string }[] = [];
+    deliveryRequest = (url, init) => {
+      if (url.pathname.endsWith(":batchGet")) {
+        return Response.json({ acknowledgements: stored.map((notice) => ({ notice })) });
+      }
+      stored.push(JSON.parse(String(init?.body)).notice);
+      return Response.json({});
+    };
+    const state = (outcomeCursor: bigint) =>
+      threadState({
+        rows: [
+          viewState(),
+          entity({
+            case: "command",
+            value: { operation, outcome: ThreadCommandOutcome.FAILED, outcomeCursor, outcomeReason: "Harness stopped" },
+          }),
+        ],
+      });
+    const before = await render(state(37n));
+    const row = pendingRow(before, "test-entity");
+    await act(async () => buttonIn(row, "Dismiss")!.click());
+    expect(stored).toEqual([{ commandId: "test-entity", outcomeCursor: "37" }]);
+    expect(row.querySelector(".transcript-user-bubble")).not.toBeNull();
+    expect(row.querySelector('[role="alert"]')).toBeNull();
+    expect(buttonIn(row, "Dismiss")).toBeUndefined();
+    expect((await openDeliveryDetails(row)).textContent).toContain("Harness stopped");
+
+    const reopened = await render(state(37n));
+    expect(buttonIn(pendingRow(reopened, "test-entity"), "Dismiss")).toBeUndefined();
+    const updated = await render(state(38n));
+    expect(buttonIn(pendingRow(updated, "test-entity"), "Dismiss")).toBeDefined();
+  }
+);
 
 it("keeps a still-pending sent message out of the pending-commands box, since it renders inline instead", async () => {
   const container = await render(

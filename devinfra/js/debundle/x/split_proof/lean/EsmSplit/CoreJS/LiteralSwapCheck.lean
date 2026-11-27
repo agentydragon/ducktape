@@ -18,6 +18,72 @@ def literal (e : Expr) : Option { v : Literal // v.expr = e } :=
   | .str s => some ⟨.str s, rfl⟩
   | _ => none
 
+/-- Schedule steps over original indexed rows. Prefixes and suffixes retain
+their statements and IDs. The address obligations are discharged at allocation. -/
+inductive SourceSchedule : List (Nat × Stmt) → List (Nat × Stmt) → Prop where
+  | refl (body) : SourceSchedule body body
+  | swap (pre tail : List (Nat × Stmt)) (i j : Nat) (x y : Name) (a b : Literal) :
+      x ≠ y →
+      SourceSchedule (pre ++ (i, decl x a) :: (j, decl y b) :: tail)
+        (pre ++ (j, decl y b) :: (i, decl x a) :: tail)
+  | trans {before middle after} :
+      SourceSchedule before middle → SourceSchedule middle after → SourceSchedule before after
+
+theorem SourceSchedule.perm {before after} (schedule : SourceSchedule before after) :
+    after.Perm before := by
+  induction schedule with
+  | refl => exact .refl _
+  | swap pre tail i j x y a b _ =>
+    apply List.Perm.append_left
+    exact .swap _ _ _
+  | trans _ _ first second => exact second.trans first
+
+def inScope (env : Env) (body : List (Nat × Stmt)) : List LinkedUnit :=
+  body.map fun (id, stmt) => (id, stmt, env)
+
+/-- Use one actual allocation for the entire schedule and lift each source swap
+to the already-proved linked step. -/
+theorem SourceSchedule.linked {before after} (schedule : SourceSchedule before after) (env : Env)
+    (cells : ∀ id x e, (id, .decl .const x e) ∈ before → ∃ a, env.vars.lookup x = some a)
+    (injective : ∀ x y a, env.vars.lookup x = some a → env.vars.lookup y = some a → x = y) :
+    SafeReorder (inScope env before) (inScope env after) := by
+  induction schedule with
+  | refl => exact .refl _
+  | swap pre tail i j x y a b different =>
+    obtain ⟨cx, hx⟩ := cells i x a.expr (by simp [decl])
+    obtain ⟨cy, hy⟩ := cells j y b.expr (by simp [decl])
+    have separate : cx ≠ cy := fun same => different (injective x y cx hx (same ▸ hy))
+    simpa [inScope] using
+      (SafeReorder.swap (inScope env pre) (inScope env tail) i j env env x y a b cx cy hx hy separate)
+  | trans first _ firstSound secondSound =>
+    exact .trans (firstSound cells) (secondSound fun id x e member =>
+      cells id x e (first.perm.mem_iff.1 member))
+
+/-- Check the requested executable order using the original rows. The current
+checker admits unchanged order or one adjacent pair of distinct literal consts. -/
+def checkSourceSchedule (body : List (Nat × Stmt)) (order : List Nat) :
+    Except String (Σ scheduled : List (Nat × Stmt),
+      PLift (SourceSchedule body scheduled ∧ order = scheduled.map Prod.fst)) := do
+  let ids := body.map Prod.fst
+  if kept : order = ids then return ⟨body, ⟨.refl _, kept⟩⟩
+  let some index := (ids.zip order).findIdx? (fun (before, after) => before != after) |
+    throw "plan does not enumerate the original executable units"
+  match remaining : body.drop index with
+  | (i, .decl .const x ex) :: (j, .decl .const y ey) :: tail =>
+    let some ⟨a, ha⟩ := literal ex | throw "first moved initializer is not a primitive literal"
+    let some ⟨b, hb⟩ := literal ey | throw "second moved initializer is not a primitive literal"
+    if distinct : x ≠ y then
+      let pre := body.take index
+      let scheduled := pre ++ (j, decl y b) :: (i, decl x a) :: tail
+      if ordered : order = scheduled.map Prod.fst then
+        have source : body = pre ++ (i, decl x a) :: (j, decl y b) :: tail := by
+          rw [decl, ha, decl, hb, ← remaining]
+          exact (List.take_append_drop index body).symm
+        return ⟨scheduled, ⟨source.symm ▸ .swap pre tail i j x y a b distinct, ordered⟩⟩
+      else throw "plan is not the checked adjacent swap"
+    else throw "moved declarations do not name distinct bindings"
+  | _ => throw "the changed order does not start with two adjacent const declarations"
+
 /-- One checked step uses the linked addresses of the actual units. It cannot
 move a read, a throw, or two declarations of the same linked cell. -/
 def adjacent (units : List LinkedUnit) (index : Nat) : Except String { out // SafeReorder units out } := do
@@ -78,6 +144,9 @@ theorem throw_order (w : World) :
       (0, .throw (.str "first"), (⟨[], .undef, none⟩ : Env))] (initialState w 2)) = some (.str "second") := by
   constructor <;> cbv
 
+#print axioms SourceSchedule.perm
+#print axioms SourceSchedule.linked
+#print axioms checkSourceSchedule
 #print axioms throw_order
 #print axioms refuses_read
 #print axioms refuses_throw
