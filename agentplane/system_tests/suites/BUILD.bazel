@@ -332,9 +332,11 @@ py_test(
 )
 
 # Every VM scenario boots independently on the same stack and runs concurrently.
+# The recycled runner keeps the image store only (issue #20575).
 vm_test(
     name = "test_vm",
     recycle = True,
+    retain_k3s = False,
 )
 
 # Same scenarios on managed BuildBuddy for on-demand comparisons.

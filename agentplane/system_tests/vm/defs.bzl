@@ -7,20 +7,27 @@ def vm_test(
         name,
         pool = "kvm-vm",
         recycle = False,
+        retain_k3s = True,
         tags = [],
         suite = "//agentplane/system_tests/suites:test_vm.py",
         extra_deps = []):
-    """Use a hosted pool for hardware acceleration, or pool=None for the managed TCG control."""
+    """Use a hosted pool for hardware acceleration, or pool=None for the managed TCG control.
+
+    With recycle, retain_k3s=False stops k3s at teardown so the paused runner keeps only its image store:
+    a running KubeVirt baseline exceeds the KVM workers' 2 GiB paused-runner cap and is never reused.
+    """
     recycling_properties = {}
     recycling_environment = {}
     if recycle:
         recycling_properties = {
             "test.recycle-runner": "true",
-            "test.runner-recycling-key": "kvm-docker-spike-ext4-reclaim-v1-" + k3s_recycling_key(vm = True),
+            # Runners holding a running baseline and runners holding only images never trade places.
+            "test.runner-recycling-key": ("kvm-docker-spike-ext4-reclaim-v1-" if retain_k3s else "kvm-docker-images-v1-") + k3s_recycling_key(vm = True),
             "test.runner-recycling-max-wait": "5s",
             "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1,AGENTPLANE_K3S_DATA_DIR=/var/lib/k3s-recycled",
         }
         recycling_environment = {
+            "AGENTPLANE_K3S_RETAIN_RUNNING": "1" if retain_k3s else "0",
             "PYTEST_PLUGINS": "agentplane.system_tests.k3s.recycling_probe",
             "K3S_RECYCLING_DISK_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s:recycling_data_disk)",
         }

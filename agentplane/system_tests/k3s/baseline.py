@@ -1172,6 +1172,21 @@ def stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
     _record_baseline_transition("stop_owned_end", k3s.data_dir)
 
 
+def retain_running_baseline() -> bool:
+    """Whether teardown leaves k3s running for the next action on a recycled runner.
+
+    Retention needs BuildBuddy's executor persistence permission. A suite whose running baseline exceeds the
+    executor's paused-runner memory cap sets `AGENTPLANE_K3S_RETAIN_RUNNING=0`: teardown stops k3s, and the
+    recycled runner keeps only the digest-addressed image store on its data disk. The variable can only
+    disable retention, so it may come from the test's ordinary environment."""
+    if os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") != "1":
+        return False
+    retain = os.environ.get("AGENTPLANE_K3S_RETAIN_RUNNING")
+    if retain not in {None, "0", "1"}:
+        raise ValueError(f"AGENTPLANE_K3S_RETAIN_RUNNING must be 0 or 1: {retain=}")
+    return retain != "0"
+
+
 def stop_previous() -> None:
     """Leave retention mode by stopping only the server recorded in the ownership marker."""
     if _BASELINE_MARKER.exists():
