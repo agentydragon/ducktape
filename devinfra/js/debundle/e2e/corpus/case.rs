@@ -26,6 +26,8 @@ pub(super) struct Accepted {
     #[serde(default)]
     pub probes: BTreeMap<PathBuf, Probe>,
     #[serde(default)]
+    pub emitted_probes: BTreeMap<PathBuf, Probe>,
+    #[serde(default)]
     pub runtime_files: BTreeMap<String, PathBuf>,
 }
 

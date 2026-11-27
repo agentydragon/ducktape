@@ -26,6 +26,50 @@ fn wrong_stdout_does_not_pass() {
 }
 
 #[test]
+fn rename_namespace_and_cell_controls_fail_on_emitted_output() {
+    let mut wrong_name = named_case("emission/catchall_member_rename/spec");
+    let Expectation::Accept { accept } = &mut wrong_name.expectation else {
+        unreachable!()
+    };
+    accept
+        .exports
+        .get_mut(std::path::Path::new("main/entry.js"))
+        .unwrap()
+        .include
+        .push("missing_name".into());
+    let failure = catch_unwind(|| wrong_name.run()).expect_err("wrong name must fail");
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .is_some_and(|s| s.contains("to export missing_name"))
+    );
+
+    let inputs = CaseWorkspace::with_retention_root(None);
+    let probe = inputs.path().join("wrong-cell.mjs");
+    write_text_file(
+        &probe,
+        "export default entry => console.log(entry.a === entry.b, true, entry.a !== entry.b);\n",
+    );
+    let mut wrong_cell = named_case("emission/catchall_member_rename/spec");
+    wrong_cell
+        .inputs
+        .iter_mut()
+        .find(|file| file.relative == std::path::Path::new("identity.probe.mjs"))
+        .unwrap()
+        .source = probe;
+    let failure = catch_unwind(|| wrong_cell.run()).expect_err("wrong cell must fail");
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| failure.downcast_ref::<&str>().copied())
+        .unwrap_or("");
+    assert!(
+        message.contains("false true true"),
+        "unexpected failure: {message}"
+    );
+}
+
+#[test]
 fn discovers_and_executes_a_second_analyzed_chunk_without_a_list() {
     let inputs = CaseWorkspace::with_retention_root(None);
     let main = inputs.path().join("main.js");

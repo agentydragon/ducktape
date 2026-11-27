@@ -2,9 +2,17 @@ spec.yaml:
   accept:
     stdout: ""
     exports:
+      main/entry.js:
+        include:
+          - "a"
+          - "b"
+          - "FirstFn"
       main/modules/residual/unhandled.js:
         include:
           - "FirstFn"
           - "b"
         exclude:
           - "a"
+    emitted_probes:
+      identity.probe.mjs:
+        stdout: "true true true\n"
