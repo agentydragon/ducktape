@@ -21,7 +21,7 @@ use gate::{
     AssignmentAnalysis, ChunkGateRejection, GateVerdict, RejectedAssignment, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
 };
-use graph::AtomicGroupConflict;
+use graph::assignment_assembly::AtomicGroupConflict;
 use graph::report::source_unit_key;
 use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, CANDIDATE_RELOCATION_ASSESSMENT_REPORT, CYCLES_REPORT,
@@ -526,12 +526,12 @@ fn emit_reports_and_resolve_gate<'a>(
             // modules as canonical `ModulePath` — the same entity
             // keys `dependency_graph.json.gz` uses, so the file joins
             // against the dependency graph without string surgery.
-            let wire = ::graph::AtomicGroupConflictReport::from_conflicts(
+            let wire = ::graph::report::AtomicGroupConflictReport::from_conflicts(
                 &assignment_report.atomic_group_conflicts,
                 &|id| assignment_analysis.module_path(id),
                 assignment_analysis.inputs().dependency_graph(),
                 &|id| {
-                    ::graph::DependencyEdgeReport::from_edge(
+                    ::graph::report::DependencyEdgeReport::from_edge(
                         assignment_analysis.inputs().dependency_graph().edge(id),
                     )
                 },

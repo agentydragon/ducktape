@@ -424,17 +424,19 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
         let local_bindings = assignment_analysis
             .inputs()
             .local_bindings(finalized.chunk_id_interned)?;
-        let placement_projection = graph::project_placement(graph::PlacementProjectionInput {
-            graph: graph_ir,
-            assignment: assignment_analysis.assignment(),
-            local_bindings,
-            body: &finalized.runtime_ast.module.body,
-            layout: &finalized.source_unit_layout,
-            whole_statements: &finalized.whole_statement_assignment,
-            module_count: finalized.module_count,
-            destructuring_groups: &finalized.ast_analysis.destructuring_groups,
-            nested_var_statements: &finalized.ast_analysis.nested_var_statements,
-        });
+        let placement_projection = graph::placement_projection::project_placement(
+            graph::placement_projection::PlacementProjectionInput {
+                graph: graph_ir,
+                assignment: assignment_analysis.assignment(),
+                local_bindings,
+                body: &finalized.runtime_ast.module.body,
+                layout: &finalized.source_unit_layout,
+                whole_statements: &finalized.whole_statement_assignment,
+                module_count: finalized.module_count,
+                destructuring_groups: &finalized.ast_analysis.destructuring_groups,
+                nested_var_statements: &finalized.ast_analysis.nested_var_statements,
+            },
+        );
         let candidate = CandidatePreflight::prepare(assignment_analysis, &placement_projection);
         ensure!(
             !candidate.is_rejected(),

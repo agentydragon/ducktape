@@ -2,7 +2,7 @@ use analysis_model::DepKind;
 use analysis_vocabulary::report_schema::{BindingEffectAuthorityReport, EffectCellReport};
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
-use graph::DependencyGraphReport;
+use graph::report::DependencyGraphReport;
 
 fn assert_property_frontier(
     graph: &DependencyGraphReport,

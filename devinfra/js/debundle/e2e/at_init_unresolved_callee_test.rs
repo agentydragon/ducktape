@@ -11,7 +11,7 @@
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use graph::EdgeRoleReport;
+use graph::report::EdgeRoleReport;
 
 /// `const g = readB; const r = g();` — the alias `g` is a VarDecl, not a
 /// function declaration. `readB`'s body reads `B` (mod_b), and mod_b

@@ -167,7 +167,7 @@ impl DependencyGraph {
     /// dropping such edges would hand the planner-side gate a weaker
     /// graph than the one the report described.
     pub(super) fn from_report(
-        report: &crate::DependencyGraphReport,
+        report: &crate::report::DependencyGraphReport,
     ) -> Result<(Self, HashMap<String, SourceUnitId>), GraphReportIdError> {
         let mut by_id = HashMap::with_capacity(report.nodes.len());
         let mut nodes = Vec::with_capacity(report.nodes.len());

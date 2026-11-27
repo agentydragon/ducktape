@@ -8,7 +8,7 @@ use std::fs;
 use analysis_projection::AnalysisSpec;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
-use graph::DependencyGraphReport;
+use graph::report::DependencyGraphReport;
 
 #[test]
 fn projection_rejects_unresolved_and_duplicate_selectors_before_writing() {

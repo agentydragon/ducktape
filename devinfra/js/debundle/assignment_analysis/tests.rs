@@ -11,6 +11,8 @@ use analysis::{BindingKind, ModuleRole};
 use analysis_domain::item_views::StatementKind;
 use analysis_model::DepKind;
 use analysis_vocabulary::inputs::AnalysisInputs;
+use graph::atomic_groups::compute_dependency_graph_and_atomic_groups_with;
+use graph::report::{BindingReport, EdgeRoleReport, ModuleDestinationKind};
 use graph::*;
 use raw_js_test_support::parse;
 use source_identity::ChunkId;

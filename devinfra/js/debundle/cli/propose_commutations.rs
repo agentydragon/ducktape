@@ -22,11 +22,14 @@ use analysis::{EntryDestination, ModuleId};
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
+use graph::module_assignment::ModuleAssignment;
+use graph::report::{
+    DependencyEdgeReport, DependencyGraphReport, ModuleDestinationKind, ModuleKey, SourceUnitReport,
+};
 use graph::{CommutationOrder, EndpointView, assignment_endpoints};
 use graph::{
-    DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphInput,
-    DependencyGraphReport, KnownConflict, ModuleAssignment, ModuleDestinationKind, ModuleKey,
-    PremiseVerdict, SequencedCause, SourceUnitReport,
+    DependencyEdgeId, DependencyGraph, DependencyGraphInput, KnownConflict, PremiseVerdict,
+    SequencedCause,
 };
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::output_format::OutputFormat;

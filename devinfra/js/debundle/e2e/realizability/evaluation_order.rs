@@ -18,8 +18,9 @@ use analysis_vocabulary::inputs::AnalysisInputs;
 use analyze::analyze_chunk;
 use debundle_e2e_support::*;
 use gate::check_realizability_with_priority;
+use graph::DependencyGraph;
 use graph::build_dependency_graph_with;
-use graph::{DependencyGraph, ModuleAssignment};
+use graph::module_assignment::ModuleAssignment;
 
 struct SweepCase {
     name: &'static str,

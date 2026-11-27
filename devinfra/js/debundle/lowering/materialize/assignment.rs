@@ -16,8 +16,8 @@ use artifact::JsFile;
 use frontend_elaboration::ResolvedMemberSite;
 use frontend_elaboration::chunk_ast::{ChunkAstAnalysis, SourceExportIdentity};
 use gate::AssignmentAnalysis;
-use graph::SourceUnitLayout;
 use graph::assignment_assembly::assemble_assignment;
+use graph::placement_projection::SourceUnitLayout;
 use graph_provenance::GraphProvenance;
 use js_ast::ParsedJsModule;
 use ownership_subset::SelectedModule;
@@ -52,7 +52,7 @@ pub(super) struct SelectedAssignmentBuildInput<'a, 'p, 's> {
     pub(super) placement_anchors: Option<selector_resolve::PlacementAnchors>,
     pub(super) placement_source: Option<selector_resolve::Chunk<'p>>,
     pub(super) placement_modules: BTreeMap<String, spec::LogicalModule>,
-    pub(super) precomputed: graph::DependencyGraphAndAtomicGroups,
+    pub(super) precomputed: graph::atomic_groups::DependencyGraphAndAtomicGroups,
     pub(super) projection: &'p AnalysisProjection<'s>,
 }
 
@@ -333,7 +333,7 @@ struct AssignmentSettlement<'a> {
 /// coarse residual synthesis until none remain.
 fn settle_assignment(
     settlement: &AssignmentSettlement<'_>,
-    precomputed: graph::DependencyGraphAndAtomicGroups,
+    precomputed: graph::atomic_groups::DependencyGraphAndAtomicGroups,
     bindings_catalogue: BindingCatalogue,
     module_plans: &mut Vec<ModulePlan>,
     whole_statement_assignment: &mut BTreeMap<StatementId, usize>,
@@ -491,8 +491,8 @@ pub(crate) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
     });
     let graph = graph.with_source_declarations(&structural_analysis.per_statement)?;
     let dependency_graph = graph.graph().clone();
-    let precomputed = graph::DependencyGraphAndAtomicGroups {
-        atomic_groups: graph::compute_atomic_groups(&dependency_graph),
+    let precomputed = graph::atomic_groups::DependencyGraphAndAtomicGroups {
+        atomic_groups: graph::atomic_groups::compute_atomic_groups(&dependency_graph),
         dependency_graph,
         unused_commuting_statements: Vec::new(),
     };

@@ -6,7 +6,7 @@ use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 
 fn reachable_assignments<'a>(
-    graph: &'a graph::DependencyGraphReport,
+    graph: &'a graph::report::DependencyGraphReport,
     root: &'a analysis_vocabulary::purity::Purity,
 ) -> Vec<&'a analysis_vocabulary::purity::PurityReason> {
     let mut pending = vec![root];

@@ -9,7 +9,8 @@ use anyhow::Result;
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
-use graph::{AtomicGroupReport, DependencyGraphInput, DependencyGraphReport};
+use graph::DependencyGraphInput;
+use graph::report::{AtomicGroupReport, DependencyGraphReport};
 use graph_provenance::VerifiedGraphSourceContext;
 use spec_modules::{collect_module_files, module_path_from_file, read_module_claims};
 

@@ -9,7 +9,8 @@ use thiserror::Error;
 use crate::report_builders::build_dependency_graph_report;
 use analysis::{BindingCatalogue, BindingScopeError, EntryDestination, ModuleId, PlannedModule};
 use graph::module_assignment::ModuleAssignment;
-use graph::{DependencyGraphReport, StructuralPlacementCheck};
+use graph::placement_projection::StructuralPlacementCheck;
+use graph::report::DependencyGraphReport;
 use graph::{assignment_assembly::AtomicGroupConflict, assignment_assembly::assemble_assignment};
 use graph::{atomic_groups::AtomicGroup, atomic_groups::DependencyGraphAndAtomicGroups};
 use source_identity::SourceUnitId;
@@ -134,7 +135,7 @@ impl<'a> CandidatePreflight<'a> {
     /// The projection must be for this immutable assignment.
     pub fn prepare(
         assignment_analysis: &'a AssignmentAnalysis,
-        projection: &graph::PlacementProjection<'_>,
+        projection: &graph::placement_projection::PlacementProjection<'_>,
     ) -> Self {
         assert!(
             std::ptr::eq(&assignment_analysis.assignment, projection.assignment()),
@@ -345,7 +346,7 @@ pub struct StructuralPlacementAssessment {
     /// uses; diagnostic counts do not reconstruct the emitter's decision.
     pub emission_mappable: bool,
     pub coverage: StructuralPlacementCoverage,
-    pub projection_violations: Vec<graph::PlacementProjectionViolation>,
+    pub projection_violations: Vec<graph::placement_projection::PlacementProjectionViolation>,
     pub cross_destination_rebinds: Vec<CrossDestinationRebindObligation>,
     pub atomic_group_obligations: Vec<AtomicGroupPlacementObligation>,
     pub semantic_order_sccs: Vec<SemanticOrderSccObligation>,
@@ -435,7 +436,7 @@ fn has_legacy_gate_ordering_veto(placement: &StructuralPlacementAssessment) -> b
 fn structural_placement_assessment(
     graph: &graph::DependencyGraph,
     validation: &AssignmentValidation,
-    projection: &graph::PlacementProjection<'_>,
+    projection: &graph::placement_projection::PlacementProjection<'_>,
 ) -> StructuralPlacementAssessment {
     let cross_destination_rebinds: Vec<CrossDestinationRebindObligation> = validation
         .verdict

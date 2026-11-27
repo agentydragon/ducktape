@@ -14,8 +14,8 @@ use analysis_vocabulary::report_schema::{
 };
 use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Args as ClapArgs};
-use graph::ProgramGraphReport;
 use graph::report::BindingReport;
+use graph::report::ProgramGraphReport;
 use graph_provenance::{CurrentRoots, GraphProvenance};
 use peel::output_format::OutputFormat;
 use peel::plan::LimitSectionReport;

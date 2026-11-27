@@ -8,7 +8,7 @@ pub use graph_fixture::GraphFixture;
 use analysis_model::DepKind;
 use debundle_e2e_support::saved_analysis::StagedInvocation;
 use debundle_e2e_support::{Fixture, RejectedFixture, read_gzip_json, read_json};
-use graph::{DependencyGraphReport, ProgramGraphReport};
+use graph::report::{DependencyGraphReport, ProgramGraphReport};
 use graph::{report::EdgeRoleReport, report::SourceUnitReport};
 use serde_json::Value;
 use std::path::{Path, PathBuf};

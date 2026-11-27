@@ -6,7 +6,7 @@ use std::path::Path;
 use analysis_domain::item_views::StatementKind;
 use anonymous_resolution::resolve_source_file;
 use anyhow::{Context, Result, anyhow, bail};
-use graph::{DependencyGraphReport, ModuleDestinationKind};
+use graph::report::{DependencyGraphReport, ModuleDestinationKind};
 use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
 use spec::{LogicalModule, ModulePath, is_residual_namespace_path};
 use spec_modules::{coalesce_source_match_claims, module_path_from_file};
@@ -497,7 +497,7 @@ struct ResidualClaimPlan {
 impl ResidualClaimPlan {
     fn claim(
         &mut self,
-        node: &graph::SourceUnitReport,
+        node: &graph::report::SourceUnitReport,
         source: std::path::PathBuf,
         destination: &str,
         source_unit_id: &str,

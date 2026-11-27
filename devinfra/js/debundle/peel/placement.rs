@@ -12,7 +12,7 @@ use analysis::{EntryDestination, ModuleId};
 use analysis_domain::item_views::StatementKind;
 use anyhow::{Context, Result, ensure};
 use gate::project_assignment_constraints;
-use graph::ModuleAssignment;
+use graph::module_assignment::ModuleAssignment;
 use source_identity::SourceUnitId;
 use spec::{ModulePath, is_residual_namespace_path};
 

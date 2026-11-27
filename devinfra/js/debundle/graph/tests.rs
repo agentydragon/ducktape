@@ -141,7 +141,7 @@ mod from_report_tests {
             callback_factory_barriers: Vec::new(),
             heap_native_integrity_uses: Vec::new(),
             synchronous_execution: None,
-            destination: crate::ModuleKey("residual".to_string()),
+            destination: crate::report::ModuleKey("residual".to_string()),
         }
     }
 
@@ -225,7 +225,7 @@ mod from_report_tests {
         report.nodes.swap(0, 2);
         report.nodes[1]
             .declared_bindings
-            .push(crate::BindingReport {
+            .push(crate::report::BindingReport {
                 binding: "localName".into(),
                 export_name: "readableName".into(),
             });

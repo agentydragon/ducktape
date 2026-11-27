@@ -8,7 +8,7 @@ mod own_data_reads;
 
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
-use graph::DependencyGraphReport;
+use graph::report::DependencyGraphReport;
 use serde_json::Value;
 
 fn execution(fixture: &Fixture, binding: &str) -> Value {

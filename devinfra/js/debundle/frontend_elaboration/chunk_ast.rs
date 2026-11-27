@@ -9,7 +9,9 @@ use source_identity::StatementId;
 
 use crate::source_ast::{RuntimeImportFacts, RuntimeImportInfo, runtime_import_bindings};
 use anyhow::{Context, Result, bail};
-use graph::{DestructuringDeclaratorGroup, NestedVarStatement, SourceUnitSyntaxLocation};
+use graph::placement_projection::{
+    DestructuringDeclaratorGroup, NestedVarStatement, SourceUnitSyntaxLocation,
+};
 use js_ast::post_split_top_level_count;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{HashMap, HashSet};

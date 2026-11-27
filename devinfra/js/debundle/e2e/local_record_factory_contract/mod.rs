@@ -14,7 +14,7 @@ mod retained_arrays;
 use analysis_vocabulary::report_schema::SynchronousExecutionReport;
 use debundle_e2e_graph_support::node_declaring;
 use debundle_e2e_support::*;
-use graph::DependencyGraphReport;
+use graph::report::DependencyGraphReport;
 
 /// The synchronous-execution report of the source unit declaring `binding`.
 fn execution<'g>(
