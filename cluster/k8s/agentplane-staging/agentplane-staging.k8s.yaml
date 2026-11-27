@@ -3793,6 +3793,8 @@ spec:
   template:
     metadata:
       labels:
+        agentplane.io/otel-class: service
+        agentplane.io/otel-emitter: "true"
         app.kubernetes.io/name: central-sampler
         cdk8s.io/metadata.addr: agentplane-central-sampler-deployment-c84b5474
     spec:
@@ -3806,6 +3808,18 @@ spec:
                   name: postgres-central-sampler
             - name: SSL_CERT_FILE
               value: /var/run/public-web-pki/ca-certificates.crt
+            - name: OTEL_SERVICE_NAME
+              value: central-sampler
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=agentplane,deployment.environment.name=agentplane-staging
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4317
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_always_on
             - name: AGENTPLANE_CENTRAL_SAMPLER_CONFIG
               value: /etc/agentplane-central-sampler/settings.json
           image: git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset

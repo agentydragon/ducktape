@@ -16,6 +16,7 @@ go_library(
     deps = [
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/grpc/bearer",
+        "//agentplane/observability",
         "//agentplane/proto:event_go_proto",
         "//agentplane/sampler/internal/executionstate",
         "//agentplane/sampler/internal/executor/transport",
