@@ -143,7 +143,7 @@ private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
     (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.AuthenticatedSource.IndexedSource)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
-  unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
+  unless (spec.sequential || spec.privateEntryBody) && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
   unless !classified.localExports.isEmpty do return none
   let .ok decoded := indexed | return none
   let .ok input := decodeLocalExportSource decoded | return none
@@ -189,7 +189,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
   if let .authored spec := chunk.placement then
-    if spec.sequential then
+    if spec.sequential || spec.privateEntryBody then
       if let .ok classified := CoreJS.AuthenticatedSource.decodeSourceClassification src.program src.source spec.entry then
         if let some verdict ← rejectDuplicateTerminalSelectors chunk classified options then return verdict
         let indexed := CoreJS.AuthenticatedSource.checkIndexedSource classified

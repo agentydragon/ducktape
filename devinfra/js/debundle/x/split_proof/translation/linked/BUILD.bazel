@@ -113,6 +113,28 @@ js_test(
     },
 )
 
+_CATCHALL_SOURCE = "//devinfra/js/debundle/e2e:cases/emission/catchall_exports/main.js"
+
+_CATCHALL_PROBE = "//devinfra/js/debundle/e2e:cases/emission/catchall_exports/read.probe.mjs"
+
+js_test(
+    name = "private_priority_cli_test",
+    data = _TEST_DATA + [
+        _CATCHALL_SOURCE,
+        _CATCHALL_PROBE,
+    ],
+    entry_point = "private_priority_cli_test.mjs",
+    env = dict(
+        _TEST_ENV,
+        CATCHALL_PROBE = "$(rootpath " + _CATCHALL_PROBE + ")",
+        CATCHALL_SOURCE = "$(rootpath " + _CATCHALL_SOURCE + ")",
+    ),
+    no_copy_to_bin = [
+        _CATCHALL_SOURCE,
+        _CATCHALL_PROBE,
+    ],
+)
+
 js_test(
     name = "terminal_export_artifact_test",
     size = "medium",

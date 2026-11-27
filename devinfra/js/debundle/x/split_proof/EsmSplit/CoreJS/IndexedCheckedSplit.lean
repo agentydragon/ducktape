@@ -78,6 +78,29 @@ def SourceFacts.check (original : Program) (B : EsmSplit.Bundle) (rows : List Es
     return ⟨source, single, coverage, unique, ordered, absent⟩
   | _ => throw "expected one source module"
 
+/-- Private-mode priority is supported without a facade when the actual
+priority plan keeps source execution order and needs no extra entry exports.
+Before planning, require the full authored priority and one ordinal selector
+per original slot. The planner's filtering and deduplication cannot certify
+an altered request. -/
+def PrivatePriority (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Prop :=
+  S.privateEntryBody = true ∧ S.sequential = false ∧ S.order ≠ [] ∧
+  S.order.Perm ((S.modules.map Prod.fst).filter (· != S.entry)) ∧
+  ((S.modules.flatMap Prod.snd).map (fun
+    | .stmt id => some id
+    | .name _ => none)).Perm ((List.range B.length).map some)
+
+instance (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Decidable (PrivatePriority B S) := by
+  unfold PrivatePriority
+  infer_instance
+
+def SupportedRequest (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Prop :=
+  (S.privateEntryBody = false ∧ (S.order ≠ [] → S.sequential = true)) ∨ PrivatePriority B S
+
+instance (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Decidable (SupportedRequest B S) := by
+  unfold SupportedRequest
+  infer_instance
+
 /-- The computed candidate and its strict obligations use the actual source,
 planner bundle, original rows, and supplied request. -/
 structure Construction (source : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
@@ -86,9 +109,9 @@ structure Construction (source : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Sp
   sourceCoverage : ((body.map Prod.fst) ++ rows.map (·.ordinal)).Perm (List.range B.length)
   plan : EsmSplit.Plan
   planEq : plan = EsmSplit.mkPlan B S
-  publicEntry : S.privateEntryBody = false
-  orderRequiresSequential : S.order ≠ [] → S.sequential = true
-  schedule : S.sequential = true → plan.evalOrder = S.order ++ [S.entry]
+  requestSupported : SupportedRequest B S
+  schedule : (S.sequential = true ∨ S.privateEntryBody = true) → plan.evalOrder = S.order ++ [S.entry]
+  entryWithoutGlue : ∃ entry, plan.find plan.entry = some entry ∧ entry.exports = []
   program : Program
   constructed : program = splitProgramIndexed body B plan
   assignment : List UnitPlacement
@@ -117,10 +140,8 @@ private theorem forRequest {source output : Program} (requested : Guarantee)
 def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
     (rows : List EsmSplit.LocalExportUnit) (requested : Guarantee)
     (facts : SourceFacts original B rows) : Except String (Construction original B S rows requested) := do
-  let .isTrue publicEntry := (inferInstance : Decidable (S.privateEntryBody = false)) |
-    throw "checked split requires no private entry body"
-  let .isTrue orderRequiresSequential := (inferInstance : Decidable (S.order ≠ [] → S.sequential = true)) |
-    throw "an explicit module order requires a sequential request"
+  let .isTrue requestSupported := (inferInstance : Decidable (SupportedRequest B S)) |
+    throw "expected a public ordered request or a private priority with complete original ordinals"
   let .isTrue metadataSelectorsOnce := (inferInstance : Decidable (MetadataSelectorsOnce B S rows)) |
     throw "each metadata row must be selected exactly once"
   let source := facts.source
@@ -136,7 +157,7 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
                 let planned := EsmSplit.mkPlanWithImports B S
                 let P := planned.1
                 let .isTrue schedule := (inferInstance : Decidable
-                  (S.sequential = true → P.evalOrder = S.order ++ [S.entry])) |
+                  ((S.sequential = true ∨ S.privateEntryBody = true) → P.evalOrder = S.order ++ [S.entry])) |
                   throw "constructed modules do not follow the requested order"
                 if valid : EsmSplit.Valid B S P then
                   if kept : SparseProjectedOrder.OrderKept body P then
@@ -210,7 +231,7 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
                                       apply SparseProjectedOrder.split_indexed_authored_owner valid.2.2.1 safe
                                       rw [SparseProjectedOrder.split_indexed_fileUnitPlacements safe]
                                       exact member
-                                    return ⟨body, facts.coverage, P, rfl, publicEntry, orderRequiresSequential, schedule,
+                                    return ⟨body, facts.coverage, P, rfl, requestSupported, schedule, ⟨owner, planEntry, glue⟩,
                                       splitProgramIndexed body B P, rfl, labels, rfl,
                                       placed, ownerProof, metadataSelectorsOnce, rowOwner, rowPlaced,
                                       exports, runs, forRequest requested runs⟩
