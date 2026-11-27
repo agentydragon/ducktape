@@ -1427,6 +1427,14 @@ debundle_e2e_test(
 
 exports_files(
     [
+        "cases/emission/catchall_exports/main.js",
+        "cases/emission/catchall_exports/read.probe.mjs",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+)
+
+exports_files(
+    [
         "cases/emission/catchall_export_consumer/app.js",
         "cases/emission/catchall_export_consumer/read.probe.mjs",
         "cases/emission/return_object_provider_import/main.js",
