@@ -167,6 +167,7 @@ js_test(
 _UNSHARDED_TESTS = [
     "arithmetic_test",
     "generator_test",
+    "hoisted_helper_constructor_test",
     "import_cells_test",
     "logical_test",
     "module_graph_test",

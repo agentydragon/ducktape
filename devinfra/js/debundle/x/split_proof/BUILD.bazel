@@ -1676,6 +1676,7 @@ lean_library(
         ":corejs_indexed_checked_split",
         ":corejs_indexed_default_snapshot",
         ":corejs_indexed_exported_function",
+        ":corejs_indexed_helper_constructor",
         ":corejs_indexed_hoisted_swap",
         ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
@@ -1729,6 +1730,33 @@ lean_proof_test(
         ":lowersplit_diagnostic",
         ":lowersplit_slice_certificate",
     ],
+)
+
+lean_library(
+    name = "corejs_indexed_helper_constructor",
+    srcs = ["EsmSplit/CoreJS/IndexedHelperConstructor.lean"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_deployment_placement",
+        ":corejs_indexed_inline_constructor",
+        ":corejs_indexed_input_checks",
+        ":corejs_indexed_reorder",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+        ":corejs_plan_placement",
+        ":corejs_primitive_rhs",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_helper_constructor_axioms_test",
+    modules = ["EsmSplit.CoreJS.IndexedHelperConstructor"],
+    required_theorems = [
+        "CoreJS.IndexedHelperConstructor.construct",
+        "CoreJS.IndexedHelperConstructor.Construction.authoredOwner",
+        "CoreJS.IndexedHelperConstructor.Construction.readbackGuarantees",
+    ],
+    deps = [":corejs_indexed_helper_constructor"],
 )
 
 # Diagnostic runs need no linked certificate evaluator or structural proofs.
