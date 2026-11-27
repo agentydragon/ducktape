@@ -768,8 +768,8 @@ fn global_property_reads(
 #[cfg(test)]
 mod tests {
     use super::super::callable_capabilities::prepare_callable_capabilities;
-    use super::super::var_decl_of_item;
     use super::*;
+    use js_ast::item_var_decl;
     use raw_js_test_support::parse;
 
     #[test]
@@ -832,7 +832,7 @@ mod tests {
         for depth in [1, 16, 64] {
             let source = format!("const result = alias{};", ".getPrototypeOf()".repeat(depth));
             let parsed = parse(&source);
-            let declaration = var_decl_of_item(&parsed.body[0]).unwrap();
+            let declaration = item_var_decl(&parsed.body[0]).unwrap();
             let expression = ValueExpr::from_expr(declaration.decls[0].init.as_ref().unwrap());
             let mut inputs = Counted { reads: 0 };
             let roots = intrinsic_roots_read(

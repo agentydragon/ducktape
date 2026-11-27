@@ -2,9 +2,10 @@
 
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::initialization_effects::CompletedInitialization;
-use analysis_domain::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
+use analysis_domain::item_views::{SplitDeclaratorProvenance, TopLevelItemView};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
+use js_ast::item_var_decl;
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_common::{Span, Spanned};
@@ -204,7 +205,7 @@ fn original_declarator<'source>(
 ) -> Result<(&'source VarDecl, &'source VarDeclarator), OwnerInitializationCoverageRefusalReason> {
     match item {
         TopLevelItemView::Borrowed(item) => {
-            let Some(declaration) = var_decl_of_item(item) else {
+            let Some(declaration) = item_var_decl(item) else {
                 return Err(refusal_for_non_variable_owner(item));
             };
             let [declarator] = declaration.decls.as_slice() else {
@@ -222,7 +223,7 @@ fn original_split_declarator<'source>(
 ) -> Result<(&'source VarDecl, &'source VarDeclarator), OwnerInitializationCoverageRefusalReason> {
     use OwnerInitializationCoverageRefusalReason::SplitDeclaration;
 
-    let Some(original) = var_decl_of_item(provenance.parent_item) else {
+    let Some(original) = item_var_decl(provenance.parent_item) else {
         return Err(SplitDeclaration);
     };
     if original.decls.len() <= 1 {
@@ -231,7 +232,7 @@ fn original_split_declarator<'source>(
     let Some(declarator) = original.decls.get(provenance.declarator_index) else {
         return Err(SplitDeclaration);
     };
-    let Some(single) = var_decl_of_item(view) else {
+    let Some(single) = item_var_decl(view) else {
         return Err(SplitDeclaration);
     };
     let [single_declarator] = single.decls.as_slice() else {

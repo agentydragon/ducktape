@@ -34,6 +34,7 @@ mod strict_provider;
 mod top_level_scan;
 mod visit;
 
+use js_ast::item_var_decl;
 use native_write_census::{
     ArraySpreadNativeIteratorPremise, NativeSlotOverlap, array_spread_protocol_slot_overlap,
     source_slot_overlap,
@@ -57,7 +58,7 @@ use analysis::facts::statement_facts::{
 };
 use analysis_domain::builtins::{self, IntrinsicOp, Invocation, Row};
 use analysis_domain::integrity::{IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites};
-use analysis_domain::item_views::{TopLevelItemView, var_decl_of_item};
+use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
     InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
@@ -1623,7 +1624,7 @@ impl ExecutionIndex {
                         ..
                     }))
             );
-            self.direct_top_level_const_declaration = var_decl_of_item(item.as_module_item())
+            self.direct_top_level_const_declaration = item_var_decl(item.as_module_item())
                 .is_some_and(|declaration| declaration.kind == VarDeclKind::Const);
             self.past_await = false;
             self.may_skip_await_depth = 0;
@@ -1707,7 +1708,7 @@ impl ExecutionIndex {
                     ..
                 }
             )
-            && let Some(declaration) = var_decl_of_item(item.as_module_item())
+            && let Some(declaration) = item_var_decl(item.as_module_item())
             && !declaration.declare
             && let [declarator] = declaration.decls.as_slice()
             && let Pat::Ident(binding) = &declarator.name
@@ -1743,7 +1744,7 @@ impl ExecutionIndex {
                 ) && matches!(
                     initializer.composed_expression(),
                     Some(ValueExpr::Binding(_))
-                ) && let Some(declaration) = var_decl_of_item(item.as_module_item())
+                ) && let Some(declaration) = item_var_decl(item.as_module_item())
                     && !declaration.declare
                     && let [declarator] = declaration.decls.as_slice()
                     && let Pat::Ident(binding) = &declarator.name

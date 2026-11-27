@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use analysis::EffectCell;
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, public_export_name};
-use js_ast::{GlobalUseElisions, ParsedGlobalUses};
+use js_ast::{GlobalUseElisions, ParsedGlobalUses, VarDeclShape};
 use swc_common::{BytePos, DUMMY_SP, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -303,28 +303,19 @@ fn split_top_level_var_decls(module: &mut Module) {
     for item in std::mem::take(&mut module.body) {
         match item {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() > 1 => {
+                let shape = VarDeclShape::of(&var);
                 for decl in var.decls {
-                    out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
-                        span: var.span,
-                        ctxt: var.ctxt,
-                        kind: var.kind,
-                        declare: var.declare,
-                        decls: vec![decl],
-                    })))));
+                    let single = shape.with_decls(shape.span, vec![decl]);
+                    out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(single)))));
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match export_decl.decl {
                 Decl::Var(var) if var.decls.len() > 1 => {
+                    let shape = VarDeclShape::of(&var);
                     for decl in var.decls {
                         out.push(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
                             span: export_decl.span,
-                            decl: Decl::Var(Box::new(VarDecl {
-                                span: var.span,
-                                ctxt: var.ctxt,
-                                kind: var.kind,
-                                declare: var.declare,
-                                decls: vec![decl],
-                            })),
+                            decl: Decl::Var(Box::new(shape.with_decls(shape.span, vec![decl]))),
                         })));
                     }
                 }

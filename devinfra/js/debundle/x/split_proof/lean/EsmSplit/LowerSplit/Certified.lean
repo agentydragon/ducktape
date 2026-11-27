@@ -1,8 +1,10 @@
 import EsmSplit.Cli
 import EsmSplit.CoreJS.IndexedCheckedSplit
+import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.CoreJS.LinkedInput
-import EsmSplit.CoreJS.NamedDeclarationSplit
+import EsmSplit.CoreJS.CheckedSplit
+import EsmSplit.CoreJS.ResolvedPlacement
 import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.CoreJS.TerminalExportPlacement
 import EsmSplit.CoreJS.TerminalSource
@@ -58,33 +60,47 @@ private def stageConstructed (program : CoreJS.Program) (src : BundleInput)
       | .error reason => .error { reason }
 
 private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
+    (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.LinkedInput.IndexedSource)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
-  let .ok (source, localExports) :=
-    CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
-  let [original] := source.modules | return none
+  let original := classified.source
+  unless original.imports.isEmpty && !classified.hasTemplates do return none
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
       match stmt with
-      | .decl .const _ _ => true
-      | .decl .let_ _ .undef => false
-      | .decl .let_ _ _ => true
+      | .decl .const _ _ | .decl .let_ _ _ => true
       | _ => false) do return none
   unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
-  let .ok constructed := CoreJS.NamedDeclarationSplit.construct source spec | return none
-  -- This dense constructor accounts for executable source units only. Do not
-  -- publish or fall through to another route when original nodes were omitted
-  -- or a standalone export row lacks an authenticated owner.
-  let provenance : Except String Unit := do
-    let nodes ← ESTreeUnits.checkedNodes src.program src.source
-    let _ ← CoreJS.LinkedInput.checkSourceUnitCoverage nodes.size source localExports
-    unless localExports.isEmpty do
-      throw "standalone export rows require source-indexed placement"
-    return ()
-  if let .error reason := provenance then
-    return some (← emitRefusal options.request.label { reason := s!"source provenance: {reason}" } "named-declarations")
+  unless CoreJS.IndexedInlineConstructor.staticDeclarations [] original.body do return none
+  -- Once the source is recognized, omitted original units are a final
+  -- refusal. The same classification supplies the indexed construction.
+  let decoded ← match indexed with
+    | .ok indexed => pure indexed
+    | .error reason =>
+      return some (← emitRefusal options.request.label { reason := s!"source provenance: {reason}" }
+        "named-declarations")
+  let source := decoded.program
+  -- Indexed decoding has already checked original-unit coverage. A standalone
+  -- export row must be handled by the source-indexed local-export route.
+  unless decoded.localExports.isEmpty do
+    return some (← emitRefusal options.request.label
+      { reason := "source provenance: standalone export rows require source-indexed placement" } "named-declarations")
+  -- Selectors are resolved against the actual original units, before the
+  -- planner can deduplicate them. Invalid selectors are terminal refusals.
+  let selected ← match CoreJS.ResolvedPlacement.selectRequests original spec with
+    | .ok (_, selected) => pure selected
+    | .error reason =>
+      return some (← emitRefusal options.request.label { reason } "named-declarations")
+  unless decide ((selected.map Prod.fst).Nodup) do
+    return some (← emitRefusal options.request.label { reason := "an original unit is selected more than once" }
+      "named-declarations")
+  unless decide ((selected.map Prod.fst).Perm (original.body.map Prod.fst)) do
+    return some (← emitRefusal options.request.label { reason := "selectors do not cover every original unit" }
+      "named-declarations")
+  let .ok constructed := CoreJS.IndexedInlineConstructor.construct decoded (CoreJS.CheckedSplit.summarize source) spec |
+    return none
   try
-    let checked ← stageConstructed constructed.split.program src out work options timings
+    let checked ← stageConstructed constructed.program src out work options timings
     match checked with
     | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "named-declarations"
         [("strategy", toJson "compiled-constructor")])
@@ -98,8 +114,7 @@ private structure LocalExportSource where
   bundle : Bundle
   facts : CoreJS.IndexedCheckedSplit.SourceFacts source bundle rows
 
-private def decodeLocalExportSource (original : Json) (sourceText entry : String) : Except String LocalExportSource := do
-  let decoded ← CoreJS.LinkedInput.decodeIndexedSource original sourceText entry
+private def decodeLocalExportSource (decoded : CoreJS.LinkedInput.IndexedSource) : Except String LocalExportSource := do
   let source := decoded.program
   let bundle := sourceBundle decoded.nodes
   let sequence ← CoreJS.IndexedSourceSchedule.checkSequence decoded bundle
@@ -115,10 +130,13 @@ private def decodeLocalExportSource (original : Json) (sourceText entry : String
 /-- Construct from the actual indexed source, bundle, export rows and authored
 placement. Both terminal and interior rows use the same proof and writer. -/
 private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
+    (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.LinkedInput.IndexedSource)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
   unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
-  let .ok input := decodeLocalExportSource src.program src.source spec.entry | return none
+  unless !classified.localExports.isEmpty do return none
+  let .ok decoded := indexed | return none
+  let .ok input := decodeLocalExportSource decoded | return none
   unless decide (CoreJS.IndexedCheckedSplit.MetadataSelectorsOnce input.bundle spec input.rows) do
     return some (← emitVerdict options.request.label (.error "each metadata row must be selected exactly once")
       "indexed-local-exports")
@@ -135,12 +153,13 @@ private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
 the proof and let the ordinary checker reinterpret the authored request. This
 uses the terminal selector resolver without imposing its coverage or owner
 requirements on otherwise unsupported placements. -/
-private def rejectDuplicateTerminalSelectors (chunk : DeploymentChunk) (src : BundleInput)
+private def rejectDuplicateTerminalSelectors (chunk : DeploymentChunk)
+    (classified : CoreJS.LinkedInput.DecodedSource)
     (options : CertifiedOptions) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
   unless spec.sequential && !spec.privateEntryBody do return none
-  let .ok input := CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
-  let .ok terminal := CoreJS.TerminalSource.check input | return none
+  unless classified.source.imports.isEmpty && !classified.hasTemplates do return none
+  let .ok terminal := CoreJS.TerminalSource.check (classified.program, classified.localExports) | return none
   let terminalSource : CoreJS.TerminalExportPlacement.TerminalSource := {
     module := terminal.source
     exportOrdinal := terminal.row.ordinal
@@ -159,9 +178,13 @@ private def rejectDuplicateTerminalSelectors (chunk : DeploymentChunk) (src : Bu
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
-  if let some verdict ← rejectDuplicateTerminalSelectors chunk src options then return verdict
-  if let some verdict ← tryLocalExports chunk src out work options timings then return verdict
-  if let some verdict ← tryNamedDeclarations chunk src out work options timings then return verdict
+  if let .authored spec := chunk.placement then
+    if spec.sequential then
+      if let .ok classified := CoreJS.LinkedInput.decodeSourceClassification src.program src.source spec.entry then
+        if let some verdict ← rejectDuplicateTerminalSelectors chunk classified options then return verdict
+        let indexed := CoreJS.LinkedInput.checkIndexedSource classified
+        if let some verdict ← tryLocalExports chunk src classified indexed out work options timings then return verdict
+        if let some verdict ← tryNamedDeclarations chunk src classified indexed out work options timings then return verdict
   noConstructor options.request.label s!"no constructor accepts the requested placement of {chunk.path}"
 
 def certified (args : List String) : IO UInt32 := do

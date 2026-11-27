@@ -73,7 +73,12 @@ func TestDispatcherNumericRetirementPreservesEvidenceAndVersions(t *testing.T) {
 		HAVING count(*)=10`
 	before := queryRetirementValue[string](t, db, snapshot)
 	indexes := queryRetirementValue[string](t, db, numericIndexes)
-	if err := Up(t.Context(), db); err != nil {
+	// Stop at 00034: 00035 drops retired attribution columns, a deliberate row-shape change.
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 34); err != nil {
 		t.Fatal(err)
 	}
 	if got := queryRetirementValue[string](t, db, snapshot); got != before {
@@ -138,7 +143,7 @@ func TestDispatcherNumericRetirementPreservesEvidenceAndVersions(t *testing.T) {
 	if err := numericSchema.Up(t.Context(), db); err != nil {
 		t.Fatal("pre-cleanup numeric migration startup:", err)
 	}
-	_, err := db.ExecContext(t.Context(), `UPDATE dispatch SET state='FAILED' WHERE command_id='uncertain-command'`)
+	_, err = db.ExecContext(t.Context(), `UPDATE dispatch SET state='FAILED' WHERE command_id='uncertain-command'`)
 	var pgErr *pq.Error
 	if !errors.As(err, &pgErr) || pgErr.Code != "42703" {
 		t.Fatalf("legacy write after cleanup returned %v, want undefined_column", err)

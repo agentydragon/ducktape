@@ -590,8 +590,10 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.IndexedSourceSchedule"],
     required_theorems = [
+        "CoreJS.LinkedInput.sourceItemOrdinalsPermProjections",
         "CoreJS.IndexedSourceSchedule.checkSequence",
         "CoreJS.IndexedSourceSchedule.sourceInductionFacts",
+        "CoreJS.IndexedSourceSchedule.noOmittedSourceRows",
         "CoreJS.IndexedSourceSchedule.check",
         "CoreJS.IndexedSourceSchedule.constructedRows",
         "CoreJS.IndexedSourceSchedule.constructedPlacementOwner",
@@ -747,6 +749,7 @@ lean_proof_test(
     ],
     required_theorems = [
         "CoreJS.OrderedRegion.matching_link",
+        "CoreJS.OrderedRegion.matching_link_with_frames",
         "CoreJS.OrderedRegion.planned_link",
         "CoreJS.OrderedRegion.planned_runs",
         "CoreJS.OrderedRegion.planned_runs_with_exports",
@@ -1091,16 +1094,18 @@ lean_library(
     ],
     deps = [
         ":corejs_certificate_probe",
+        ":corejs_checked_split",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
+        ":corejs_resolved_placement",
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
         ":corejs_terminal_source",
         ":lowersplit_input",
         ":lowersplit_support",
-        ":named_declaration_split",
         ":ordered_const_syntax",
         ":planner",
         ":terminal_export_placement",
@@ -2894,6 +2899,7 @@ lean_library(
     deps = [
         ":corejs_indexed_checked_split",
         ":corejs_indexed_inline_plan",
+        ":corejs_runtime",
     ],
 )
 
@@ -2957,6 +2963,7 @@ lean_library(
     deps = [
         ":corejs_export_rows",
         ":corejs_indexed_entry_link",
+        ":ordered_region",
         ":plan_glue",
     ],
 )
@@ -2971,6 +2978,7 @@ lean_proof_test(
         "CoreJS.ExportRows.rowAt_some",
         "CoreJS.ExportRows.row_alias_live_cell",
         "CoreJS.ExportRows.rows_resolved_from_plan",
+        "CoreJS.ExportRows.rows_same_exports_from_source_link",
         "CoreJS.ExportRows.rows_resolved_from_mkPlan",
         "CoreJS.ExportRows.selected_row",
         "CoreJS.ExportRows.rows_scope_cells",
