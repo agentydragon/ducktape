@@ -24,6 +24,7 @@ from agentplane.system_tests.vm.block_storage import CLAIM_CAPACITY, STORAGE_CLA
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 # gazelle:include_dep //agentplane/testing:kubernetes_apiserver_fixtures
+# Scoped to this module, not a package conftest: envtest would join every vm/ unit test's runfiles.
 pytest_plugins = ("agentplane.testing.kubernetes_apiserver_fixtures",)
 
 _LOOP_GET_STATUS64 = 0x4C05

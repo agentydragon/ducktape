@@ -18,7 +18,6 @@ from playwright.async_api import CDPSession, Page, Request, Route, TimeoutError 
 
 from agentplane.app.frontend.testing.history_interactions import frames
 from agentplane.app.testing import thread_view_marks
-from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
@@ -28,28 +27,10 @@ from agentplane.app.testing.thread_browser import (
     wheel_and_capture_anchor_at_scrollend,
 )
 from agentplane.history_service.api.history import history_service_pb2
-from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
-from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
-
-# gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.testing.thread_browser", "agentplane.app.integration_fixtures")
-
-
-@pytest.fixture
-async def service_history_db_url(electric: ElectricService) -> str:
-    return electric.database_url
-
-
-@pytest.fixture
-async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
-    """The `ReplicationSource`'s."""
-    async with sandbox_cluster(api_server, name=SANDBOX) as started:
-        yield started
 
 
 def _append_uneven_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:

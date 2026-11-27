@@ -308,7 +308,7 @@ live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Un
 retained items are labelled incomplete rather than actively streaming. Environments
 owns Runtime attachment; loading a thread never rebuilds its history.
 
-`test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
+`browser/test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
 processes, PostgreSQL and Electric through a real HTTP/2 ingress. Only the runner source,
 Kubernetes and authentication boundaries are controlled. Its cases are split across Bazel
 shards. Traces and screenshots are test artifacts; inspect the images as well as results.

@@ -22,15 +22,6 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from testing.frontend_visual.capture import VisualPage
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-# gazelle:include_dep //agentplane/app/testing:thread_browser
-# gazelle:include_dep //agentplane/app/testing:thread_browser_backends
-pytest_plugins = (
-    "agentplane.app.testing.thread_browser",
-    "agentplane.app.integration_fixtures",
-    "agentplane.app.testing.thread_browser_backends",
-)
-
 
 @asynccontextmanager
 async def serving_tls(server: grpc.aio.Server, address: str, credentials: grpc.ServerCredentials) -> AsyncIterator[int]:

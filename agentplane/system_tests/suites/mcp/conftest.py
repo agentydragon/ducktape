@@ -1,4 +1,4 @@
-"""Policy resources shared by the MCP suites."""
+"""Policy resources and operator credentials shared by the MCP suites."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import pytest
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.policy_objects import PolicyObjects
+from agentplane.system_tests.suites.mcp.operator_fixtures import operator_bff, operator_credentials
 
 
 @pytest.fixture

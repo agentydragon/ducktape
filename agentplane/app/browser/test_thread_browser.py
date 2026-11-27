@@ -73,14 +73,6 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-# gazelle:include_dep //agentplane/app/testing:thread_browser_backends
-pytest_plugins = (
-    "agentplane.app.testing.thread_browser",
-    "agentplane.app.integration_fixtures",
-    "agentplane.app.testing.thread_browser_backends",
-)
-
 
 async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[None]]) -> None:
     """Hand `handler` the first request matching `url`; later ones fall through to the network.
