@@ -337,12 +337,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .callables
                 .get(&function)
                 .map_or(0, |callable| callable.params.len());
-            let mut nested = self.invoke(function, vec![unknown(); count], captured, false);
-            self.apply_rebind_effects(&nested.effects.rebinds);
-            outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-            outcome.executed_owners.extend(nested.executed_owners);
-            outcome.unknown_call |= nested.unknown_call;
-            outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+            let nested = self.invoke(function, vec![unknown(); count], captured, false);
+            self.absorb_nested_call(outcome, nested);
         }
         if has_unknown {
             outcome.unsupported(
@@ -673,33 +669,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
                     }
                 };
-                let mut nested =
-                    self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
-                        owner: self
-                            .state
-                            .current_top_owner
-                            .expect("callback call has a top owner"),
-                        arguments: std::slice::from_ref(callbacks).to_vec(),
-                        captured: Context::new(),
-                        reason,
-                        reach: HavocReach::Global {
-                            cause: GlobalReachCause::EscapedCallbackPool,
-                        },
-                        span: DUMMY_SP,
-                        diagnostics: BoundedInvocationFallbackDiagnostics {
-                            callsite_span: diagnostic_callsite_span,
-                            arguments: Some(if no_sync_arguments {
-                                Vec::new()
-                            } else {
-                                source_arguments.to_vec()
-                            }),
-                        },
-                    });
-                self.apply_rebind_effects(&nested.effects.rebinds);
-                outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-                outcome.executed_owners.extend(nested.executed_owners);
-                outcome.unknown_call |= nested.unknown_call;
-                outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+                let nested = self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
+                    owner: self
+                        .state
+                        .current_top_owner
+                        .expect("callback call has a top owner"),
+                    arguments: std::slice::from_ref(callbacks).to_vec(),
+                    captured: Context::new(),
+                    reason,
+                    reach: HavocReach::Global {
+                        cause: GlobalReachCause::EscapedCallbackPool,
+                    },
+                    span: DUMMY_SP,
+                    diagnostics: BoundedInvocationFallbackDiagnostics {
+                        callsite_span: diagnostic_callsite_span,
+                        arguments: Some(if no_sync_arguments {
+                            Vec::new()
+                        } else {
+                            source_arguments.to_vec()
+                        }),
+                    },
+                });
+                self.absorb_nested_call(outcome, nested);
                 return true;
             }
             let writable_before = self.state.world.surface.writable_prefix.clone();
@@ -721,7 +712,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 _ => None,
             };
-            if let Some(mut nested) = nested {
+            if let Some(nested) = nested {
                 // Foreign code can retain and invoke a callback's synchronous
                 // return value as well. This includes a descriptor getter that
                 // returns another callable; stopping at the getter loses the
@@ -730,11 +721,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // member returns reaches that code too.
                 self.taint_objects(&nested.returns);
                 self.promote_returned_callbacks(&nested.returns);
-                self.apply_rebind_effects(&nested.effects.rebinds);
-                outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-                outcome.executed_owners.extend(nested.executed_owners);
-                outcome.unknown_call |= nested.unknown_call;
-                outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+                self.absorb_nested_call(outcome, nested);
             }
             // Opaque code can omit or repeat this member. A changed exact
             // post-state cannot replace the entry witness as though the call

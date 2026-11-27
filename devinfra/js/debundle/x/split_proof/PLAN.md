@@ -551,7 +551,7 @@ What is owed beyond the steps above. Each is a known gap, not a plan.
 ## More of debundle's cases through the Lean checker
 
 Use the [saved corpus results](debundle_cases/results/summary.md) for the
-historical baseline and the [adapter notes](debundle_cases/README.md#outcomes)
+historical baseline and the [adapter notes](debundle_cases/README.md#initial-outcomes)
 for verdict meanings. Regenerate the results to measure the current adapter.
 
 Acceptance for every step, after running the [debundle case corpus](debundle_cases/README.md#run-it):

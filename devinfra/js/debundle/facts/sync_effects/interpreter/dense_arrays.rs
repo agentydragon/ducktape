@@ -261,12 +261,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    pub(super) fn merge_array_effects(&mut self, outcome: &mut Outcome, mut nested: Outcome) {
-        self.apply_rebind_effects(&nested.effects.rebinds);
-        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-        outcome.executed_owners.extend(nested.executed_owners);
-        outcome.unknown_call |= nested.unknown_call;
-        outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+    /// Revoke a prior exact result for one allocation site before foreign
+    /// code can read that site again: drop its literal array and its
+    /// primitive-array proof, and mark the object tainted. The prefix
+    /// revision moves only when one of those actually changed.
+    fn revoke_dense_array_result(&mut self, result: u32) {
+        self.literal_heap().invalidate_dense_array(result);
+        let primitive_removed = self
+            .state
+            .world_mut()
+            .arrays
+            .primitive
+            .remove(&result)
+            .is_some();
+        let newly_tainted = self
+            .state
+            .world_mut()
+            .surface
+            .tainted_objects
+            .insert(result);
+        if primitive_removed || newly_tainted {
+            self.state.world_mut().revision.bump_prefix();
+        }
     }
 
     pub(super) fn execute_array_iteration(
@@ -392,7 +408,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.state.array_iteration_unsupported |= previous_unsupported;
             let returned = nested.returns.clone();
             let callback_executed_completely = nested.body_invoked && nested.complete;
-            self.merge_array_effects(outcome, nested);
+            self.absorb_nested_call(outcome, nested);
             let current_source = self.evaluate(&proof.source, env, captures);
             let current_source = self.dense_array_iteration_transfer(&current_source, |executor| {
                 executor.array_slots_intact(row.requires)
@@ -502,25 +518,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if contents.len() != before {
                             self.state.world_mut().revision.bump_prefix();
                         }
-                        // The same allocation site may have a prior exact result.
-                        // Revoke it before the next callback can read that site.
-                        self.literal_heap().invalidate_dense_array(result);
-                        let primitive_removed = self
-                            .state
-                            .world_mut()
-                            .arrays
-                            .primitive
-                            .remove(&result)
-                            .is_some();
-                        let newly_tainted = self
-                            .state
-                            .world_mut()
-                            .surface
-                            .tainted_objects
-                            .insert(result);
-                        if primitive_removed || newly_tainted {
-                            self.state.world_mut().revision.bump_prefix();
-                        }
+                        self.revoke_dense_array_result(result);
                     }
                 }
                 IterationResult::Filtered => {
@@ -580,23 +578,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 match slots {
                     Some(slots) => self.retain_dense_array(result, slots),
                     None => {
-                        self.literal_heap().invalidate_dense_array(result);
-                        let primitive_removed = self
-                            .state
-                            .world_mut()
-                            .arrays
-                            .primitive
-                            .remove(&result)
-                            .is_some();
-                        let newly_tainted = self
-                            .state
-                            .world_mut()
-                            .surface
-                            .tainted_objects
-                            .insert(result);
-                        if primitive_removed || newly_tainted {
-                            self.state.world_mut().revision.bump_prefix();
-                        }
+                        self.revoke_dense_array_result(result);
                     }
                 }
             }

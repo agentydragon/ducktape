@@ -628,7 +628,10 @@ lean_library(
 lean_library(
     name = "ordered_const_syntax",
     srcs = ["EsmSplit/CoreJS/OrderedConstSyntax.lean"],
-    deps = [":ordered_region"],
+    deps = [
+        ":corejs_runtime",
+        ":ordered_region",
+    ],
 )
 
 lean_proof_test(
@@ -639,7 +642,6 @@ lean_proof_test(
         "CoreJS.OrderedConstSyntax.all_const",
         "CoreJS.OrderedConstSyntax.checkBody",
         "CoreJS.OrderedConstSyntax.checkEarlierReads",
-        "CoreJS.OrderedConstSyntax.checkRhs",
         "CoreJS.OrderedConstSyntax.dense_runs",
         "CoreJS.OrderedConstSyntax.rhs_free",
     ],
@@ -751,6 +753,7 @@ lean_library(
     deps = [
         ":corejs_checked_split",
         ":corejs_resolved_placement",
+        ":corejs_runtime",
     ],
 )
 
@@ -1231,6 +1234,7 @@ lean_library(
         "EsmSplit/CoreJS/BrowserGlobals.lean",
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/Syntax.lean",
+        "EsmSplit/CoreJS/PrimitiveRhs.lean",
         "EsmSplit/CoreJS/Decode.lean",
         "EsmSplit/CoreJS/Fragment.lean",
         "EsmSplit/CoreJS/SyntaxMatch.lean",
@@ -1245,6 +1249,20 @@ lean_library(
         ":estree",
         ":module_order",
     ],
+)
+
+lean_proof_test(
+    name = "primitive_rhs_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PrimitiveRhs"],
+    required_theorems = [
+        "CoreJS.PrimitiveRhs.check",
+        "CoreJS.PrimitiveRhs.free_allowed",
+        "CoreJS.PrimitiveRhs.policy_iff",
+        "CoreJS.PrimitiveRhs.restrict",
+        "CoreJS.PrimitiveRhs.weaken",
+    ],
+    deps = [":corejs_runtime"],
 )
 
 test_runner(
@@ -1444,6 +1462,9 @@ lean_proof_test(
         "CoreJS.cellFootprint_readVar",
         "CoreJS.cellFootprint_initVar",
         "CoreJS.cellFootprint_writeVar",
+        "CoreJS.BindingAllocation.binding_present",
+        "CoreJS.BindingAllocation.present",
+        "CoreJS.newCells_allocation",
         "CoreJS.newCells_distinct",
         "CoreJS.LinkedCellsExamples.nonempty_allocation",
         "CoreJS.LinkedCellsExamples.names_allow_alias",
@@ -2789,4 +2810,17 @@ lean_proof_test(
         "CoreJS.ExportRows.rows_scope_cells",
     ],
     deps = [":corejs_export_rows_link"],
+)
+
+lean_proof_test(
+    name = "linked_cells_allocation_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedCells"],
+    required_theorems = [
+        "CoreJS.BindingAllocation.binding_present",
+        "CoreJS.BindingAllocation.present",
+        "CoreJS.newCells_allocation",
+        "CoreJS.newCells_fresh",
+    ],
+    deps = [":corejs_certificate_support_base"],
 )

@@ -214,7 +214,7 @@ impl LocalExecutionContext<'_, '_, '_> {
                 &mut self.executor.state.iteration_element_records,
                 element_records.clone(),
             );
-            let mut nested =
+            let nested =
                 self.executor
                     .invoke(callback.key, operands, callback.captured.clone(), false);
             self.executor.state.iteration_element_records = outer_records;
@@ -234,13 +234,7 @@ impl LocalExecutionContext<'_, '_, '_> {
                 },
                 dependencies: prerequisites,
             });
-            self.executor.apply_rebind_effects(&nested.effects.rebinds);
-            self.outcome
-                .absorb_call_effects(&mut nested.effects, self.executor.state.assumption.as_ref());
-            self.outcome.executed_owners.extend(nested.executed_owners);
-            self.outcome.unknown_call |= nested.unknown_call;
-            self.outcome
-                .inherit_completeness(nested.complete, nested.effects.precision_losses);
+            self.executor.absorb_nested_call(self.outcome, nested);
             frame.inputs.extend(returned.iter().cloned());
             frame
                 .borrowed_records

@@ -282,13 +282,20 @@ impl SynchronousCalls {
         }
     }
 
+    /// Whether an authored initializer-binding effects input was applied.
+    /// That is what lets this run claim source-only authority rather than a
+    /// conservative one.
+    fn initializer_effects_are_applied(&self) -> bool {
+        matches!(
+            self.initializer_binding_effects.as_deref(),
+            Some(analysis_vocabulary::report_schema::InitializerBindingEffectsUse::Applied { .. })
+        )
+    }
+
     pub fn binding_effect_authority(
         &self,
     ) -> super::binding_effect_coverage::BindingEffectAuthority {
-        let author_source_only = matches!(
-            self.initializer_binding_effects.as_deref(),
-            Some(analysis_vocabulary::report_schema::InitializerBindingEffectsUse::Applied { .. })
-        );
+        let author_source_only = self.initializer_effects_are_applied();
         self.binding_effect_coverage
             .authority(self.complete, author_source_only)
     }
@@ -296,10 +303,7 @@ impl SynchronousCalls {
     pub fn binding_effect_authority_report(
         &self,
     ) -> analysis_vocabulary::report_schema::BindingEffectAuthorityReport {
-        let author_source_only = matches!(
-            self.initializer_binding_effects.as_deref(),
-            Some(analysis_vocabulary::report_schema::InitializerBindingEffectsUse::Applied { .. })
-        );
+        let author_source_only = self.initializer_effects_are_applied();
         self.binding_effect_coverage
             .authority_report(self.complete, author_source_only)
     }
