@@ -59,12 +59,19 @@ hoisted heap and the captured cells of every unit, including the scanner's
 read of the extracted predicate. It also preserves the complete public
 address table, so fresh calls use the same cells after initialization.
 
-The test requires both emitted files and checks them from disk. It then
-changes only the scanner's binding in the emitted entry and confirms that
-Node observes the same CRLF error as in the handwritten control. The disk
-checker rejects the edited artifact. B and A+B still refuse; they need,
-respectively, an order change through an entry cycle and more than one
-extracted owner. Refusing either request leaves an existing A tree intact.
+A+B also certifies with one additional concrete, hoisted function in the
+second owner. The original order remains #22, #23, #35, #36, #38, #446.
+The entry imports the live `isNewLine` and `nextLineBreak` cells; the scanner
+imports the same `isNewLine` cell from the first owner. A and A+B use the same
+ordered execution and exact export proofs. B still refuses because moving
+the scanner alone changes the source order and introduces an entry cycle.
+
+The test checks the physical import aliases, source statements, and public
+export row of the union. Both accepted layouts pass Node and disk readback.
+Replacing the callee identifier with the scanner's own name leaves declarations
+and imports intact and direct `isNewLine` results unchanged, but it changes
+the CRLF position. The disk checker rejects the edited artifact. Reversed
+union priority and the B request both leave an existing certified tree intact.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:acorn_line_info --test_output=all

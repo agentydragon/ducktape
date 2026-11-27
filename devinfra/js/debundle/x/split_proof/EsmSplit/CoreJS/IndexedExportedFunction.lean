@@ -9,8 +9,9 @@ import EsmSplit.CoreJS.IndexedSortedScopes
 import EsmSplit.CoreJS.LinkWorld
 
 /-! Extract one hoisted predicate through an original standalone export row.
-The helper is a source prefix; any remaining executable rows stay in the entry.
-Exact scope agreement preserves retained calls to the moved cell, including
+The helper forms a source prefix. An optional second owner holds a single
+concrete function that reads the first helper; all other rows stay in the entry.
+Exact scope agreement preserves the links between all three modules, including
 calls made after module evaluation. -/
 
 namespace CoreJS.IndexedExportedFunction
@@ -80,10 +81,10 @@ private def entryFunc : Nat → Func → Bool
 end
 
 private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSplit.Spec)
-    (helper : String) : Except String Unit := do
+    (helper : String) (readerOwner : Option String) : Except String Unit := do
   let authored owner (row : Nat × Stmt) := request.claimants B row.1 == [owner]
-  let (prefixRows, entryRows) := source.body.span (authored helper)
-  unless !prefixRows.isEmpty && entryRows.all (authored request.entry) do
+  let (prefixRows, remaining) := source.body.span (authored helper)
+  unless !prefixRows.isEmpty do
     throw "predicate and captures must be authored in the helper, before the entry body"
   let (_, .funDecl (.mk name .normal false [param] [.ret value])) :: revSeeds :=
       prefixRows.reverse | throw "expected an ordinary one-parameter return predicate"
@@ -93,6 +94,20 @@ private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSp
     throw "expected strict comparisons and logical expressions over the parameter and literal captures"
   unless (source.exports.map Prod.snd).contains name do
     throw "the source export must name the original predicate"
+  let entryRows ← match readerOwner with
+    | none => pure remaining
+    | some owner =>
+      let (id, .funDecl (.mk reader .normal false params body)) :: rest := remaining |
+        throw "expected a hoisted reader immediately after the predicate prefix"
+      let f := Func.mk reader .normal false params body
+      unless authored owner (id, .funDecl f) do
+        throw "the second helper must own the reader"
+      let reads := f.free
+      unless entryFunc 128 f && reads.contains name && reads.all (· == name) do
+        throw "the second helper must be concrete and capture only the predicate"
+      pure rest
+  unless entryRows.all (authored request.entry) do
+    throw "remaining executable units must be authored in the entry"
   for (id, stmt) in entryRows do
     unless entryStmt 128 stmt do throw s!"entry unit {id}: expected concrete retained code"
 
@@ -125,20 +140,23 @@ structure Construction (decoded : IndexedSource) (B : EsmSplit.Bundle) (request 
 
 def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec) :
     Except String (Construction decoded B request) := do
-  let [helper] := request.order | throw "expected one authored predicate module"
+  let (helper, readerOwner) ← match request.order with
+    | [owner] => pure (owner, none)
+    | [owner, reader] => pure (owner, some reader)
+    | _ => throw "expected a predicate module and at most one reader module"
   let [_] := decoded.localExports | throw "expected one original standalone export row"
   let source := decoded.source
   let original := decoded.program
-  unless request.sequential && !request.privateEntryBody && helper != request.entry &&
+  unless request.sequential && !request.privateEntryBody && decide (request.entry :: request.order).Nodup &&
       request.modules.all (fun module => module.1.endsWith ".mjs") && !decoded.hasTemplates do
-    throw "expected two sequential .mjs modules with a public entry and no templates"
+    throw "expected distinct sequential .mjs modules with a public entry and no templates"
   let .isTrue metadataOnce := (inferInstance : Decidable
       (IndexedCheckedSplit.MetadataSelectorsOnce B request decoded.localExports)) |
     throw "each original metadata row must be selected exactly once"
   let .isTrue metadataOwner := (inferInstance : Decidable
       (∀ row ∈ decoded.localExports, request.claimants B row.ordinal = [request.entry])) |
     throw "standalone export row must be authored in the entry"
-  checkFamily source B request helper
+  checkFamily source B request helper readerOwner
   unless decide (IndexedInlineConstructor.SelectorsOnce source.body B request) do
     throw "each original executable unit must be selected exactly once"
   let schedule ← IndexedSourceSchedule.check decoded B request

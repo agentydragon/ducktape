@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as acorn from "acorn";
@@ -168,10 +168,48 @@ async function nodeLayout(dir, owners, order, miswired = false) {
   return readModule(path.join(dir, entry));
 }
 
-// Change the scanner's single read of the imported function. Keep the
-// public alias and its original cell, so direct predicate tests still pass.
-async function checkMiswiredArtifact(request) {
-  const file = path.join(request.out, entry);
+function checkUnionGraph(out) {
+  const read = (file) => parse(readFileSync(path.join(out, file), "utf8"));
+  const imports = ({ ast }) =>
+    ast.body
+      .filter((node) => node.type === "ImportDeclaration")
+      .map(({ source, specifiers }) => [
+        source.value,
+        specifiers.map(({ imported, local }) => [imported.name, local.name]),
+      ]);
+  const retainedSource = ({ ast, code }) =>
+    topLevelStatements(ast)
+      .filter(({ node }) => !["ImportDeclaration", "ExportNamedDeclaration"].includes(node.type))
+      .map(({ start, end }) => code.slice(start, end));
+  const helper = read(newline);
+  const reader = read(scanner);
+  const main = read(entry);
+  assert.deepEqual(imports(helper), []);
+  assert.deepEqual(imports(reader), [["./" + newline, [["isNewLine", "isNewLine"]]]]);
+  assert.deepEqual(imports(main), [
+    ["./" + newline, [["isNewLine", "isNewLine"]]],
+    ["./" + scanner, [["nextLineBreak", "nextLineBreak"]]],
+  ]);
+  assert.deepEqual(retainedSource(helper), [text.get(a)]);
+  assert.deepEqual(retainedSource(reader), [text.get(b)]);
+  assert.deepEqual(
+    retainedSource(main),
+    ordinals.slice(2).map((id) => text.get(id))
+  );
+  const publicRow = main.ast.body.find((node) => node.type === "ExportNamedDeclaration");
+  assert.deepEqual(
+    publicRow.specifiers.map(({ exported, local }) => [exported.name, local.name]),
+    exports.map(({ exported, local }) => [exported.name, local.name])
+  );
+}
+
+// Replace just the callee identifier with the scanner's own name. All
+// statements, declarations and imports stay in place. Use a separate tree
+// so the scanner cannot be loaded from Node's cache of the valid output.
+async function checkMiswiredArtifact(request, owner) {
+  const tamperedOut = request.out + "-wrong-scanner";
+  cpSync(request.out, tamperedOut, { recursive: true });
+  const file = path.join(tamperedOut, owner);
   const originalBytes = readFileSync(file, "utf8");
   const parsed = parse(originalBytes);
   const module = parsed.scopes.scopes.find((scope) => scope.type === "module");
@@ -181,24 +219,18 @@ async function checkMiswiredArtifact(request) {
   });
   assert.equal(scannerReads.length, 1);
   const [{ identifier }] = scannerReads;
-  const tampered =
-    originalBytes.slice(0, identifier.start) +
-    "wrongPredicate" +
-    originalBytes.slice(identifier.end) +
-    "\nfunction wrongPredicate() { return false; }\n";
+  const tampered = originalBytes.slice(0, identifier.start) + names.get(b) + originalBytes.slice(identifier.end);
+  const statementTypes = ({ ast }) => ast.body.map(({ type }) => type);
+  assert.deepEqual(statementTypes(parse(tampered)), statementTypes(parsed));
   writeFileSync(file, tampered);
-  try {
-    const wrong = await import(pathToFileURL(file).href + "?wrong-scanner");
-    assert.deepEqual(Object.keys(wrong), publicNames);
-    const actual = observe(wrong);
-    assert.deepEqual(actual.direct, expected.direct);
-    assert.deepEqual(actual.positions[2], [1, 3, 1, 5]);
-    const reread = split({ ...request, checkOutput: true });
-    assert.equal(reread.status, "refused", reread.log);
-    assert.match(reread.reason, /entry\.mjs/);
-  } finally {
-    writeFileSync(file, originalBytes);
-  }
+  const wrong = await readModule(path.join(tamperedOut, entry));
+  assert.deepEqual(Object.keys(wrong), publicNames);
+  const actual = observe(wrong);
+  assert.deepEqual(actual.direct, expected.direct);
+  assert.notDeepEqual(actual.positions[2], expected.positions[2]);
+  const reread = split({ ...request, out: tamperedOut, checkOutput: true });
+  assert.equal(reread.status, "refused", reread.log);
+  assert(reread.reason.includes(owner), reread.log);
 }
 
 const acceptedOut = path.join(tmp, "cli-A");
@@ -230,24 +262,31 @@ for (const [name, moved] of [
   writeFileSync(spec, JSON.stringify({ entry, modules, order, sequential: true }, null, 2));
   const request = { source: input, spec, out: path.join(tmp, "cli-" + name), require: "all-outcomes" };
   const result = split(request);
-  if (name === "A") {
+  if (name !== "B") {
     assert.equal(result.status, "certified", result.log);
     assert.equal(result.scope, "indexed-exported-function", result.log);
-    assert.deepEqual(result.files, [entry, newline]);
+    assert.deepEqual(result.files, name === "A" ? [entry, newline] : [entry, newline, scanner]);
     assert.equal(result.verdict.strategy, "compiled-constructor", result.log);
     assert.equal(result.guarantee, "all-outcomes", result.log);
     assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
     const actual = await readModule(path.join(request.out, entry));
     assert.deepEqual(Object.keys(actual), publicNames);
     assert.deepEqual(observe(actual), expected);
-    await checkMiswiredArtifact(request);
+    if (name === "A+B") {
+      checkUnionGraph(request.out);
+      const swappedSpec = path.join(tmp, "union-swapped-priority.json");
+      writeFileSync(swappedSpec, JSON.stringify({ entry, modules, order: [...order].reverse(), sequential: true }));
+      const swapped = split({ ...request, spec: swappedSpec, allowExistingOut: true });
+      assert.equal(swapped.status, "refused", swapped.log);
+      assert.equal(swapped.reasonCode, "no_constructed_rule", swapped.log);
+    }
+    await checkMiswiredArtifact(request, name === "A" ? entry : scanner);
     assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
   } else {
     assert.equal(result.status, "refused", result.log);
     assert.equal(result.reasonCode, "no_constructed_rule", result.log);
     assert.equal(result.guarantee, null);
-    // Check and publication requests for a different layout both leave the
-    // existing certified A tree untouched. The split helper snapshots it.
+    // The split helper snapshots the valid A tree during both refusals.
     for (const checkOutput of [false, true]) {
       const againstA = split({ ...request, out: acceptedOut, allowExistingOut: true, checkOutput });
       assert.equal(againstA.status, "refused", againstA.log);
