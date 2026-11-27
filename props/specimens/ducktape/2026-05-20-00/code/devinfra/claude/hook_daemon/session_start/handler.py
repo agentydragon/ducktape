@@ -205,7 +205,7 @@ async def _setup_platform_services(
 
         On Firecracker (ext4 root), tmpfs is unnecessary — disk I/O is
         adequate (seq write 98 MB/s, seq read 241 MB/s, 4K write 92 MB/s)
-        and tmpfs would waste RAM. See container_spec.md IO benchmarks.
+        and tmpfs would waste RAM.
         """
         await anyio.Path(path).mkdir(parents=True, exist_ok=True)
         if not platform.needs_tmpfs_for_io:
