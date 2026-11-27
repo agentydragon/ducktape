@@ -299,7 +299,7 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural do return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
-  let .ok (source, _localExports) :=
+  let .ok (source, localExports) :=
     CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
   let [original] := source.modules | return none
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
@@ -313,13 +313,14 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   -- This dense constructor accounts for executable source units only. Do not
   -- publish or fall through to another route when original nodes were omitted
   -- or a standalone export row lacks an authenticated owner.
-  let decoded ← match CoreJS.LinkedInput.decodeIndexedSource src.program src.source spec.entry with
-    | .ok decoded => pure decoded
-    | .error reason =>
-      return some (← emitRefusal options.request.label { reason := s!"source provenance: {reason}" } "named-declarations")
-  unless decoded.localExports.isEmpty do
-    return some (← emitRefusal options.request.label
-      { reason := "standalone export rows require source-indexed placement" } "named-declarations")
+  let provenance : Except String Unit := do
+    let nodes ← ESTreeUnits.checkedNodes src.program src.source
+    let _ ← CoreJS.LinkedInput.checkSourceUnitCoverage nodes.size source localExports
+    unless localExports.isEmpty do
+      throw "standalone export rows require source-indexed placement"
+    return ()
+  if let .error reason := provenance then
+    return some (← emitRefusal options.request.label { reason := s!"source provenance: {reason}" } "named-declarations")
   try
     let programs ← IO.ofExcept (ESTreeEmit.corePrograms constructed.split.program src.source)
     let part : OutputPart := { programs, source := src.source, input := src.input, work }
