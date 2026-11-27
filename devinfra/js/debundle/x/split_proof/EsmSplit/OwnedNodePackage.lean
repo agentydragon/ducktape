@@ -23,6 +23,7 @@ structure CheckedPackage where
   entryAst : Json
   providerAst : Json
   entryText : String
+  callerIsDefaultSnapshot : Bool
   private fixed : List (String × String)
 
 /-- Read the original manifest and exactly the declared files. No resolution
@@ -37,8 +38,9 @@ def check (spec : Spec) (work : System.FilePath) : IO CheckedPackage := do
     let entryText ← entryAst.getObjValAs? String "sourceText"
     let providerText ← providerAst.getObjValAs? String "sourceText"
     let callerText ← captured.getObjValAs? String "caller"
+    let callerIsDefaultSnapshot ← captured.getObjValAs? Bool "callerIsDefaultSnapshot"
     let manifest ← captured.getObjValAs? String "manifest"
-    return ⟨spec, entryAst, providerAst, entryText,
+    return ⟨spec, entryAst, providerAst, entryText, callerIsDefaultSnapshot,
       [("package.json", manifest), (spec.provider, providerText), (spec.caller, callerText)]⟩
 
 /-- Verify the exact package at the staged and promoted roots, or reread a

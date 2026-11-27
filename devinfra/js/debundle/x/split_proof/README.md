@@ -60,9 +60,11 @@ The same constructor must accept before `--check-output` can verify an existing 
 
 For a flat owned Node package, the
 [callable provider example](integration/library_splits/LODASH_SORTED_UNIQ.md#ordinary-cli)
-shows how to declare the package root, provider and unchanged caller. This
-route requires an explicit `--require all-outcomes` and a fresh destination
-for publication.
+shows how to declare the package root, provider and a caller that only
+snapshots the imported entry default. This route requires an explicit
+`--require all-outcomes` and a fresh destination for publication. The
+verdict's `proof_scope` is the linked entry and provider, not general
+package behavior.
 
 Host-dependent, structural and multi-chunk checks cannot publish output.
 The [construction roadmap](CONSTRUCTION_ROADMAP.md) tracks coverage. For the

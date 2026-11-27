@@ -200,7 +200,8 @@ function readNodePackage(dir, result, entry, provider, caller) {
   const manifest = readFixed("package.json");
   if (JSON.parse(manifest)?.type !== "module") throw new Error('package.json must explicitly declare "type": "module"');
   const callerText = readFixed(caller);
-  const requests = linkedProgram(callerText).body.filter(
+  const body = linkedProgram(callerText).body;
+  const requests = body.filter(
     (node) => ["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration"].includes(node.type) && node.source
   );
   const [request] = requests;
@@ -213,11 +214,22 @@ function readNodePackage(dir, result, entry, provider, caller) {
     request.specifiers[0].type !== "ImportDefaultSpecifier"
   )
     throw new Error("expected the fixed caller to import only the original entry default");
+  // A complete positive grammar: the caller only snapshots the checked
+  // entry's default binding. There are no calls, property reads, or other
+  // expressions through which the caller can observe this deployment.
+  const [, snapshot] = body;
+  const callerIsDefaultSnapshot =
+    body.length === 2 &&
+    body[0] === request &&
+    snapshot.type === "ExportDefaultDeclaration" &&
+    snapshot.declaration.type === "Identifier" &&
+    snapshot.declaration.name === request.specifiers[0].local.name;
   writeJson(result, {
     manifest,
     entry: linkedProgram(readFixed(entry)),
     provider: linkedProgram(readFixed(provider)),
     caller: callerText,
+    callerIsDefaultSnapshot,
   });
 }
 

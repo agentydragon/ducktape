@@ -92,8 +92,14 @@ caller remain fixed assets.
 
 ## Ordinary CLI
 
-Declare the package in the deployment manifest and use the original
-authored [spec](lodash_sorted_uniq/split.json):
+Use the original authored [spec](lodash_sorted_uniq/split.json) and declare
+the package in the deployment manifest. The positive CLI control uses the
+shipped entry and provider with a separate forwarding caller:
+
+```js
+import uniq from "./_baseSortedUniq.js";
+export default uniq;
+```
 
 ```json
 {
@@ -101,33 +107,42 @@ authored [spec](lodash_sorted_uniq/split.json):
   "chunks": [
     {
       "path": "_baseSortedUniq.js",
-      "source": "/absolute/path/to/lodash-es/_baseSortedUniq.js",
+      "source": "/absolute/path/to/owned-package/_baseSortedUniq.js",
       "spec": "split.json"
     }
   ],
   "owned_node_package": {
-    "root": "/absolute/path/to/lodash-es",
+    "root": "/absolute/path/to/owned-package",
     "provider": "eq.js",
     "caller": "sortedUniq.js"
   }
 }
 ```
 
-Pass `--require all-outcomes` for publication and reread. The CLI requires
-the chunk source to match the declared entry route and the fixed caller to
-import only that entry's default as a static dependency. The callable
-constructor checks the provider pinned by the actual import and requires
-the original import and executable default to stay in the entry. Both
-publication and `--check-output` call the linked proof on the independently
-reparsed generated files and the byte-checked provider.
+Pass `--require all-outcomes` for publication and reread. The CLI accepts
+only the two caller statements above, with any valid local name: a
+single default import from the declared entry, then `export default`
+of precisely that identifier. No other statements or expressions are
+admitted. The shipped `sortedUniq.js` is refused: its property read can
+invoke a getter or proxy trap. The original files are not rewritten.
 
-The fixture runs the public caller directly in the published package and
-checks NaN, positive zero, original object identities, and that the
-entry snapshots the function exported by the helper. It refuses an
-existing destination for fresh publication and checks that failed rereads
-leave tampered provider, caller, manifest, and default-cell files unchanged.
-The opt-in is confined to an owned root; there is no enclosing-package
-lookup for externally managed destinations.
+The callable constructor still checks the provider named by the entry's
+import and keeps the original executable default in the entry. Both
+publication and `--check-output` check the linked proof on the independently
+reparsed generated files and the byte-checked provider. A successful
+`all-outcomes` verdict reports `proof_scope: linked-entry-provider` and
+`caller_context: default-import-snapshot`. The proof does not cover arbitrary
+Node callers, host behavior, or observations of the package's file layout.
+
+The [blocking review of #20657](https://github.com/agentydragon/ducktape/pull/20657#issuecomment-7230274306)
+showed why checking only the static import is insufficient. A caller
+with identical bytes in both trees imported the newly added helper URL
+and reported `false` before, `true` after; both CLI modes certified the
+old request ([reproduction](https://app.buildbuddy.io/invocation/1a432410-1ceb-4fcb-89d9-ec5ab9cfc80c)).
+The regression reproduces that distinction, then checks that the CLI
+refuses it in both modes and leaves existing output unchanged. It also
+refuses callers with other property reads or calls, so the guard does
+not depend on recognizing dynamic import alone.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:lodash_sorted_uniq_test
