@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261127063556-7533f7e # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
+    newTag: devel-20261127075417-920aabd # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261127012617-cf1e2de # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environments
@@ -28,11 +28,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
     newTag: devel-20261127014431-98c382d # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261126234803-197b6f4 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261127075431-920aabd # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261126234753-197b6f4 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261127075421-920aabd # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261127052242-f95a457 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261127075425-920aabd # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker
     newTag: devel-20261124024526-3e4257c # {"$imagepolicy": "flux-system:agentplane-environment-firecracker:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher
