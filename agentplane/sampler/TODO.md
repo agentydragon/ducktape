@@ -1,5 +1,15 @@
 # TODO — sampler
 
+## Decide how to represent blocked Session causes
+
+Decide whether the sampler should persist a machine-readable block cause and evidence, or derive
+it from its journal, before using it for recovery decisions. Human-readable `blocked_reason` is not
+a machine contract. Compare the typed HarnessHost `Blocked` projection with SamplerAdmin and the
+stored Session state; distinguish the original failure from the current unresolved effect. Cover
+legacy unknown causes, owner and host fencing, and evidence needed before automatic recovery. The
+decision is tracked by [`SAMPLER_BLOCK_CAUSE_DESIGN`](../plans/task_dag.md#sampler_block_cause_design--represent-blocked-session-causes).
+The staging shutdown wedge is to be recovered separately after its mechanism is fixed.
+
 ## Compare sampler and notification-service notifications
 
 Consider whether the sampler's Codex-derived in-turn notifications and the Notification Service's

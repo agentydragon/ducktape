@@ -2654,6 +2654,7 @@ flowchart LR
     CENTRAL_SESSION_NOTIFICATIONS[Blocked: environment-independent Session inbox delivery]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
     COMMAND_ADMISSION_REFUSAL_DESIGN[Decision: authoritative command admission refusals]
+    SAMPLER_BLOCK_CAUSE_DESIGN[Decision: machine-readable sampler block causes]
     SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
@@ -3289,6 +3290,24 @@ or choose another receiver-owned mechanism that provides the same late-arrival a
 **Exit:** a reviewed contract and implementation/rollout boundaries; cover the race where a refusal
 wins before a delayed earlier attempt, the reverse admission-wins case, lost replies, conflicting
 payloads, ambiguous commits, mixed writers and changed admission authority.
+
+### `SAMPLER_BLOCK_CAUSE_DESIGN` — represent blocked Session causes
+
+**Decision; unscheduled.** A staging sampler shutdown left a Session blocked with no unresolved
+work; its `blocked_reason` described the shutdown but is human-facing text, not a safe SQL recovery
+selector. The operator deferred this design and will request manual recovery after the shutdown
+mechanism is fixed. See the [sampler TODO](../sampler/TODO.md#decide-how-to-represent-blocked-session-causes).
+
+**Recommendation for review:** evaluate a durable typed cause and evidence alongside the display
+text, reusing the HarnessHost typed `Blocked` vocabulary where its semantics fit. Compare that with
+deriving the current blocker from the journal. Distinguish the original failure from current
+unsettled effects; identify unknown legacy state and prove owner/host fencing before any automatic
+recovery. A different replica's host ID alone does not prove the old host has stopped.
+
+**Question for review:** which causes and evidence must be persisted versus derived, who owns them,
+and which, if any, authorize automatic recovery? **Exit:** a reviewed contract covering API and
+storage representation, legacy records, mixed writers, and recovery tests. No implementation is
+authorized by this node.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — send commands to a Session ID
 
