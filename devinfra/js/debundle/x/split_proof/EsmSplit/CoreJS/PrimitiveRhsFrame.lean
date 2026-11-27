@@ -61,6 +61,12 @@ theorem eval_inert {allows : Name → Bool} {expr : Expr} (shape : Rhs allows ex
     | binary left right =>
       exact inert_bind (ih left env) (fun a => inert_bind (ih right env) (fun b => inert_lift (binop _ a b)))
     | logical left right => exact inert_logical fuel env _ _ _ (ih left env) (ih right env)
+    | cond test yes no =>
+      exact inert_bind (ih test env) fun value =>
+        inert_bind (inert_lift (toBoolean value)) fun selected => by
+          cases selected
+          · exact ih no env
+          · exact ih yes env
 
 /-- A successful result from the existing source checker supplies the same
 all-outcome frame fact; no additional syntax admission is introduced. -/
@@ -136,6 +142,15 @@ example (s : State W) : evalExpr 0 exampleEnv (.var "x") s = .fuel := by rfl
 example (s : State W) :
     evalExpr 2 ⟨[], .undef, none⟩ (.logical .and (.bool false) (.var "missing")) s =
       .ok (.bool false) s := by rfl
+
+/-- Conditional evaluation skips the unselected read, which would throw. -/
+example (s : State W) :
+    evalExpr 2 ⟨[], .undef, none⟩ (.cond (.bool true) (.num 2) (.var "missing")) s =
+      .ok (.num 2) s := by rfl
+
+example (s : State W) :
+    evalExpr 2 ⟨[], .undef, none⟩ (.cond (.bool false) (.num 2) (.var "missing")) s =
+      .throw (.error .reference "missing is not defined") s := by rfl
 
 #guard (check (fun _ => true) (.assign (.var "x") (.bool true))).isNone
 

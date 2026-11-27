@@ -21,6 +21,7 @@ inductive Rhs (allows : Name → Bool) : Expr → Prop where
   | unary {op : UnOp} {arg : Expr} : sourceUnary op = true → Rhs allows arg → Rhs allows (.unary op arg)
   | binary {op : BinOp} {left right : Expr} : Rhs allows left → Rhs allows right → Rhs allows (.binary op left right)
   | logical {op : LogOp} {left right : Expr} : Rhs allows left → Rhs allows right → Rhs allows (.logical op left right)
+  | cond {test yes no : Expr} : Rhs allows test → Rhs allows yes → Rhs allows no → Rhs allows (.cond test yes no)
 
 /-- Check syntax and the supplied binding policy in one traversal. -/
 def check (allows : Name → Bool) : (expr : Expr) → Option (PLift (Rhs allows expr))
@@ -43,6 +44,11 @@ def check (allows : Name → Bool) : (expr : Expr) → Option (PLift (Rhs allows
     let ⟨lhs⟩ ← check allows left
     let ⟨rhs⟩ ← check allows right
     return ⟨.logical lhs rhs⟩
+  | .cond test yes no => do
+    let ⟨condition⟩ ← check allows test
+    let ⟨consequent⟩ ← check allows yes
+    let ⟨alternate⟩ ← check allows no
+    return ⟨.cond condition consequent alternate⟩
   | _ => none
 
 /-- Every free identifier satisfies the actual caller-supplied policy. -/
@@ -56,6 +62,13 @@ theorem free_allowed {allows : Name → Bool} {expr : Expr} (rhs : Rhs allows ex
     intro name member
     simp only [Expr.free, List.mem_append] at member
     exact member.elim (left name) (right name)
+  | cond _ _ _ test yes no =>
+    intro name member
+    simp only [Expr.free, List.mem_append] at member
+    rcases member with member | member | member
+    · exact test name member
+    · exact yes name member
+    · exact no name member
 
 /-- A less restrictive binding policy preserves the same supported syntax. -/
 theorem weaken {allows more : Name → Bool} {expr : Expr} (rhs : Rhs allows expr)
@@ -70,6 +83,7 @@ theorem weaken {allows more : Name → Bool} {expr : Expr} (rhs : Rhs allows exp
   | unary op arg ih => exact .unary op ih
   | binary left right ihl ihr => exact .binary ihl ihr
   | logical left right ihl ihr => exact .logical ihl ihr
+  | cond test yes no iht ihy ihn => exact .cond iht ihy ihn
 
 /-- Syntax accepted without name restrictions can be restricted precisely by
 checking its free identifiers; no operator-specific evaluation is needed. -/
@@ -93,6 +107,20 @@ theorem restrict {allows : Name → Bool} {expr : Expr} (rhs : Rhs (fun _ => tru
       apply closed name
       simp only [Expr.free, List.mem_append]
       exact Or.inr member
+  | cond test yes no iht ihy ihn =>
+    refine .cond (iht ?_) (ihy ?_) (ihn ?_)
+    · intro name member
+      apply closed name
+      simp only [Expr.free, List.mem_append]
+      exact Or.inl member
+    · intro name member
+      apply closed name
+      simp only [Expr.free, List.mem_append]
+      exact Or.inr (Or.inl member)
+    · intro name member
+      apply closed name
+      simp only [Expr.free, List.mem_append]
+      exact Or.inr (Or.inr member)
 
 theorem policy_iff {allows : Name → Bool} {expr : Expr} :
     Rhs allows expr ↔ Rhs (fun _ => true) expr ∧ ∀ name ∈ expr.free, allows name = true := by
