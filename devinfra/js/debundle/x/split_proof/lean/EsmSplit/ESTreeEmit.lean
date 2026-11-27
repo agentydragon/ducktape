@@ -95,6 +95,8 @@ def programs (asts : Array Json) (B : Bundle) (P : Plan) (source : String)
 /-- The direct CoreJS printer currently handles ASCII binding names. The
 source parser has already checked scope; this check keeps unsupported names
 out of the generated ESTree. -/
+-- Reserve `undefined` so the direct printer can use the global identifier for
+-- CoreJS `.undef` without a local binding shadowing it.
 private def printableBinding (name : String) : Bool :=
   let initial := fun c => ('a' ≤ c && c ≤ 'z') || ('A' ≤ c && c ≤ 'Z') || c == '_' || c == '$'
   let rest := fun c => initial c || ('0' ≤ c && c ≤ '9')
@@ -103,7 +105,7 @@ private def printableBinding (name : String) : Bool :=
       "do", "else", "enum", "export", "extends", "false", "finally", "for", "function", "if", "import",
       "in", "instanceof", "let", "new", "null", "return", "super", "switch", "this", "throw", "true",
       "try", "typeof", "var", "void", "while", "with", "yield", "implements", "interface", "package",
-      "private", "protected", "public", "static", "eval", "arguments"].contains name
+      "private", "protected", "public", "static", "eval", "arguments", "undefined"].contains name
 
 private def coreIdentifier (name : String) : Except String Json := do
   unless printableBinding name do throw s!"unsupported CoreJS binding name `{name}`"
@@ -113,11 +115,7 @@ private def coreIdentifier (name : String) : Except String Json := do
 constructor route. Unsupported CoreJS syntax fails closed. -/
 private def coreExpr (expr : CoreJS.Expr) (operand := false) : Except String Json :=
   match expr with
-  | .undef => do
-    -- The legacy standalone spelling reparses as a unary expression.
-    if operand then throw "undefined operand has no exact CoreJS readback"
-    return node "UnaryExpression" [("operator", .str "void"), ("prefix", .bool true),
-      ("argument", node "Literal" [("value", toJson (0 : Nat))])]
+  | .undef => pure <| identifier "undefined"
   | .null => pure <| node "Literal" [("value", .null)]
   | .bool value => pure <| node "Literal" [("value", .bool value)]
   | .str value => pure <| node "Literal" [("value", .str value)]

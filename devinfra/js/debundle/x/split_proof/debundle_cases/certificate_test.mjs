@@ -19,7 +19,7 @@ function check(out, status, { checkOutput = false } = {}) {
   assert.equal(verdict.status, status, log);
   if (status === "certified") {
     assert.equal(verdict.guarantee, "all-outcomes", log);
-    assert.equal(verdict.scope, "terminal-declarations", log);
+    assert.equal(verdict.scope, "indexed-local-exports", log);
     assert.equal(verdict.strategy, "compiled-constructor", log);
   } else assert.equal(verdict.guarantee, null, log);
 }
