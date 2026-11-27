@@ -1102,7 +1102,10 @@ lean_library(
 lean_binary(
     name = "lowersplit_core",
     data = [":lowersplit_generated_proof_files"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+    ],
     deps = [":lowersplit_core_modules"],
 )
 
