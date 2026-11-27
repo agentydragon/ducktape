@@ -108,8 +108,12 @@ private def checkSparse (j : Json) (specText : String) : IO Unit := do
   let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle decoded.nodes
   let request ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
   let evidence ← IO.ofExcept (IndexedSourceSchedule.check decoded bundle request)
+  let _sourceFacts := IndexedSourceSchedule.sourceInductionFacts evidence.sequence
   require (evidence.sequence.units.map IndexedSourceSchedule.SourceUnit.ordinal == [0, 1, 2])
     "complete source schedule dropped or shifted an original ordinal"
+  require (evidence.sequence.units.map IndexedSourceSchedule.SourceUnit.nodeEncoding ==
+      decoded.nodes.toList.map Lean.Json.compress)
+    "source classification lost or changed an original AST node"
   require (evidence.sequence.units.filterMap IndexedSourceSchedule.SourceUnit.executable? == [0, 2])
     "executable projection differs from the original source IDs"
   require (evidence.sequence.units.filterMap IndexedSourceSchedule.SourceUnit.localExport? ==
@@ -150,11 +154,27 @@ private def checkAliases (j : Json) : IO Unit := do
   require (m.exports == pairs) "alias export table changed"
   let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle decoded.nodes
   let sequence ← IO.ofExcept (IndexedSourceSchedule.checkSequence decoded bundle)
+  let _sourceFacts := IndexedSourceSchedule.sourceInductionFacts sequence
   require (sequence.units.map IndexedSourceSchedule.SourceUnit.ordinal == [0, 1, 2, 3])
     "source classification changed ordinals around an empty export row"
+  require (sequence.units.map IndexedSourceSchedule.SourceUnit.nodeEncoding ==
+      decoded.nodes.toList.map Lean.Json.compress)
+    "multi-row classification lost or changed an original AST node"
+  require (sequence.units.filterMap IndexedSourceSchedule.SourceUnit.executable? ==
+      m.body.map Prod.fst)
+    "multi-row classification changed executable source ordinals"
   require (sequence.units.filterMap IndexedSourceSchedule.SourceUnit.localExport? ==
       [(1, aliases.names), (2, [])])
     "an empty metadata row was not retained by the complete source sequence"
+  let classifiedRows := sequence.units.filterMap IndexedSourceSchedule.SourceUnit.localExportRow?
+  require (classifiedRows.map (·.ordinal) == decoded.localExports.map (·.ordinal) &&
+      classifiedRows.map (·.names) == decoded.localExports.map (·.names))
+    "source induction changed metadata row order, aliases, or empty rows"
+  require (decoded.localExports.map (·.ordinal) == [1, 2])
+    "source induction did not establish the source order of metadata row ordinals"
+  let _allOriginalOrdinals :
+      ((sequence.source.body.map Prod.fst) ++ decoded.localExports.map (·.ordinal)).Perm
+        (List.range bundle.length) := sequence.sourceCoverage
   -- Removing the empty row leaves the public aliases above unchanged.
   match LinkedInput.checkSourceUnitCoverage decoded.nodes.size decoded.program [aliases] with
   | .error "unsupported omitted source node 2" => pure ()
