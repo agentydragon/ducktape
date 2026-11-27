@@ -44,6 +44,31 @@ Nix 2.34.9 vs 2.35.6, new tree, source step only: 19.0 s vs 2.3 s. 2.34 streamed
 
 Eval flamegraph (`--option eval-profiler flamegraph`): ordinary nixpkgs stdenv/lib work; largest repo-local site `nix/packages/system-libs.nix` (`makeLibraryPath` over mesa/cups/pango/gobject-introspection/… Chromium + GUI libs) ≈17%. Evaluates `nixpkgs` and `nixpkgs-unstable`; `nixpkgs-master` not touched.
 
+## What the flake reads outside `nix/`
+
+**Devshell: nothing.** `path:` copy of only `flake.{nix,lock}`, `nix/`, `skills/skills_registry.json` (2.1 MB) → `devShells.default` evaluates to the identical derivation as the full repo; `packages.devtools` evaluates too (2026-11-27, `origin/devel` `86fdb47743`). Lazy eval leaves the rest untouched. Without `skills` in the devshell (#20544) the registry drops out too.
+
+**Whole flake** (static trace of path literals across 159 reachable `.nix` files; misses computed paths, rows not each evaluated):
+
+| Area                                                                                 | What                                                                              | Used by                                                                                          |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `secrets/`, `ssh_keys/`, `cluster/k8s/**/*.sops.yaml`                                | SOPS secrets: attic, API keys, kubeconfig, wifi, atuin, LiteLLM keys, deploy keys | home-manager + NixOS host configs                                                                |
+| `nebula-mesh.json`                                                                   | mesh membership                                                                   | `nix/nixos/modules/{nebula,k8s-worker}.nix`, rugged                                              |
+| `model_catalog/claude-wrappers.json`                                                 | wrapper definitions                                                               | `nix/home/claude_code/codex-claude.nix`                                                          |
+| `agentplane/env/images/**`, `agentplane/cli/package.nix`                             | sandbox/VM images (guest contracts, systemd units, `tools.nix`), `agentplane` CLI | `nix/flake/packages.nix`, `agentplane-environment-*` NixOS configs, `environment-tools` devShell |
+| `devinfra/buildbuddy/**`                                                             | RBE/runner images, KVM worker                                                     | packages, NixOS configs                                                                          |
+| `devinfra/ci/{artifact_targets.json,nix_attic_targets.nix,github_actions_image.nix}` | artifact checks, attic push targets, CI image                                     | `flake.nix`, `nix/flake/{packages,artifact-checks}.nix`                                          |
+| `devinfra/nixos_bazel_test/`                                                         | Bazel test VM                                                                     | NixOS config                                                                                     |
+| `.pre-commit-config.yaml`, `ruff.toml`                                               | copied into the tools check                                                       | `agentplane/env/images/ducktape_tools_check.nix`                                                 |
+| `cpap/gateway/`                                                                      | CPAP gateway host + image                                                         | NixOS config, packages                                                                           |
+| `haku/runtime/x/managed_agent/self_hosted/`                                          | Haku worker (`entrypoint.sh`, `worker.py`)                                        | NixOS config, image                                                                              |
+| `openclaw/`                                                                          | gateway, patches, scripts                                                         | packages                                                                                         |
+| `website/`                                                                           | site sources                                                                      | packages                                                                                         |
+| `cluster/parked/{agent-box,gecko}/nix/`                                              | parked host configs                                                               | `flake.nix`                                                                                      |
+| `x/ai_sub_value/shell.nix`, `x/codex_pod_image/`                                     | side devShell, pod image                                                          | `flake.nix`, packages                                                                            |
+
+→ The flake splits cleanly: devshell = `nix/` + pins (~2 MB); hosts/secrets/images stay in the root flake and keep paying the whole-repo cost on rare uses.
+
 ## Options
 
 Columns: which of the three costs (hash / copy / eval) or the miss frequency it removes. Estimates are sums of measured steps, not measured runs.
@@ -73,6 +98,8 @@ Upstream HEAD (`02f6fcea5d`, 2026-11-22, v3.2.0) still archives `self` unconditi
 Our flake's inputs are all remote (`github:`), so #837's temp copy covers them. Hash + eval remain. Variants: wait; carry #837 via home-manager overlay; local `--dry-run` patch (considered, owner: doesn't feel right).
 
 ### C. `path:` sub-flake for the devshell
+
+Feasible file-wise today: see [What the flake reads outside `nix/`](#what-the-flake-reads-outside-nix).
 
 `.envrc`: `use flake path:./nix/flake` (the `path:` prefix is required; bare `./nix/flake` resolves to the git repo). Source = that directory only, including untracked/ignored files there; it cannot read outside it.
 
