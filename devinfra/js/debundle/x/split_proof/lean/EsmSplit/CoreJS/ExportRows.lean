@@ -19,6 +19,42 @@ structure SourceRows (source : Module) (rows : List EsmSplit.LocalExportUnit) : 
   unique : (rows.map (·.ordinal)).Nodup
   absent : ∀ row ∈ rows, row.ordinal ∉ source.body.map Prod.fst
 
+/-- A finite source/plan check: every name published by the source is declared
+by an original bundle unit. A public alias does not itself declare a local. -/
+def LocalsDeclared (source : Module) (B : EsmSplit.Bundle) : Prop :=
+  ∀ name ∈ source.exports.map Prod.snd, ∃ id ∈ List.range B.length, name ∈ (B.stmt id).defs
+
+instance (source : Module) (B : EsmSplit.Bundle) : Decidable (LocalsDeclared source B) := by
+  unfold LocalsDeclared
+  infer_instance
+
+/-- Source-name declaration coverage applies to every actual row alias,
+including repeated aliases of the same local and empty rows. -/
+theorem row_locals_declared {source : Module} {rows : List EsmSplit.LocalExportUnit} {B : EsmSplit.Bundle}
+    (sourceRows : SourceRows source rows) (declared : LocalsDeclared source B)
+    {pair : Name × Name} (member : pair ∈ rows.flatMap (·.names)) :
+    ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs := by
+  have inSource : pair ∈ source.exports := by rw [sourceRows.exports]; exact member
+  obtain ⟨id, inRange, localDecl⟩ := declared pair.2 (List.mem_map.mpr ⟨pair, inSource, rfl⟩)
+  exact ⟨id, List.mem_range.1 inRange, localDecl⟩
+
+/-- The source-name check is exactly the existing per-row declaration check
+when the rows are the source publication; no new acceptance condition is
+introduced, even for empty rows or repeated public aliases. -/
+theorem locals_declared_iff {source : Module} {rows : List EsmSplit.LocalExportUnit} {B : EsmSplit.Bundle}
+    (sourceRows : SourceRows source rows) :
+    LocalsDeclared source B ↔
+      ∀ pair ∈ rows.flatMap (·.names), ∃ id ∈ List.range B.length, pair.2 ∈ (B.stmt id).defs := by
+  constructor
+  · intro declared pair member
+    obtain ⟨id, within, localDecl⟩ := row_locals_declared sourceRows declared member
+    exact ⟨id, List.mem_range.2 within, localDecl⟩
+  · intro declared name member
+    obtain ⟨pair, inSource, same⟩ := List.mem_map.1 member
+    have inRows : pair ∈ rows.flatMap (·.names) := by rw [← sourceRows.exports]; exact inSource
+    subst name
+    exact declared pair inRows
+
 /-- Each authored entry unit either contributes no public exports or exactly
 its actual row's ordered planner footprint. -/
 def UnitMatches (B : EsmSplit.Bundle) (rows : List EsmSplit.LocalExportUnit) (id : Nat) : Prop :=
@@ -116,6 +152,8 @@ theorem exact_entry_exports {B : EsmSplit.Bundle} {owner : EsmSplit.Module}
 
 #print axioms fold_entry_exports
 #print axioms exact_entry_exports
+#print axioms row_locals_declared
+#print axioms locals_declared_iff
 #print axioms singleton_selection
 #print axioms singleton_matches
 

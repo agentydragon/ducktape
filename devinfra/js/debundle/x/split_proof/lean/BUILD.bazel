@@ -2590,6 +2590,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.InteriorPlanExports"],
     required_theorems = [
         "CoreJS.InteriorPlanExports.declaration_owner",
+        "CoreJS.InteriorPlanExports.row_pair_scope_cell",
         "CoreJS.InteriorPlanExports.row_scope_cells",
     ],
     deps = [":corejs_interior_plan_exports"],
@@ -2787,6 +2788,8 @@ lean_proof_test(
     required_theorems = [
         "CoreJS.ExportRows.exact_entry_exports",
         "CoreJS.ExportRows.fold_entry_exports",
+        "CoreJS.ExportRows.locals_declared_iff",
+        "CoreJS.ExportRows.row_locals_declared",
     ],
     deps = [":corejs_export_rows"],
 )
@@ -2808,6 +2811,7 @@ lean_proof_test(
         "CoreJS.ExportRows.indexed_module_dense",
         "CoreJS.ExportRows.indexed_program_dense",
         "CoreJS.ExportRows.rowAt_some",
+        "CoreJS.ExportRows.row_alias_live_cell",
         "CoreJS.ExportRows.rows_resolved_from_plan",
         "CoreJS.ExportRows.selected_row",
         "CoreJS.ExportRows.rows_scope_cells",
