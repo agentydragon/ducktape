@@ -2,7 +2,9 @@
 
 This guide describes landed cluster configuration, not proof of live rollout. Shared
 semantics and ownership live in the [model-catalogue design](../../model_catalog/design.md);
-current work and dated deployment evidence live in [#9574](https://github.com/agentydragon/ducktape/issues/9574).
+dated deployment evidence from the roster migration lives in
+[#9574](https://github.com/agentydragon/ducktape/issues/9574). See the
+[gateway replacement plan](plans/x/llm_gateway_replacement.md) for evaluation requirements.
 
 ## Deployment bindings
 
@@ -19,15 +21,16 @@ provider metadata does not select client budgets.
 
 ## Projections
 
-| Consumer                     | Input                                                               | Output                                                         |
-| ---------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------- |
-| LiteLLM                      | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings              | Proxy config and alias settings                                |
-| Crossplane virtual keys      | `KEY_MODEL_LANES`                                                   | `Key.forProvider.models` and `Team.forProvider.routerSettings` |
-| Agentplane app               | `HarnessRoutes`                                                     | App-owned `ModelCatalog` records and harness ID lists          |
-| Paused Public Coder renderer | Explicit selections and budgets in `public_coder/app.py`            | OpenClaw IDs, names, limits, and reasoning flags               |
-| Parked Haku OpenClaw         | Selected subscription routes and command aliases                    | Native Claude Code model slugs                                 |
-| Gatus                        | Selected Ollama route                                               | Probe request model ID                                         |
-| LLM ingress                  | Environment-selected routes and explicit `RUNNER_CONTEXT_OVERRIDES` | Ingress-owned model configuration and authenticated response   |
+| Consumer                     | Input                                                                       | Output                                                         |
+| ---------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| LiteLLM                      | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings                      | Proxy config and alias settings                                |
+| Crossplane virtual keys      | `KEY_MODEL_LANES`                                                           | `Key.forProvider.models` and `Team.forProvider.routerSettings` |
+| Agentplane app               | `HarnessRoutes`                                                             | App-owned `ModelCatalog` records and harness ID lists          |
+| Paused Public Coder renderer | Explicit selections and budgets in `public_coder/config.py`                 | OpenClaw IDs, names, limits, and reasoning flags               |
+| Parked Haku OpenClaw         | Selected subscription routes and command aliases                            | Native Claude Code model slugs                                 |
+| Gatus                        | Selected Ollama route                                                       | Probe request model ID                                         |
+| LLM ingress, Claude          | Claude routes and explicit `RUNNER_CONTEXT_OVERRIDES`                       | Native `ModelConfig` gRPC lookup                               |
+| LLM ingress, Codex           | Codex routes, pinned upstream Codex metadata and explicit context overrides | Authenticated Codex model catalog and Responses cache version  |
 
 The app projects named routes into IDs, display names and reasoning choices;
 keys serialize route IDs. Offering a route does not grant access to it. Keep
@@ -48,13 +51,13 @@ records to Crossplane keys/teams; keys may combine several lanes. Regenerate the
 manifests with `bb run //cluster/cdk8s:generate_manifests`. For remote execution, use the
 [remote generation and patch retrieval recipe](../../devinfra/buildbuddy/docs/remote.md#run-repository-writers-remotely-and-retrieve-a-patch).
 
-Each environment projects selected routes and explicit `RUNNER_CONTEXT_OVERRIDES`
-into `LlmIngressProps.models`. The runner consumes the shared `ModelConfig` contract
-through authenticated ingress lookup, not a separate environment/guest-config budget
-map. See the [ingress contract](../../agentplane/llm_ingress/README.md#per-model-client-configuration)
-for `total_context_budget_tokens`, lookup failures and the model-ID translation TODO;
-[client budgets](../../model_catalog/client_budgets.md#codex-and-agentplane) describes
-native harness application and session/model-switch behavior.
+The environment projects Claude budgets into `LlmIngressProps.models` for the
+runner's authenticated [ModelConfig lookup](../../agentplane/llm_ingress/README.md#per-model-client-configuration).
+Codex reads its context settings from the ingress-served
+[Codex catalog](../../agentplane/llm_ingress/README.md#codex-model-catalog), generated by
+[`codex_models.py`](../cdk8s/agentplane/codex_models.py). A changed catalog version on a
+Responses reply tells a running Codex to refetch. These projections apply client
+policy independently of the token metadata exposed by LiteLLM.
 
 Runtime services own their configuration/API schemas and consume serialized data;
 they do not import generator internals. Diagnostic probes and acceptance tests likewise
@@ -69,26 +72,17 @@ lane tests reject unserved allowances and unauthorized fallbacks. Do not duplica
 these checks with a second handwritten inventory or tests that repeat renderer field
 assignments.
 
-## Parked Agentplane Claude offerings
+## Agentplane offerings
 
-During the [model-roster audit](https://github.com/agentydragon/ducktape/issues/9121),
-Agentplane staging offers only Codex in new-session launch forms. An empty
-Claude list in the app model catalogue disables that harness in those forms; a new
-session defaults to an available harness. Staging's Haku preset follows: it launches
-Codex against the local Qwen3.8 route's 256K window, the widest one the runner is
-configured for, and the wider 128K/256K choice is otherwise an operator's per-session
-pick. Both Qwen windows carry their declared reasoning efforts on the OpenAI-compatible
-wire only, which is why the preset names that one.
+[`model_selections.py`](../cdk8s/agentplane/model_selections.py) owns staging's
+named route offerings for Claude, Codex and the central sampler. The October pause
+applied to the launch forms and retained the runtime adapter and existing sessions.
+[#9127](https://github.com/agentydragon/ducktape/pull/9127)
 
-This is an offering pause, not a runtime prohibition: existing Claude sessions can
-still resume, receive commands, and show history. Explicit low-level session launches,
-the native Claude adapter, credentials, and shared Anthropic/LiteLLM ingress remain.
-Direct local clients and Claude Code Web are unaffected.
+Staging includes Claude offerings again. [#13085](https://github.com/agentydragon/ducktape/pull/13085)
+Preset defaults remain explicit in [`staging_config.py`](../cdk8s/agentplane/staging_config.py).
+Check launch forms and session behavior separately from rollout.
 
-To restore the offerings, repopulate `STAGING_APP_MODELS.claude` in
-`cluster/cdk8s/agentplane/model_selections.py`. Restoring Haku's
-Claude default is optional and separate: Haku's preset is defined in `staging_config.py`,
-where its `model` takes any route, and a Thread cannot move to a model with a different
-configured context window, so existing Haku Threads stay on Codex. Resolve the tracked
-client-budget/metadata questions before restoring Claude; regenerate manifests and
-check both launch forms. No session or volume migration is part of either pause or restoration.
+Claude supports model changes within the same configured context window or between
+two unlisted routes. Changing the window or switching between a configured and an
+unlisted route requires a new session. [Session protocol](../../agentplane/env/runtime/docs/session_protocol.md#commands-and-effects)

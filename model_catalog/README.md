@@ -39,14 +39,16 @@ probes and acceptance checks inspect deployed APIs or committed artifacts.
 
 See [consumer wiring](../cluster/docs/model_catalog.md) for projections and checks.
 
-## Refactor documentation
+## Design and evidence
 
 - [Design](design.md): goals, ownership, example wiring, rollout and shared vocabulary.
 - [Migration inventory](migration_inventory.md): settled boundaries and remaining
   file/consumer disposition decisions.
+- [Gateway replacement requirements](../cluster/docs/plans/x/llm_gateway_replacement.md):
+  consumer inventory, current requirements and open questions for a replacement.
 - [Routing review](routing_review.md) and [options/source audit](routing_options.md):
-  routing-first requirements, candidate features and acceptance gaps.
+  the October 2026 checkpoint, pinned candidate research and acceptance gaps.
 - Supporting research: [LiteLLM metadata](litellm_metadata.md),
   [Antigravity limits](antigravity_limits.md), and [client budgets](client_budgets.md).
-- [Tracking issue #9574](https://github.com/agentydragon/ducktape/issues/9574): PR/rollout
-  status and parked integrations, including restoration obligations.
+- [Historical issue #9574](https://github.com/agentydragon/ducktape/issues/9574): dated
+  PR and rollout evidence, including the original parking decisions.

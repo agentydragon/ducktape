@@ -1,24 +1,20 @@
 # LLM routing contract review
 
-Status: proposed investigation, opened 2026-10-10 under [#9574](https://github.com/agentydragon/ducktape/issues/9574).
-The operator requested recording the findings and reconsidering the routing design,
-including alternative gateways. **No replacement, catalogue suppression, budget change,
-route reactivation or runtime migration is approved by this document.** Existing
-configuration stays in place while its behavioral contract is evaluated.
-
-The [options/source audit](routing_options.md) now records the refined requirements,
-client constraints and candidate feature matrix. Its current operator requirements
-supersede broader proposed parity requirements below (notably cost accounting,
-automatic fallback, image input and Haku recall). No candidate is approved or live-tested.
+October 2026 investigation under [#9574](https://github.com/agentydragon/ducktape/issues/9574).
+The [gateway replacement requirements](../cluster/docs/plans/x/llm_gateway_replacement.md)
+record the later consumer inventory and evaluation criteria. The
+[options/source audit](routing_options.md) retains October requirements, pinned
+candidate evidence, and the distinction between source evidence and tested behavior.
+A replacement or change to served routes, budgets or metadata requires its own
+decision.
 
 ## Work ordering: routing decision before further roster implementation
 
 Operator direction, 2026-10-10: prioritize this review **before further roster
 restructuring**, not only before token-metadata expansion. The chosen routing design
 may eliminate LiteLLM configuration and projection responsibilities; do not simplify
-or generalize wiring we may no longer need. Keep existing behavior and record necessary
-maintenance separately rather than treating the remaining roster inventory as an
-implementation queue during this review.
+or generalize wiring we may no longer need. Continue behavior-preserving maintenance
+separately from the remaining roster decisions.
 
 Sequence: agree the client/protocol/context acceptance matrix, map current behavior,
 evaluate where routing/translation/policy should live and compare options, then record
@@ -36,9 +32,11 @@ The catalogue also carries pricing and capabilities. A switch to its bundled ver
 is not catalogue disablement, and clearing the whole map risks unrelated behavior.
 
 Do not treat completing every token declaration as a prerequisite for this review.
-The previous all-routes publication target is under reconsideration, not silently
-implemented, deleted, or replaced. Preserve existing provenance and unresolved
-acceptance work; this is not a reason to run another capacity-probe campaign.
+The previous target was to replace catalogue fallback on every served route with
+Ducktape-owned, modality-appropriate metadata and then retire `publish_limits`.
+The target remains under reconsideration. Keep existing request behavior and source
+provenance pending a publication decision. A fresh capacity campaign is unnecessary
+for evaluating the routing contract.
 
 ## Primary success criterion: working clients and usable route context
 
@@ -114,6 +112,10 @@ native versus OpenAI-compatible Ollama, and one embedding route. These exercise 
 known risks without claiming to validate every combination or requiring paid inference.
 
 ## Proposed requirements to decide, not assumed features
+
+This list records the initial review. Use the
+[later requirements](../cluster/docs/plans/x/llm_gateway_replacement.md#requirements)
+when assessing a candidate today.
 
 1. Satisfy the client/protocol/context acceptance matrix above. Preserve native protocols when translation is unnecessary. Specify which cross-protocol
    translations we need and what information loss, if any, is acceptable.

@@ -3,19 +3,19 @@
 Companion to the [design](design.md). This records files and consumers requiring
 review, not a commitment to change every file. **Only explicitly approved dispositions
 are decisions**; all other keep/move/merge/delete options remain open.
-The [tracking issue](https://github.com/agentydragon/ducktape/issues/9574) owns PR/rollout
-status and links to the historical parked-integration inventory in
+[Historical issue #9574](https://github.com/agentydragon/ducktape/issues/9574) records
+dated PR and rollout evidence and links to the earlier parked-integration inventory in
 [#9121](https://github.com/agentydragon/ducktape/issues/9121).
 
 ## Current sequencing checkpoint
 
-The [routing review](routing_review.md#work-ordering-routing-decision-before-further-roster-implementation)
-precedes further roster restructuring. This inventory remains a record of existing
-responsibilities and unfinished acceptance, not a queue to implement while the routing
-architecture is reconsidered. Reconcile dispositions after that decision; some LiteLLM
-configuration and projection wiring may no longer be needed. The separate Crossplane key
-ownership handoff is recorded in the LiteLLM disposition below; it keeps the served roster
-unchanged while rotating key values.
+See the [routing review checkpoint](routing_review.md#work-ordering-routing-decision-before-further-roster-implementation)
+for the sequencing decision and the
+[gateway replacement requirements](../cluster/docs/plans/x/llm_gateway_replacement.md)
+for the later consumer inventory and evaluation constraints. Crossplane owns the
+existing keys and teams separately from any gateway replacement. See the
+[Crossplane recovery record](../cluster/debug/2026_10_22_litellm_crossplane.md) for
+rotation and handoff evidence.
 
 ## Consumer inventory and side effects
 
@@ -69,30 +69,18 @@ finds another consumer or source of independently maintained configuration.
 
 #### Agentplane selection, projection and runtime
 
-The settled boundaries are:
+The [cluster wiring guide](../cluster/docs/model_catalog.md#projections) owns
+the current app/ingress projections, including the separate Codex catalog and
+native Claude budget lookup. Retain named-route offerings and explicit preset
+defaults; environments supply selections to the renderers.
 
-- `cluster/cdk8s/agentplane/app_settings.py` projects named selections into the app's
-  existing offering schema. Environments supply those selections at the renderer;
-  `Environment` does not carry an unused `model_routes` field.
-- `cluster/cdk8s/agentplane/llm_ingress.py` projects selected routes and explicit
-  `RUNNER_CONTEXT_OVERRIDES` into ingress-owned configuration, not runner environment
-  or guest-config budget maps. `agentplane/llm_ingress/models.py` owns the shared
-  `ModelConfig` contract; `settings.py` owns ingress configuration.
-- `agentplane/env/configuration/configuration.go` performs the authenticated lookup. Runner
-  configuration selects the harness endpoint/credential, and session handling applies
-  the resolved budget in the native adapter's vocabulary. The
-  [client-budget description](client_budgets.md#codex-and-agentplane) owns these semantics.
+Exposing a different model ID from the upstream request remains a design question
+in the [ingress contract](../agentplane/llm_ingress/README.md#per-model-client-configuration).
+Coordinate lookup and request/response identity, authorization and accounting.
 
-Source disposition and remaining work:
-
-| Files / boundary                                                                              | Disposition / remaining question                                                                                                                                                                                  |
-| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/agentplane/model_selections.py`; Agentplane environment and preset definitions | Reviewed 2026-10-10: retain named-route offerings and explicit preset defaults. Staging/testing public-coder defaults select Luna; Haku selects Qwen 256K. No reconstructed default slugs or second roster found. |
-| Ingress `app.py`, `settings.py`; runner lookup and session handling                           | Should exposed model IDs differ from LiteLLM IDs? Translation remains a TODO, not an implemented or activated mapping. Coordinate request/response identity, authorization and accounting.                        |
-
-Runtime acceptance remains open: verify new-runner startup/session/model-switch
-behavior and existing-runner inference/stream continuity. Source wiring and template
-inspection do not establish those outcomes; the tracker owns the dated evidence.
+For changes to this wiring, check new-runner startup, sessions and model switches,
+plus existing-runner inference and stream continuity. [Historical issue #9574](https://github.com/agentydragon/ducktape/issues/9574)
+records the October acceptance evidence and gaps.
 
 #### Nix wrappers and direct local clients
 
@@ -103,18 +91,19 @@ primary/Haiku membership in the key lane, and emits `claude-wrappers.json`.
 individual wrappers retain family-specific behavior, not duplicate rosters.
 The JSON remains generated, not another authored model registry.
 
-`nix/home/home.nix` explicitly pauses gateway wrapper installation. Keep the
-renderers, secrets and direct Codex/Claude modules; no centralized-gateway migration
-or reactivation is implied. Source review does not verify workstation activation
-or the current behavior of installed clients (#9112).
+The [Home Manager option](../nix/home/modules/claude-gateway-wrappers.nix) installs
+wrappers with their client keys by explicit opt-in and defaults to an empty list.
+The Tana renderer still requires restoration of its routes and client key. Keep the
+retained renderers, credential declarations and direct clients. [#9112](https://github.com/agentydragon/ducktape/pull/9112)
+records the original pause; verify installation and behavior on the workstation separately.
 
 #### Ollama serving variants
 
-| Current file(s)                                                                                         | Question to resolve                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/ollama/app.py`                                                                           | Where should server defaults and serving-variant configuration be declared, and what should deployment rendering consume?                                                                                                 |
-| `cluster/cdk8s/ollama/setup-gpt-oss-v2.sh.j2`                                                           | Now rendered from Ollama source declarations; shell remains the executor. Further script/interface changes remain open.                                                                                                   |
-| Ollama definitions in `model_catalog/catalog.py`; their projection in `cluster/cdk8s/litellm/config.py` | Decide jointly with the two files above: who defines variant identity, upstream tag and requested context, and how each wire actually applies them? Do not infer provider limits or client budgets from serving settings. |
+| Current file(s)                                                                                                                                            | Question to resolve                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster/cdk8s/ollama/app.py`                                                                                                                              | Where should server defaults and serving-variant configuration be declared, and what should deployment rendering consume?                                                                                                 |
+| `cluster/cdk8s/ollama/setup-gpt-oss-v2.sh.j2`                                                                                                              | Now rendered from Ollama source declarations; shell remains the executor. Further script/interface changes remain open.                                                                                                   |
+| Ollama source variants in `model_catalog/ollama.py`; route selection and serialization in `model_catalog/catalog.py` and `cluster/cdk8s/litellm/config.py` | Decide jointly with the two files above: who defines variant identity, upstream tag and requested context, and how each wire actually applies them? Do not infer provider limits or client budgets from serving settings. |
 
 #### Public Coder and smaller consumers
 
@@ -136,13 +125,13 @@ Existing roster, Nix, key-policy and OpenClaw tests check identity, authorizatio
 serialization and native-consumer assumptions. Preserve them; do not add tests that
 merely copy the roster constants. This is source-disposition review, **not** live
 startup/model-switch acceptance, pause verification, storage cleanup or permission
-to restore consumers. Those operational obligations remain in #9574.
+to restore consumers. Historical issue #9574 records the dated operational evidence and gaps.
 
 #### Generated outputs, tests, build boundaries and documentation
 
 | Current file(s)                                                                                                                                                                               | Question to resolve                                                                                                                                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Affected `cluster/k8s/…` manifests and Nix JSON artifacts                                                                                                                                     | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source.                                                             |
+| Affected generated cluster manifests and Nix JSON artifacts                                                                                                                                   | Which outputs follow from the eventual source changes? Regenerate them from their owners, never make them another authored source.                                                             |
 | `cluster/cdk8s/test_model_rosters.py`; `cluster/cdk8s/litellm/test_config.py`, `test_openclaw_models.py`; `model_catalog/test_nix.py`, `test_policies.py`; affected Agentplane/OpenClaw tests | Which tests prove identity, authorization, fallback, serialization or native-client behavior, and which merely restate fields? Decide retention/consolidation based on that distinction.       |
 | Affected `BUILD.bazel` files, including `cluster/cdk8s/BUILD.bazel`, `cluster/cdk8s/litellm/BUILD.bazel`, `cluster/cdk8s/agentplane/BUILD.bazel`                                              | Which dependency/visibility edges should change as ownership is decided? Preserve the cdk8s generation/runtime boundary.                                                                       |
 | `model_catalog/design.md`; `model_catalog/README.md`; `cluster/docs/model_catalog.md`                                                                                                         | The neutral design/research split and cluster operations-guide scope are settled. See [documentation consolidation](#documentation-ownership); preserve evidence and restoration instructions. |
@@ -160,16 +149,10 @@ and runtime code stay in Agentplane. This decision does not settle any other fil
 
 ## Token metadata ownership migration
 
-**Prior target, under reconsideration (2026-10-10):** the [routing review](routing_review.md)
-now precedes further publication expansion or unwiring. The inventory below records
-existing state and gaps, not an instruction to fill every gap before that review.
-No runtime change or replacement has been selected.
-
-The prior target was that every retained served route gets its applicable token metadata from
-Ducktape declarations. LiteLLM catalogue values may be copied with entry/revision
-provenance; live fallback is not the long-term authority. Legacy schema aliases are
-projected from the same declaration, not independent facts. Fresh probing of every model
-is not required. This does not reopen consumer-budget ownership or authorize route removal.
+The [routing review](routing_review.md#why-reopen-the-design) records the
+all-routes publication proposal and why it remains under reconsideration.
+The October 2026 snapshot below preserves the evidence and decisions still relevant
+to evaluating that proposal.
 
 **Source snapshot, reconciled 2026-10-10:** 58 of 74 public entries publish explicit
 metadata: 54 generative pairs and four embedding input-only declarations. This is
@@ -178,11 +161,11 @@ The six ChatGPT entries below count as published despite their provisional prove
 GPT-5.6 Sol/Terra/Luna have been removed from both ChatGPT wires and derived key
 allowlists; GPT-6 selections and consumer budgets are unchanged.
 
-Direct-provider chat, Antigravity text, the refreshed Claude subscription roster and
-embedding declarations have landed. The three larger GPT-OSS OpenAI exposures and
+The snapshot includes direct-provider chat, Antigravity text, the then-current
+Claude subscription roster and embedding declarations. The three larger GPT-OSS OpenAI exposures and
 three Tana routes are parked; their restoration constraints below remain in force.
-The tracker retains the PR ledger and dated rollout evidence rather than repeating
-successive implementation/CI states here.
+See the historical tracker for the dated PR/rollout ledger. For a later subscription
+roster refresh and bounded route checks, see [#18716](https://github.com/agentydragon/ducktape/pull/18716).
 
 | Family                                                           | Remaining work                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -193,11 +176,10 @@ successive implementation/CI states here.
 | Groq transcription (two unpublished entries)                     | Research applicable audio metadata and projection behavior without inventing a generative output ceiling.                                                                                                                                                                                                                                                                                        |
 | Embeddings (four published entries, including the durable alias) | Declarations are complete. Ollama full-input/boundary verification with truncation disabled remains explicitly deferred; batch/special-token limits may be lower ([record](litellm_metadata.md#ollama-embedding-input-metadata-2026-10-09)). Preserve dimensions and stored indexes.                                                                                                             |
 
-These are **remaining data/disposition decisions**, not a second runtime registry.
-The `publish_limits` flag remains transitional until retained declarations and
-mode-appropriate publication rules are complete. Metadata research does not block
-behavior-preserving consumer simplification. The tracker owns lane ordering and
-current PR/rollout status; this inventory owns unresolved file/data decisions.
+The table is dated and distinguishes open evidence gaps from configuration. Read the
+current declarations for each served route. The
+[publication contract](litellm_metadata.md#publication-ownership) describes the
+existing `publish_limits` projection and the decisions still needed to change it.
 
 ### Parked GPT-OSS 20B OpenAI exposures
 
@@ -218,7 +200,7 @@ OpenAI-compatible context-selection mechanism), verify the effective serving pat
 then restore the selected exposures in `catalog.py` and regenerate consumers. A tag
 name or successful oversized request is not capacity proof. No alias provisioning,
 model pruning, client-budget increase or automatic unpause is approved by this change.
-[#9574](https://github.com/agentydragon/ducktape/issues/9574) tracks source/rollout status.
+[#9574](https://github.com/agentydragon/ducktape/issues/9574) records the original source and rollout evidence.
 
 ## Documentation ownership
 
@@ -235,7 +217,7 @@ maintaining a second specification.
 | `model_catalog/README.md`                       | Neutral-package entry point and generation entry points                                     |
 | `cluster/docs/model_catalog.md`                 | Landed cluster wiring and operations; not proof of live rollout                             |
 | `model_catalog/debug/harness_model_metadata.md` | Historical version-scoped cross-layer audit, not current deployment policy                  |
-| Tracking issue #9574                            | Current PR/rollout status and parked-integration restoration obligations                    |
+| Historical issue #9574                          | Dated PR/rollout evidence and original parked-integration obligations                       |
 
 Update affected wiring descriptions with implementation changes. Remove resolved
 alternatives and completed instructions instead of appending migration histories;
