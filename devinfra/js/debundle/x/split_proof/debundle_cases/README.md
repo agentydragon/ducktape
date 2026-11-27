@@ -34,7 +34,7 @@ DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mj
 ## Which accepted cases have artifact certificates?
 
 [Per-case certificate results](results/certificates.jsonl) are separate from the diagnostic report.
-Of 122 saved `agree-accept` cases, 111 certified with the structural checker, passed a fresh
+In the historical two-mode run, of 122 saved `agree-accept` cases, 111 certified with the structural checker, passed a fresh
 `--check-output` on the published files, and matched the fixture's expected stdout and exit status
 in Node for both original and emitted entry. With `privateEntryBody: true`, the planner may split the declaration prefix of the entry into
 a private implementation module to keep glue exports off the public entry namespace. The
@@ -56,7 +56,7 @@ bb run "$p:debundle_cases" -- --certify --out "$out/certificates.jsonl"
 The test selects every certified case from the saved certificate report, independently of the
 diagnostic cohort. A refusal, failed disk check, runtime mismatch or missing case fails the pin.
 The census reuses the diagnostic owner plan but supplies the original JS to the normal certifying
-CLI. It tries the structural checker first and the default checker on emission refusal. A published
+CLI. It requests emission once, including for nested entries with fixed providers. An emission refusal records the ordinary CLI’s reason in `emission.blocker` and its reason code when available. A published
 tree that fails recheck is an error. Review a new census before updating the report: keep existing
 successes and add newly certified cases.
 
