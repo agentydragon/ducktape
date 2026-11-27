@@ -34,6 +34,9 @@ pub mod selectors;
 #[path = "spec_wire/vendor_marks.rs"]
 pub mod vendor_marks;
 
+/// One saved projection field the encoder always writes. A decoder that finds
+/// it absent has a truncated or mismatched artifact, so every such field fails
+/// here with the same wording rather than restating the sentence.
 pub fn required<T>(value: Option<T>) -> Result<T> {
     value.context("missing required projection field")
 }
@@ -386,10 +389,9 @@ pub fn encode_host_behavior(value: &spec::HostBehavior) -> pb::HostBehavior {
 
 pub fn decode_host_behavior(v: pb::HostBehavior) -> Result<spec::HostBehavior> {
     Ok(spec::HostBehavior {
-        synchronous_module_loader: pb::SynchronousModuleLoader::try_from(
-            v.synchronous_module_loader
-                .context("missing required projection field")?,
-        )?,
+        synchronous_module_loader: pb::SynchronousModuleLoader::try_from(required(
+            v.synchronous_module_loader,
+        )?)?,
         loader_result_for_evaluating_module: v
             .loader_result_for_evaluating_module
             .map(pb::LoaderResultForEvaluatingModule::try_from)
@@ -443,14 +445,12 @@ pub fn encode_program_premises(value: &spec::ProgramPremises) -> pb::ProgramPrem
 
 pub fn decode_program_premises(v: pb::ProgramPremises) -> Result<spec::ProgramPremises> {
     Ok(spec::ProgramPremises {
-        process_prototype_chain_accessors: pb::ProcessPrototypeChainAccessors::try_from(
-            v.process_prototype_chain_accessors
-                .context("missing required projection field")?,
-        )?,
-        non_literal_loader_calls: pb::NonLiteralLoaderCalls::try_from(
-            v.non_literal_loader_calls
-                .context("missing required projection field")?,
-        )?,
+        process_prototype_chain_accessors: pb::ProcessPrototypeChainAccessors::try_from(required(
+            v.process_prototype_chain_accessors,
+        )?)?,
+        non_literal_loader_calls: pb::NonLiteralLoaderCalls::try_from(required(
+            v.non_literal_loader_calls,
+        )?)?,
         intrinsics_never_written: v
             .intrinsics_never_written
             .map(decode_intrinsics_never_written)

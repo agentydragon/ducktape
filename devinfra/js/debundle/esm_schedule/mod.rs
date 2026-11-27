@@ -52,6 +52,17 @@ pub enum ImportScheduleError {
     },
 }
 
+/// The successor map must stay inside the declared module universe: every
+/// source is a node, and every target set is a subset of the nodes.
+fn successors_are_closed(
+    successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    nodes: &BTreeSet<ModuleId>,
+) -> bool {
+    successors
+        .iter()
+        .all(|(from, targets)| nodes.contains(from) && targets.is_subset(nodes))
+}
+
 impl EsmImportSchedule {
     /// Construct exactly the supplied global priority. No alternative ordering
     /// is tried. Entry is implicit and never appears in `priority`.
@@ -61,11 +72,7 @@ impl EsmImportSchedule {
         nodes: &BTreeSet<ModuleId>,
         priority: &[ModuleId],
     ) -> Result<Self, ImportScheduleError> {
-        if !nodes.contains(&entry)
-            || successors
-                .iter()
-                .any(|(from, targets)| !nodes.contains(from) || !targets.is_subset(nodes))
-        {
+        if !nodes.contains(&entry) || !successors_are_closed(successors, nodes) {
             return Err(ImportScheduleError::ModuleUniverse);
         }
         let expected: BTreeSet<_> = nodes.iter().copied().filter(|&id| id != entry).collect();
@@ -173,9 +180,7 @@ impl EsmImportSchedule {
         if entry != self.entry
             || !nodes.contains(&entry)
             || self.imports.keys().copied().collect::<BTreeSet<_>>() != *nodes
-            || successors
-                .iter()
-                .any(|(from, targets)| !nodes.contains(from) || !targets.is_subset(nodes))
+            || !successors_are_closed(successors, nodes)
         {
             return Err(ImportScheduleError::ModuleUniverse);
         }

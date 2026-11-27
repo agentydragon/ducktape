@@ -20,8 +20,9 @@ The database URL comes from the explicit runtime Secret input
   own SVID. Live credential and Identity UID resolution accepts standing credentials with no
   Sandbox or Pod, so no Environment attachment is required.
 - Request fields never assert caller identity. A service principal carries no fabricated account
-  UID or Pod, and certificate-plus-bearer authentication is refused. Retained ServiceAccount
-  attribution and historical Session records remain readable without admitting new bearer calls.
+  UID or Pod, and certificate-plus-bearer authentication is refused. Historical Session and Dispatch
+  records attributed only to a ServiceAccount or a delegated Identity stay readable as unattributed
+  and cannot wake.
 - Creator/broker identity is retained for provenance, not Session ownership. The exact Identity
   creator may recover only its matching `CreateSession` receipt; that narrow retry authority does not
   grant `GetSession`, command, cancellation or watch access to the resulting Session.
@@ -52,7 +53,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   grant applies only to automatic wake and does not lend component authority to that Identity.
   Native Session creation still resolves the selected Sandbox's live execution Identity, which may
   differ from the creator only under the existing explicit policy grant.
-- Durable openings and dispatch rows retain actor, effective caller and Action correlation
+- Durable openings and dispatch rows retain the service actor, effective Identity and Action correlation
   separately. Request and execution UUIDs are correlation only; Session/command IDs and domain
   request equality retain their reconciliation meaning. Retries cannot rewrite admission evidence.
 - Wake eligibility ordinarily uses the effective Identity. A row carrying Action proof uses its
@@ -110,10 +111,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   `policy_namespace`) is never privileged. A native `CreateSession` requires an explicit `bind_session`
   grant even on a Sandbox acting as the caller; acting as the Identity alone does not authorize lifecycle control.
   It reads, writes, cancels and watches only Sessions whose recorded execution
-  Identity is that incarnation, never one recorded with only a ServiceAccount; writes and cancellation also
-  require the Sandbox to still name it. Its rows record the Identity and its Pod as creator or actor, in
-  columns separate from ServiceAccount attribution. Its queued work requests an automatic wake as the Identity,
-  which the lifecycle manager authorizes exactly as the Sandbox's own ServiceAccount's: the target Sandbox
+  Identity is that incarnation; writes and cancellation also
+  require the Sandbox to still name it. Its rows record the Identity and its Pod as creator or actor. Its queued work requests an automatic wake as the Identity,
+  which the lifecycle manager authorizes as follows: the target Sandbox
   must act as that live Identity incarnation and its `resumePolicy.allowOwnServiceAccount` must permit its
   own principal to resume it. Messaging between Sessions of one Identity, and the wake it causes, is implied;
   a direct resume or wake request by an Identity still has no rule type and is refused.
@@ -157,7 +157,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   quiescence and Runtime's admission barrier remain separate.
 - Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
   rechecks the target UID and retained caller: for an Identity caller, that the Sandbox acts as that live
-  Identity incarnation under its current `resumePolicy`; a retained ServiceAccount caller is never authorized.
+  Identity incarnation under its current `resumePolicy`; an unattributed row is never authorized.
   `wake_service_callers` is an automatic-only broker grant. An Action-attributed row is assessed
   as its verified service actor through the Dispatcher's exact service broker grant; its effective Identity
   remains in the row attribution for Session authority. These grants do not authorize explicit resume or
@@ -420,9 +420,8 @@ by reading the same ID; never blindly replay native, provider or executor effect
 API.
 
 `Session` is a minimal authorized projection: `session_id`, `placement`, creation/update timestamps,
-nested `SessionStatus` and the exact execution ServiceAccount identity once established. It does not
-expose the immutable `SessionSpec` or instructions. A missing identity means no exact owner is
-established; callers must not infer its UID from a current same-name account.
+nested `SessionStatus` and the exact execution Identity incarnation (`identity`). It does not
+expose the immutable `SessionSpec` or instructions.
 `SessionStatus.materialization` is placement-owner progress, not harness state
 ([values](#method-scope)): `SESSION_MATERIALIZATION_ACCEPTED` means the owner durably admitted the
 logical Session, not that a harness is ready, a turn completed or History projected a Thread.

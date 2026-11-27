@@ -55,6 +55,7 @@ function ConditionsTable({ conditions }: { conditions: RawCondition[] }): JSX.El
             <Table.Th>Reason</Table.Th>
             <Table.Th>Message</Table.Th>
             <Table.Th>Transition</Table.Th>
+            <Table.Th>Generation</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -76,8 +77,8 @@ function ConditionsTable({ conditions }: { conditions: RawCondition[] }): JSX.El
                     · probed <TimeAgo value={condition.lastProbeTime} />
                   </>
                 )}
-                {condition.observedGeneration !== null && ` · generation ${condition.observedGeneration}`}
               </Table.Td>
+              <Table.Td>{condition.observedGeneration ?? "—"}</Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>

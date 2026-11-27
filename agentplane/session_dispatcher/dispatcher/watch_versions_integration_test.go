@@ -76,7 +76,7 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 	queueStore := testStore(t, 5)
 	filter := testSessionDispatchFilter("test-resume-session")
 	for _, id := range []string{"test-resume-a", "test-resume-b", "test-resume-c"} {
-		if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-resume-sandbox", sandboxUID, input(id, "test-input"), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-resume-sandbox", sandboxUID, input(id, "test-input")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -100,7 +100,7 @@ func TestVersionWatchResumesAfterDisconnectAndServiceRestart(t *testing.T) {
 		t.Fatal("resumed snapshot has no checkpoint")
 	}
 	resumed.stop(t)
-	if _, err := queueStore.CancelForCaller(ctx, "test-resume-b", testStoreCaller(nil)); err != nil {
+	if _, err := queueStore.CancelForCaller(ctx, "test-resume-b", testStoreCaller()); err != nil {
 		t.Fatal(err)
 	}
 	if err := queueStore.EndSandbox(ctx, sandboxUID); err != nil {
@@ -158,7 +158,7 @@ func TestWatchRequestedCommandAndLegacyDeletionReceipt(t *testing.T) {
 	queueStore := testStore(t, 5)
 	cmd := input("test-filtered-command", "stored before delivery")
 	filter := testSessionDispatchFilter("test-filtered-session", cmd.GetCommandId())
-	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-filtered-sandbox", sandboxUID, cmd, nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-filtered-sandbox", sandboxUID, cmd); err != nil {
 		t.Fatal(err)
 	}
 	hub := testWatchHub(t, queueStore)
@@ -184,7 +184,7 @@ func TestVersionWatchResumesOnlyChangedRowsAndRejectsDifferentFilter(t *testing.
 	queueStore := testStore(t, 5)
 	filter := testSessionDispatchFilter("test-delta-session", "test-delta-a", "test-delta-b")
 	for _, id := range filter.GetCommandIds() {
-		if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-delta-sandbox", sandboxUID, input(id, "test-input"), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-delta-sandbox", sandboxUID, input(id, "test-input")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -194,7 +194,7 @@ func TestVersionWatchResumesOnlyChangedRowsAndRejectsDifferentFilter(t *testing.
 	watch.next(t)
 	token := watch.next(t).GetResumeToken()
 	watch.stop(t)
-	if _, err := queueStore.CancelForCaller(ctx, "test-delta-b", testStoreCaller(nil)); err != nil {
+	if _, err := queueStore.CancelForCaller(ctx, "test-delta-b", testStoreCaller()); err != nil {
 		t.Fatal(err)
 	}
 	// Command IDs form a set: reordering and duplicates keep the same digest.
@@ -245,7 +245,7 @@ func TestVersionWatchReportsExpiredCoverageOnResumeAndReconnectingStream(t *test
 	ctx := admitted(t)
 	queueStore, databaseURL := testStoreWithURL(t, 5)
 	filter := testSessionDispatchFilter("test-expired-session")
-	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-expired-sandbox", sandboxUID, input("test-expired-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-expired-sandbox", sandboxUID, input("test-expired-command", "test-input")); err != nil {
 		t.Fatal(err)
 	}
 	listenerURL := postgres.URLWithApplicationName(t, databaseURL, "test-dispatch-retention-reconnect")
@@ -315,7 +315,7 @@ func TestVersionWatchReplicasReadTerminalReceiptsFromHubWakeup(t *testing.T) {
 	ctx := admitted(t)
 	queueStore := testStore(t, 5)
 	filter := testSessionDispatchFilter("test-replicas-session")
-	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-replicas-sandbox", sandboxUID, input("test-replicas-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-replicas-sandbox", sandboxUID, input("test-replicas-command", "test-input")); err != nil {
 		t.Fatal(err)
 	}
 	var replicas []*versionWatch
@@ -348,7 +348,7 @@ func TestVersionWatchIgnoresUnrelatedChangesUntilResumed(t *testing.T) {
 	hub := testWatchHub(t, queueStore)
 	filter := testSessionDispatchFilter("test-own-scope")
 	// Opening the Session notifies its key, so it exists before the watch starts.
-	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-own-sandbox", sandboxUID, input("test-own-first", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-own-sandbox", sandboxUID, input("test-own-first", "test-input")); err != nil {
 		t.Fatal(err)
 	}
 	watch := startVersionWatch(t, ctx, queueStore, hub, filter, "")
@@ -359,10 +359,10 @@ func TestVersionWatchIgnoresUnrelatedChangesUntilResumed(t *testing.T) {
 	if before.GetCaughtUp() == nil {
 		t.Fatal("snapshot has no checkpoint")
 	}
-	if _, err := enqueueWithSession(t, queueStore, ctx, "test-other-scope", "test-other-sandbox", sandboxUID, input("test-other-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, "test-other-scope", "test-other-sandbox", sandboxUID, input("test-other-command", "test-input")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-own-sandbox", sandboxUID, input("test-own-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-own-sandbox", sandboxUID, input("test-own-command", "test-input")); err != nil {
 		t.Fatal(err)
 	}
 	if frame := watch.next(t); frame.GetDispatch().GetCommandId() != "test-own-command" {

@@ -113,7 +113,6 @@ go_test(
         "activity_client_test.go",
         "activity_integration_test.go",
         "activity_observer_integration_test.go",
-        "attribution_test.go",
         "authorization_integration_test.go",
         "central_activity_integration_test.go",
         "claim_retry_integration_test.go",

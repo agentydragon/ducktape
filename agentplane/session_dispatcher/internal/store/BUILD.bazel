@@ -60,7 +60,6 @@ go_test(
         "store_integration_test.go",
         "store_integration_testmain_test.go",
         "versions_integration_test.go",
-        "wake_fixtures_test.go",
         "wake_integration_test.go",
         "watch_versions_integration_test.go",
     ],

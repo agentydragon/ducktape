@@ -652,7 +652,7 @@ func TestRepackSplitBlockPreservesPendingSamplingProjection(t *testing.T) {
 	}
 }
 
-func TestRepackPreservesSmallerLegacySource(t *testing.T) {
+func TestRepackMigratesSmallerLegacySource(t *testing.T) {
 	store := newTestStore(t)
 	store.eventBlockProfile = eventblock.DefaultProfile(1)
 	session := openSessionForStore(t, store, "")
@@ -660,15 +660,15 @@ func TestRepackPreservesSmallerLegacySource(t *testing.T) {
 	appendAPBTestJournalThrough(t, store, session.ID, through)
 	replaceRowsWithBlock(t, store, session.ID, 1, through, true)
 	want := eventFrames(t, store, session.ID, 1, through)
-	migrationExec(t, store.DB(), `CREATE FUNCTION reject_legacy_rewrite() RETURNS trigger LANGUAGE plpgsql AS $$
-		BEGIN RAISE EXCEPTION 'smaller source was rewritten'; END; $$`)
-	migrationExec(t, store.DB(), `CREATE TRIGGER no_rewrite BEFORE DELETE ON sampler_event_block
-		FOR EACH ROW EXECUTE FUNCTION reject_legacy_rewrite()`)
 	for _, apply := range []bool{false, true} {
 		result, err := store.CompactJournal(t.Context(), session.ID, apply)
-		if err != nil || !result.Completed || result.OutputBytes != result.StoredBytes || result.RetainedLegacyBlocks != 1 {
+		if err != nil || !result.Completed || result.OutputBytes <= result.StoredBytes || result.RetainedLegacyBlocks != 0 {
 			t.Fatalf("apply=%v result=%+v err=%v", apply, result, err)
 		}
+	}
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block
+		WHERE session_id=$1 AND substring(payload FROM 1 FOR 2)=decode('1f8b','hex')`, session.ID); got != 0 {
+		t.Fatalf("legacy blocks after apply=%d", got)
 	}
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, through), want)
 }
@@ -702,5 +702,21 @@ func TestRepackRetriesOnlyItsOwnDeadline(t *testing.T) {
 	defer cancel()
 	if err := run(ctx, "SELECT 1"); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrJournalBusy) {
 		t.Fatalf("caller's deadline: %v", err)
+	}
+}
+
+func TestRepackedBlockInventoryColumns(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	const through = 32
+	appendAPBTestJournalThrough(t, store, session.ID, through)
+	frames := eventFrames(t, store, session.ID, 1, through)
+	size := 4 * len(frames)
+	for _, frame := range frames {
+		size += len(frame)
+	}
+	replaceRowsWithBlock(t, store, session.ID, 1, through, false)
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1 AND block_format='apb_v1' AND uncompressed_bytes=$2`, session.ID, size); got != 1 {
+		t.Fatal("APB block missing from format and size inventory")
 	}
 }

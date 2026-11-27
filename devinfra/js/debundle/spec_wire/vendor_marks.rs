@@ -137,7 +137,7 @@ pub fn decode_partial_swap_symbol(
 ) -> Result<spec::vendor_marks::PartialSwapSymbol> {
     Ok(spec::vendor_marks::PartialSwapSymbol {
         package: required(v.package)?,
-        kind: pb::PartialSwapKind::try_from(v.kind.context("missing required projection field")?)?,
+        kind: pb::PartialSwapKind::try_from(required(v.kind)?)?,
         upstream_export: v.upstream_export,
         local: v.local,
     })
