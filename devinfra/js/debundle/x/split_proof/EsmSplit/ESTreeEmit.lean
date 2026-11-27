@@ -116,6 +116,7 @@ private def coreExpr (shadowed : Bool) (expr : CoreJS.Expr) (operand := false) :
   | .arr elems => do
     let elements ← elems.attach.mapM fun ⟨elem, _⟩ => coreExpr shadowed elem
     return node "ArrayExpression" [("elements", toJson elements)]
+  | .obj [] => return node "ObjectExpression" [("properties", .arr #[])]
   | .undef => do
     if shadowed then throw "undefined initializer is shadowed in the output module"
     return identifier "undefined"
