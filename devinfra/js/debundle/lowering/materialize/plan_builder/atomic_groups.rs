@@ -2,7 +2,7 @@
 
 use crate::exports::PublicExportSurface;
 use crate::plans::ModulePlan;
-use crate::util::target_file_for_request;
+use crate::target_paths::target_file_for_request;
 use analysis::{BindingKind, EntryDestination, ModuleId, ModuleRole};
 use anyhow::{Context, Result, bail};
 use esm_schedule::{EsmImportOrder, EsmImportSchedule};

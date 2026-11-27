@@ -17,7 +17,7 @@ use anyhow::Result;
 use peel::OutputFormat;
 use serde::Serialize;
 
-use crate::edit_gate::{GateRejection, GateRejectionReport};
+use edit_gate::{Gate, GateRejection, GateRejectionReport};
 
 /// A spec-mutating CLI operation represented in mutation and rejection outcomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display)]
@@ -85,6 +85,16 @@ impl GateOutcome {
                 Self::Passed
             }
             _ => self,
+        }
+    }
+}
+
+/// The label a successful edit reports for its validation mode.
+impl From<&Gate<'_>> for GateOutcome {
+    fn from(gate: &Gate<'_>) -> Self {
+        match gate {
+            Gate::Run { .. } => Self::ClaimsChecked,
+            Gate::Skip => Self::Skipped,
         }
     }
 }

@@ -12,17 +12,18 @@ use spec::{LogicalModule, ModulePath, is_residual_namespace_path};
 use spec_modules::{coalesce_source_match_claims, module_path_from_file};
 use spec_tree::ModuleTreeScope;
 
-use crate::binding::{
-    BindingIdentity, BindingLabel, ModuleDocs, apply_doc_changes, binding_effective_name,
-    binding_matches_in_doc, canonical_module_path, insert_annotation, load_module_docs,
-    member_effective_name, source_match_readable, take_indexed, take_source_match_bindings,
+use binding::{
+    BindingIdentity, BindingLabel, apply_doc_changes, binding_effective_name,
+    binding_matches_in_doc, canonical_module_path, insert_annotation, member_effective_name,
+    source_match_readable, take_indexed, take_source_match_bindings,
 };
-use crate::candidate_assessment::ResolvedCandidateEffectAssessment;
-use crate::edit_gate::{
-    Gate, LocalBindingResolution, SourceUnitClaimProjection, SourceUnitModuleAssignments,
-    post_edit_spec_from_docs, resolve_edit_claims, source_unit_module_assignments_from_projection,
+use candidate_assessment::ResolvedCandidateEffectAssessment;
+use edit_gate::{
+    Gate, LocalBindingResolution, ModuleDocs, SourceUnitClaimProjection,
+    SourceUnitModuleAssignments, load_module_docs, post_edit_spec_from_docs, resolve_edit_claims,
+    source_unit_module_assignments_from_projection,
 };
-use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
+use outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SourceUnitApplyOutcome {
@@ -860,7 +861,7 @@ fn source_unit_claim_locations(
     dependency_graph: &DependencyGraphReport,
     modules_root: &Path,
     docs: &ModuleDocs,
-    post_spec: &crate::edit_gate::PostEditSpec,
+    post_spec: &edit_gate::PostEditSpec,
     projection: &SourceUnitClaimProjection,
     scope: Option<&ModuleTreeScope>,
 ) -> Result<Vec<SourceUnitClaimLocation>> {

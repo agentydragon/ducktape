@@ -46,7 +46,8 @@ use spec::{ModulePath, ResolvedMemberSelector};
 use spec_modules::{collect_module_files, module_path_from_file};
 use swc_atoms::Atom;
 
-use crate::{GraphCompatibilityScope, emit_report};
+use crate::emit_report;
+use graph_compatibility::GraphCompatibilityScope;
 use graph_provenance::CurrentRoots;
 
 /// Args for `debundle spec propose-commutations`.
@@ -101,7 +102,7 @@ impl ProposeCommutationsArgs {
             Some(_) => GraphCompatibilityScope::AuthoredModuleTree { tree_config: None },
             None => GraphCompatibilityScope::ExactSourceUnit,
         };
-        crate::verify_graph_compatibility_with_scope(
+        graph_compatibility::verify_graph_compatibility_with_scope(
             &self.graph,
             self.modules.as_deref(),
             Some(self.source_root.as_path()),

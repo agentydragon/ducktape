@@ -3,24 +3,180 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
 
 rust_library(
+    name = "graph_compatibility",
+    srcs = ["graph_compatibility.rs"],
+    crate_root = "graph_compatibility.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle/selectors/resolution:anonymous_resolution",
+        "@crates//:anyhow",
+    ],
+)
+
+# Graph-backed claim and realizability checks shared by the spec edit verbs.
+rust_library(
+    name = "edit_gate",
+    srcs = ["edit_gate.rs"],
+    crate_root = "edit_gate.rs",
+    edition = "2024",
+    deps = [
+        ":graph_compatibility",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:command_diagnostics",
+        "//devinfra/js/debundle:gate",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/artifacts:output_layout",
+        "//devinfra/js/debundle/esm_schedule",
+        "//devinfra/js/debundle/graph",
+        "//devinfra/js/debundle/peel",
+        "//devinfra/js/debundle/selectors/resolution:anonymous_resolution",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "//devinfra/js/debundle/spec:spec_tree",
+        "//devinfra/js/debundle/spec:yaml_edit",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+# The shared JSON/text outcome of a spec-mutating verb.
+rust_library(
+    name = "outcome",
+    srcs = ["outcome.rs"],
+    crate_root = "outcome.rs",
+    edition = "2024",
+    deps = [
+        ":edit_gate",
+        "//devinfra/js/debundle:command_diagnostics",
+        "//devinfra/js/debundle:command_output",
+        "//devinfra/js/debundle:gate",
+        "//devinfra/js/debundle/peel",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:strum",
+    ],
+)
+
+rust_library(
+    name = "candidate_assessment",
+    srcs = ["candidate_assessment.rs"],
+    crate_root = "candidate_assessment.rs",
+    edition = "2024",
+    deps = [
+        ":edit_gate",
+        "//devinfra/js/debundle:command_diagnostics",
+        "//devinfra/js/debundle:gate",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:pipeline",
+        "//devinfra/js/debundle:transform_inputs",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+    ],
+)
+
+rust_library(
+    name = "binding",
+    srcs = ["binding.rs"],
+    crate_root = "binding.rs",
+    edition = "2024",
+    deps = [
+        ":candidate_assessment",
+        ":edit_gate",
+        ":outcome",
+        "//devinfra/js/debundle:command_diagnostics",
+        "//devinfra/js/debundle:gate",
+        "//devinfra/js/debundle:pipeline",
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "//devinfra/js/debundle/spec:yaml_edit",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:shlex",
+    ],
+)
+
+rust_test(
+    name = "binding_test",
+    crate = ":binding",
+    edition = "2024",
+)
+
+rust_library(
+    name = "comment",
+    srcs = ["comment.rs"],
+    crate_root = "comment.rs",
+    edition = "2024",
+    deps = [
+        ":binding",
+        "//devinfra/js/debundle:command_output",
+        "//devinfra/js/debundle/peel",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "//devinfra/js/debundle/spec:yaml_edit",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_library(
+    name = "module",
+    srcs = ["module.rs"],
+    crate_root = "module.rs",
+    edition = "2024",
+    deps = [
+        ":candidate_assessment",
+        ":edit_gate",
+        ":outcome",
+        "//devinfra/js/debundle:command_diagnostics",
+        "//devinfra/js/debundle:command_output",
+        "//devinfra/js/debundle:gate",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle/peel",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "//devinfra/js/debundle/spec:yaml_edit",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "module_test",
+    crate = ":module",
+    edition = "2024",
+)
+
+rust_library(
     name = "cli",
     srcs = [
-        "binding.rs",
         "bindings_commands.rs",
-        "candidate_assessment.rs",
-        "comment.rs",
         "contract_audit.rs",
-        "edit_gate.rs",
         "gate.rs",
         "inspection_commands.rs",
         "integrity_explanation.rs",
         "invocation.rs",
         "mod.rs",
-        "module.rs",
         "module_apply.rs",
         "module_proposals.rs",
         "modules_commands.rs",
-        "outcome.rs",
         "propose_commutations.rs",
         "scc_cluster.rs",
         "selected_view_apply.rs",
@@ -37,6 +193,13 @@ rust_library(
     crate_root = "mod.rs",
     edition = "2024",
     deps = [
+        ":binding",
+        ":candidate_assessment",
+        ":comment",
+        ":edit_gate",
+        ":graph_compatibility",
+        ":module",
+        ":outcome",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:analyze_command",
@@ -60,7 +223,6 @@ rust_library(
         "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/artifacts:output_layout",
-        "//devinfra/js/debundle/esm_schedule",
         "//devinfra/js/debundle/graph",
         "//devinfra/js/debundle/lowering",
         "//devinfra/js/debundle/peel",

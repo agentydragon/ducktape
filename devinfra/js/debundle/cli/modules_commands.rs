@@ -1,15 +1,15 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
-use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
-use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
-use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, read_assignment_request, run_modules_apply};
 use crate::module_proposals::{GraphCorpusScope, discover_graphs, scope_graphs_to_tree};
 use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
 use anyhow::{Context, Result, ensure};
 use clap::{Args as ClapArgs, Subcommand};
+use comment::{ModuleCommentArgs, run_module_comment_cmd};
+use edit_gate::GraphEditArgs;
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
+use module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use peel::assignment::{
     AssignmentPlan, AssignmentProblem, AssignmentSnapshot, SourceUnitAssignment, accepted,
 };
@@ -64,7 +64,7 @@ impl ModulesNs {
     pub(super) fn verify_graph(
         &self,
         roots: &CurrentRoots,
-    ) -> Result<crate::VerifiedGraphContexts> {
+    ) -> Result<graph_compatibility::VerifiedGraphContexts> {
         if let ModulesNsCommand::Propose(args) = &self.command {
             return verify_proposal_graphs(args, roots);
         }
@@ -72,7 +72,7 @@ impl ModulesNs {
             return edit.verify_graph(roots).map(crate::single_graph_context);
         }
         let context = match &self.command {
-            ModulesNsCommand::Check(args) => crate::verify_graph_compatibility(
+            ModulesNsCommand::Check(args) => graph_compatibility::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
@@ -80,7 +80,7 @@ impl ModulesNs {
                 args.tree_config.as_deref(),
             )
             .map(Some),
-            ModulesNsCommand::Apply(args) => crate::verify_graph_compatibility(
+            ModulesNsCommand::Apply(args) => graph_compatibility::verify_graph_compatibility(
                 &args.graph,
                 &args.modules_root,
                 Some(&args.source_root),
@@ -97,9 +97,9 @@ impl ModulesNs {
 fn verify_proposal_graphs(
     args: &ProposeArgs,
     roots: &CurrentRoots,
-) -> Result<crate::VerifiedGraphContexts> {
+) -> Result<graph_compatibility::VerifiedGraphContexts> {
     if let Some(graph) = &args.dependency_graph_path {
-        return crate::verify_graph_compatibility(
+        return graph_compatibility::verify_graph_compatibility(
             graph,
             &args.modules_root,
             args.source_root.as_deref(),
@@ -118,12 +118,12 @@ fn verify_proposal_graphs(
     // Check current input provenance for the entire corpus before producing
     // any report. Out-of-scope chunks still need current graph/source evidence.
     for graph in graphs.values() {
-        crate::verify_graph_compatibility_with_scope(
+        graph_compatibility::verify_graph_compatibility_with_scope(
             graph,
             Some(&args.modules_root),
             args.source_root.as_deref(),
             roots,
-            crate::GraphCompatibilityScope::ExactSourceUnit,
+            graph_compatibility::GraphCompatibilityScope::ExactSourceUnit,
         )?;
     }
 
@@ -132,9 +132,9 @@ fn verify_proposal_graphs(
         .as_deref()
         .context("--graphs requires --tree-config")?;
     let scope = scope_graphs_to_tree(&graphs, config)?;
-    let mut contexts = crate::VerifiedGraphContexts::new();
+    let mut contexts = graph_compatibility::VerifiedGraphContexts::new();
     for (chunk_id, graph) in scope.configured {
-        let context = crate::verify_graph_compatibility(
+        let context = graph_compatibility::verify_graph_compatibility(
             &graph,
             &args.modules_root,
             args.source_root.as_deref(),
@@ -367,7 +367,7 @@ fn run_modules_check(
 fn run_assignment_search(
     args: &ProposeArgs,
     stderr: &mut (dyn std::io::Write + Send),
-    source_contexts: &crate::VerifiedGraphContexts,
+    source_contexts: &graph_compatibility::VerifiedGraphContexts,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
     if let Some(reports_root) = &args.graphs_root {
@@ -531,7 +531,7 @@ fn search_one_graph(
 fn preflight_selected_corpus(
     args: &ProposeArgs,
     proposals: &mut [ConstructedProposal],
-    contexts: &crate::VerifiedGraphContexts,
+    contexts: &graph_compatibility::VerifiedGraphContexts,
     stderr: &mut (dyn std::io::Write + Send),
 ) -> Result<usize> {
     struct Group {
@@ -628,7 +628,7 @@ fn run_graph_corpus_search(
     args: &ProposeArgs,
     reports_root: &std::path::Path,
     stderr: &mut (dyn std::io::Write + Send),
-    source_contexts: &crate::VerifiedGraphContexts,
+    source_contexts: &graph_compatibility::VerifiedGraphContexts,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
     use serde::Serialize;
@@ -890,7 +890,7 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String, with_a
 pub(super) fn run(
     stderr: &mut (dyn std::io::Write + Send),
     args: ModulesNs,
-    source_contexts: &crate::VerifiedGraphContexts,
+    source_contexts: &graph_compatibility::VerifiedGraphContexts,
     analysis_engine_sha256: &'static str,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
