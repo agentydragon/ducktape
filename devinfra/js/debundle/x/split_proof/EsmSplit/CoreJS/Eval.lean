@@ -95,6 +95,18 @@ def makeOpaque (code part : Nat) (cells : List (Option Addr)) (name : String) (l
   (if constructor then addPrototype a else pure ())
   pure (.obj a)
 
+
+/-- Ordinary call expressions keep callee and argument evaluation in order. -/
+abbrev directExprCall {m : Type → Type} [Monad m] (call : Val → Val → List Val → m Val)
+    (callee : m Val) (args : m (List Val)) : m Val := do
+  call (← callee) .undef (← args)
+
+/-- A host callback hands the value back only after the inner call returns. -/
+abbrev requestCall {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (call : Val → Val → List Val → m Val) (f this : WVal) (args : List WVal) : m Told := do
+  let result ← call (← sync (fromW f)) (← sync (fromW this)) (← sync (args.mapM fromW))
+  pure (.value (← sync (toW result)))
+
 /-- What a request of the world does, given what a call and `new` do. -/
 def perform (call : Call W) (construct : Val → List Val → M W Val) (code : Nat) (cells : List (Option Addr)) :
     Request → M W Told
@@ -115,7 +127,7 @@ def perform (call : Call W) (construct : Val → List Val → M W Val) (code : N
     let keys ← ownKeys (← fromW o)
     let some names := keys.mapM PropertyKey.string? | unknown "symbol property keys cross the opaque host boundary"
     pure (.keys names)
-  | .call f this args => do pure (.value (← toW (← call (← fromW f) (← fromW this) (← args.mapM fromW))))
+  | .call f this args => requestCall (fun run => run) call f this args
   | .construct f args => do pure (.value (← toW (← construct (← fromW f) (← args.mapM fromW))))
   | .newObject proto => do
     let parent ← match proto with
@@ -432,13 +444,47 @@ def dispatchCall {m : Type → Type} [Monad m] (sync : {α : Type} → M W α �
   | .host name => sync (hostCall name this args)
   | _ => sync (throwErr .type "not a function")
 
+
+/-- The synchronous entry actions hand their resulting effect to the body;
+its completion returns to the caller without projecting the effect. -/
+abbrev ordinaryCallBody {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (body : Env → List Stmt → m Flow) (f : Func) (closed : Env) (this : Val) (args : List Val) : m Val := do
+  let env ← sync (enterFunction f closed this args)
+  sync (Flow.functionResult (← body env f.body))
+
+/-- Only normal statement completion advances to the remaining statements. -/
+abbrev continueBody {m : Type → Type} [Monad m] (first rest : m Flow) : m Flow := do
+  match ← first with
+  | .normal => rest
+  | jump => pure jump
+
+/-- A cleanup sees the effects left by the body, and its own jump wins. -/
+abbrev finishFinally {m : Type → Type} [Monad m] (cleanup : m Flow) (throw : Val → m Flow)
+    (body : Except Val Flow) : m Flow := do
+  match ← cleanup with
+  | .normal => match body with
+    | .ok flow => pure flow
+    | .error reason => throw reason
+  | jump => pure jump
+
+/-- One modeled conversation step. A language exception is reported to the
+world; a model refusal or exhausted fuel is handled by the effect itself. -/
+abbrev conversationStep {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (attemptRequest : m Told → m (Except Val Told)) (request : Request → m Told)
+    (next : Told → m Val) (told : Told) : m Val := do
+  match ← sync (talk told) with
+  | .done v => sync (fromW v)
+  | .throw v => do sync (throwVal (← sync (fromW v)))
+  | .unknown why => sync (unknown why)
+  | req =>
+    let answer ← attemptRequest (request req)
+    next (← sync (toldOf answer))
+
 /-- Enter and run a local closure; async completion still settles the Promise
 using the synchronous prefix rules. A deferred body never reaches here. -/
 def runLocalCall (body : Env → List Stmt → M W Flow) (f : Func) (closed : Env)
     (this : Val) (args : List Val) : M W Val :=
-  let run : M W Val := do
-    let env ← enterFunction f closed this args
-    Flow.functionResult (← body env f.body)
+  let run := ordinaryCallBody (m := M W) (fun run => run) body f closed this args
   if f.kind == .asyncFn then AsyncPrefix.invokeBody promiseProto run else run
 
 mutual
@@ -536,9 +582,7 @@ def evalExpr : Nat → Env → Expr → M W Val
       let new := if inc then old + 1.0 else old - 1.0
       putRef (callFn n) env r (.num new)
       pure (.num (if pre then new else old))
-    | .call f args => do
-      let callee ← evalExpr n env f
-      callFn n callee .undef (← evalArgs n env args)
+    | .call f args => directExprCall (callFn n) (evalExpr n env f) (evalArgs n env args)
     | .callMethod o k args => do
       let base ← evalExpr n env o
       let key ← evalExpr n env k
@@ -810,14 +854,8 @@ def execStmt : Nat → Env → Stmt → M W Flow
     | .tryFinally body finalizer => fun s =>
       -- the finalizer runs after a normal end, a jump or a throw; if it jumps or throws itself, that wins
       match execStmt n env body s with
-      | .ok flow s => (do
-          match ← execStmt n env finalizer with
-          | .normal => pure flow
-          | jump => pure jump) s
-      | .throw v s => (do
-          match ← execStmt n env finalizer with
-          | .normal => throwVal v
-          | jump => pure jump) s
+      | .ok flow s => finishFinally (execStmt n env finalizer) throwVal (.ok flow) s
+      | .throw v s => finishFinally (execStmt n env finalizer) throwVal (.error v) s
       | r => r
     | .opaque code decls funs free .world => do
       let _ ← converse n code (opaqueCells env decls funs free) (.run code 0 (.prim .undef) (← toW env.this) [] false)
@@ -829,23 +867,16 @@ def execStmt : Nat → Env → Stmt → M W Flow
 def execStmts : Nat → Env → List Stmt → M W Flow
   | 0, _, _ => outOfFuel
   | _ + 1, _, [] => pure .normal
-  | n + 1, env, s :: ss => do
-    match ← execStmt n env s with
-    | .normal => execStmts n env ss
-    | jump => pure jump
+  | n + 1, env, s :: ss => continueBody (execStmt n env s) (execStmts n env ss)
 
 /-- A conversation with the world about the opaque code `code`, which was handed `cells`: each request of the world
 is carried out with the smaller bound, until the world ends the code. -/
 def converse : Nat → Nat → List (Option Addr) → Told → M W Val
   | 0, _, _, _ => outOfFuel
-  | n + 1, code, cells, told => do
-    match ← talk told with
-    | .done v => fromW v
-    | .throw v => throwVal (← fromW v)
-    | .unknown why => unknown why
-    | req => do
-      let told ← toldOf (← attempt (perform (callFn n) (fun callee args => constructTarget n callee callee args) code cells req))
-      converse n code cells told
+  | n + 1, code, cells, told =>
+    conversationStep (fun run => run) attempt
+      (perform (callFn n) (fun callee args => constructTarget n callee callee args) code cells)
+      (converse n code cells) told
 
 /-- Test the condition at its designated phase. At the other phase, proceed
 without evaluating it or changing state. -/

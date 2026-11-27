@@ -109,3 +109,33 @@ the turn through bodies, host callbacks, and any other path that can re-enter
 the evaluator. In particular, wrapping a queue-producing call in the current
 `TurnM.lift` would lose the jobs; this slice neither adds such a rule nor
 changes the publishing gate.
+
+## Passing an updated turn through recursive rules
+
+The ordinary evaluator now calls shared rules for direct invocation, entering
+and completing a local body, statement-list continuation, cleanup, and a step
+of the modeled host conversation. Each rule accepts its recursive computation
+at the same fuel as before. At these boundaries the turn-valued instances
+pass the resulting turn to the next statement, the caller, the finalizer, or
+the next host step. The corresponding Lean equations quantify over the whole
+incoming FIFO and recover the ordinary result at the same bound.
+
+The regression starts with two queued markers. It adds a third marker once,
+after an actual ordinary statement in an inner body. Nested return and throw
+keep all three in order through the finalizer. Model refusal keeps all three
+and skips the finalizer. A modeled host callback also keeps all three through
+the value reply and a subsequent host refusal. The test composes the shared
+rules at the recursive edges of fixed fixtures. It does not install a new
+JavaScript operation or let a host enqueue a job.
+
+There are still recursive edges that cannot carry an updated queue. Reading an
+accessor through `getProp` uses the existing state-only `Call` result. The
+getter fixture returns the same value and logs the same line through that
+interface, but the third marker is lost. The next change at this edge is to
+make the property-access rule accept and return the same effect as the
+callback, and then thread it through `getProp` and the modeled host `.get`
+request. Similar callback-bearing paths need their own overlap proofs (for
+example setters, constructors, and iterators). The shared recursion interfaces
+here do not authorize projecting a queue-bearing operation through any of
+those paths. The production evaluator still has no enqueue rule, and its
+publication gate is unchanged.
