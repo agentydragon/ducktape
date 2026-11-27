@@ -1920,7 +1920,6 @@ lean_library(
         ":corejs_terminal_footprints",
         ":corejs_terminal_plan_family",
         ":corejs_terminal_source",
-        ":named_declaration_split",
         ":ordered_const_syntax",
     ],
 )
