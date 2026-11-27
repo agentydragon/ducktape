@@ -86,7 +86,7 @@ private def runStaticProvider (chunk : DeploymentChunk) (spec : Spec) (src : Bun
       !spec.entry.contains '/' do
     return ← refuse "expected a raw .mjs source and a root-level entry route"
   let .ok request := CoreJS.StaticProviderConstruction.providerRequest classified |
-    return ← refuse "expected one relative named import"
+    return ← refuse "expected named imports of one export from one relative provider"
   try
     let actual ← IO.FS.realPath chunk.source
     let some root := actual.parent | return ← refuse "source does not have a directory"

@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { split as construct } from "../testing/split.mjs";
-import { exportNamed, importNamed, moduleEvaluationOrder, observe, prepare, program, runSplit } from "./harness.mjs";
+import {
+  exportNamed,
+  importNamed,
+  lower,
+  moduleEvaluationOrder,
+  observe,
+  prepare,
+  program,
+  runSplit,
+} from "./harness.mjs";
 
 const source = `
 import { publicValue } from "./provider.mjs";
@@ -153,3 +162,76 @@ for (const name of ["leaf", "publicValue", "missing"]) {
     assert(!existsSync(fixture.out));
   }
 }
+
+// Two local imports of the same provider export remain the same live cell.
+const auditSource = `import { publicValue as first, publicValue as second } from "./provider.mjs";
+const local = first === second;
+export const result = local;
+export { first as live };`;
+const auditSpec = {
+  entry: "entry.mjs",
+  modules: { "entry.mjs": ["#0", "#2", "#3"], "local.mjs": ["#1"] },
+  order: ["local.mjs"],
+  sequential: true,
+};
+const audit = runSplit("same-provider-alias-audit", {
+  source: auditSource,
+  provider: "export const publicValue = 31;",
+  spec: auditSpec,
+});
+assert.equal(audit.verdict.status, "certified", audit.log);
+assert.equal(audit.verdict.guarantee, "all-outcomes", audit.log);
+assert.deepEqual(observe(audit.files.sourceFile, ["result", "live"]), { result: true, live: 31 });
+assert.deepEqual(observe(path.join(audit.out, "entry.mjs"), ["result", "live"]), { result: true, live: 31 });
+assert.equal(
+  readFileSync(path.join(audit.out, "provider.mjs"), "utf8"),
+  readFileSync(audit.files.providerFile, "utf8")
+);
+assert.equal(
+  lower(audit.files.sourceFile, audit.files.specFile, audit.out, ["--check-output"]).verdict.status,
+  "certified"
+);
+assert.deepEqual(moduleEvaluationOrder(audit.out, "entry.mjs"), ["provider.mjs", "local.mjs", "entry.mjs"]);
+
+// Separate declarations from the same provider still select the same cell.
+const separateImports = auditSource.replace(
+  'import { publicValue as first, publicValue as second } from "./provider.mjs";',
+  'import { publicValue as first } from "./provider.mjs"; import { publicValue as second } from "./provider.mjs";'
+);
+const separateSpec = { ...auditSpec, modules: { "entry.mjs": ["#0", "#1", "#3", "#4"], "local.mjs": ["#2"] } };
+const separate = runSplit("same-provider-separate-imports", {
+  source: separateImports,
+  provider: "export const publicValue = 31;",
+  spec: separateSpec,
+});
+assert.equal(separate.verdict.status, "certified", separate.log);
+assert.equal(separate.verdict.guarantee, "all-outcomes", separate.log);
+assert.deepEqual(observe(separate.files.sourceFile, ["result", "live"]), { result: true, live: 31 });
+assert.deepEqual(observe(path.join(separate.out, "entry.mjs"), ["result", "live"]), { result: true, live: 31 });
+assert.equal(
+  lower(separate.files.sourceFile, separate.files.specFile, separate.out, ["--check-output"]).verdict.status,
+  "certified"
+);
+
+// Equal values in different provider cells do not justify treating aliases as one cell.
+const different = primitiveFixture("different-provider-cells", {
+  source: auditSource.replace("publicValue as second", "decoy as second"),
+  provider: "export const publicValue = 31; export const decoy = 31;",
+  spec: auditSpec,
+});
+assert.deepEqual(observe(different.sourceFile, ["result", "live"]), { result: true, live: 31 });
+assertRefused(different, /static provider:/);
+assert(!existsSync(different.out));
+const auditBefore = ["entry.mjs", "local.mjs", "provider.mjs"].map((name) => readFileSync(path.join(audit.out, name)));
+const existingRefusal = construct({
+  source: different.sourceFile,
+  spec: different.specFile,
+  out: audit.out,
+  require: "all-outcomes",
+  allowExistingOut: true,
+});
+assert.equal(existingRefusal.status, "refused", existingRefusal.log);
+assert.deepEqual(
+  ["entry.mjs", "local.mjs", "provider.mjs"].map((name) => readFileSync(path.join(audit.out, name))),
+  auditBefore
+);
