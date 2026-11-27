@@ -222,5 +222,24 @@ theorem wrongAlias_changes_run :
   rw [wrongAlias.1, wrongAlias.2] at h
   exact (by decide : (#["provider", "true true"] : Array String) ≠ #["provider", "false false"]) h
 
+private def equalValued : Expr := .seq (.prim .log [.str "provider"]) (.bool false)
+
+/-- Equal initial values and equal traces do not make two exported bindings aliases. -/
+theorem equalValueWrongAlias :
+    output (runProgram World.probe 32 (original equalValued)) = #["provider", "false false"] ∧
+    output (runProgram World.probe 32 (split equalValued true)) = #["provider", "false false"] ∧
+    LinkedBehavior.exportsMatch World.probe (original equalValued) (split equalValued true) = false := by
+  refine ⟨?_, ?_, ?_⟩ <;> cbv
+
+private def throwingInitializer : Expr := .seq (.prim .log [.str "provider"]) (.get .null (.str "x"))
+
+/-- An effect before a provider throw survives, and the consumer's log never runs. -/
+theorem throwingProviderStopsConsumer :
+    (match runProgram World.probe 32 (split throwingInitializer) with
+      | .throw _ state => some state.out
+      | _ => none) = some #["provider"] ∧
+    runProgram World.probe 0 (split throwingInitializer) = .fuel := by
+  constructor <;> cbv
+
 
 end CoreJS.StaticProviderBoundary
