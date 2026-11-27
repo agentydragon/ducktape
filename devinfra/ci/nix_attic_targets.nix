@@ -85,6 +85,8 @@ let
       "bbapi"
       "devtools"
       "precommit"
+      "precommit-ansible"
+      "precommit-checkov"
       "precommit-rustfmt"
       "agent-haku"
       "pr-visuals"

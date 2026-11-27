@@ -28,7 +28,7 @@ exclude: |
     props/specimens/[^/]+/[^/]+/code/.*
   )$
 repos:
-  # All hook commands come from the flake-locked Nix precommit package.
+  # The repository flake pins both the bootstrap and the on-demand hook tools.
   # Keep upstream pre-commit-hooks metadata when changing their local definitions.
   - repo: local
     hooks:
@@ -182,7 +182,7 @@ repos:
       # CI: Runs full ansible-lint with all rules (thorough, slower)
       - id: ansible-syntax-check
         name: ansible-playbook --syntax-check
-        entry: ansible/scripts/run-syntax-check.sh
+        entry: devinfra/precommit/with_flake_tool.sh ansible ansible/scripts/run-syntax-check.sh
         language: system
         # Only root-level ansible/*.yaml (playbooks), not roles/vars/etc subdirs.
         files: "^ansible/[^/]+\\.yaml$"
@@ -265,7 +265,7 @@ repos:
       - id: checkov_diff
         name: checkov (terraform)
         language: system
-        entry: checkov
+        entry: devinfra/precommit/with_flake_tool.sh checkov checkov
         args: ["--framework", "terraform", "--skip-check", "CKV_TF_1,CKV2_AWS_23", "-f"]
         files: "^(cluster/terraform|tf)/.*\\.tf$"
         require_serial: true

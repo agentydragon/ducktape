@@ -31,6 +31,8 @@ ducktapePkgs
     name = "ducktape-precommit";
     paths = preCommitBootstrapPackages;
   };
+  precommit-ansible = pkgs.ansible;
+  precommit-checkov = pkgs.checkov;
   precommit-rustfmt = preCommitRustfmt;
   # Pinned nixpkgs has nix-fast-build 1.4.0, which lacks --stream-json-lines.
   # Remove this pin and use pkgs.nix-fast-build once nixpkgs has both

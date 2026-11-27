@@ -45,13 +45,15 @@ let
     ducktapePkgs.prettier
     pkgs.kubeconform
     pkgs.tflint
-    pkgs.checkov
-    pkgs.ansible
   ];
 
   # Developer and agent environments also support running the hooks offline.
   preCommitRustfmt = rustToolchain.rustfmt;
-  preCommitPackages = preCommitBootstrapPackages ++ [ preCommitRustfmt ];
+  preCommitPackages = preCommitBootstrapPackages ++ [
+    pkgs.checkov
+    preCommitRustfmt
+    pkgs.ansible
+  ];
 
   # Shared developer tool core used by `.#devtools` and Claude Code web's
   # Home Manager profile. The devShell and `.#devtools` also include
