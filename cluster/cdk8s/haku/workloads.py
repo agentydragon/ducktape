@@ -15,6 +15,7 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -110,7 +111,7 @@ def chart(app: App) -> Chart:
         chart,
         "deployer-binding",
         metadata=k8s.ObjectMeta(name=_DEPLOYER_ROLE, namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_DEPLOYER_ROLE),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_DEPLOYER_ROLE),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_RECONCILER, namespace=_FLUX_NAMESPACE)],
     )
     flux_kustomization(

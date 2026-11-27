@@ -38,6 +38,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -83,7 +84,7 @@ class HistoryService(Construct):
         callers: dict[ServiceAccountRef, Pods],
         delegation_actor: ServiceAccountRef | None,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
-        registry_secret_name: str | None = "forgejo-images-creds",
+        registry_secret_name: str | None = SECRET_NAME,
         container_env: Mapping[str, EnvValue] | None = None,
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,

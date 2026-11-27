@@ -10,6 +10,7 @@ from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmRelease
 from pydantic import BaseModel, ConfigDict, Field
 
 from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -125,7 +126,7 @@ def chart(app: App) -> Chart:
         chart,
         "oidc-agentydragon-admin",
         metadata=k8s.ObjectMeta(name="oidc-agentydragon-admin"),
-        subjects=[k8s.Subject(kind="User", name="oidc:agentydragon", api_group="rbac.authorization.k8s.io")],
-        role_ref=k8s.RoleRef(kind="ClusterRole", name="cluster-admin", api_group="rbac.authorization.k8s.io"),
+        subjects=[k8s.Subject(kind="User", name="oidc:agentydragon", api_group=RBAC_GROUP)],
+        role_ref=k8s.RoleRef(kind="ClusterRole", name="cluster-admin", api_group=RBAC_GROUP),
     )
     return chart

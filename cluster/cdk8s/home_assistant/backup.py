@@ -16,6 +16,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.home_assistant.namespace import NAMESPACE, OUTPUT_DIR
@@ -55,7 +56,7 @@ def _repository(scope: Construct) -> None:
         scope,
         "secret-reader-rolebinding",
         metadata=k8s.ObjectMeta(name=_SECRET_READER, namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_SECRET_READER),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_SECRET_READER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_SECRET_READER, namespace=NAMESPACE)],
     )
     secret_store(

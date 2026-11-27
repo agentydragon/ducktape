@@ -27,6 +27,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -68,7 +69,7 @@ def chart(app: App) -> Chart:
         "metrics-reader-binding",
         metadata=k8s.ObjectMeta(name="volsync-metrics-reader-binding"),
         # The ClusterRole comes with the chart.
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="volsync-metrics-reader"),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="ClusterRole", name="volsync-metrics-reader"),
         subjects=[k8s.Subject(kind="ServiceAccount", name=account.name, namespace=NAMESPACE)],
     )
     helm_release(

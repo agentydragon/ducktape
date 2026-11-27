@@ -44,7 +44,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.probes import http_probe
@@ -90,7 +90,7 @@ class App(Construct):
         electric: ServiceRef | None,
         database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
-        registry_secret_name: str | None = "forgejo-images-creds",
+        registry_secret_name: str | None = SECRET_NAME,
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:

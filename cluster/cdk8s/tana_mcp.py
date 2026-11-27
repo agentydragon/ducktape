@@ -24,6 +24,7 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import Promet
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, namespaces, node_scheduling, public_web_pki
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
@@ -215,7 +216,7 @@ def _resigner(chart: Chart) -> None:
         chart,
         "resigner-role-binding",
         metadata=k8s.ObjectMeta(name=_RESIGNER, namespace=_NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_RESIGNER),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_RESIGNER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_RESIGNER, namespace=_NAMESPACE)],
     )
 

@@ -48,7 +48,7 @@ from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NAMESPACE_LABEL, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -271,9 +271,7 @@ class HaMcpApp(Construct):
             ),
             endpoint_selector=FACADE.pods.selector,
             ingress=[
-                IngressRule.from_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": "agentplane-staging"}, ports=[FACADE.pod_port]
-                ),
+                IngressRule.from_endpoints({NAMESPACE_LABEL: "agentplane-staging"}, ports=[FACADE.pod_port]),
                 cilium.SCRAPERS.admit(_METRICS.pod_port),
             ],
         )

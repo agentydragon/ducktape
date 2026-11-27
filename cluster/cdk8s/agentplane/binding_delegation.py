@@ -17,6 +17,7 @@ from cdk8s_plus_34 import k8s
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant, RoleBindingGrant
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.flux import (
     DUCKTAPE_SOURCE,
     Kustomization,
@@ -26,8 +27,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-
-_RBAC_GROUP = "rbac.authorization.k8s.io"
 
 
 def external_charts(
@@ -55,12 +54,12 @@ def _chart(app: App, env: Environment, target_namespace: str, role_names: Sequen
         metadata=k8s.ObjectMeta(name=role_name, namespace=target_namespace),
         rules=[
             k8s.PolicyRule(
-                api_groups=[_RBAC_GROUP], resources=["rolebindings"], verbs=["create", "delete", "get", "list", "patch"]
+                api_groups=[RBAC_GROUP], resources=["rolebindings"], verbs=["create", "delete", "get", "list", "patch"]
             ),
             # Persisted bindings can retain Role names after catalog removal.
-            k8s.PolicyRule(api_groups=[_RBAC_GROUP], resources=["roles"], verbs=["get"]),
+            k8s.PolicyRule(api_groups=[RBAC_GROUP], resources=["roles"], verbs=["get"]),
             *[
-                k8s.PolicyRule(api_groups=[_RBAC_GROUP], resources=["roles"], resource_names=[name], verbs=["bind"])
+                k8s.PolicyRule(api_groups=[RBAC_GROUP], resources=["roles"], resource_names=[name], verbs=["bind"])
                 for name in role_names
             ],
         ],
@@ -69,7 +68,7 @@ def _chart(app: App, env: Environment, target_namespace: str, role_names: Sequen
         scope,
         "role-binding",
         metadata=k8s.ObjectMeta(name=role_name, namespace=target_namespace),
-        role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="Role", name=role_name),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=role_name),
         subjects=[k8s.Subject(kind="ServiceAccount", name=policy_controller.NAME, namespace=env.namespace)],
     )
     return scope

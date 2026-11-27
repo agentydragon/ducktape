@@ -14,6 +14,7 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
 from airlock.settings import Settings
 from cluster.cdk8s import namespaces, public_web_pki
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -283,7 +284,7 @@ def chart(app: App) -> Chart:
         chart,
         "secret-writer-rolebinding",
         metadata=k8s.ObjectMeta(name=_SECRET_WRITER, namespace=NAME),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_SECRET_WRITER),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_SECRET_WRITER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=NAME)],
     )
     k8s.KubeService(

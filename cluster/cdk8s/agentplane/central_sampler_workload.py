@@ -32,6 +32,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import platform_instructions
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.config_format import json_config
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Port
@@ -53,7 +54,7 @@ class CentralSampler(Construct):
         *,
         database_url: EnvValue,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
-        registry_secret_name: str | None = "forgejo-images-creds",
+        registry_secret_name: str | None = SECRET_NAME,
     ) -> None:
         super().__init__(scope, id)
         props = env.central_sampler

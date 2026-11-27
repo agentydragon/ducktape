@@ -123,6 +123,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":jwt_roster",
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",

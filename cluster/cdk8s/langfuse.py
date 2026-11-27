@@ -20,6 +20,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -100,12 +101,10 @@ def _log_reader(scope: Construct) -> None:
         scope,
         "log-reader-binding",
         metadata=k8s.ObjectMeta(name="claude-langfuse-reader", namespace=_NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind=role.kind, name=role.name),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind=role.kind, name=role.name),
         subjects=[
             k8s.Subject(kind="ServiceAccount", name="default", namespace="claude-sandbox"),
-            k8s.Subject(
-                kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users", api_group="rbac.authorization.k8s.io"
-            ),
+            k8s.Subject(kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users", api_group=RBAC_GROUP),
         ],
     )
 

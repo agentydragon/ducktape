@@ -8,7 +8,7 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.gitlab_spike import app as gitlab
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.namespaces import initial_request_annotations
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NAMESPACE_LABEL, EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "gitlab-spike-runner"
@@ -36,7 +36,7 @@ def chart(app: App) -> Chart:
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": gitlab.NAMESPACE}, gitlab.WEB.pod_port, gitlab.REGISTRY.pod_port
+                    {NAMESPACE_LABEL: gitlab.NAMESPACE}, gitlab.WEB.pod_port, gitlab.REGISTRY.pod_port
                 ),
                 cilium.egress_via_gateway(gitlab.HOSTNAME, gitlab.REGISTRY_HOSTNAME),
                 *(

@@ -33,6 +33,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 )
 
 from cluster.cdk8s import namespaces, node_scheduling, public_web_pki
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.container_resources import container_resources
@@ -360,12 +361,8 @@ def chart(app: App) -> Chart:
         chart,
         "agent-secrets-reader",
         metadata=k8s.ObjectMeta(name="agent-secrets-reader", namespace=_NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="secrets-reader"),
-        subjects=[
-            k8s.Subject(
-                kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users", api_group="rbac.authorization.k8s.io"
-            )
-        ],
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="ClusterRole", name="secrets-reader"),
+        subjects=[k8s.Subject(kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users", api_group=RBAC_GROUP)],
     )
     return chart
 

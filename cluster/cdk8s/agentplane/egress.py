@@ -78,6 +78,7 @@ from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
 from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
@@ -544,7 +545,7 @@ class Egress(Construct):
         litellm_host: str | None = None,
         litellm_cluster_internal: bool = True,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
-        registry_secret_name: str | None = "forgejo-images-creds",
+        registry_secret_name: str | None = SECRET_NAME,
         container_env: Mapping[str, EnvValue] | None = None,
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,

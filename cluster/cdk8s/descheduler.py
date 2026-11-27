@@ -12,6 +12,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import piraeus_storage, stateful_infra
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -123,7 +124,7 @@ def rbac_chart(app: App) -> Chart:
         chart,
         "binding",
         metadata=k8s.ObjectMeta(name=_PVC_READER),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind=role.kind, name=role.name),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind=role.kind, name=role.name),
         subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=NAMESPACE)],
     )
     return chart

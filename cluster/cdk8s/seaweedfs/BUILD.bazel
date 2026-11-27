@@ -155,6 +155,7 @@ py_library(
     name = "s3_config",
     srcs = ["s3_config.py"],
     deps = [
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

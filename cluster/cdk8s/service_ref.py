@@ -17,7 +17,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule
+from cluster.cdk8s.providers.cilium.network_policy import NAMESPACE_LABEL, EgressRule, IngressRule
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
 
@@ -61,7 +61,7 @@ class Pods:
     @property
     def cilium(self) -> dict[str, str]:
         """The endpoint labels a Cilium rule matches these Pods by."""
-        return {"k8s:io.kubernetes.pod.namespace": self.namespace, **self.selector}
+        return {NAMESPACE_LABEL: self.namespace, **self.selector}
 
     def admit(self, *ports: int) -> CiliumNetworkPolicySpecIngress:
         """The server-side rule letting these Pods in; the server passes its own `pod_port`."""

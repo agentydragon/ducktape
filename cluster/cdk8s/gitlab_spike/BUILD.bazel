@@ -76,6 +76,7 @@ py_library(
     srcs = ["dependencies.py"],
     deps = [
         ":app",
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:valkey",

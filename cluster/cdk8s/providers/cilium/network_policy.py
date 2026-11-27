@@ -38,6 +38,11 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
+# Cilium's own label key for the namespace a Pod runs in; selectors spell it alongside the
+# workload's labels. It lives here because the wrapper and service_ref both build endpoint
+# selectors, and cilium.py depends on service_ref, not the other way round.
+NAMESPACE_LABEL = "k8s:io.kubernetes.pod.namespace"
+
 Protocol = Literal["TCP", "UDP", "ANY"]
 
 

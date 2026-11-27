@@ -14,7 +14,7 @@ from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NAMESPACE_LABEL, NetworkPolicy
 
 NAME = "haku-namespace"
 NAMESPACE = "haku-sandbox"
@@ -61,14 +61,9 @@ def chart(app: App) -> Chart:
         ingress=[
             CiliumNetworkPolicySpecIngress(
                 from_endpoints=[
+                    CiliumNetworkPolicySpecIngressFromEndpoints(match_labels={NAMESPACE_LABEL: NAMESPACE}),
                     CiliumNetworkPolicySpecIngressFromEndpoints(
-                        match_labels={"k8s:io.kubernetes.pod.namespace": NAMESPACE}
-                    ),
-                    CiliumNetworkPolicySpecIngressFromEndpoints(
-                        match_labels={
-                            "k8s:io.kubernetes.pod.namespace": "authentik",
-                            "app.kubernetes.io/name": "authentik",
-                        }
+                        match_labels={NAMESPACE_LABEL: "authentik", "app.kubernetes.io/name": "authentik"}
                     ),
                 ]
             )

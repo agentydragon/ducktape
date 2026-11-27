@@ -21,6 +21,7 @@ py_library(
     deps = [
         ":db",
         ":secret_copy",
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:namespaces",
@@ -95,6 +96,7 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:vpa_policy",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

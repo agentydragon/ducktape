@@ -21,6 +21,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import piraeus_storage
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.cnpg.role_credentials import mint_db_role_secret
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
@@ -127,7 +128,7 @@ def _secret_store(chart: Chart, *, source_secrets: list[str]) -> None:
         chart,
         "s3-reader-binding",
         metadata=k8s.ObjectMeta(name=_SECRET_READER, namespace=app.NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_SECRET_READER),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_SECRET_READER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_SECRET_READER, namespace=app.NAMESPACE)],
     )
     secret_store(

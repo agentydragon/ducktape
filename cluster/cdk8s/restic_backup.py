@@ -27,6 +27,7 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -165,7 +166,7 @@ class ResticBackup(Construct):
             self,
             "repository-reader-rolebinding",
             metadata=reader,
-            role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=self.role.name),
+            role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=self.role.name),
             subjects=[k8s.Subject(kind="ServiceAccount", name=self.service_account.name, namespace=namespace)],
         )
         self.secret_store = secret_store(

@@ -33,15 +33,21 @@ from cilium_envoyconfig_crds.io.cilium import (
 from constructs import Construct
 
 # Aliased because this module's own `dns_egress` binds `KUBE_DNS_LABELS` to the generic rule.
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Protocol, dns_egress as _dns_egress
+from cluster.cdk8s.providers.cilium.network_policy import (
+    NAMESPACE_LABEL,
+    EgressRule,
+    Entity,
+    Protocol,
+    dns_egress as _dns_egress,
+)
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
 # kube-dns's own selector -- every environment's DNS egress rule selects it the same way.
-KUBE_DNS_LABELS = {"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
+KUBE_DNS_LABELS = {NAMESPACE_LABEL: "kube-system", "k8s-app": "kube-dns"}
 # Authentik's server Pods, reached through the Gateway Service with the client's original SNI
 # (cluster/docs/cilium_network_policy.md § Egress through a local Gateway).
 AUTHENTIK_SERVER_LABELS = {
-    "k8s:io.kubernetes.pod.namespace": "authentik",
+    NAMESPACE_LABEL: "authentik",
     "app.kubernetes.io/name": "authentik",
     "app.kubernetes.io/instance": "authentik",
     "app.kubernetes.io/component": "server",
@@ -58,7 +64,7 @@ AGENTPLANE_STAGING_PROXY = Pods(namespace="agentplane-staging", labels=(("app.ku
 
 
 def endpoint_labels(namespace: str, name: str) -> dict[str, str]:
-    return {"k8s:io.kubernetes.pod.namespace": namespace, "app.kubernetes.io/name": name}
+    return {NAMESPACE_LABEL: namespace, "app.kubernetes.io/name": name}
 
 
 def egress_via_gateway(*server_names: str, port: int = 443) -> CiliumNetworkPolicySpecEgress:
@@ -138,7 +144,7 @@ def force_proxy_egress(
             endpoint_selector=CiliumClusterwideNetworkPolicySpecEndpointSelector(
                 match_expressions=[
                     CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressions(
-                        key="k8s:io.kubernetes.pod.namespace",
+                        key=NAMESPACE_LABEL,
                         operator=CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator.IN,
                         values=list(namespaces),
                     )

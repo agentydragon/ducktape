@@ -23,6 +23,7 @@ from external_secrets_crds.io.external_secrets import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import external_creds, namespaces
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.authentik import jwt_roster
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import (
@@ -120,7 +121,7 @@ def _published_secrets_reader(chart: Chart) -> None:
         chart,
         "published-secrets-reader-rolebinding",
         metadata=k8s.ObjectMeta(name=_PUBLISHED_SECRETS_READER, namespace=jwt_roster.PUBLISHED_SECRET_NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_PUBLISHED_SECRETS_READER),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_PUBLISHED_SECRETS_READER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=NAMESPACE)],
     )
 

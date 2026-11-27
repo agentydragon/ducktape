@@ -35,7 +35,7 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NAMESPACE_LABEL, IngressRule, NetworkPolicy
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
 
 NAMESPACE = "public-coder-agent"
@@ -240,11 +240,7 @@ def add_gateway_resources(
         endpoint_selector=GATEWAY.pods.selector,
         ingress=[
             IngressRule.from_endpoints(
-                {
-                    "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                    **LABELS,
-                    "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT,
-                },
+                {NAMESPACE_LABEL: NAMESPACE, **LABELS, "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT},
                 ports=[GATEWAY.pod_port],
             )
         ],

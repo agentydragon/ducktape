@@ -7,6 +7,7 @@ from constructs import Construct
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, deny_all_egress
@@ -47,7 +48,7 @@ class Frontend(Construct):
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
             ),
             placement=node_scheduling.HIL_OVH,
-            registry_secret_name="forgejo-images-creds",
+            registry_secret_name=SECRET_NAME,
             automount_service_account_token=False,
             read_only_root_filesystem=True,
         )

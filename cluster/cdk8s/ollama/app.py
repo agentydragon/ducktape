@@ -18,6 +18,7 @@ from jinja2 import Environment, StrictUndefined
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces, piraeus_storage
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -263,12 +264,10 @@ def _rbac(scope: Construct) -> None:
         scope,
         "reader-binding",
         metadata=k8s.ObjectMeta(name="claude-ollama-reader", namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="reader"),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name="reader"),
         subjects=[
             k8s.Subject(kind="ServiceAccount", name="default", namespace="claude-sandbox"),
-            k8s.Subject(
-                kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users", api_group="rbac.authorization.k8s.io"
-            ),
+            k8s.Subject(kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users", api_group=RBAC_GROUP),
         ],
     )
 
