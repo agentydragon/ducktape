@@ -122,7 +122,7 @@ def chart(app: App) -> Chart:
         spec=ReceiverSpec(
             type=ReceiverSpecType.GENERIC,
             secret_ref=ReceiverSpecSecretRef(name=finance_token),
-            resources=[ReceiverResource.git_repository("finance-agent", namespace="ducktape-flux")],
+            resources=[ReceiverResource.git_repository("finance-agent", namespace=flux.NAMESPACE)],
         ),
     )
     grafana = Provider(
@@ -147,7 +147,7 @@ def chart(app: App) -> Chart:
             event_severity=AlertSpecEventSeverity.INFO,
             event_sources=_alert_sources(
                 (AlertSpecEventSourcesKind.KUSTOMIZATION, flux.CONTROLLER_NAMESPACE),
-                (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
+                (AlertSpecEventSourcesKind.KUSTOMIZATION, flux.NAMESPACE),
                 (AlertSpecEventSourcesKind.HELM_RELEASE, flux.CONTROLLER_NAMESPACE),
             ),
         ),
@@ -167,10 +167,10 @@ def chart(app: App) -> Chart:
             event_severity=AlertSpecEventSeverity.ERROR,
             event_sources=_alert_sources(
                 (AlertSpecEventSourcesKind.KUSTOMIZATION, flux.CONTROLLER_NAMESPACE),
-                (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
+                (AlertSpecEventSourcesKind.KUSTOMIZATION, flux.NAMESPACE),
                 (AlertSpecEventSourcesKind.HELM_RELEASE, flux.CONTROLLER_NAMESPACE),
                 (AlertSpecEventSourcesKind.GIT_REPOSITORY, flux.CONTROLLER_NAMESPACE),
-                (AlertSpecEventSourcesKind.GIT_REPOSITORY, "ducktape-flux"),
+                (AlertSpecEventSourcesKind.GIT_REPOSITORY, flux.NAMESPACE),
             ),
         ),
     )

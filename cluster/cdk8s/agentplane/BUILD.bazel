@@ -892,6 +892,7 @@ py_library(
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:google_mcp",
         "//cluster/cdk8s:ha_mcp",

@@ -25,6 +25,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
 from cdk8s_plus_34 import Group, ISubject, ServiceAccount, k8s
 from constructs import Construct
 
+from cluster.cdk8s import flux
 from cluster.cdk8s.agentplane.kubernetes_grants import (
     ClusterRoleBindingGrant,
     ClusterRoleRef,
@@ -128,7 +129,7 @@ _GRANTS: dict[str, KubernetesGrant] = {
         namespace="clickhouse", role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader")
     ),
     "ducktape-flux-read": RoleBindingGrant(
-        namespace="ducktape-flux", role_ref=RoleRef(kind="Role", name="ducktape-flux-reader")
+        namespace=flux.NAMESPACE, role_ref=RoleRef(kind="Role", name="ducktape-flux-reader")
     ),
     "public-coder-volsync-status": RoleBindingGrant(
         namespace="public-coder-agent",

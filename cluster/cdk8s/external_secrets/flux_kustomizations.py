@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
+from cluster.cdk8s import flux
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
@@ -14,9 +15,7 @@ def external_secrets_crds(chart: Chart) -> Kustomization:
         "external-secrets-crds",
         # CRDs from the external-secrets repository
         KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
-            name="external-secrets-source",
-            namespace="ducktape-flux",
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="external-secrets-source", namespace=flux.NAMESPACE
         ),
         interval="1h",
         path="./deploy/crds",

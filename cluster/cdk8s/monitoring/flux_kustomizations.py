@@ -3,6 +3,7 @@
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
+from cluster.cdk8s import flux
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
@@ -15,7 +16,7 @@ def monitoring_crds(chart: Chart) -> Kustomization:
         KustomizationSpecSourceRef(
             kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
             name="prometheus-operator-source",
-            namespace="ducktape-flux",
+            namespace=flux.NAMESPACE,
         ),
         interval="1h",
         path="./example/prometheus-operator-crd-full",

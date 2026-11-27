@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 
+from cluster.cdk8s import flux
 from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 
-NAMESPACE = "ducktape-flux"
+NAMESPACE = flux.NAMESPACE
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
 STORE = SecretStoreRef.cluster("kubernetes-external-creds-secret-store")

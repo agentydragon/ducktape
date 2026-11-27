@@ -10,6 +10,7 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
+from cluster.cdk8s import flux
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
@@ -18,7 +19,7 @@ def sshpiper_crds(chart: Chart) -> Kustomization:
         chart,
         "sshpiper-crds",
         KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="sshpiper-source", namespace="ducktape-flux"
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="sshpiper-source", namespace=flux.NAMESPACE
         ),
         timeout="2m",
         path="./plugin/kubernetes",
