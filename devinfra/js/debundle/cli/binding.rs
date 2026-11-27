@@ -28,7 +28,7 @@ use candidate_assessment::{EffectAssessmentUnavailable, ResolvedCandidateEffectA
 use spec::annotations::{BindingAnnotation, SourceMatchBinding, SourceMatchClaim};
 use spec::member_selectors::{Member, MemberSelectorSpec};
 use spec::{LogicalModule, ModulePath, SourceMatchBindingDetail, is_residual_namespace_path};
-use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
+use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
 use yaml_edit::write_yaml_atomic;
 
 use edit_gate::{CheckedImportOrder, Gate, ModuleDocs, load_module_docs, post_edit_spec_from_docs};
@@ -503,9 +503,7 @@ pub fn rename_bindings(
                 );
             }
         }
-        let (_, doc) = docs
-            .get_mut(&hit.module_path)
-            .expect("resolved module is loaded");
+        let doc = loaded_document(&mut docs, &hit.module_path);
         annotations.insert(identity.clone(), doc.annotations.remove(old));
     }
     let mut renames = Vec::new();
@@ -513,9 +511,7 @@ pub fn rename_bindings(
     for (identity, (request, hit)) in &resolved {
         let old = binding_effective_name(&hit.label);
         if old != request.readable {
-            let (_, doc) = docs
-                .get_mut(&hit.module_path)
-                .expect("resolved module is loaded");
+            let doc = loaded_document(&mut docs, &hit.module_path);
             if doc.annotations.contains_key(&request.readable) {
                 bail!(
                     "annotations.{} already exists in {}",
@@ -775,9 +771,7 @@ pub fn run_bindings_assign(
                     .expect("resolved source-match binding is loaded"),
             ),
         };
-        let (_, doc) = docs
-            .get_mut(&p.source_module)
-            .expect("resolved module is loaded");
+        let doc = loaded_document(&mut docs, &p.source_module);
         let annotation = doc.annotations.remove(&p.source_effective_name);
         if let Some(new_readable) = &p.req.readable {
             entry.set_readable(new_readable);
@@ -1082,6 +1076,15 @@ pub fn apply_doc_changes(
     Ok((files_written, files_deleted))
 }
 
+/// The loaded document of one module path in a planning snapshot. Every
+/// caller reaches it through a path that resolution or a batch plan just
+/// produced from the same snapshot, so a miss is a caller bug, not a state a
+/// command can hit.
+fn loaded_document<'a>(docs: &'a mut ModuleDocs, module: &str) -> &'a mut ModuleFile {
+    let (_, doc) = docs.get_mut(module).expect("resolved module is loaded");
+    doc
+}
+
 /// Extract entries of one per-module list (`list` selects it) by snapshot
 /// identity without null sentinels or repeated Vec removals.
 pub fn take_indexed<T>(
@@ -1095,7 +1098,7 @@ pub fn take_indexed<T>(
     }
     let mut taken = BTreeMap::new();
     for (module, indices) in by_module {
-        let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
+        let doc = loaded_document(docs, &module);
         let kept = list(doc);
         for (index, item) in std::mem::take(kept).into_iter().enumerate() {
             if indices.contains(&index) {
@@ -1127,7 +1130,7 @@ pub fn take_source_match_bindings(
     }
     let mut taken = BTreeMap::new();
     for (module, claims) in by_module {
-        let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
+        let doc = loaded_document(docs, &module);
         for (claim_index, mut claim) in std::mem::take(&mut doc.source_matches)
             .into_iter()
             .enumerate()
@@ -1249,9 +1252,7 @@ pub fn run_bindings_unassign(
     for ((source_module, _), member) in
         take_indexed(&mut docs, plan.keys().cloned(), |doc| &mut doc.members)
     {
-        let (_, doc) = docs
-            .get_mut(&source_module)
-            .expect("resolved module is loaded");
+        let doc = loaded_document(&mut docs, &source_module);
         if let Some(export_name) = member_effective_name(&member) {
             doc.annotations.remove(&export_name);
         }
