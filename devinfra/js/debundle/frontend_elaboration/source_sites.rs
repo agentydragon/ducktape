@@ -75,9 +75,7 @@ pub(super) fn resolve_analysis_source_sites(
         }
 
         let prefix = format!("chunk_analysis_options.{chunk_name}");
-        let chunk = artifact
-            .chunk_named(chunk_name)
-            .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
+        let chunk = artifact.loaded_provider_chunk(&prefix, chunk_name)?;
         if !provider_closure.contains(&chunk.chunk_id) {
             if !options.analysis.value_inputs.is_empty() {
                 bail!(

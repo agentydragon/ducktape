@@ -306,11 +306,7 @@ pub(super) fn resolve_value_inputs(
             continue;
         }
         let prefix = format!("chunk_analysis_options.{chunk_name}.value_inputs");
-        let chunk = artifact.chunk_named(chunk_name).with_context(|| {
-            format!(
-                "chunk_analysis_options.{chunk_name}.value_inputs names no loaded provider chunk"
-            )
-        })?;
+        let chunk = artifact.loaded_provider_chunk(&prefix, chunk_name)?;
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "chunk_analysis_options.{chunk_name}.value_inputs provider is outside the existing analyzed import closure"
@@ -435,12 +431,10 @@ pub(super) fn resolve_native_operation_inputs(
         if operation_inputs.is_empty() && native_call_identity_inputs.is_empty() {
             continue;
         }
-        let chunk = artifact.chunk_named(chunk_name)
-            .with_context(|| {
-                format!(
-                    "chunk_analysis_options.{chunk_name}.native_operation_inputs names no loaded provider chunk"
-                )
-            })?;
+        let chunk = artifact.loaded_provider_chunk(
+            &format!("chunk_analysis_options.{chunk_name}.native_operation_inputs"),
+            chunk_name,
+        )?;
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "chunk_analysis_options.{chunk_name}.native_operation_inputs provider is outside the existing analyzed import closure"
@@ -574,9 +568,7 @@ pub(super) fn resolve_argument_inputs(
             continue;
         }
         let prefix = format!("chunk_analysis_options.{chunk_name}.argument_inputs");
-        let chunk = artifact
-            .chunk_named(chunk_name)
-            .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
+        let chunk = artifact.loaded_provider_chunk(&prefix, chunk_name)?;
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "{prefix} cannot target an outside-closure provider"
@@ -710,9 +702,7 @@ pub(super) fn resolve_no_accessor_install_callables(
             continue;
         }
         let prefix = format!("chunk_analysis_options.{chunk_name}.no_accessor_install_callables");
-        let chunk = artifact
-            .chunk_named(chunk_name)
-            .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
+        let chunk = artifact.loaded_provider_chunk(&prefix, chunk_name)?;
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "{prefix} cannot target an outside-closure provider"

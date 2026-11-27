@@ -301,6 +301,18 @@ impl ChunkBundle {
             .and_then(|id| self.find_chunk(id))
     }
 
+    /// The loaded chunk a provider-input clause names. `request_prefix` is the
+    /// clause's own request id, which is what the refusal has to name; every
+    /// provider-input path asked this and then typed the same sentence by hand.
+    pub fn loaded_provider_chunk(
+        &self,
+        request_prefix: &str,
+        name: &str,
+    ) -> Result<&ChunkArtifact> {
+        self.chunk_named(name)
+            .with_context(|| format!("{request_prefix} names no loaded provider chunk"))
+    }
+
     pub fn chunk(&self, chunk_id: ChunkId) -> Result<&ChunkArtifact> {
         self.find_chunk(chunk_id)
             .with_context(|| format!("missing artifact chunk {}", self.chunk_table.name(chunk_id)))
