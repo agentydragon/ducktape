@@ -1,9 +1,11 @@
 import EsmSplit.Cli
 import EsmSplit.CoreJS.DynamicImports
+import EsmSplit.CoreJS.IndexedInlinePlan
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
+import EsmSplit.LowerSplit.Input
 
 open Lean (Json toJson)
 
@@ -145,6 +147,26 @@ private def singletonSourceShape (input : Json) : Except String Json := do
     Json.mkObj [("name", toJson m.name), ("body", toJson (m.body.map fun (id, stmt) =>
       (id, stmt.bindings.map Prod.fst))), ("exports", toJson m.exports)]))]
 
+/-- Check the actual indexed decoder, source-derived planner bundle and
+authored order-kept request for a top-level lexical inline export. -/
+private def indexedInlinePlan (input : Json) : Except String Json := do
+  let sourceAst ← input.getObjVal? "source"
+  let sourceText ← input.getObjValAs? String "sourceText"
+  let request ← EsmSplit.parseSpec (← input.getObjVal? "spec")
+  let decoded ← CoreJS.LinkedInput.decodeIndexedSource sourceAst sourceText request.entry
+  let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
+  let checked ← CoreJS.IndexedInlinePlan.check decoded bundle request
+  let output := CoreJS.splitProgramIndexed decoded.source.body bundle checked.schedule.plan
+  let ownerChecks := output.fileUnitPlacements.all fun (ordinal, owner) =>
+    request.claimants bundle ordinal == [owner]
+  return .arr #[
+    toJson (decoded.sourceItems.map CoreJS.LinkedInput.SourceItem.ordinal),
+    toJson (output.loaded.flatMap fun m => m.body.map Prod.fst),
+    toJson output.fileUnitPlacements,
+    toJson ownerChecks,
+    toJson (decoded.source.exports.map Prod.fst)
+  ]
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
@@ -157,6 +179,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "structuralSparseHole" => pure (structuralSparseHole (← fixture.getObjVal? "input"))
       | "singletonSourceShape" => pure (singletonSourceShape (← fixture.getObjVal? "input"))
       | "namedConstructor" => pure (namedConstructor (← fixture.getObjVal? "input"))
+      | "indexedInlinePlan" => pure (indexedInlinePlan (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"

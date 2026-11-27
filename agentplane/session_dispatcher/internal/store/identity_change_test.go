@@ -16,7 +16,7 @@ func seedIdentitySession(t *testing.T, store *Store, sandboxUID string, identity
 	id := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
 	_, err := store.CreateSessionWithAdmissionCheck(t.Context(), id, "test-sandbox", sandboxUID,
-		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
+		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil,
 		SessionExecution{Identity: identity},
 		IdentityCaller{Identity: identity, Proof: IdentitySVID{}}, check)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestLiveIdentityRecheckDoesNotRejectExistingSessionReceipt(t *testing.T) {
 	spec := &sessionpb.SessionSpec{}
 	checked := false
 	_, err := store.CreateSessionWithAdmissionCheck(t.Context(), id, "test-sandbox", sandboxUID,
-		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil, nil,
+		testPlacement(spec, "test-sandbox", sandboxUID), spec, nil,
 		SessionExecution{Identity: identity},
 		IdentityCaller{Identity: identity, Proof: IdentitySVID{}},
 		func(context.Context) error { checked = true; return status.Error(codes.FailedPrecondition, "changed") })

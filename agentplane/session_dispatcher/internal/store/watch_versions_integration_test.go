@@ -19,7 +19,7 @@ func TestVersionWatchCheckpointWaitsForLowerAllocatedVersion(t *testing.T) {
 	store := testStore(t, 5)
 	filter := storeDispatchFilter("test-order-session")
 	for _, id := range []string{"test-order-a", "test-order-b"} {
-		if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-order-sandbox", sandboxUID, input(id, "test-input"), nil); err != nil {
+		if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-order-sandbox", sandboxUID, input(id, "test-input")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -79,7 +79,7 @@ func TestVersionWatchSnapshotQueryDoesNotBlockDispatchWriter(t *testing.T) {
 	defer cancel()
 	store := testStore(t, 5)
 	filter := storeDispatchFilter("test-nonblocking-session")
-	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-nonblocking-sandbox", sandboxUID, input("test-nonblocking-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-nonblocking-sandbox", sandboxUID, input("test-nonblocking-command", "test-input")); err != nil {
 		t.Fatal(err)
 	}
 	// Only the batch query joins session. Hold that query here while the frontier
@@ -153,7 +153,7 @@ func TestVersionWatchBoundsDeletionAfterFrontierAndRechecksPruning(t *testing.T)
 	ctx := t.Context()
 	store := testStore(t, 5)
 	filter := storeDispatchFilter("test-frontier-deletion-session")
-	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-frontier-deletion-sandbox", sandboxUID, input("test-frontier-deletion-command", "test-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-frontier-deletion-sandbox", sandboxUID, input("test-frontier-deletion-command", "test-input")); err != nil {
 		t.Fatal(err)
 	}
 	caller := ServiceCaller{SPIFFEID: peertls.AppURI}

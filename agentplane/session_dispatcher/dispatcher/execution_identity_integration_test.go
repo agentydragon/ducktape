@@ -179,7 +179,6 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	other := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "identity-other", policyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	otherIdentity := &identitypb.Identity{Name: other.Identity.Name, Uid: string(other.Identity.UID)}
-	ownerAccount := serviceAccountIdentityFor(owner.Principal.Account, owner.Principal.ServiceAccountUID)
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
 
@@ -197,10 +196,9 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		t.Fatalf("Identity caller CreateSession on a Sandbox acting as it: %v, want PermissionDenied", err)
 	}
 	owned, ownedSpec := uuid.NewString(), &sessionpb.SessionSpec{}
-	testPlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID)
-	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
-		ownedSpec, nil, nil,
-		store.SessionExecution{Identity: ownerIdentity}, store.IdentityCaller{Identity: ownerIdentity, Proof: store.IdentitySVID{}}); err != nil {
+	if _, err := createSessionForCaller(queueStore, ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
+		ownedSpec, nil,
+		ownerIdentity, store.IdentityCaller{Identity: ownerIdentity, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed the Identity's Session: %v", err)
 	}
 	ownerAttribution := &store.IdentityAttribution{Identity: ownerIdentity, Pod: &store.PodIdentity{Name: owner.Principal.PodName, UID: owner.Principal.PodUID}}
@@ -220,22 +218,21 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		t.Fatalf("Identity caller GetDispatch: %v, %v", got, err)
 	}
 
-	// Another Identity's Session and a Session created by a ServiceAccount actor for another Identity.
+	// Another Identity's Session and a Session a privileged component created for another Identity.
 	otherSandbox := SandboxSnapshot{Name: other.Sandbox.Name, Namespace: other.Sandbox.Namespace, UID: string(other.Sandbox.UID)}
 	otherSession, otherSpec := uuid.NewString(), &sessionpb.SessionSpec{}
-	testPlacement(otherSpec, otherSandbox.Name, otherSandbox.UID)
-	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, otherSession, otherSandbox.Name, otherSandbox.UID,
-		otherSpec, nil, nil,
-		store.SessionExecution{Identity: otherIdentity},
+	if _, err := createSessionForCaller(queueStore, ctx, otherSession, otherSandbox.Name, otherSandbox.UID,
+		otherSpec, nil,
+		otherIdentity,
 		store.IdentityCaller{Identity: otherIdentity, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed another Identity's Session: %v", err)
 	}
-	accountSession := uuid.NewString()
-	if _, err := createSessionForCaller(queueStore, ctx, accountSession, ownerSandbox.Name, ownerSandbox.UID, &sessionpb.SessionSpec{}, nil, nil, otherIdentity,
-		store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &store.AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}}); err != nil {
+	platformSession := uuid.NewString()
+	if _, err := createSessionForCaller(queueStore, ctx, platformSession, ownerSandbox.Name, ownerSandbox.UID, &sessionpb.SessionSpec{}, nil, otherIdentity,
+		testStoreCaller()); err != nil {
 		t.Fatalf("seed a platform-created Session for another Identity: %v", err)
 	}
-	for _, foreign := range []string{otherSession, accountSession} {
+	for _, foreign := range []string{otherSession, platformSession} {
 		if _, err := ownerClient.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: foreign}); status.Code(err) != codes.NotFound {
 			t.Fatalf("Identity caller read a Session it does not own: %v", err)
 		}
@@ -277,9 +274,8 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	defer cancel()
 
 	sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
-	testPlacement(spec, sandbox.Name, sandbox.UID)
-	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, sandbox.UID,
-		spec, nil, nil, store.SessionExecution{Identity: named}, store.IdentityCaller{Identity: named, Proof: store.IdentitySVID{}}); err != nil {
+	if _, err := createSessionForCaller(queueStore, ctx, sessionID, sandbox.Name, sandbox.UID,
+		spec, nil, named, store.IdentityCaller{Identity: named, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed an Identity-run Session: %v", err)
 	}
 	for _, commandID := range []string{"identity-run-input", "identity-run-stranded"} {

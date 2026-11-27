@@ -39,9 +39,7 @@ pub fn decode_captured_value_contract(
     v: pb::CapturedValueContract,
 ) -> Result<spec::input_contracts::CapturedValueContract> {
     Ok(spec::input_contracts::CapturedValueContract {
-        kind: pb::CapturedValueKind::try_from(
-            v.kind.context("missing required projection field")?,
-        )?,
+        kind: pb::CapturedValueKind::try_from(required(v.kind)?)?,
     })
 }
 
@@ -61,9 +59,7 @@ pub fn decode_native_operation_input_contract(
 ) -> Result<spec::input_contracts::NativeOperationInputContract> {
     Ok(spec::input_contracts::NativeOperationInputContract {
         selector: decode_source_unit_selector(required(v.selector)?)?,
-        operation: pb::NativeOperationKind::try_from(
-            v.operation.context("missing required projection field")?,
-        )?,
+        operation: pb::NativeOperationKind::try_from(required(v.operation)?)?,
         audited_source_sha256: required(v.audited_source_sha256)?,
         note: v.note,
     })
@@ -121,9 +117,7 @@ pub fn decode_initializer_call_effect_input_contract(
     v: pb::InitializerCallEffectInputContract,
 ) -> Result<spec::input_contracts::InitializerCallEffectInputContract> {
     Ok(spec::input_contracts::InitializerCallEffectInputContract {
-        resolved_member: v
-            .resolved_member
-            .context("missing required projection field")?,
+        resolved_member: required(v.resolved_member)?,
         audited_source_sha256: required(v.audited_source_sha256)?,
         provider_chunk: required(v.provider_chunk)?,
         provider_export: required(v.provider_export)?,
@@ -157,9 +151,7 @@ pub fn decode_initializer_call_effective_replacement(
     Ok(spec::input_contracts::InitializerCallEffectiveReplacement {
         package: required(v.package)?,
         bundle_export: required(v.bundle_export)?,
-        symbol_kind: pb::PartialSwapKind::try_from(
-            v.symbol_kind.context("missing required projection field")?,
-        )?,
+        symbol_kind: pb::PartialSwapKind::try_from(required(v.symbol_kind)?)?,
         upstream_export: v.upstream_export,
         audited_bundle_sha256: required(v.audited_bundle_sha256)?,
     })
@@ -299,9 +291,7 @@ pub fn decode_native_call_identity_input_contract(
 ) -> Result<spec::input_contracts::NativeCallIdentityInputContract> {
     Ok(spec::input_contracts::NativeCallIdentityInputContract {
         source_match: decode_source_match_claim(required(v.source_match)?)?,
-        callee: pb::NativeCallIdentityKind::try_from(
-            v.callee.context("missing required projection field")?,
-        )?,
+        callee: pb::NativeCallIdentityKind::try_from(required(v.callee)?)?,
         audited_source_sha256: required(v.audited_source_sha256)?,
         note: v.note,
     })

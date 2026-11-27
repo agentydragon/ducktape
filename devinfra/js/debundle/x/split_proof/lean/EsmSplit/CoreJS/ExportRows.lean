@@ -62,6 +62,11 @@ def UnitMatches (B : EsmSplit.Bundle) (rows : List EsmSplit.LocalExportUnit) (id
   | none => (B.stmt id).exports = []
   | some row => row.FootprintMatches (B.stmt id)
 
+instance (B : EsmSplit.Bundle) (rows : List EsmSplit.LocalExportUnit) (id : Nat) :
+    Decidable (UnitMatches B rows id) := by
+  unfold UnitMatches
+  split <;> infer_instance
+
 /-- A singleton row lookup depends only on the original ordinal. -/
 theorem rowAt_singleton (row : EsmSplit.LocalExportUnit) (id : Nat) :
     rowAt [row] id = if id = row.ordinal then some row else none := by

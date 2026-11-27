@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
@@ -68,6 +68,29 @@ const ownerResult = split({
 });
 assert.equal(ownerResult.status, "refused", ownerResult.log);
 assert.equal(readFileSync(sentinel, "utf8"), "preserve existing bytes\n");
+
+// The original #32 metadata unit must be selected once, not omitted or
+// repeated within the same authored module. A refusal must not publish files.
+for (const [kind, entrySelectors] of [
+  ["duplicate", ["#32", "#32"]],
+  ["dropped", []],
+]) {
+  const invalid = structuredClone(fixture.spec);
+  invalid.modules[fixture.entry] = entrySelectors;
+  const invalidSpec = path.join(root, `${kind}-metadata.json`);
+  writeFileSync(invalidSpec, JSON.stringify(invalid));
+  const result = split({
+    source,
+    spec: invalidSpec,
+    out: protectedOut,
+    require: "all-outcomes",
+    allowExistingOut: true,
+    timeoutMs: 90_000,
+  });
+  assert.equal(result.status, "refused", result.log);
+  assert.equal(readFileSync(sentinel, "utf8"), "preserve existing bytes\n");
+  assert.deepEqual(readdirSync(protectedOut), ["sentinel.txt"]);
+}
 
 console.log(
   JSON.stringify({
@@ -179,6 +202,25 @@ const sparseOwnerResult = split({
 });
 assert.equal(sparseOwnerResult.status, "refused", sparseOwnerResult.log);
 assert.equal(readFileSync(sparseSentinel, "utf8"), "preserve existing bytes\n");
+
+// Repeating #1 in the same module previously disappeared into the planner's
+// set. It must be refused before either guarantee publishes an output tree.
+const sparseDuplicate = structuredClone(sparseSpec);
+sparseDuplicate.modules[sparseSpec.entry].push("#1");
+const sparseDuplicateSpec = path.join(root, "sparse-duplicate.json");
+writeFileSync(sparseDuplicateSpec, JSON.stringify(sparseDuplicate));
+for (const guarantee of ["normal-completion", "all-outcomes"]) {
+  const duplicateOut = path.join(root, `sparse-duplicate-${guarantee}`);
+  const duplicateResult = split({
+    source: sparseSourceFile,
+    spec: sparseDuplicateSpec,
+    out: duplicateOut,
+    require: guarantee,
+  });
+  assert.equal(duplicateResult.status, "refused", duplicateResult.log);
+  assert.match(duplicateResult.reason, /each metadata row must be selected exactly once/);
+  assert.equal(existsSync(duplicateOut), false, "duplicate metadata created an output directory");
+}
 console.log(
   JSON.stringify({
     fixture: "sparse-interior-export",

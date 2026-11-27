@@ -356,10 +356,11 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 	if err := validateJournalRepackCoverage(entries, outputs); err != nil {
 		return repackPlan{}, err
 	}
-	// The maintenance page is bounded and all inputs are verified above. Include
-	// standalone rows on both sides, and never trade a smaller source layout
-	// for a larger final layout. Retained legacy blocks remain readable.
-	if journalPayloadBytes(outputs) > journalPayloadBytes(sources) {
+	// Keep the cheaper layout for pages already using current formats. A legacy
+	// block must still migrate when its replacement happens to be larger.
+	if journalPayloadBytes(outputs) > journalPayloadBytes(sources) && !slices.ContainsFunc(sources, func(row repackStorage) bool {
+		return row.block && eventcodec.IsGzip(row.payload)
+	}) {
 		outputs = sources
 	}
 	through := state.opening

@@ -38,21 +38,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    data = ["//agentplane/env/runtime/execution/testing/typedproxy:typedproxy_bin"],
-    deps = [
-        "//agentplane/testing:codex_fixtures",
-        "//agentplane/testing:kubernetes_apiserver_fixtures",
-        "//devinfra/testing:undeclared_outputs",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest",
-        "@rules_python//python/runfiles",
-    ],
-)
-
 # Live provider (LiteLLM) agent run; manual. See the module docstring for the command.
 live_openai_py_test(
     name = "test_live_provider",
@@ -63,9 +48,9 @@ live_openai_py_test(
     requires_docker = True,
     tags = ["manual"],
     deps = [
-        ":conftest",
         ":settings",
         ":testing",
+        ":testing_fixtures",
         ":testing_store",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane/proto:event_pb2",
@@ -96,9 +81,9 @@ live_openai_py_test(
     requires_docker = True,
     tags = ["manual"],
     deps = [
-        ":conftest",
         ":settings",
         ":testing",
+        ":testing_fixtures",
         ":testing_store",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agentplane/harness_host:harness_host_pb2",
@@ -126,7 +111,6 @@ py_test(
     data = ["@agentplane_codex_cli_linux_x64//:files"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":settings",
         ":testing",
         ":testing_store",
@@ -155,7 +139,6 @@ py_test(
     data = ["@agentplane_codex_cli_linux_x64//:files"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":settings",
         ":testing",
         ":testing_store",
@@ -188,7 +171,6 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
-        ":conftest",
         ":testing",
         ":testing_store",
         "//:conftest",
@@ -211,10 +193,13 @@ py_test(
         "//agentplane/sampler/api:sampler_admin_pb2",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/session_dispatcher/testing:gateway_process",
+        "//agentplane/testing:codex_fixtures",
         "//agentplane/testing:electric_role",
         "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
         "//devinfra/testing:undeclared_outputs",
         "//testing:postgres",
+        "//testing:postgres_fixtures",
         "//testing:sqlalchemy_engines",
         "@pypi//grpcio",
         "@pypi//pillow",
@@ -231,7 +216,6 @@ py_test(
     data = ["@agentplane_codex_cli_linux_x64//:files"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":settings",
         ":testing",
         "//:conftest",
@@ -256,7 +240,6 @@ py_test(
     data = ["@agentplane_codex_cli_linux_x64//:files"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":settings",
         ":testing",
         ":testing_store",
@@ -296,7 +279,6 @@ py_test(
     size = "small",
     srcs = ["test_settings.py"],
     deps = [
-        ":conftest",
         ":settings",
         "//:conftest",
         "@pypi//pydantic",
@@ -320,12 +302,16 @@ py_library(
     name = "testing_fixtures",
     testonly = True,
     srcs = ["testing_fixtures.py"],
+    data = ["//agentplane/env/runtime/execution/testing/typedproxy:typedproxy_bin"],
     deps = [
         ":settings",
         ":testing",
         ":testing_store",
+        "//agentplane/testing:codex_fixtures",
         "//devinfra/testing:undeclared_outputs",
+        "//testing:postgres_fixtures",
         "//testing:sqlalchemy_engines",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )

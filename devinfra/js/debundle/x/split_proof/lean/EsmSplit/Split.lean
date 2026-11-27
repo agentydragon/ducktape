@@ -81,18 +81,42 @@ def nest (seq : List ModName) (need : Std.TreeMap Nat Nat) : Std.TreeMap ModName
 def Spec.moduleOf (S : Spec) (B : Bundle) (i : Nat) : Option ModName :=
   (S.modules.find? fun (_, sels) => sels.any (·.claims B i)).map (·.1)
 
+private def Spec.pickedWithIndex (S : Spec) (decl : Std.TreeMap Name (List Nat))
+    (unitCount : Nat) : List (ModName × List Nat) :=
+  S.modules.map fun (m, sels) =>
+    (m, ((sels.flatMap (·.picks decl unitCount)).foldl (·.insert ·) (∅ : Std.TreeSet Nat)).toList)
+
 /-- For each entry of the spec, the statements its selectors pick, ascending. -/
 def Spec.picked (S : Spec) (B : Bundle) : List (ModName × List Nat) :=
-  let decl := B.declIdx
-  S.modules.map fun (m, sels) =>
-    (m, ((sels.flatMap (·.picks decl B.length)).foldl (·.insert ·) (∅ : Std.TreeSet Nat)).toList)
+  S.pickedWithIndex B.declIdx B.length
 
-/-- Places statements as the spec says, derives `import`/`export` glue from the names each module uses,
-and orders imports by where the imported module's code first appeared in the bundle. -/
-def mkPlan (B : Bundle) (S : Spec) : Plan :=
+/-- Attach glue based on the actual named imports, then add import-only orphan
+edges. The returned map records the consumed local names used for glue. -/
+def finishPlan (B : Bundle) (S : Spec) (base : List Module) (rank : ModName → Nat) :
+    Plan × Std.TreeMap ModName (List Name) :=
+  -- a module exports exactly the names other modules import from it
+  let imported : Std.TreeMap ModName (List Name) := base.foldl (fun acc o =>
+    o.imports.foldl (fun acc e => acc.insert e.1 (e.2.reverse ++ acc.getD e.1 [])) acc) ∅
+  let withExports := base.map fun md =>
+    { md with exports := glueExports (md.published B)
+                           (dedup (imported.getD md.name []).reverse) }
+  let p1 : Plan := { entry := S.entry, mods := withExports }
+  -- a module nobody imports still has to run: the entry imports it for its effects
+  let evalOrder := p1.evalOrder
+  let orphans := withExports.filter fun md => !evalOrder.contains md.name
+  ({ p1 with mods := withExports.map fun md =>
+      if md.name == S.entry then
+        let all := md.imports ++ orphans.map fun o => (o.name, [])
+        -- a sequence keeps the roots first: sorting would put a module the entry mentions before the root above it
+        { md with imports := if S.sequential then all else sortBy (rank ∘ (·.1)) all }
+      else md }, imported)
+
+/-- The actual plan and the map of names consumed by its import edges, before
+adding import-only orphan edges. The latter have no names. -/
+def mkPlanWithImports (B : Bundle) (S : Spec) : Plan × Std.TreeMap ModName (List Name) :=
   let arr := B.toArray
   let decl := B.declIdx
-  let picked := S.picked B
+  let picked := S.pickedWithIndex decl B.length
   -- a module name means its first entry in the spec
   let stmtsOf : Std.TreeMap ModName (List Nat) := picked.foldr (fun e acc => acc.insert e.1 e.2) ∅
   -- the module that first claims each statement
@@ -130,21 +154,10 @@ def mkPlan (B : Bundle) (S : Spec) : Plan :=
     else named m
   let base : List Module := S.modules.map fun (m, _) =>
     { name := m, stmts := stmtsOf.getD m [], imports := imports m, exports := [] }
-  -- a module exports exactly the names other modules import from it
-  let imported : Std.TreeMap ModName (List Name) := base.foldl (fun acc o =>
-    o.imports.foldl (fun acc e => acc.insert e.1 (e.2.reverse ++ acc.getD e.1 [])) acc) ∅
-  let withExports := base.map fun md =>
-    { md with exports := glueExports (md.publishedFrom arr)
-                           (dedup (imported.getD md.name []).reverse) }
-  let p1 : Plan := { entry := S.entry, mods := withExports }
-  -- a module nobody imports still has to run: the entry imports it for its effects
-  let evalOrder := p1.evalOrder
-  let orphans := withExports.filter fun md => !evalOrder.contains md.name
-  { p1 with mods := withExports.map fun md =>
-      if md.name == S.entry then
-        let all := md.imports ++ orphans.map fun o => (o.name, [])
-        -- a sequence keeps the roots first: sorting would put a module the entry mentions before the root above it
-        { md with imports := if S.sequential then all else sortBy (rank ∘ (·.1)) all }
-      else md }
+  finishPlan B S base rank
+
+/-- Places statements as the spec says, derives glue from the consumed names,
+and orders imports by where their source first appeared. -/
+def mkPlan (B : Bundle) (S : Spec) : Plan := (mkPlanWithImports B S).1
 
 end EsmSplit

@@ -22,9 +22,9 @@ func TestFailedClaimAloneSchedulesDelivery(t *testing.T) {
 			var command *store.Dispatch
 			var err error
 			if opening {
-				_, err = createSession(queueStore, ctx, id, sandbox.Name, sandbox.UID, &sessionpb.SessionSpec{}, nil, nil)
+				_, err = createSession(queueStore, ctx, id, sandbox.Name, sandbox.UID, &sessionpb.SessionSpec{}, nil)
 			} else {
-				command, err = enqueueWithSession(t, queueStore, ctx, id, sandbox.Name, sandbox.UID, input("test-claim-retry-command", "test input"), nil)
+				command, err = enqueueWithSession(t, queueStore, ctx, id, sandbox.Name, sandbox.UID, input("test-claim-retry-command", "test input"))
 			}
 			if err != nil {
 				t.Fatal(err)

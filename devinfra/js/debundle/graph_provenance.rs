@@ -9,7 +9,7 @@ use std::fmt;
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use anyhow::{Context, Result, bail};
 use ring::digest::{self, SHA256};
@@ -374,6 +374,15 @@ thread_local! {
     static ACTIVE_CAPTURE: RefCell<Option<CaptureState>> = const { RefCell::new(None) };
 }
 
+/// The shared capture state with its lock held. The state is still the
+/// caller's `Option`: a handle panics when the capture has ended, while the
+/// ambient recorders report it as an error. Poisoning means a recorder
+/// panicked mid-capture—a bug rather than a runtime condition—so every site
+/// takes the lock through here and says so with the same words.
+fn lock_capture(state: &CaptureState) -> MutexGuard<'_, Option<GraphProvenance>> {
+    state.lock().expect("capture lock")
+}
+
 fn active_capture() -> Option<CaptureState> {
     ACTIVE_CAPTURE.with(|slot| slot.borrow().clone())
 }
@@ -459,7 +468,7 @@ impl InputCapture {
             .strip_prefix(&parent)
             .context("ownership subset input is outside its parent directory")?
             .to_path_buf();
-        let mut guard = self.state.lock().expect("capture lock");
+        let mut guard = lock_capture(&self.state);
         let provenance = guard.as_mut().expect("capture started");
         provenance.roots.ownership_subset = Some(parent);
         provenance.files.push(InputFile {
@@ -474,9 +483,8 @@ impl InputCapture {
         &self,
         selected: BTreeMap<String, Vec<SelectedOwnershipModule>>,
     ) -> Result<()> {
-        self.state
-            .lock()
-            .expect("capture lock")
+        let mut guard = lock_capture(&self.state);
+        guard
             .as_mut()
             .expect("capture started")
             .selected_ownership_by_chunk = selected;
@@ -488,7 +496,7 @@ impl InputCapture {
         config_path: &Path,
         roots: BTreeMap<String, Vec<PathBuf>>,
     ) -> Result<()> {
-        let mut guard = self.state.lock().expect("capture lock");
+        let mut guard = lock_capture(&self.state);
         let provenance = guard.as_mut().expect("capture started");
         let config = absolute(config_path)?;
         let relative = config
@@ -515,27 +523,20 @@ impl InputCapture {
     /// analyze`: its provenance keys an analysis artifact (engine, parser
     /// inputs) and is never replayed as a `debundle run`.
     pub fn finish_inputs(self) -> Result<GraphProvenance> {
-        {
-            let mut provenance = self
-                .state
-                .lock()
-                .expect("capture lock")
-                .take()
-                .expect("capture started");
-            provenance
-                .files
-                .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
-            provenance
-                .present_directories
-                .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
-            provenance
-                .chunk_sources
-                .sort_by(|a, b| a.chunk_id.cmp(&b.chunk_id));
-            provenance
-                .yaml_memberships
-                .sort_by(|a, b| (&a.root, &a.directory).cmp(&(&b.root, &b.directory)));
-            Ok(provenance)
-        }
+        let mut provenance = lock_capture(&self.state).take().expect("capture started");
+        provenance
+            .files
+            .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
+        provenance
+            .present_directories
+            .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
+        provenance
+            .chunk_sources
+            .sort_by(|a, b| a.chunk_id.cmp(&b.chunk_id));
+        provenance
+            .yaml_memberships
+            .sort_by(|a, b| (&a.root, &a.directory).cmp(&(&b.root, &b.directory)));
+        Ok(provenance)
     }
 }
 
@@ -553,35 +554,33 @@ enum ReadRole<'a> {
 fn read_bytes_with_role(path: &Path, role: ReadRole<'_>) -> Result<Vec<u8>> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     if let Some(state) = active_capture() {
-        let mut guard = state.lock().expect("capture lock");
+        let mut guard = lock_capture(&state);
+        let provenance = guard
+            .as_mut()
+            .context("graph capture ended before input read")?;
+        let (root, relative) = match role {
+            ReadRole::Spec => provenance.classify_spec(path)?,
+            ReadRole::Source => provenance.classify_source(path)?,
+            ReadRole::Package(name) => provenance.classify_package(name, path)?,
+        };
+        let entry = InputFile {
+            root,
+            path: relative,
+            sha256: sha256(&bytes),
+        };
+        if let Some(previous) = provenance
+            .files
+            .iter()
+            .find(|f| f.root == entry.root && f.path == entry.path)
         {
-            let provenance = guard
-                .as_mut()
-                .context("graph capture ended before input read")?;
-            let (root, relative) = match role {
-                ReadRole::Spec => provenance.classify_spec(path)?,
-                ReadRole::Source => provenance.classify_source(path)?,
-                ReadRole::Package(name) => provenance.classify_package(name, path)?,
-            };
-            let entry = InputFile {
-                root,
-                path: relative,
-                sha256: sha256(&bytes),
-            };
-            if let Some(previous) = provenance
-                .files
-                .iter()
-                .find(|f| f.root == entry.root && f.path == entry.path)
-            {
-                if previous.sha256 != entry.sha256 {
-                    bail!(
-                        "input {} changed during graph analysis; rerun on a stable snapshot",
-                        path.display()
-                    );
-                }
-            } else {
-                provenance.files.push(entry);
+            if previous.sha256 != entry.sha256 {
+                bail!(
+                    "input {} changed during graph analysis; rerun on a stable snapshot",
+                    path.display()
+                );
             }
+        } else {
+            provenance.files.push(entry);
         }
     }
     Ok(bytes)
@@ -613,7 +612,7 @@ pub fn record_package_input(name: &str, path: &Path) -> Result<()> {
         return Ok(());
     };
     let (root, relative) = {
-        let guard = state.lock().expect("capture lock");
+        let guard = lock_capture(&state);
         guard
             .as_ref()
             .context("graph capture ended before package input check")?
@@ -622,7 +621,7 @@ pub fn record_package_input(name: &str, path: &Path) -> Result<()> {
 
     let metadata = fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
     if metadata.is_dir() {
-        let mut guard = state.lock().expect("capture lock");
+        let mut guard = lock_capture(&state);
         let provenance = guard
             .as_mut()
             .context("graph capture ended before package input check")?;
@@ -647,7 +646,7 @@ pub fn record_package_input(name: &str, path: &Path) -> Result<()> {
         path: relative,
         sha256: sha256_reader(&mut file).with_context(|| format!("hashing {}", path.display()))?,
     };
-    let mut guard = state.lock().expect("capture lock");
+    let mut guard = lock_capture(&state);
     let provenance = guard
         .as_mut()
         .context("graph capture ended before package input check")?;
@@ -675,19 +674,17 @@ pub fn record_chunk_source(
     bytes: &[u8],
 ) -> Result<()> {
     if let Some(state) = active_capture() {
-        let mut guard = state.lock().expect("capture lock");
-        {
-            let provenance = guard
-                .as_mut()
-                .context("graph capture ended before source mapping")?;
-            let (root, path) = provenance.classify_source(input_file)?;
-            provenance.chunk_sources.push(ChunkSource {
-                chunk_id: chunk_id.to_string(),
-                source_path: PathBuf::from(source_path),
-                input_file: InputPath { root, path },
-                sha256: sha256(bytes),
-            });
-        }
+        let mut guard = lock_capture(&state);
+        let provenance = guard
+            .as_mut()
+            .context("graph capture ended before source mapping")?;
+        let (root, path) = provenance.classify_source(input_file)?;
+        provenance.chunk_sources.push(ChunkSource {
+            chunk_id: chunk_id.to_string(),
+            source_path: PathBuf::from(source_path),
+            input_file: InputPath { root, path },
+            sha256: sha256(bytes),
+        });
     }
     Ok(())
 }
@@ -697,7 +694,7 @@ pub fn record_chunk_source(
 pub fn yaml_files(directory: &Path) -> Result<Vec<PathBuf>> {
     let members = relative_yaml_files(directory)?;
     if let Some(state) = active_capture() {
-        let mut guard = state.lock().expect("capture lock");
+        let mut guard = lock_capture(&state);
         let provenance = guard
             .as_mut()
             .context("graph capture ended before YAML membership check")?;

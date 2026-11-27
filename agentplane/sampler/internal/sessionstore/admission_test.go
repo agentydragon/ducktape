@@ -95,6 +95,7 @@ func TestCommandAdmissionMetadataMigrationPreservesPackedLegacyRows(t *testing.T
 	// Recreate the pre-0024/0025 schema while keeping the already-packed journal and command row.
 	// Reapply both migrations to verify 0024 preserves packed data and 0025 leaves legacy rows
 	// without sampling projections.
+	removeBlockMetadata(t, store.DB())
 	removeSamplingRecoveryProjection(t, store.DB())
 	migrationExec(t, store.DB(), `ALTER TABLE sampler_command
 		DROP CONSTRAINT sampler_command_admission_metadata_check,

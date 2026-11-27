@@ -26,6 +26,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
@@ -208,7 +209,7 @@ func (f *deliveryFixture) create(t *testing.T) string {
 	t.Helper()
 	id := uuid.NewString()
 	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
-	_, err := f.queueStore.CreateSessionWithPlacementForCaller(f.ctx, id, f.sandbox.Name, string(f.sandbox.UID), spec, nil, nil, store.SessionExecution{Identity: f.identity}, store.ServiceCaller{SPIFFEID: peertls.AppURI})
+	_, err := f.queueStore.CreateSessionWithAdmissionCheck(f.ctx, id, f.sandbox.Name, string(f.sandbox.UID), placement.PlacementOf(spec), spec, nil, store.SessionExecution{Identity: f.identity}, store.ServiceCaller{SPIFFEID: peertls.AppURI}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +219,7 @@ func (f *deliveryFixture) create(t *testing.T) string {
 func (f *deliveryFixture) command(t *testing.T, session string) string {
 	t.Helper()
 	id := uuid.NewString()
-	_, err := f.queueStore.EnqueueForCaller(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, nil, store.ServiceCaller{SPIFFEID: peertls.AppURI})
+	_, err := f.queueStore.Enqueue(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test input"}}}, store.ServiceCaller{SPIFFEID: peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +400,7 @@ func TestSandboxDeletionCleansQueuedWorkAndFencesReplacement(t *testing.T) {
 		row, err := f.queueStore.GetDispatch(ctx, command)
 		return err == nil && row.State == store.FailedState && row.Reason == "sandbox_deleted" && row.SandboxUID == string(f.sandbox.UID), err
 	})
-	if _, err := f.queueStore.EnqueueForCaller(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: uuid.NewString(), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test stale input"}}}, nil, store.ServiceCaller{SPIFFEID: peertls.AppURI}); !errors.Is(err, store.ErrSandboxDeleted) {
+	if _, err := f.queueStore.Enqueue(f.ctx, session, f.sandbox.Name, string(f.sandbox.UID), &commandpb.Command{CommandId: uuid.NewString(), Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test stale input"}}}, store.ServiceCaller{SPIFFEID: peertls.AppURI}); !errors.Is(err, store.ErrSandboxDeleted) {
 		t.Fatalf("deleted UID admitted work: %v", err)
 	}
 	if got := f.catalog.scans.Load(); got != scans {

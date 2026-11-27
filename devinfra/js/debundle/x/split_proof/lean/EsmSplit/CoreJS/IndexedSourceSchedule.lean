@@ -38,6 +38,7 @@ def SourceUnit.localExportRow? : SourceUnit → Option LocalExportUnit :=
 source sequence against the actual original node count and bundle. -/
 structure Sequence (decoded : LinkedInput.IndexedSource) (bundle : Bundle) where
   source : CoreJS.Module := decoded.source
+  sourceEq : source = decoded.source
   singleton : decoded.program.modules = [decoded.source] := decoded.singleton
   decoderCoverage : List.Perm
     (LinkedInput.sourceUnitIds decoded.program decoded.localExports)
@@ -97,6 +98,7 @@ def checkSequence (decoded : LinkedInput.IndexedSource) (bundle : Bundle) :
     simpa [LinkedInput.sourceUnitIds, decoded.singleton, countMatches] using decoded.coverage
   return {
     source := source
+    sourceEq := rfl
     singleton := decoded.singleton
     decoderCoverage := decoded.coverage
     units := units
