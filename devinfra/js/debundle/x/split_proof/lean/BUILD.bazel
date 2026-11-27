@@ -742,6 +742,7 @@ lean_proof_test(
         "EsmSplit.CoreJS.SingleModule",
     ],
     required_theorems = [
+        "CoreJS.OrderedRegion.matching_hoist_link_with_frames",
         "CoreJS.OrderedRegion.matching_link",
         "CoreJS.OrderedRegion.matching_link_with_frames",
         "CoreJS.OrderedRegion.planned_link",
@@ -764,6 +765,7 @@ lean_library(
     deps = [
         ":corejs_certificate_support",
         ":corejs_link_world",
+        ":ordered_region",
         ":planner",
     ],
 )
