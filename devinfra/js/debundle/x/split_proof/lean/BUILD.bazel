@@ -2733,6 +2733,7 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.IndexedReorder"],
     required_theorems = [
+        "CoreJS.IndexedReorder.inline_tables",
         "CoreJS.IndexedReorder.run_of_schedule",
         "CoreJS.IndexedReorder.same_inline_exports",
     ],

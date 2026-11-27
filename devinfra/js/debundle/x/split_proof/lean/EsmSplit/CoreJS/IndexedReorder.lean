@@ -82,44 +82,27 @@ instance (source : Module) (B : EsmSplit.Bundle) (entry : EsmSplit.Module) :
   unfold InlineExportsOwned
   infer_instance
 
-/-- Locally owned inline exports resolve to the original live cells under a
-covered plan. Both tables are computed by the actual linker. -/
-theorem same_inline_exports {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+/-- Resolve authored inline exports from the actual source and candidate scopes.
+Frame names suffice for this step, so a caller can use the same table proof
+for different supported declaration kinds. -/
+theorem inline_tables {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
     (valid : EsmSplit.Valid B S P) {original : Program} {source : Module}
-    (single : original.modules = [source]) (imports : source.imports = [])
     (found : original.find original.entry = some source)
     (footprints : IndexedExportCells.Footprints source.body B)
     (complete : IndexedPlanCells.DefinitionsPresent source.body B)
-    (ordered : source.body.Pairwise (fun a b => a.1 ≤ b.1))
-    (consts : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init)
-    (covered : (SparseProjectedOrder.executableIds source.body P).Perm (source.body.map Prod.fst))
+    {frames : List (Nat × List (Name × Addr))} (frameNames : FramesOf source.body frames)
+    {linked : List (Module × Env)}
+    (scopes : (splitProgramIndexed source.body B P).scopes frames
+      (splitProgramIndexed source.body B P).loaded = .ok linked)
     {entry : EsmSplit.Module} (planEntry : P.find P.entry = some entry)
     (own : InlineExportsOwned source B entry)
     (table : (moduleOfIndexed source.body B P entry).exports = source.exports) :
-    LinkedBehavior.SameExports original (splitProgramIndexed source.body B P) := by
-  intro w
+    ∃ exports, EntryExports.resolve original.entry
+        [(source, { vars := source.scope frames, this := .undef })] = .ok exports ∧
+      EntryExports.resolve (splitProgramIndexed source.body B P).entry linked = .ok exports := by
   let output := splitProgramIndexed source.body B P
   let target := moduleOfIndexed source.body B P entry
-  have unique := footprints.uniqueIds
-  have tops : output.tops = source.body :=
-    SparseProjectedOrder.split_indexed_tops_of_perm unique covered ordered
-  have regions : output.regions = original.regions := by
-    rw [SparseProjectedOrder.split_indexed_regions_of_perm unique covered,
-      IndexedEntryLink.singleton_source_regions single]
-  obtain ⟨frames, ready, allocated⟩ := IndexedConstLink.source_allocation rfl single consts w
-  have frameNames := declareTops_names _ allocated
   let env : Env := { vars := source.scope frames, this := .undef }
-  let before : LinkedBehavior.CheckedLink original w :=
-    ⟨[(source, env)], ready, IndexedEntryLink.link_after_const_allocation
-      (IndexedEntryLink.import_free_source_tops found imports ordered)
-      unique allocated (IndexedEntryLink.import_free_entry_scopes found imports frames)
-      (IndexedEntryLink.source_const_init consts)⟩
-  obtain ⟨linked, scopes, init⟩ :=
-    IndexedEntryLink.indexed_const_scopes_and_init valid footprints complete frameNames (source := source) rfl consts
-  let after : LinkedBehavior.CheckedLink output w :=
-    ⟨linked, ready, by
-      rw [regions]
-      exact IndexedEntryLink.link_after_const_allocation tops unique allocated scopes init⟩
   have targetFind : output.find output.entry = some target := by
     change (splitProgramIndexed source.body B P).find P.entry = some target
     rw [SparseProjectedOrder.split_indexed_find, planEntry]
@@ -143,8 +126,47 @@ theorem same_inline_exports {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSp
     obtain ⟨a, sourceCell, targetCell⟩ := IndexedExportCells.source_and_module_cell
       footprints frameNames valid.1 (source := source) rfl originalRow targetRow declared
     exact ⟨a, sourceCell, by rw [List.lookup_append, targetCell]; rfl⟩
+  exact IndexedEntryLink.resolved_entries_equal sourceLink targetLink table cellAgreement
+
+/-- Locally owned inline exports resolve to the original live cells under a
+covered plan. Both tables are computed by the actual linker. -/
+theorem same_inline_exports {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (valid : EsmSplit.Valid B S P) {original : Program} {source : Module}
+    (single : original.modules = [source]) (imports : source.imports = [])
+    (found : original.find original.entry = some source)
+    (footprints : IndexedExportCells.Footprints source.body B)
+    (complete : IndexedPlanCells.DefinitionsPresent source.body B)
+    (ordered : source.body.Pairwise (fun a b => a.1 ≤ b.1))
+    (consts : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init)
+    (covered : (SparseProjectedOrder.executableIds source.body P).Perm (source.body.map Prod.fst))
+    {entry : EsmSplit.Module} (planEntry : P.find P.entry = some entry)
+    (own : InlineExportsOwned source B entry)
+    (table : (moduleOfIndexed source.body B P entry).exports = source.exports) :
+    LinkedBehavior.SameExports original (splitProgramIndexed source.body B P) := by
+  intro w
+  let output := splitProgramIndexed source.body B P
+  have unique := footprints.uniqueIds
+  have tops : output.tops = source.body :=
+    SparseProjectedOrder.split_indexed_tops_of_perm unique covered ordered
+  have regions : output.regions = original.regions := by
+    rw [SparseProjectedOrder.split_indexed_regions_of_perm unique covered,
+      IndexedEntryLink.singleton_source_regions single]
+  obtain ⟨frames, ready, allocated⟩ := IndexedConstLink.source_allocation rfl single consts w
+  have frameNames := declareTops_names _ allocated
+  let env : Env := { vars := source.scope frames, this := .undef }
+  let before : LinkedBehavior.CheckedLink original w :=
+    ⟨[(source, env)], ready, IndexedEntryLink.link_after_const_allocation
+      (IndexedEntryLink.import_free_source_tops found imports ordered)
+      unique allocated (IndexedEntryLink.import_free_entry_scopes found imports frames)
+      (IndexedEntryLink.source_const_init consts)⟩
+  obtain ⟨linked, scopes, init⟩ :=
+    IndexedEntryLink.indexed_const_scopes_and_init valid footprints complete frameNames (source := source) rfl consts
+  let after : LinkedBehavior.CheckedLink output w :=
+    ⟨linked, ready, by
+      rw [regions]
+      exact IndexedEntryLink.link_after_const_allocation tops unique allocated scopes init⟩
   obtain ⟨exports, sourceTable, targetTable⟩ :=
-    IndexedEntryLink.resolved_entries_equal sourceLink targetLink table cellAgreement
+    inline_tables valid found footprints complete frameNames scopes planEntry own table
   refine ⟨exports, exports, ?_, ?_, .refl _⟩
   · rw [LinkedBehavior.exports, before.equation]
     change (EntryExports.resolve original.entry _).toOption = _
@@ -156,6 +178,7 @@ theorem same_inline_exports {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSp
     rw [targetTable]
     rfl
 
+#print axioms inline_tables
 #print axioms same_inline_exports
 #print axioms run_of_schedule
 
