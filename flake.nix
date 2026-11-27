@@ -76,6 +76,7 @@
   outputs =
     {
       self,
+      devshell,
       nixpkgs,
       nixpkgs-unstable,
       nixpkgs-master,
@@ -337,9 +338,9 @@
         in
         atticTargets;
 
-      # Same derivation as the devshell flake's (nix/flake.nix), which direnv loads.
+      # Defined by the devshell flake (nix/flake.nix), which direnv loads.
       devShells.${system} = {
-        default = packageSets.devShell;
+        default = devshell.devShells.${system}.default;
         ai-usage = import ./x/ai_sub_value/shell.nix {
           inherit pkgs;
           baseShell = self.devShells.${system}.default;

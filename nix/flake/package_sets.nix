@@ -1,4 +1,4 @@
-# Package sets, CI-released artifacts and the devShell, shared by the root
+# Package sets and CI-released artifacts, shared by the root
 # flake and the devshell flake (nix/flake.nix). The devshell flake is a `path:`
 # flake rooted at nix/, so nothing reachable from here may read outside nix/.
 {
@@ -137,11 +137,4 @@ in
     ducktapePkgs
     devTools
     ;
-  devShell = pkgs.mkShell {
-    # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
-    dontAddPythonPath = "1";
-    packages = devTools.devToolPackages ++ devTools.localOnlyPackages ++ devTools.systemLibs.packages;
-    inherit (devTools.systemLibs) buildInputs;
-    LD_LIBRARY_PATH = devTools.systemLibs.libraryPath;
-  };
 }

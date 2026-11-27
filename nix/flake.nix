@@ -37,6 +37,16 @@
       };
     in
     {
-      devShells.${system}.default = packageSets.devShell;
+      devShells.${system}.default =
+        let
+          inherit (packageSets) pkgs devTools;
+        in
+        pkgs.mkShell {
+          # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
+          dontAddPythonPath = "1";
+          packages = devTools.devToolPackages ++ devTools.localOnlyPackages ++ devTools.systemLibs.packages;
+          inherit (devTools.systemLibs) buildInputs;
+          LD_LIBRARY_PATH = devTools.systemLibs.libraryPath;
+        };
     };
 }
