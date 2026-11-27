@@ -4,6 +4,7 @@ go_library(
     name = "identitycache",
     srcs = [
         "cache.go",
+        "health.go",
         "peer.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy/identitycache",
@@ -16,13 +17,18 @@ go_library(
         "@com_github_sethvargo_go_retry//:go-retry",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//status",
     ],
 )
 
 go_test(
     name = "identitycache_test",
-    srcs = ["cache_test.go"],
+    srcs = [
+        "cache_test.go",
+        "health_test.go",
+    ],
     embed = [":identitycache"],
     deps = [
         "//agentplane/identity/auth",
@@ -30,6 +36,8 @@ go_test(
         "//agentplane/testing/grpcserver",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/emptypb",
         "@org_golang_google_protobuf//types/known/timestamppb",

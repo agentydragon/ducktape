@@ -85,7 +85,9 @@ func listenAndServe(ctx context.Context, c config) error {
 type identitySources struct {
 	callers, sandboxes, delegation auth.IdentityUIDReader
 	rules                          reader.IdentitySource
-	stop                           func()
+	// current returns once the view can answer, or with the context's error.
+	current func(context.Context) error
+	stop    func()
 }
 
 // startIdentities serves every Identity read from one PolicyService view.
@@ -95,7 +97,8 @@ func startIdentities(ctx context.Context, c config) (identitySources, error) {
 		return identitySources{}, fmt.Errorf("PolicyService Identity view: %w", err)
 	}
 	return identitySources{
-		callers: view, sandboxes: view, delegation: view, rules: reader.CachedIdentities{View: view}, stop: stop,
+		callers: view, sandboxes: view, delegation: view, rules: reader.CachedIdentities{View: view},
+		current: view.WaitCurrent, stop: stop,
 	}, nil
 }
 
@@ -257,11 +260,13 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	defer server.Stop()
 	healthServer := health.NewServer()
+	// Serving once the gRPC listener accepts calls and the Identity view can answer: a caller authenticated earlier
+	// would be refused as UNAVAILABLE.
+	stopGate := identitycache.GateHealth(ctx, healthServer, identities.current)
+	defer stopGate()
 	healthpb.RegisterHealthServer(server, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(rpcListener)) }()
 
-	// Serving once the gRPC listener accepts calls.
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	var result error
 	select {
 	case err := <-failed:
@@ -269,6 +274,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	case <-ctx.Done():
 		result = ctx.Err()
 	}
+	stopGate() // first, so a late SERVING cannot overwrite the shutdown status
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	cancel()
 	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
