@@ -8,6 +8,28 @@ use super::receiver_flow::{
 };
 use super::*;
 
+/// The shape every native-input refusal takes: the program's own analysis
+/// positively identified a contradicting write, so the claim cannot hold, and
+/// the source unit that voids it is named. `provider` is the module whose
+/// analysis found it, for the callers that report across modules.
+pub fn positively_identified_contradiction(
+    request: &str,
+    finding: &str,
+    provider: Option<&str>,
+    owner: SourceUnitOrdinal,
+) -> String {
+    match provider {
+        Some(module) => format!(
+            "{request} is contradicted by a positively identified {finding} in provider {module}, source unit {}",
+            owner.0
+        ),
+        None => format!(
+            "{request} is contradicted by a positively identified {finding} in source unit {}",
+            owner.0
+        ),
+    }
+}
+
 impl ExecutionIndex {
     pub fn validated_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
         self.resolved_native_operation_inputs.clone()
@@ -1059,23 +1081,29 @@ impl ExecutionIndex {
         match operation {
             NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze) => {
                 let owner = self.known_object_freeze_mutation()?;
-                Some(format!(
-                    "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
-                    owner.0
+                Some(positively_identified_contradiction(
+                    request,
+                    "required Object.freeze slot write",
+                    None,
+                    owner,
                 ))
             }
             NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray) => {
                 let owner = self.known_set_protocol_mutation()?;
-                Some(format!(
-                    "{request} is contradicted by a positively identified required native slot write in source unit {}",
-                    owner.0
+                Some(positively_identified_contradiction(
+                    request,
+                    "required native slot write",
+                    None,
+                    owner,
                 ))
             }
             _ => {
                 let (name, owner) = self.known_global_native_operation_mutation(operation)?;
-                Some(format!(
-                    "{request} is contradicted by a positively identified global {name} replacement or accessor installation (source unit {})",
-                    owner.0
+                Some(positively_identified_contradiction(
+                    request,
+                    &format!("global {name} replacement or accessor installation"),
+                    None,
+                    owner,
                 ))
             }
         }

@@ -13,6 +13,7 @@ use anyhow::{Result, bail};
 use execution_index::callable_capabilities::{
     InferredCallableCapabilities, PreparedCallableCapabilities,
 };
+use execution_index::positively_identified_contradiction;
 use inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::BytePos;
@@ -814,11 +815,13 @@ fn reject_contradicted_native_operation_inputs(
                 .known_global_native_operation_mutation_owner(input.evidence.operation)
                 .map(|owner| (module, owner))
         }) {
-            bail!(
-                "{} is contradicted by a positively identified global {name} replacement or operation mutation in provider {module}, source unit {}",
-                input.evidence.spec_location,
-                owner.0
+            let contradiction = positively_identified_contradiction(
+                &input.evidence.spec_location,
+                &format!("global {name} replacement or operation mutation"),
+                Some(module.as_str()),
+                owner,
             );
+            bail!("{contradiction}");
         }
     }
     if selected_native_operation_inputs
@@ -843,10 +846,13 @@ fn reject_contradicted_native_operation_inputs(
             })
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_call_identity_inputs");
-        bail!(
-            "{request} is contradicted by a positively identified required Object.freeze slot write in provider {module}, source unit {}",
-            owner.0
+        let contradiction = positively_identified_contradiction(
+            request,
+            "required Object.freeze slot write",
+            Some(module.as_str()),
+            owner,
         );
+        bail!("{contradiction}");
     }
     if selected_native_operation_inputs
         .values()
@@ -870,10 +876,13 @@ fn reject_contradicted_native_operation_inputs(
             })
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_operation_inputs");
-        bail!(
-            "{request} is contradicted by a positively identified required Set construction protocol slot write in provider {module}, source unit {}",
-            owner.0
+        let contradiction = positively_identified_contradiction(
+            request,
+            "required Set construction protocol slot write",
+            Some(module.as_str()),
+            owner,
         );
+        bail!("{contradiction}");
     }
     Ok(())
 }
