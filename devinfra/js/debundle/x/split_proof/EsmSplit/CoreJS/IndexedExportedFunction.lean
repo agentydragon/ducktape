@@ -10,8 +10,9 @@ import EsmSplit.CoreJS.LinkWorld
 
 /-! Extract one hoisted predicate through an original standalone export row.
 The helper forms a source prefix. An optional second owner holds a single
-concrete function that reads the first helper; all other rows stay in the entry.
-Exact scope agreement preserves the links between all three modules, including
+concrete function that reads the first helper. A third owner may retain adjacent
+constructor initializations and a prototype write. Exact scope agreement preserves
+the links to the original bindings, including
 calls made after module evaluation. -/
 
 namespace CoreJS.IndexedExportedFunction
@@ -81,8 +82,26 @@ private def entryFunc : Nat → Func → Bool
 
 end
 
+/-- One owner can retain adjacent constructor initializations and the eager
+prototype write between them. Each initializer is closed; the installed
+method can capture only the constructor whose prototype it modifies. -/
+private def checkPrototypeBlock (owns : Nat → Bool) (rows : List (Nat × Stmt)) :
+    Except String (List (Nat × Stmt)) := do
+  let (first, .decl .var ctor (.func init)) ::
+      (write, .expr (.assign (.member (.get (.var receiver) (.str "prototype")) (.str _))
+        (.func method))) ::
+      (last, .decl .var other (.func endInit)) :: rest := rows |
+    throw "expected two constructor initializations with a prototype write between them"
+  unless owns first && owns write && owns last do
+    throw "one module must own the constructors and their prototype write"
+  unless receiver == ctor && ctor != other && entryFunc 128 init && init.free.isEmpty &&
+      entryFunc 128 method && method.free.all (· == ctor) &&
+      entryFunc 128 endInit && endInit.free.isEmpty do
+    throw "expected closed constructors and a method on the original prototype"
+  return rest
+
 private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSplit.Spec)
-    (helper : String) (readerOwner : Option String) : Except String Unit := do
+    (helper : String) (readerOwner prototypeOwner : Option String) : Except String Unit := do
   let authored owner (row : Nat × Stmt) := request.claimants B row.1 == [owner]
   let (prefixRows, remaining) := source.body.span (authored helper)
   unless !prefixRows.isEmpty do
@@ -95,7 +114,7 @@ private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSp
     throw "expected strict comparisons and logical expressions over the parameter and literal captures"
   unless (source.exports.map Prod.snd).contains name do
     throw "the source export must name the original predicate"
-  let entryRows ← match readerOwner with
+  let afterReader ← match readerOwner with
     | none => pure remaining
     | some owner =>
       let (id, .funDecl (.mk reader .normal false params body)) :: rest := remaining |
@@ -107,6 +126,9 @@ private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSp
       unless entryFunc 128 f && reads.contains name && reads.all (· == name) do
         throw "the second helper must be concrete and capture only the predicate"
       pure rest
+  let entryRows ← match prototypeOwner with
+    | none => pure afterReader
+    | some owner => checkPrototypeBlock (fun id => request.claimants B id == [owner]) afterReader
   unless entryRows.all (authored request.entry) do
     throw "remaining executable units must be authored in the entry"
   for (id, stmt) in entryRows do
@@ -141,10 +163,11 @@ structure Construction (decoded : IndexedSource) (B : EsmSplit.Bundle) (request 
 
 def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec) :
     Except String (Construction decoded B request) := do
-  let (helper, readerOwner) ← match request.order with
-    | [owner] => pure (owner, none)
-    | [owner, reader] => pure (owner, some reader)
-    | _ => throw "expected a predicate module and at most one reader module"
+  let (helper, readerOwner, prototypeOwner) ← match request.order with
+    | [owner] => pure (owner, none, none)
+    | [owner, reader] => pure (owner, some reader, none)
+    | [owner, reader, prototype] => pure (owner, some reader, some prototype)
+    | _ => throw "expected a predicate module, with optional reader and prototype modules"
   let [_] := decoded.localExports | throw "expected one original standalone export row"
   let source := decoded.source
   let original := decoded.program
@@ -157,7 +180,7 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
   let .isTrue metadataOwner := (inferInstance : Decidable
       (∀ row ∈ decoded.localExports, request.claimants B row.ordinal = [request.entry])) |
     throw "standalone export row must be authored in the entry"
-  checkFamily source B request helper readerOwner
+  checkFamily source B request helper readerOwner prototypeOwner
   unless decide (IndexedInlineConstructor.SelectorsOnce source.body B request) do
     throw "each original executable unit must be selected exactly once"
   let schedule ← IndexedSourceSchedule.check decoded B request

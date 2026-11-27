@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as acorn from "acorn";
@@ -116,6 +116,92 @@ const scanner = "scanner.mjs";
 const locations = "locations.mjs";
 const rows = [...ids, exportOrdinal];
 const selectors = (ordinals) => ordinals.map((id) => "#" + rows.indexOf(id));
+function instances(api) {
+  const position = api.getLineInfo(programText, start);
+  const token = new api.Node({ options, sourceFile: "input.js" }, start, position);
+  assert.equal(token.loc.start, position);
+  return { position, location: token.loc };
+}
+
+async function checkExtractedArtifacts(request, api, modules, order) {
+  const constructors = await readModule(path.join(request.out, locations));
+  const { position, location } = instances(api);
+  assert(position instanceof constructors.Position);
+  assert(position.offset(4) instanceof constructors.Position);
+  assert(location instanceof constructors.SourceLocation);
+
+  const entryCode = readFileSync(path.join(request.out, entry), "utf8");
+  const locationCode = readFileSync(path.join(request.out, locations), "utf8");
+  const locationAst = parse(locationCode).ast;
+  const locationImports = locationAst.body.filter((node) => node.type === "ImportDeclaration");
+  assert.deepEqual(locationImports, []);
+  const importAliases = parse(entryCode)
+    .ast.body.filter((node) => node.type === "ImportDeclaration")
+    .map(({ source, specifiers }) => [
+      source.value,
+      specifiers.map(({ imported, local }) => [imported.name, local.name]),
+    ]);
+  assert.deepEqual(importAliases, [
+    ["./" + newline, [["isNewLine", "isNewLine"]]],
+    ["./" + scanner, [["nextLineBreak", "nextLineBreak"]]],
+    [
+      "./" + locations,
+      [
+        ["Position", "Position"],
+        ["SourceLocation", "SourceLocation"],
+      ],
+    ],
+  ]);
+  const [ctor, prototype, secondCtor] = locationAst.body;
+  assert.deepEqual(
+    [ctor, prototype, secondCtor].map(({ start, end }) => locationCode.slice(start, end)),
+    [35, 36, 37].map(statement)
+  );
+
+  // Rebind only Node's imported constructor. Its fields and the public API
+  // still agree, but the object no longer has the original prototype.
+  const wrongCell = request.out + "-wrong-cell";
+  cpSync(request.out, wrongCell, { recursive: true });
+  const { id } = secondCtor.declarations[0];
+  const twin =
+    locationCode.slice(secondCtor.start, id.start) + "TwinLocation" + locationCode.slice(id.end, secondCtor.end);
+  writeFileSync(path.join(wrongCell, locations), locationCode + "\n" + twin + "\nexport { TwinLocation };\n");
+  const importDecl = parse(entryCode).ast.body.find((node) => node.source?.value === "./" + locations);
+  const alias = importDecl.specifiers.find(({ imported }) => imported.name === "SourceLocation");
+  writeFileSync(
+    path.join(wrongCell, entry),
+    entryCode.slice(0, alias.start) + "TwinLocation as SourceLocation" + entryCode.slice(alias.end)
+  );
+  const wrongApi = await readModule(path.join(wrongCell, entry));
+  assert.deepEqual(Object.keys(wrongApi), publicNames);
+  assert.deepEqual(observe(wrongApi), expected);
+  const wrongConstructors = await readModule(path.join(wrongCell, locations));
+  const wrong = instances(wrongApi).location;
+  assert(wrong instanceof wrongConstructors.TwinLocation);
+  assert(!(wrong instanceof wrongConstructors.SourceLocation));
+  assert.equal(split({ ...request, out: wrongCell, checkOutput: true }).status, "refused");
+
+  // The prototype installation is an eager write, not closure metadata.
+  const earlyWrite = request.out + "-early-prototype";
+  cpSync(request.out, earlyWrite, { recursive: true });
+  writeFileSync(
+    path.join(earlyWrite, locations),
+    locationCode.slice(prototype.start, prototype.end) +
+      "\n" +
+      locationCode.slice(ctor.start, ctor.end) +
+      locationCode.slice(prototype.end)
+  );
+  await assert.rejects(readModule(path.join(earlyWrite, entry)), TypeError);
+  assert.equal(split({ ...request, out: earlyWrite, checkOutput: true }).status, "refused");
+
+  const swapped = path.join(tmp, "locations-before-scanner.json");
+  writeFileSync(swapped, JSON.stringify({ entry, modules, order: [order[0], order[2], order[1]], sequential: true }));
+  const wrongOrder = split({ ...request, spec: swapped, allowExistingOut: true });
+  assert.equal(wrongOrder.status, "refused", wrongOrder.log);
+  assert.equal(wrongOrder.reasonCode, "no_constructed_rule");
+  assert.equal(split({ ...request, checkOutput: true }).status, "certified");
+}
+
 const results = [];
 for (const [name, moveLocations] of [
   ["node-kept", false],
@@ -171,6 +257,8 @@ for (const [name, moveLocations] of [
     const emitted = await readModule(path.join(request.out, entry));
     assert.deepEqual(Object.keys(emitted), publicNames);
     assert.deepEqual(observe(emitted), expected);
+    assert.deepEqual(result.files, moveLocations ? [entry, locations, newline, scanner] : [entry, newline, scanner]);
+    if (moveLocations) await checkExtractedArtifacts(request, emitted, modules, order);
   } else {
     assert.equal(result.reasonCode, "no_constructed_rule", result.log);
   }
@@ -195,7 +283,7 @@ writeFileSync(path.join(artifacts, "results.json"), JSON.stringify(results, null
 
 if (process.env.EXPECT_NODE_LOCATION) {
   assert.equal(results[0].verdict.status, process.env.EXPECT_NODE_LOCATION);
-  assert.equal(results[1].verdict.status, "rejected");
+  assert.equal(results[1].verdict.status, process.env.EXPECT_NODE_LOCATION);
 }
 
 // Spread invokes the iterator protocol, outside this dense array fragment.
