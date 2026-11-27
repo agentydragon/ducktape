@@ -1,5 +1,5 @@
 use super::module_facts::ModulePurityFacts;
-use inference::{FactContext, IterativeInference, IterativeRules};
+use inference::{FactContext, IterativeInference, IterativeRules, merge_became_true};
 use std::collections::{BTreeMap, BTreeSet};
 use value_flow::program_bindings::{ExportId, ProgramBindings, SourceModuleKey};
 
@@ -92,9 +92,7 @@ impl IterativeRules for StableImportRules<'_> {
         }
     }
 
-    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let changed = !*current && contribution;
-        *current |= contribution;
-        changed
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        merge_became_true(key, current, contribution)
     }
 }

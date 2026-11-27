@@ -10,7 +10,7 @@ static EMPTY_PROOF_DEPENDENCIES: LazyLock<ProofDependencies> =
 mod iterative;
 pub use iterative::{
     CertificateContext, CompletedTransfer, FactChange, FactContext, GuardedContext, IterativeFacts,
-    IterativeInference, IterativeRules, SealedFacts,
+    IterativeInference, IterativeRules, SealedFacts, merge_became_true, merge_union,
 };
 
 /// A proven fact and the direct premises that certify it.

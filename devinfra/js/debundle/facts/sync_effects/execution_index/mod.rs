@@ -75,7 +75,7 @@ use deferred_global_publication::{
 };
 use fresh_values::{FreshValueStep, RecordFactoryArgument, fresh_value_step};
 use global_receiver::{DestructuringMemberWrite, GlobalMembershipProbe, NamespacePrivacy};
-use inference::{FactContext, IterativeInference, IterativeRules};
+use inference::{FactContext, IterativeInference, IterativeRules, merge_became_true};
 use intrinsic_roots::IntrinsicRoots;
 use kernel::closure::CaptureCensus;
 use kernel::context::IndexReads;
@@ -160,10 +160,8 @@ impl IterativeRules for MutationReceiverAliasRules<'_> {
         }
     }
 
-    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let changed = !*current && contribution;
-        *current |= contribution;
-        changed
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        merge_became_true(key, current, contribution)
     }
 }
 

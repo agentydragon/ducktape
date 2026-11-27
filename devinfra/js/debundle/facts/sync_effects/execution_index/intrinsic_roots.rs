@@ -6,7 +6,7 @@ use analysis_domain::builtins;
 use analysis_domain::integrity::IntrinsicSlot;
 use analysis_vocabulary::inputs::{NativeIntrinsic, ValueInputRef};
 use analysis_vocabulary::value::Kind;
-use inference::{FactContext, IterativeInference, IterativeRules};
+use inference::{FactContext, IterativeInference, IterativeRules, merge_union};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::*;
@@ -695,10 +695,8 @@ impl IterativeRules for RawIntrinsicAliasRules<'_> {
         }
     }
 
-    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let previous_len = current.len();
-        current.extend(contribution);
-        current.len() != previous_len
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        merge_union(key, current, contribution)
     }
 }
 

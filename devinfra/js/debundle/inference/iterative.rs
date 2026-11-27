@@ -202,6 +202,27 @@ pub trait IterativeRules: Sized {
     }
 }
 
+/// Join for a set-valued fact family: the union. A contribution changed the
+/// record exactly when it added an element, which is all the engine needs to
+/// decide whether to wake readers again.
+pub fn merge_union<Key, Element: Ord>(
+    _key: &Key,
+    current: &mut BTreeSet<Element>,
+    contribution: BTreeSet<Element>,
+) -> bool {
+    let previous_len = current.len();
+    current.extend(contribution);
+    current.len() != previous_len
+}
+
+/// Join for a boolean fact family: once established, always established. A
+/// contribution changed the record only when it turned an unset fact on.
+pub fn merge_became_true<Key>(_key: &Key, current: &mut bool, contribution: bool) -> bool {
+    let changed = !*current && contribution;
+    *current |= contribution;
+    changed
+}
+
 pub struct IterativeInference<'input, R: IterativeRules> {
     rules: R,
     sealed: Option<&'input SealedFacts<R::Key, R::Fact>>,

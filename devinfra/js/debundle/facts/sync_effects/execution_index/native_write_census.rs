@@ -11,7 +11,7 @@ use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativeReceiverPath, NativeWriteSlot,
 };
-use inference::{FactContext, IterativeInference, IterativeRules};
+use inference::{FactContext, IterativeInference, IterativeRules, merge_union};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -424,10 +424,8 @@ impl IterativeRules for NativeIntegrityRootRules<'_> {
         );
     }
 
-    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let previous_len = current.len();
-        current.extend(contribution);
-        current.len() != previous_len
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        merge_union(key, current, contribution)
     }
 }
 

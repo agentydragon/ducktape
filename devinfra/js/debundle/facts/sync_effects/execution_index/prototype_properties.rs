@@ -7,6 +7,7 @@ use super::intrinsic_roots::{
 use super::receiver_flow::CallableReturnInputs;
 use super::*;
 use analysis_vocabulary::report_schema::{NativePrototypeMutation, NativePrototypeMutationKind};
+use inference::merge_union;
 use std::cell::RefCell;
 use swc_common::{DUMMY_SP, SyntaxContext};
 
@@ -895,10 +896,8 @@ impl IterativeRules for CapabilityContainmentRules<'_> {
         Self::propose_roots(plan, &mut state, context);
     }
 
-    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let previous_len = current.len();
-        current.extend(contribution);
-        current.len() != previous_len
+    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        merge_union(key, current, contribution)
     }
 }
 
