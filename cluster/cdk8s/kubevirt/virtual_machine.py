@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import k8s
@@ -28,6 +29,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecNetworksPod,
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesContainerDisk,
+    VirtualMachineSpecTemplateSpecVolumesHostDisk,
 )
 
 _ROOT_DISK = "rootdisk"
@@ -39,21 +41,42 @@ def domain_labels(name: str) -> dict[str, str]:
     return {"kubevirt.io/domain": name}
 
 
+@dataclass(frozen=True)
+class HostDiskRoot:
+    """A read-only root disk image file already on the node, attached without containerd.
+
+    Needs KubeVirt's Alpha `HostDisk` feature gate. With `type: Disk` KubeVirt neither creates nor
+    re-owns the file; QEMU (uid 107) only needs to read it."""
+
+    path: str
+
+
 def _virtio_disk(
-    name: str, *, serial: str | None = None, boot_order: int | None = None
+    name: str, *, serial: str | None = None, boot_order: int | None = None, readonly: bool | None = None
 ) -> VirtualMachineSpecTemplateSpecDomainDevicesDisks:
     return VirtualMachineSpecTemplateSpecDomainDevicesDisks(
         name=name,
         boot_order=boot_order,
         serial=serial,
-        disk=VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk(bus="virtio"),
+        disk=VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk(bus="virtio", readonly=readonly),
+    )
+
+
+def _root_volume(root: str | HostDiskRoot) -> VirtualMachineSpecTemplateSpecVolumes:
+    if isinstance(root, HostDiskRoot):
+        return VirtualMachineSpecTemplateSpecVolumes(
+            name=_ROOT_DISK, host_disk=VirtualMachineSpecTemplateSpecVolumesHostDisk(path=root.path, type="Disk")
+        )
+    return VirtualMachineSpecTemplateSpecVolumes(
+        name=_ROOT_DISK,
+        container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(image=root, image_pull_policy="IfNotPresent"),
     )
 
 
 def container_disk_template(
     *,
     labels: Mapping[str, str],
-    image: str,
+    image: str | HostDiskRoot,
     cpu: VirtualMachineSpecTemplateSpecDomainCpu,
     resources: VirtualMachineSpecTemplateSpecDomainResources,
     node_selector: Mapping[str, str] | None = None,
@@ -65,8 +88,8 @@ def container_disk_template(
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
     autoattach_graphics_device: bool | None = None,
 ) -> VirtualMachineSpecTemplate:
-    """A VMI template, its pods labelled `labels`, that boots `image` as an ephemeral containerDisk
-    under EFI without Secure Boot, and reaches the pod network through masquerade on `ports`. Each of
+    """A VMI template, its pods labelled `labels`, that boots `image` as an ephemeral containerDisk (or a
+    read-only `HostDiskRoot`) under EFI without Secure Boot, and reaches the pod network through masquerade on `ports`. Each of
     `disks` attaches as a virtio disk the guest finds at `/dev/disk/by-id/virtio-<key>`.
     `controller_attached_disks` adds only the disk device; the enclosing controller supplies its
     volume source when it creates the VM. The remaining argument names are the corresponding VMI fields.
@@ -90,7 +113,12 @@ def container_disk_template(
                 devices=VirtualMachineSpecTemplateSpecDomainDevices(
                     autoattach_graphics_device=autoattach_graphics_device,
                     disks=[
-                        _virtio_disk(_ROOT_DISK, serial=root_disk_serial, boot_order=1),
+                        _virtio_disk(
+                            _ROOT_DISK,
+                            serial=root_disk_serial,
+                            boot_order=1,
+                            readonly=True if isinstance(image, HostDiskRoot) else None,
+                        ),
                         *(_virtio_disk(volume.name, serial=serial) for serial, volume in disks.items()),
                         *(_virtio_disk(name, serial=name) for name in controller_attached_disks),
                     ],
@@ -105,15 +133,7 @@ def container_disk_template(
             networks=[
                 VirtualMachineSpecTemplateSpecNetworks(name=_NETWORK, pod=VirtualMachineSpecTemplateSpecNetworksPod())
             ],
-            volumes=[
-                VirtualMachineSpecTemplateSpecVolumes(
-                    name=_ROOT_DISK,
-                    container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
-                        image=image, image_pull_policy="IfNotPresent"
-                    ),
-                ),
-                *disks.values(),
-            ],
+            volumes=[_root_volume(image), *disks.values()],
         ),
     )
 

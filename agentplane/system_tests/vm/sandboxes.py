@@ -31,6 +31,8 @@ def select_native_profile(objects: list[dict[str, Any]], *, enabled: bool, profi
             spec = template["spec"]["vm"]["template"]["spec"]
             root = one(disk for disk in spec["domain"]["devices"]["disks"] if "bootOrder" in disk)
             volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
+            if "containerDisk" not in volume:
+                raise ValueError("the profile guest root replaces a containerDisk root, not a host-disk root")
             volume["containerDisk"]["image"] = _PROFILE_ROOT_IMAGE
 
 

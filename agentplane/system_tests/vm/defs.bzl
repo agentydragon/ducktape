@@ -8,6 +8,7 @@ def vm_test(
         pool = "kvm-vm",
         recycle = False,
         retain_k3s = True,
+        guest_root_host_disk = False,
         tags = [],
         suite = "//agentplane/system_tests/suites:test_vm.py",
         extra_deps = []):
@@ -15,7 +16,15 @@ def vm_test(
 
     With recycle, retain_k3s=False stops k3s at teardown so the paused runner keeps only its image store:
     a running KubeVirt baseline exceeds the KVM workers' 2 GiB paused-runner cap and is never reused.
+    guest_root_host_disk attaches the guest root as a read-only host disk instead of importing its
+    containerDisk (agentplane/system_tests/vm/guest_root.py).
     """
+    manifests = "//agentplane/system_tests/suites:vm_native_host_root_manifests.json" if guest_root_host_disk else "//agentplane/system_tests/suites:vm_native_manifests.json"
+    image_manifest = "//agentplane/system_tests/suites:vm_native_host_root_image_manifest" if guest_root_host_disk else "//agentplane/system_tests/suites:vm_native_image_manifest"
+    guest_root_data = ["//agentplane/system_tests/vm/guest:root_erofs"] if guest_root_host_disk else []
+    guest_root_environment = {
+        "VM_GUEST_ROOT_DISK_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:root_erofs)",
+    } if guest_root_host_disk else {}
     recycling_properties = {}
     recycling_environment = {}
     if recycle:
@@ -66,25 +75,25 @@ def vm_test(
             "//agentplane/crds",
             K3S_BINARY,
             "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-            "//agentplane/system_tests/suites:vm_native_image_manifest",
-            "//agentplane/system_tests/suites:vm_native_manifests.json",
+            image_manifest,
+            manifests,
             "@cert_manager_v1_21_2_release//file",
             "@kubevirt_operator_bundle//file",
             "@kyverno_install//file",
-        ] + (["//agentplane/system_tests/k3s:recycling_data_disk"] if recycle else []),
+        ] + (["//agentplane/system_tests/k3s:recycling_data_disk"] if recycle else []) + guest_root_data,
         env = {
             "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
             "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
             "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-            "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_native_manifests.json)",
-            "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_native_image_manifest)",
+            "K3S_FIXTURE_RLOCATION": "$(rlocationpath %s)" % manifests,
+            "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath %s)" % image_manifest,
             "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
             "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
             "AGENTPLANE_K3S_REQUIRE_KVM": "1" if pool else "0",
             "AGENTPLANE_VM_BOOT_EVIDENCE": "0",
             "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "0",
             "K3S_PROFILE_GUEST_ROOT": "0",
-        } | recycling_environment,
+        } | recycling_environment | guest_root_environment,
         exec_properties = properties,
         main = suite,
         tags = K3S_TAGS + tags,

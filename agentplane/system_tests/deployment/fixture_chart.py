@@ -111,7 +111,7 @@ from agentplane.system_tests.driver.native_auth import (
     RUNTIME_PROXY_TEST_READER_URI,
 )
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
-from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
+from agentplane.system_tests.vm import block_storage, configuration as vm_configuration, guest_root
 from cluster.cdk8s import agent_access_profiles as access, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
@@ -157,6 +157,7 @@ from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_confi
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.service_database import Database
 from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
+from cluster.cdk8s.kubevirt.virtual_machine import HostDiskRoot
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.service_ref import Pods, ServiceRef
@@ -906,9 +907,17 @@ def _fixture_vm_firmware(kernel_args: str) -> VirtualMachineSpecTemplateSpecDoma
 
 
 def add_vm_templates(
-    chart: Chart, env: Environment, runner_template: environment_sandbox.EnvironmentSandboxTemplate
+    chart: Chart,
+    env: Environment,
+    runner_template: environment_sandbox.EnvironmentSandboxTemplate,
+    *,
+    guest_root_host_disk: bool,
 ) -> None:
-    """Compose the ordinary and test-only VM templates from the fixture's runner Pod."""
+    """Compose the ordinary and test-only VM templates from the fixture's runner Pod.
+
+    `guest_root_host_disk` attaches the guest root as a read-only host disk at `guest_root.HOST_PATH`
+    instead of a containerDisk the stack must import (issue #20575)."""
+    root_disk = HostDiskRoot(str(guest_root.HOST_PATH)) if guest_root_host_disk else _VM_GUEST_ROOT_IMAGE
     scope = chart
     relay_settings = runner_template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar")
     launcher_relay.LauncherRelayPolicy(
@@ -933,7 +942,7 @@ def add_vm_templates(
         "environment-vm-template",
         env,
         template_name=environment_vm.NAME,
-        root_image=_VM_GUEST_ROOT_IMAGE,
+        root_image=root_disk,
         root_disk_serial=_VM_GUEST_ROOT_SERIAL,
         firmware=_fixture_vm_firmware(_VM_GUEST_KERNEL_ARGS),
         config_map=config,
@@ -952,7 +961,7 @@ def add_vm_templates(
         "oom-vm-template",
         env,
         template_name=vm_configuration.OOM_TEMPLATE,
-        root_image=_VM_GUEST_ROOT_IMAGE,
+        root_image=root_disk,
         root_disk_serial=_VM_GUEST_ROOT_SERIAL,
         firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} agentplane.cgroup-observer=1"),
         config_map=oom_config,
@@ -965,7 +974,7 @@ def add_vm_templates(
         "supervision-vm-template",
         env,
         template_name=vm_configuration.SUPERVISION_TEMPLATE,
-        root_image=_VM_GUEST_ROOT_IMAGE,
+        root_image=root_disk,
         root_disk_serial=_VM_GUEST_ROOT_SERIAL,
         firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} {vm_configuration.SUPERVISION_KERNEL_ARG}"),
         config_map=config,

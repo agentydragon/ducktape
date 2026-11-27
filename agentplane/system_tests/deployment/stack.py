@@ -41,6 +41,7 @@ from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s import baseline, pki_infrastructure
 from agentplane.system_tests.k3s.baseline import K3s, run
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE
+from agentplane.system_tests.vm import guest_root
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -407,6 +408,9 @@ def running_stack(
     guest_images = inputs.guest_image_layouts
     if uses_guest_runtime != bool(guest_images):
         raise ValueError("VM/Firecracker deployment and guest image inputs do not match")
+    staged_guest_root = guest_root.staged_disk()
+    if guest_root.referenced_by(fixture.objects) != (staged_guest_root is not None):
+        raise ValueError(f"guest root host disk and its staged image do not match: {staged_guest_root=}")
     for objects, images in [
         (cert_manager + trust_manager, pki_images),
         (baseline_resources + guest_setup_objects, infrastructure_images),
@@ -426,6 +430,9 @@ def running_stack(
             traces = trace_cleanup.enter_context(
                 process_traces.ProcessTraces(k3s.node_ip, undeclared_outputs_dir() / "process-spans.jsonl")
             )
+            if staged_guest_root is not None:
+                # Registered before k3s so it unmounts only after k3s and its VMs are gone.
+                cleanup.enter_context(guest_root.mounted(staged_guest_root))
             # A VM stack's layers would leave too little memory for its guests (README § Image layers in memory).
             baseline_warm = False
             if persist_infrastructure:

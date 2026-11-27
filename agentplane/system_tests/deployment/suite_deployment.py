@@ -21,6 +21,7 @@ def render(
     include_app: bool,
     include_mcp_edge: bool = False,
     include_central_sampler: bool = False,
+    guest_root_host_disk: bool = False,
 ) -> RenderedFixture:
     models = MODEL_PLACEHOLDERS[backend]
     if include_central_sampler:
@@ -85,7 +86,7 @@ def render(
     if runtime is SandboxRuntime.FIRECRACKER:
         fixture_chart.add_firecracker_template(chart, env, runner)
     elif runtime is SandboxRuntime.KUBEVIRT:
-        fixture_chart.add_vm_templates(chart, env, runner)
+        fixture_chart.add_vm_templates(chart, env, runner, guest_root_host_disk=guest_root_host_disk)
     boxes = fixture_chart.add_command_templates(chart, env)
     fixture_chart.add_svid_box_template(boxes, env)
     fixture_chart.add_model_credentials(chart, env, models=models)

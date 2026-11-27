@@ -36,7 +36,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 
 from cluster.cdk8s.agentplane import template_storage
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
+from cluster.cdk8s.kubevirt.virtual_machine import HostDiskRoot, container_disk_template
 
 NAME = "environment-vm"
 ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-environment-vm:unset"  # image-pins/ sets the tag
@@ -63,7 +63,7 @@ class EnvironmentVmTemplate(SandboxTemplate):
         env: Environment,
         *,
         template_name: str,
-        root_image: str,
+        root_image: str | HostDiskRoot,
         config_map: ConfigMap,
         labels: dict[str, str],
         state_storage_class: str,
