@@ -29,9 +29,8 @@ use swc_common::GLOBALS;
 use artifact::paths::{join_module_path, manifest_relative_path};
 use artifact::{ArtifactIndexes, ChunkBundle};
 use js_ast::parse_js_module;
-use spec::{
-    PartialSwapKind, PartialSwapPackage, PartialSwapSymbol, VendorLevel, VendorMark, WrapperShape,
-};
+use spec::vendor_marks::{PartialSwapPackage, PartialSwapSymbol, VendorLevel, VendorMark};
+use spec::{PartialSwapKind, WrapperShape};
 
 use crate::export_surface::{
     collect_and_validate_boundary_mapping, collect_default_export_object_keys,

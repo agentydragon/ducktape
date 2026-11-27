@@ -25,10 +25,9 @@ use selector_outcome::SelectorKind;
 use serde::Deserialize;
 
 use crate::candidate_assessment::{EffectAssessmentUnavailable, ResolvedCandidateEffectAssessment};
-use spec::{
-    BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath, SourceMatchBinding,
-    SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
-};
+use spec::annotations::{BindingAnnotation, SourceMatchBinding, SourceMatchClaim};
+use spec::member_selectors::{Member, MemberSelectorSpec};
+use spec::{LogicalModule, ModulePath, SourceMatchBindingDetail, is_residual_namespace_path};
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 use yaml_edit::write_yaml_atomic;
 

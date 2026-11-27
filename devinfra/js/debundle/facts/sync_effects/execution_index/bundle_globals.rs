@@ -1,10 +1,14 @@
 //! Bundle-owned global properties: one finite invalidation closure across chunks.
 
+use super::callable_capabilities::PreparedCallableCapabilities;
+use super::intrinsic_roots::{
+    IntrinsicRootMap, IntrinsicRootRead, NativeReceiverRoot, NativeReceiverRoots,
+    close_raw_intrinsic_aliases, intrinsic_roots_read,
+};
+use super::receiver_flow::CallableReturnInputs;
 use super::{
-    CallKind, CallableReturnInputs, ExecutionIndex, GlobalNames, IntrinsicRootMap,
-    IntrinsicRootRead, IntrinsicWriteTarget, NativeReceiverRoot, NativeReceiverRoots,
-    PreparedCallableCapabilities, PropertyKeyDomain, PropertyKeyEvidence, PropertyKeyExpr,
-    close_raw_intrinsic_aliases, intrinsic_roots_read, key_domain_may_name, property_key_evidence,
+    CallKind, ExecutionIndex, GlobalNames, IntrinsicWriteTarget, PropertyKeyDomain,
+    PropertyKeyEvidence, PropertyKeyExpr, key_domain_may_name, property_key_evidence,
 };
 use analysis::facts::standard_globals::is_predefined_global;
 use analysis_vocabulary::inputs::{
@@ -764,7 +768,8 @@ fn global_property_reads(
 
 #[cfg(test)]
 mod tests {
-    use super::super::{prepare_callable_capabilities, var_decl_of_item};
+    use super::super::callable_capabilities::prepare_callable_capabilities;
+    use super::super::var_decl_of_item;
     use super::*;
     use raw_js_test_support::parse;
 

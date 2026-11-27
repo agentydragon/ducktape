@@ -194,6 +194,7 @@ func TestCompactJournalTranscodesLegacyAndCurrentBlocks(t *testing.T) {
 func sameJournalCompactionWork(left, right JournalCompactionResult) bool {
 	return left.Events == right.Events && left.Blocks == right.Blocks &&
 		left.StoredBytes == right.StoredBytes && left.PackedBytes == right.PackedBytes &&
+		left.OutputBytes == right.OutputBytes && left.RetainedLegacyBlocks == right.RetainedLegacyBlocks &&
 		left.OpeningCursor == right.OpeningCursor && left.Batches == right.Batches && left.Completed == right.Completed
 }
 
@@ -600,4 +601,25 @@ func TestRepackBlockLimitPreservesCrossingSourceBetweenCommits(t *testing.T) {
 	if maxInstalled != DefaultJournalBlocksPerTxn {
 		t.Fatalf("largest committed group = %d, want %d", maxInstalled, DefaultJournalBlocksPerTxn)
 	}
+}
+
+func TestRepackPreservesSmallerLegacySource(t *testing.T) {
+	store := newTestStore(t)
+	store.eventBlockProfile = eventblock.DefaultProfile(1)
+	session := openSessionForStore(t, store, "")
+	const through = 32
+	appendAPBTestJournalThrough(t, store, session.ID, through)
+	replaceRowsWithBlock(t, store, session.ID, 1, through, true)
+	want := eventFrames(t, store, session.ID, 1, through)
+	migrationExec(t, store.DB(), `CREATE FUNCTION reject_legacy_rewrite() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN RAISE EXCEPTION 'smaller source was rewritten'; END; $$`)
+	migrationExec(t, store.DB(), `CREATE TRIGGER no_rewrite BEFORE DELETE ON sampler_event_block
+		FOR EACH ROW EXECUTE FUNCTION reject_legacy_rewrite()`)
+	for _, apply := range []bool{false, true} {
+		result, err := store.CompactJournal(t.Context(), session.ID, apply)
+		if err != nil || !result.Completed || result.OutputBytes != result.StoredBytes || result.RetainedLegacyBlocks != 1 {
+			t.Fatalf("apply=%v result=%+v err=%v", apply, result, err)
+		}
+	}
+	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, through), want)
 }

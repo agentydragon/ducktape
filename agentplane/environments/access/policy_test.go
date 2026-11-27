@@ -19,7 +19,7 @@ const (
 	otherUID   = types.UID("00000000-0000-4000-8000-000000000003")
 )
 
-func TestAllowedMatchesEachSelectorAsAnAndAndTheListAsAnOr(t *testing.T) {
+func TestEvaluateMatchesEachSelectorAsAnAndAndTheListAsAnOr(t *testing.T) {
 	index := indexFor(t, policyapi.EnvironmentSelector{
 		Sandbox:       &policyapi.SandboxTarget{Name: "test-first", UID: otherUID},
 		BoundIdentity: &policyapi.BoundIdentitySelector{Name: "test-worker"},
@@ -28,7 +28,7 @@ func TestAllowedMatchesEachSelectorAsAnAndAndTheListAsAnOr(t *testing.T) {
 		BoundIdentity: &policyapi.BoundIdentitySelector{Name: "test-worker"},
 	})
 	target := sandbox("test-target", testTarget, "test-worker")
-	if !Allowed(index, caller(), resume, target) {
+	if Denied == Evaluate(index, caller(), resume, target) {
 		t.Fatal("a Sandbox matching both fields of one selector was refused")
 	}
 
@@ -39,7 +39,7 @@ func TestAllowedMatchesEachSelectorAsAnAndAndTheListAsAnOr(t *testing.T) {
 		"wrong Sandbox name":     sandbox("test-other", testTarget, "test-worker"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if Allowed(index, caller(), resume, sandbox) {
+			if Denied != Evaluate(index, caller(), resume, sandbox) {
 				t.Error("a Sandbox that did not match every selector field was allowed")
 			}
 		})
@@ -50,10 +50,10 @@ func TestSelfSelectorResolvesAgainstTheLookupIdentity(t *testing.T) {
 	index := indexFor(t, policyapi.EnvironmentSelector{
 		BoundIdentity: &policyapi.BoundIdentitySelector{Self: true},
 	})
-	if !Allowed(index, caller(), resume, sandbox("test-target", testTarget, testCaller)) {
+	if Denied == Evaluate(index, caller(), resume, sandbox("test-target", testTarget, testCaller)) {
 		t.Fatal("a Sandbox bound to the caller did not match boundIdentity:self")
 	}
-	if Allowed(index, caller(), resume, sandbox("test-target", testTarget, "test-other")) {
+	if Denied != Evaluate(index, caller(), resume, sandbox("test-target", testTarget, "test-other")) {
 		t.Fatal("boundIdentity:self matched an Identity other than the caller")
 	}
 }
@@ -62,12 +62,12 @@ func TestSandboxNameWithoutAUIDMatchesItsCurrentIncarnation(t *testing.T) {
 	index := indexFor(t, policyapi.EnvironmentSelector{
 		Sandbox: &policyapi.SandboxTarget{Name: "test-target"},
 	})
-	if !Allowed(index, caller(), resume, sandbox("test-target", testTarget, "test-worker")) {
+	if Denied == Evaluate(index, caller(), resume, sandbox("test-target", testTarget, "test-worker")) {
 		t.Fatal("a name selector did not match the Sandbox's current incarnation")
 	}
 }
 
-func TestAllowedRequiresAValidSupportedOperationAndIdentityCaller(t *testing.T) {
+func TestEvaluateRequiresAValidSupportedOperationAndIdentityCaller(t *testing.T) {
 	index := indexFor(t, policyapi.EnvironmentSelector{Sandbox: &policyapi.SandboxTarget{Name: "test-target"}})
 	target := sandbox("test-target", testTarget, "test-worker")
 	for name, args := range map[string]struct {
@@ -82,7 +82,7 @@ func TestAllowedRequiresAValidSupportedOperationAndIdentityCaller(t *testing.T) 
 		"nil Sandbox":            {caller: caller(), operation: resume},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if Allowed(index, args.caller, args.operation, args.sandbox) {
+			if Denied != Evaluate(index, args.caller, args.operation, args.sandbox) {
 				t.Error("invalid caller or operation was allowed")
 			}
 		})
@@ -134,7 +134,7 @@ func TestUnsupportedRulesAreRefusedByTheSharedReaderAndGrantNothing(t *testing.T
 	if len(resolution.Refused) != 1 {
 		t.Fatalf("refused PolicySets = %v, want one refused set", resolution.Refused)
 	}
-	if Allowed(index, caller(), resume, sandbox("test-target", testTarget, "test-worker")) {
+	if Denied != Evaluate(index, caller(), resume, sandbox("test-target", testTarget, "test-worker")) {
 		t.Fatal("a PolicySet containing an unsupported rule granted its valid rule")
 	}
 }
@@ -182,7 +182,7 @@ func TestOperationsGrantOnlyTheirNamedCapability(t *testing.T) {
 			index.PutPolicySet(&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Name: "test-set"}, Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{ruleWithOperations(operations, policyapi.EnvironmentSelector{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}})}}})
 			target := sandbox("test-target", testTarget, testCaller)
 			for _, operation := range []string{resume, bindSession} {
-				if got := Allowed(index, caller(), operation, target); got != slices.Contains(operations, operation) {
+				if got := Evaluate(index, caller(), operation, target) != Denied; got != slices.Contains(operations, operation) {
 					t.Fatalf("%v grants %s = %v", operations, operation, got)
 				}
 			}
@@ -200,5 +200,35 @@ func TestBindSessionNamedSandboxAlsoPinsBoundIdentity(t *testing.T) {
 		if _, err := ParseRule(ruleWithOperations([]string{resume, bindSession}, named)); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestEvaluateReportsWhetherOnlyBoundIdentitySelectorsGrant(t *testing.T) {
+	byName := policyapi.EnvironmentSelector{Sandbox: &policyapi.SandboxTarget{Name: "test-target"}}
+	otherName := policyapi.EnvironmentSelector{Sandbox: &policyapi.SandboxTarget{Name: "test-other"}}
+	bound := policyapi.EnvironmentSelector{BoundIdentity: &policyapi.BoundIdentitySelector{Name: "test-worker"}}
+	self := policyapi.EnvironmentSelector{BoundIdentity: &policyapi.BoundIdentitySelector{Self: true}}
+	namedAndBound := policyapi.EnvironmentSelector{
+		Sandbox: &policyapi.SandboxTarget{Name: "test-target"}, BoundIdentity: &policyapi.BoundIdentitySelector{Name: "test-worker"},
+	}
+	for name, tc := range map[string]struct {
+		selectors []policyapi.EnvironmentSelector
+		identity  string
+		want      Grant
+	}{
+		"a Sandbox selector":                           {[]policyapi.EnvironmentSelector{byName}, "test-worker", Granted},
+		"a bound Identity selector":                    {[]policyapi.EnvironmentSelector{bound}, "test-worker", GrantedViaBoundIdentity},
+		"boundIdentity:self":                           {[]policyapi.EnvironmentSelector{self}, testCaller, GrantedViaBoundIdentity},
+		"a Sandbox selector that also names the bound": {[]policyapi.EnvironmentSelector{namedAndBound}, "test-worker", GrantedViaBoundIdentity},
+		"a bound selector then a Sandbox selector":     {[]policyapi.EnvironmentSelector{bound, byName}, "test-worker", Granted},
+		"a bound selector beside an unmatched Sandbox": {[]policyapi.EnvironmentSelector{bound, otherName}, "test-worker", GrantedViaBoundIdentity},
+		"no matching selector":                         {[]policyapi.EnvironmentSelector{bound, otherName}, "test-other", Denied},
+	} {
+		t.Run(name, func(t *testing.T) {
+			index := indexFor(t, tc.selectors...)
+			if got := Evaluate(index, caller(), resume, sandbox("test-target", testTarget, tc.identity)); got != tc.want {
+				t.Errorf("Evaluate = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

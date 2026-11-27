@@ -14,7 +14,7 @@ use js_ast::{
     member_property, module_export_name_node, named_export_module_item, named_export_specifier,
     named_import_specifier, parse_js_module,
 };
-use spec::BundledPartialSwapPackage;
+use spec::vendor_marks::BundledPartialSwapPackage;
 
 pub(super) fn generate_named_from_default_wrapper(
     upstream_ast: &ParsedJsModule,

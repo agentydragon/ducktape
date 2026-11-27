@@ -3,14 +3,13 @@ package session
 import (
 	"context"
 	"errors"
-	"net/http"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
+func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, session *sessionstore.Session) (sessionstore.TurnResult, error) {
 	// Subscribe before reading: a concurrent commit is in the snapshot or queues a wakeup.
 	changed, unsubscribe, err := r.slot.SubscribeTurn(owner.ConversationID)
 	if err != nil {
@@ -31,7 +30,7 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 	}
 	completed := make(chan advanceResult, 1)
 	go func() {
-		result, err := r.advance(advanceCtx, owner, live, client, session)
+		result, err := r.advance(advanceCtx, owner, live, session)
 		completed <- advanceResult{result: result, err: err}
 	}()
 	var foreground <-chan struct{}
@@ -94,7 +93,7 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 	}
 }
 
-func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
+func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *liveHost, session *sessionstore.Session) (sessionstore.TurnResult, error) {
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
 		return "", err
@@ -263,7 +262,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return "", &deferredProviderError{cause: err}
 	}
-	response, err := r.sampleProvider(ctx, owner, session, intentID, adapter, client, wire, false)
+	response, err := r.sampleProvider(ctx, owner, session, intentID, adapter, wire, false)
 	if err != nil {
 		return "", err
 	}

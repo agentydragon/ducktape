@@ -33,7 +33,7 @@ from agentplane.app.settings import EnvironmentServicePeer
 from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.notifications import FakeNotifications
-from agentplane.environments.testing.process import run_environment_service
+from agentplane.environments.testing.environment_service_process import run_environment_service
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import GoHistoryService

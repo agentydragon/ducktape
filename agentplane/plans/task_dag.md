@@ -3552,6 +3552,9 @@ flowchart LR
     IDENTITY_OWNERSHIP_DESIGN[Decision: Identity binding, store, delete rule and agent teardown]
     IDENTITY_READERS_BEHIND_POLICY_SERVICE[In flight: contract the Kubernetes Identity readers]
     RECORD_COLOCATION_DESIGN[Unscheduled: which records share a database or service]
+    POLICY_SUBJECTS_IDENTITY_ONLY[Unscheduled decision: retire Sandbox-scoped grants and ServiceAccount subjects]
+    IDENTITY_OWNERSHIP_DESIGN -. binding shape .-> POLICY_SUBJECTS_IDENTITY_ONLY
+    POLICY_SUBJECTS_IDENTITY_ONLY -. launcher grant shape .-> ORCHESTRATION_V1_BACKEND_GRANTS
     IDENTITY_OWNERSHIP_DESIGN -. cross-store invariants .-> RECORD_COLOCATION_DESIGN
     SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
     SESSION_ACCESS_GROUPING_DESIGN --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox target, grant and migration]
@@ -3598,6 +3601,28 @@ services plus the Dispatcher wake path on it in staging. Next: per-service contr
 Controller reconciler and the `orchestration_v1` writer. State and remaining steps: [Identity ownership § readers](identity_ownership.md#readers-behind-policyservice).
 **Exit:** only the Policy Controller holds `identities` RBAC, and the verifier contract documents
 watch-propagated revocation.
+
+### `POLICY_SUBJECTS_IDENTITY_ONLY` — retire Sandbox-scoped grants and ServiceAccount subjects
+
+**Unscheduled decision, raised by the operator 2026-11-26.** Direction: PolicyBindings name only
+Identities. Today three other shapes remain:
+
+- **Sandbox-scoped operator grants** (`GrantSandboxPolicyBinding`): owned by one Sandbox incarnation, but
+  the subject is the Sandbox's Identity by name. Any Sandbox or Session sharing that Identity gets the
+  grant while the Sandbox lives. The RPC comment still describes a ServiceAccount check.
+- **Launcher grants** (`orchestration_v1`, `<sandbox>.launcher`): a Sandbox-owned PolicySet whose rules are
+  pinned to that Sandbox's UID, bound to the launcher as a ServiceAccount or an Identity.
+- **ServiceAccount subjects** (`Subject{namespace, name}`): ServiceAccount callers and the
+  `WatchPolicyBindings` `subject` selector.
+
+What exactly replaces each is TBD. Inventory first: every writer and reader of each shape, its live
+staging objects, and what a caller loses if the shape goes. Then decide per shape: an Identity grant
+with an expiry or owner, a rule scoped by Sandbox or Session instead of a subject, or drop it. Remaining
+ServiceAccount callers need an Identity first (`STANDING_WORKLOAD_IDENTITY`). Coordinate the launcher
+grant with `ORCHESTRATION_V1_BACKEND_GRANTS` and `SESSION_ACCESS_GROUPING_DESIGN`, and the owner/lifetime
+question with `RECORD_COLOCATION_DESIGN`.
+**Exit:** operator decision per shape, recorded with the inventory; implementation and contract nodes
+follow from it.
 
 ### `RECORD_COLOCATION_DESIGN` — which records share a database or service
 

@@ -1,6 +1,6 @@
 //! Property-key expressions and the string domains they prove.
 
-use super::IntrinsicRoots;
+use super::intrinsic_roots::IntrinsicRoots;
 use analysis_vocabulary::inputs::NativeIntrinsic;
 use analysis_vocabulary::report_schema::NativePropertyKey;
 use std::collections::{BTreeMap, BTreeSet};

@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exporttest"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -148,7 +148,7 @@ func (s *samplerExportStream) Recv() (*session_ingresspb.PushFrame, error) {
 type samplerExportFixture struct {
 	history   *storage.Store
 	historyDB *sql.DB
-	source    *exportfixture.Source
+	source    *exporttest.Source
 	target    string
 	tls       *transport.ClientTLS
 	// identity is a live Identity the sampler may act for; ingress records how each push was admitted.
@@ -177,7 +177,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if err := migrations.Up(ctx, samplerDB); err != nil {
 		t.Fatal(err)
 	}
-	samplerSource := exportfixture.New(samplerDB, 30*time.Second)
+	samplerSource := exporttest.New(samplerDB, 30*time.Second)
 
 	ca := transporttesting.NewCA(t)
 	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
@@ -257,9 +257,13 @@ func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identit
 	return sessionID
 }
 
+var samplerTestPaging = historyexport.Paging{PageEntries: 16, PagesPerTurn: 16}
+
 func startSamplerExport(ctx context.Context, f samplerExportFixture, sessionID string) <-chan error {
 	done := make(chan error, 1)
-	go func() { done <- historyexport.ExportSession(ctx, f.source.Outbox(), sessionID, f.target, "", f.tls) }()
+	go func() {
+		done <- historyexport.ExportSession(ctx, f.source.Outbox(), sessionID, f.target, "", f.tls, samplerTestPaging)
+	}()
 	return done
 }
 
@@ -294,10 +298,10 @@ func exportSamplerHistoryThrough(t *testing.T, f samplerExportFixture, sessionID
 		t.Fatal(err)
 	}
 
-	// ExportSession intentionally sends at most 16 pages of 16 events per call.
+	// Each call sends at most one configured scheduling quantum.
 	// Bound retries from the expected source cursor and require each call to move
 	// History forward so a broken exporter cannot leave this test looping.
-	const eventsPerExportQuantum = 16 * 16
+	eventsPerExportQuantum := uint64(samplerTestPaging.PageEntries * samplerTestPaging.PagesPerTurn)
 	maxQuanta := int((sourceCursor+eventsPerExportQuantum-1)/eventsPerExportQuantum) + 1
 	var retainedCursor uint64
 	for quantum := 0; quantum < maxQuanta; quantum++ {

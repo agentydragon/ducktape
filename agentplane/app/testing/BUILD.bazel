@@ -59,7 +59,7 @@ py_library(
         ":notifications",
         "//agentplane/app:oidc",
         "//agentplane/app:settings",
-        "//agentplane/environments/testing:process",
+        "//agentplane/environments/testing:environment_service_process",
         "//agentplane/grpc:serving",
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:go_service",

@@ -110,6 +110,7 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 		{http.MethodGet, "/threads/form/sync/v1/shape"},
 		// uuid.Parse accepts this compact spelling; route converters do not.
 		{http.MethodGet, "/threads/9b6d568a225343d7a7d4190e98359594/sync/v1/shape"},
+		{http.MethodGet, "/threads/urn:uuid:9b6d568a-2253-43d7-a7d4-190e98359594/sync/v1/shape"},
 	} {
 		t.Run(request.method+" "+request.path, func(t *testing.T) {
 			response := httptest.NewRecorder()

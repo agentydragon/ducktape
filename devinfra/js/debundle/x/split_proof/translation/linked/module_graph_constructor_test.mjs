@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
@@ -128,13 +128,70 @@ const sparseOut = path.join(root, "sparse-out");
 writeFileSync(sparseSourceFile, sparseSource);
 writeFileSync(sparseSpecFile, JSON.stringify(sparseSpec));
 const sparse = split({ source: sparseSourceFile, spec: sparseSpecFile, out: sparseOut, require: "all-outcomes" });
-assert.equal(sparse.status, "refused", sparse.log);
-assert(!existsSync(sparseOut), "a refused sparse split must not publish output");
+assert.equal(sparse.status, "certified", sparse.log);
+assert.equal(sparse.scope, "indexed-interior-exports", sparse.log);
+assert.equal(sparse.verdict.strategy, "compiled-constructor", sparse.log);
+assert.equal(sparse.guarantee, "all-outcomes", sparse.log);
+const sparseChecked = split({
+  source: sparseSourceFile,
+  spec: sparseSpecFile,
+  out: sparseOut,
+  require: "all-outcomes",
+  checkOutput: true,
+});
+assert.equal(sparseChecked.status, "certified", sparseChecked.log);
+assert.equal(sparseChecked.scope, "indexed-interior-exports", sparseChecked.log);
+assert.equal(sparseChecked.verdict.strategy, "compiled-constructor", sparseChecked.log);
+const sparseEntry = path.join(sparseOut, sparseSpec.entry);
+const sparseNamespace = await import(pathToFileURL(sparseEntry).href);
+assert.equal(sparseNamespace.exposed, 42);
+
+// `seed` and `result` have the same value but are different live cells.
+const sparseBefore = readFileSync(sparseEntry, "utf8");
+const sparseAst = parse(sparseBefore, { sourceType: "module", ecmaVersion: "latest" });
+const sparseExport = sparseAst.body
+  .flatMap((stmt) => (stmt.type === "ExportNamedDeclaration" ? stmt.specifiers : []))
+  .find((item) => item.exported.name === "exposed");
+assert.equal(sparseExport?.local.name, "seed");
+sparseExport.local.name = "result";
+const sparseAltered = generate(sparseAst);
+writeFileSync(sparseEntry, sparseAltered);
+const sparseWrongCell = split({
+  source: sparseSourceFile,
+  spec: sparseSpecFile,
+  out: sparseOut,
+  require: "all-outcomes",
+  checkOutput: true,
+});
+assert.equal(sparseWrongCell.status, "refused", sparseWrongCell.log);
+assert.equal(readFileSync(sparseEntry, "utf8"), sparseAltered);
+writeFileSync(sparseEntry, sparseBefore);
+
+const sparseWrongOwner = structuredClone(sparseSpec);
+sparseWrongOwner.modules["worker.mjs"].push("#1");
+sparseWrongOwner.modules["entry.mjs"] = ["#2"];
+const sparseWrongSpec = path.join(root, "sparse-wrong-owner.json");
+const sparseProtected = path.join(root, "sparse-protected");
+writeFileSync(sparseWrongSpec, JSON.stringify(sparseWrongOwner));
+mkdirSync(sparseProtected);
+const sparseSentinel = path.join(sparseProtected, "sentinel.txt");
+writeFileSync(sparseSentinel, "preserve existing bytes\n");
+const sparseOwnerResult = split({
+  source: sparseSourceFile,
+  spec: sparseWrongSpec,
+  out: sparseProtected,
+  require: "all-outcomes",
+  allowExistingOut: true,
+});
+assert.equal(sparseOwnerResult.status, "refused", sparseOwnerResult.log);
+assert.equal(readFileSync(sparseSentinel, "utf8"), "preserve existing bytes\n");
 console.log(
   JSON.stringify({
     fixture: "sparse-interior-export",
     shape: shape.output,
     constructor: sparseConstructor,
-    production: { status: sparse.status, scope: sparse.scope, reason: sparse.reason },
+    production: { status: sparse.status, scope: sparse.scope, strategy: sparse.verdict.strategy },
+    wrongCell: sparseWrongCell.status,
+    wrongOwner: sparseOwnerResult.status,
   })
 );

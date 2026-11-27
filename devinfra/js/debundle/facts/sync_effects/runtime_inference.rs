@@ -1,11 +1,9 @@
 //! Position-specific execution facts. A later source prefix consumes the
 //! preceding prefix's settled state and never changes that earlier state.
 
-use super::execution_index::Call;
 use super::interpreter::{
     ExecutionInputs, ExecutionState, Executor, Observations, Outcome, OwnPropertyQuery,
 };
-use super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
@@ -18,6 +16,8 @@ use analysis::facts::{
 use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::report_schema::{NativeProgramPointKind, NativeProgramPointStep};
+use execution_index::Call;
+use execution_index::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRules};
 use kernel::frame::EvaluatedCallee;
 use source_identity::SourceUnitOrdinal;

@@ -11,7 +11,8 @@ use selector_resolve::{
     Projection, Resolution, SpecModule,
 };
 use source_match::ParsedSourceMatchSelector;
-use spec::{BindingAnnotation, LogicalModule, MemberEffect, UnassignedMode};
+use spec::annotations::BindingAnnotation;
+use spec::{LogicalModule, MemberEffect, UnassignedMode};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -36,7 +37,7 @@ pub struct LogicalRequest {
 pub struct AnonymousStatementRequest {
     pub parsed_selector: source_match::ParsedSourceMatchSelector,
     /// Optional timing premise for this exact selected anonymous call.
-    pub no_reentry_call: Option<spec::NoReentryCall>,
+    pub no_reentry_call: Option<spec::annotations::NoReentryCall>,
     /// Optional `comment:` text from the anonymous statement spec
     /// entry. `note:` is not emitted; it remains YAML scratch
     /// metadata.
@@ -145,9 +146,9 @@ pub fn logical_requests_for_chunk(
 }
 
 pub fn build_members(
-    members: &[spec::Member],
-    source_matches: &[spec::SourceMatchClaim],
-    annotations: &BTreeMap<String, spec::BindingAnnotation>,
+    members: &[spec::member_selectors::Member],
+    source_matches: &[spec::annotations::SourceMatchClaim],
+    annotations: &BTreeMap<String, spec::annotations::BindingAnnotation>,
     request_id: &str,
 ) -> Result<Vec<MemberRequest>> {
     let mut requests = members
@@ -156,11 +157,13 @@ pub fn build_members(
             let selected = m.selector.validate()?;
             let origin = SelectorKind::from(&selected).origin(None);
             let binding = match &selected {
-                spec::MemberSelectorSpec::Binding(binding) => binding.name.clone(),
+                spec::member_selectors::MemberSelectorSpec::Binding(binding) => {
+                    binding.name.clone()
+                }
                 _ => String::new(),
             };
             let export_name = match &selected {
-                spec::MemberSelectorSpec::Binding(binding) => {
+                spec::member_selectors::MemberSelectorSpec::Binding(binding) => {
                     m.name.clone().unwrap_or_else(|| binding.name.clone())
                 }
                 // A solver-resolved member's public export name can't default to a
@@ -215,7 +218,7 @@ pub fn build_members(
 fn apply_binding_annotations(
     request_id: &str,
     requests: &mut [MemberRequest],
-    annotations: &BTreeMap<String, spec::BindingAnnotation>,
+    annotations: &BTreeMap<String, spec::annotations::BindingAnnotation>,
 ) -> Result<()> {
     let mut by_export_name = BTreeMap::<String, Vec<usize>>::new();
     for (idx, request) in requests.iter().enumerate() {
@@ -263,7 +266,10 @@ pub fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffe
 }
 
 /// Convert one parsed selector into the selector engine's module member.
-pub fn member_from_spec(export_name: String, selector: spec::MemberSelectorSpec) -> Member {
+pub fn member_from_spec(
+    export_name: String,
+    selector: spec::member_selectors::MemberSelectorSpec,
+) -> Member {
     member_from_selector(export_name, MemberSelector::Authored(selector))
 }
 
@@ -288,7 +294,7 @@ pub fn member_from_source_match(
 pub fn parse_anonymous_selector(
     request_id: &str,
     description: impl Into<String>,
-    selector: &spec::AnonymousStatementSelector,
+    selector: &spec::annotations::AnonymousStatementSelector,
 ) -> Result<ParsedSourceMatchSelector> {
     Ok(ParsedSourceMatchSelector::parse(
         request_id,
@@ -497,9 +503,9 @@ pub fn resolve_chunks(chunks: &[(&Chunk<'_>, &[SpecModule])]) -> Result<Vec<Reso
 /// Validate request construction and duplicate claims for one authored module.
 pub fn validate_logical_module_claims(
     id: &str,
-    members: &[spec::Member],
-    source_matches: &[spec::SourceMatchClaim],
-    annotations: &BTreeMap<String, spec::BindingAnnotation>,
+    members: &[spec::member_selectors::Member],
+    source_matches: &[spec::annotations::SourceMatchClaim],
+    annotations: &BTreeMap<String, spec::annotations::BindingAnnotation>,
 ) -> Result<()> {
     let members = build_members(members, source_matches, annotations, id)?;
     reject_duplicate_export_names(ClaimOperation::LogicalModule, id, &members)?;

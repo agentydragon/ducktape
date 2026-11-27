@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "policyfixture",
+    testonly = True,
+    srcs = ["policy_service.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller/testing/policyfixture",
+    visibility = ["//agentplane/action_service/orchestration_v1:__pkg__"],
+    deps = [
+        "//agentplane/net/peertls",
+        "//agentplane/policy/v1:policy_service_go_proto",
+        "//agentplane/policy_controller/internal/rpc",
+        "//agentplane/testing/grpcmethods",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)

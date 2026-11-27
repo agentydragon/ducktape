@@ -319,6 +319,9 @@ class Settings(BaseModel):
         exclude_if=lambda value: not value,
         description="Write APB v1 zstd blocks after all replicas can read them.",
     )
+    history_export_page_entries: int | None = Field(default=None, gt=0, le=4096, exclude_if=lambda v: v is None)
+    history_export_pages_per_turn: int | None = Field(default=None, gt=0, exclude_if=lambda v: v is None)
+    follow_events_page_entries: int | None = Field(default=None, gt=0, le=4096, exclude_if=lambda v: v is None)
     event_block_profile: EventBlockProfile | None = Field(default=None, exclude_if=lambda v: v is None)
     provider_response_header_timeout_seconds: int | None = Field(
         default=None,

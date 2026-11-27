@@ -127,6 +127,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:line",
         "//agentplane/app/frontend/ui:text_block",
         "//util/frontend:disclosure",
     ],
@@ -273,6 +274,7 @@ ts_library(
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/ui:brand_icons",
+        "//agentplane/app/frontend/ui:line",
     ],
 )
 
@@ -294,6 +296,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/zod",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend/ui:line",
     ],
 )
 
@@ -310,6 +313,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:line",
     ],
 )
 
@@ -326,6 +330,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:line",
         "//agentplane/app/frontend/ui:text_block",
     ],
 )
@@ -362,6 +367,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/zod",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend/ui:line",
     ],
 )
 
@@ -378,6 +384,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:line",
     ],
 )
 
@@ -489,6 +496,7 @@ ts_library(
         "//:node_modules/zod",
         "//agentplane/app/frontend/actions:integration_preview_schemas",
         "//agentplane/app/frontend/actions:tana_action_titles",
+        "//agentplane/app/frontend/ui:line",
         "//agentplane/app/frontend/ui:text_block",
         "//util/frontend:clamped_block",
         "//util/frontend:markdown",

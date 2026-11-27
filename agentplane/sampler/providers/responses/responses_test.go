@@ -16,8 +16,8 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providertest"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wiretest"
 )
 
 func testToolSurface(encoding protocol.ExecEncoding) protocol.ToolSurface {
@@ -68,16 +68,16 @@ func TestProviderKeepsOpaqueLargeJSONNumbersExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(wirefixture.MustMarshalJSON(t, response.Output)); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
+	if got := string(wiretest.MustMarshalJSON(t, response.Output)); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
 		t.Fatalf("opaque provider number changed during decoding: %s", got)
 	}
-	if got := string(wirefixture.MustMarshalJSON(t, response.Audit())); strings.Contains(got, `"events"`) {
+	if got := string(wiretest.MustMarshalJSON(t, response.Audit())); strings.Contains(got, `"events"`) {
 		t.Fatalf("successful audit retained transient events: %s", got)
 	} else if !strings.Contains(got, `"opaque_sequence":9007199254740993`) ||
 		!strings.Contains(got, `"total_tokens":17`) || !strings.Contains(got, `"provider_usage":{"cache":3}`) {
 		t.Fatalf("terminal response metadata changed or was omitted from audit evidence: %s", got)
 	}
-	if got := string(wirefixture.MustMarshalJSON(t, response.Events)); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
+	if got := string(wiretest.MustMarshalJSON(t, response.Events)); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
 		t.Fatalf("transient per-event evidence was lost: %s", got)
 	}
 }
@@ -93,7 +93,7 @@ func TestProviderFailureDiagnosticsKeepEvents(t *testing.T) {
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("failed provider response=%+v err=%v; want a known failure", response, err)
 	}
-	if got := string(wirefixture.MustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"provider_error":{"code":"fixture"}`) {
+	if got := string(wiretest.MustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"provider_error":{"code":"fixture"}`) {
 		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
 	if got := err.Error(); got != "The Responses API reported an error (fixture)." {
@@ -202,7 +202,7 @@ func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T
 		t.Fatal(err)
 	}
 	if len(response.Output) != 2 {
-		t.Fatalf("expected only streamed completed items, got %s", string(wirefixture.MustMarshalJSON(t, response.Output)))
+		t.Fatalf("expected only streamed completed items, got %s", string(wiretest.MustMarshalJSON(t, response.Output)))
 	}
 	reasoning, call := response.Output[0], response.Output[1]
 	text, err := Text(reasoning)
@@ -210,26 +210,26 @@ func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T
 		t.Fatal(err)
 	}
 	if reasoning.Type != ItemReasoning || text != "Inspect the workspace." || reasoning.EncryptedContent != "" || len(reasoning.Content) != 0 {
-		t.Fatalf("streamed reasoning was replaced: %s", string(wirefixture.MustMarshalJSON(t, reasoning)))
+		t.Fatalf("streamed reasoning was replaced: %s", string(wiretest.MustMarshalJSON(t, reasoning)))
 	}
 	if call.Type != ItemFunctionCall || call.CallID != "call_fixture" || call.Name != "exec" || call.Arguments != `{"code":"text(1)"}` {
-		t.Fatalf("streamed tool call changed: %s", string(wirefixture.MustMarshalJSON(t, call)))
+		t.Fatalf("streamed tool call changed: %s", string(wiretest.MustMarshalJSON(t, call)))
 	}
 	var terminal struct {
 		Output []Item `json:"output"`
 	}
-	if err := json.Unmarshal([]byte(string(wirefixture.MustMarshalJSON(t, response.Terminal))), &terminal); err != nil {
+	if err := json.Unmarshal([]byte(string(wiretest.MustMarshalJSON(t, response.Terminal))), &terminal); err != nil {
 		t.Fatal(err)
 	}
 	if len(terminal.Output) != 3 || terminal.Output[0].EncryptedContent != "fixture-opaque-reasoning" {
-		t.Fatalf("terminal evidence was not retained: %s", string(wirefixture.MustMarshalJSON(t, response.Terminal)))
+		t.Fatalf("terminal evidence was not retained: %s", string(wiretest.MustMarshalJSON(t, response.Terminal)))
 	}
 }
 
 func TestProviderSemanticProgressResetsIdleBudgetForSamplingAndCompaction(t *testing.T) {
 	for _, compaction := range []bool{false, true} {
 		t.Run(map[bool]string{false: "sampling", true: "compaction"}[compaction], func(t *testing.T) {
-			server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+			server := providertest.SSEServer(t, func(stream providertest.SSEStream, r *http.Request) {
 				if got := r.Header.Get("x-codex-beta-features"); (got == "remote_compaction_v2") != compaction {
 					t.Errorf("compaction header=%q, compaction=%t", got, compaction)
 				}
@@ -247,9 +247,9 @@ func TestProviderSemanticProgressResetsIdleBudgetForSamplingAndCompaction(t *tes
 				stream.Data(`{"type":"response.completed","response":{"status":"completed","output":[]}}`)
 			})
 
-			ctx, hooks, progress := providerfixture.IdleBudget(t, 70*time.Millisecond)
+			ctx, hooks, progress := providertest.IdleBudget(t, 70*time.Millisecond)
 			client := providerio.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond)
-			recorder := &providerfixture.EvidenceRecorder{}
+			recorder := &providertest.EvidenceRecorder{}
 			response, err := Sample(ctx, client, server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, compaction, hooks)
 			if err != nil {
 				t.Fatal(err)
@@ -265,7 +265,7 @@ func TestProviderSemanticProgressResetsIdleBudgetForSamplingAndCompaction(t *tes
 }
 
 func TestRepeatedOutputItemTransitionsAndMissingIdentityDoNotRenewIdleBudget(t *testing.T) {
-	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+	server := providertest.SSEServer(t, func(stream providertest.SSEStream, r *http.Request) {
 		stream.Data(`{"type":"response.output_item.added","item":{"type":"message","role":"assistant","content":[]}}`)
 		const duplicate = `{"type":"response.output_item.added","item":{"id":"item_fixture","type":"message","role":"assistant","content":[]}}`
 		stream.Data(duplicate)
@@ -279,8 +279,8 @@ func TestRepeatedOutputItemTransitionsAndMissingIdentityDoNotRenewIdleBudget(t *
 		}
 	})
 
-	ctx, hooks, progress := providerfixture.IdleBudget(t, 55*time.Millisecond)
-	recorder := &providerfixture.EvidenceRecorder{}
+	ctx, hooks, progress := providertest.IdleBudget(t, 55*time.Millisecond)
+	recorder := &providertest.EvidenceRecorder{}
 	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
 	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
@@ -295,7 +295,7 @@ func TestRepeatedOutputItemTransitionsAndMissingIdentityDoNotRenewIdleBudget(t *
 }
 
 func TestKeepalivesAndEmptyProviderDeltasDoNotResetIdleBudget(t *testing.T) {
-	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+	server := providertest.SSEServer(t, func(stream providertest.SSEStream, r *http.Request) {
 		for index := 0; ; index++ {
 			select {
 			case <-r.Context().Done():
@@ -313,8 +313,8 @@ func TestKeepalivesAndEmptyProviderDeltasDoNotResetIdleBudget(t *testing.T) {
 		}
 	})
 
-	ctx, hooks, progress := providerfixture.IdleBudget(t, 45*time.Millisecond)
-	recorder := &providerfixture.EvidenceRecorder{}
+	ctx, hooks, progress := providertest.IdleBudget(t, 45*time.Millisecond)
+	recorder := &providertest.EvidenceRecorder{}
 	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
 	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
@@ -330,12 +330,12 @@ func TestKeepalivesAndEmptyProviderDeltasDoNotResetIdleBudget(t *testing.T) {
 
 func TestEvidenceFailureStopsStreamWithoutReportingProgress(t *testing.T) {
 	want := errors.New("fixture evidence write failure")
-	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, _ *http.Request) {
+	server := providertest.SSEServer(t, func(stream providertest.SSEStream, _ *http.Request) {
 		stream.Data(`{"type":"response.output_text.delta","item_id":"item_fixture","delta":"piece"}`)
 	})
 
-	ctx, hooks, progress := providerfixture.IdleBudget(t, 250*time.Millisecond)
-	recorder := &providerfixture.EvidenceRecorder{Fail: func(evidence protocol.ProviderEvidence) error {
+	ctx, hooks, progress := providertest.IdleBudget(t, 250*time.Millisecond)
+	recorder := &providertest.EvidenceRecorder{Fail: func(evidence protocol.ProviderEvidence) error {
 		if _, ok := evidence.(streamEvent); ok {
 			return want
 		}
@@ -498,7 +498,7 @@ func TestValidateCompactionFailureKeepsTransientEvents(t *testing.T) {
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
 	}
-	got := string(wirefixture.MustMarshalJSON(t, known.Evidence["response"]))
+	got := string(wiretest.MustMarshalJSON(t, known.Evidence["response"]))
 	if !strings.Contains(got, `"events":[{"type":"response.output_item.done"`) ||
 		!strings.Contains(got, `"provider_event_marker":"fixture"`) || !strings.Contains(got, `"provider_terminal_marker":"fixture"`) {
 		t.Fatalf("compaction failure diagnostics lost transient events or terminal response: %s", got)

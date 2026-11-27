@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
-use crate::{ChunkValueFlow, OriginTable, Values};
+use crate::ChunkValueFlow;
+use crate::values::{OriginTable, Values};
 use analysis_vocabulary::value::{Kind, Value};
 use swc_ecma_ast::{ArrowExpr, Decl, ModuleItem, Stmt};
 use swc_ecma_visit::{Visit, VisitWith};

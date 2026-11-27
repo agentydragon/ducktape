@@ -104,7 +104,7 @@ impl EdgeRole {
 /// what source analysis found, but [`EdgeReason::constrains_init_order`] is
 /// `false`, so no gate, quotient, linker-order or atomic-group consumer
 /// treats it as a constraint. Only `Sequenced` reasons are ever inerted
-/// (`graph/build.rs::apply_commuting_statements`).
+/// (`graph/build/commuting.rs::apply_commuting_statements`).
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
     pub kind: DepKind,
@@ -117,7 +117,7 @@ pub struct EdgeReason {
     sequenced_cause: Option<Box<SequencedCause>>,
     pub(crate) inerted_by: Option<CommutingStatementsRef>,
     /// How a `commuting_statements` premise over this edge's endpoints would
-    /// treat it (`graph/build.rs::premise_verdict`); `None` for the kinds a
+    /// treat it (`graph/build/commuting.rs::premise_verdict`); `None` for the kinds a
     /// premise never considers. Boxed like `sequenced_cause`.
     pub(crate) premise_verdict: Option<Box<PremiseVerdict>>,
 }

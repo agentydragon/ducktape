@@ -23,12 +23,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wiretest"
 )
 
 func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
-	input := string(wirefixture.MustMarshalJSON(t, map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123}))
+	input := string(wiretest.MustMarshalJSON(t, map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123}))
 	manager, _ := newFakeCodeModeManager(t)
 	runtime := openFakeSession(t, manager, "fixture")
 	prepared, err := runtime.prepareCall(context.Background(), protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "call", Input: input})
@@ -690,7 +690,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 			}
 			advanceDone := make(chan error, 1)
 			go func() {
-				_, err := runtime.advance(t.Context(), owner, live, nil, session)
+				_, err := runtime.advance(t.Context(), owner, live, session)
 				advanceDone <- err
 			}()
 			request := runtimetesting.ReceiveCodeOperationRequest(t, peer, live.code.ID(), "session/execute")
@@ -779,7 +779,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*ses
 		},
 		RPCTimeoutSeconds: 2,
 	}
-	runtime := &Driver{store: store, settings: settings, codeHost: manager, slot: testSlot{}}
+	runtime := &Driver{store: store, settings: settings, providerClients: samplersettings.NewProviderClients(settings.Connections), codeHost: manager, slot: testSlot{}}
 	return store, owner, runtime, &liveHost{code: code, executor: &executor.Executor{}}, code, peers()[0]
 }
 
@@ -802,7 +802,7 @@ func advanceWithFakeOperation(
 		t.Fatal(err)
 	}
 	go func() {
-		result, err := runtime.advance(t.Context(), code.owner, live, nil, session)
+		result, err := runtime.advance(t.Context(), code.owner, live, session)
 		done <- struct {
 			result sessionstore.TurnResult
 			err    error

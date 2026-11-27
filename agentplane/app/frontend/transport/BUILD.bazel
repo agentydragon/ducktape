@@ -14,6 +14,19 @@ filegroup(
 )
 
 ts_library(
+    name = "response_fields",
+    srcs = ["response_fields.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+ts_library(
+    name = "listeners",
+    srcs = ["listeners.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+)
+
+ts_library(
     name = "client",
     srcs = ["client.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
@@ -132,6 +145,7 @@ ts_library(
     srcs = ["stream_status.tsx"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
+        ":listeners",
         ":stream_reader",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

@@ -2,7 +2,8 @@
 
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
-use spec::{BindingAnnotation, InitializerBindingEffects};
+use spec::InitializerBindingEffects;
+use spec::annotations::BindingAnnotation;
 
 const CLASS_OBSERVER: &str = r#"export function inspect(value) {
   console.log(typeof value.get());

@@ -83,6 +83,7 @@ go_test(
     name = "sessionstore_test",
     size = "medium",
     srcs = [
+        "admission_test.go",
         "baseline_migration_test.go",
         "compact_journal_test.go",
         "content_store_integration_test.go",
@@ -130,7 +131,7 @@ go_test(
         "//agentplane/sampler/providers/anthropic",
         "//agentplane/sampler/providers/chatcompletions",
         "//agentplane/sampler/providers/responses",
-        "//agentplane/sampler/testing/wirefixture",
+        "//agentplane/sampler/testing/wiretest",
         "//agentplane/testing/grpcserver",
         "//agentplane/testing/jsonassert",
         "//agentplane/testing/postgres",

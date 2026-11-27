@@ -7,13 +7,6 @@ open CoreJS CoreJS.LinkedBehavior
 
 namespace ProviderBoundaryFixture
 
-private def exactUnit : SyntaxMatch.MatchEq LinkedUnit
-  | (i, stmt, env), (j, stmt', env') => do
-    let ⟨id⟩ ← SyntaxMatch.scalarEq i j
-    let ⟨body⟩ ← SyntaxMatch.stmtEq stmt stmt'
-    let ⟨scope⟩ ← SyntaxMatch.scalarEq env env'
-    return ⟨id ▸ body ▸ scope ▸ rfl⟩
-
 private theorem filterOther (name : String) : ∀ (xs : List (Module × Env)),
     xs.all (fun x => x.1.name != name) = true → xs.filter (fun x => x.1.name == name) = []
   | [], _ => rfl
@@ -23,9 +16,10 @@ private theorem filterOther (name : String) : ∀ (xs : List (Module × Env)),
     simp [different, filterOther name xs ok.2]
 
 private theorem providerPrefix (name : String) (m : Module) (env : Env) (rest : List (Module × Env))
-    (named : m.name = name) (unique : rest.all (fun x => x.1.name != name) = true) :
+    (named : m.name = name) (noImports : m.imports = [])
+    (unique : rest.all (fun x => x.1.name != name) = true) :
     ProviderPrefix name ((m, env) :: rest) (unitsOf [(m, env)]) := by
-  refine ⟨m, env, rfl, named, ?_, rfl⟩
+  refine ⟨m, env, rfl, named, noImports, ?_, rfl⟩
   simp [named, filterOther name rest unique]
 
 private def provider (linked : List (Module × Env)) : Except String
@@ -35,9 +29,11 @@ private def provider (linked : List (Module × Env)) : Except String
   | [] => throw "linked program has no provider"
   | (m, env) :: rest =>
     if named : m.name = "provider.mjs" then
-      if unique : rest.all (fun x => x.1.name != "provider.mjs") = true then
-        return ⟨m, env, rest, ⟨h, h.symm ▸ providerPrefix "provider.mjs" m env rest named unique⟩⟩
-      else throw "provider module is repeated"
+      if noImports : m.imports = [] then
+        if unique : rest.all (fun x => x.1.name != "provider.mjs") = true then
+          return ⟨m, env, rest, ⟨h, h.symm ▸ providerPrefix "provider.mjs" m env rest named noImports unique⟩⟩
+        else throw "provider module is repeated"
+      else throw "provider module has static imports"
     else throw "provider module is not first"
 
 private def providerCells (linked : List (Module × Env)) : Except String
@@ -61,32 +57,36 @@ structure ProviderCorrespondence (w : World) (init : Nat → M w Unit)
 
 /-- Correspondence is an explicit boundary obligation; it does not assume
 equality of complete importer runs. -/
-theorem commonProviderBehavior {w : World} {init : Nat → M w Unit}
-    {call : Nat → Val → List Val → M w Val} {initA initB : Nat → M w Unit}
+theorem commonProviderBehavior {w : World} {init init' : Nat → M w Unit}
+    {call call' : Nat → Val → List Val → M w Val} {initA initB : Nat → M w Unit}
     {callA callB : Nat → Val → List Val → M w Val}
+    (sameInit : ∀ fuel state, init fuel state = init' fuel state)
+    (sameCall : ∀ fuel receiver args state, call fuel receiver args state = call' fuel receiver args state)
     (a : ProviderCorrespondence w init call initA callA)
-    (b : ProviderCorrespondence w init call initB callB) :
+    (b : ProviderCorrespondence w init' call' initB callB) :
     (∀ fuel state, initA fuel state = initB fuel state) ∧
     (∀ fuel receiver args state, callA fuel receiver args state = callB fuel receiver args state) := by
-  exact ⟨fun fuel state => (a.initialization fuel state).trans (b.initialization fuel state).symm,
+  exact ⟨fun fuel state => (a.initialization fuel state).trans
+      ((sameInit fuel state).trans (b.initialization fuel state).symm),
     fun fuel receiver args state => (a.invocation fuel receiver args state).trans
-      (b.invocation fuel receiver args state).symm⟩
+      ((sameCall fuel receiver args state).trans (b.invocation fuel receiver args state).symm)⟩
 
 /-- The modeled operations in the correspondence are the actual linked
 prefix and callable. A separate cell/capture check must identify `setter`. -/
 theorem sourceFreeLinkedBoundary {source candidate : Program} {w : World}
     (boundary : SharedProvider source candidate w) (fuel : Nat)
-    (continuations : ∀ state, runUnits fuel boundary.pre boundary.before.ready = .ok () state →
-      runUnits fuel boundary.sourceTail state = runUnits fuel boundary.candidateTail state)
+    (suffix : SameUnits boundary.sourceTail boundary.candidateTail)
     (setter : Val) {initA initB : Nat → M w Unit} {callA callB : Nat → Val → List Val → M w Val}
-    (a : ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+    (a : ProviderCorrespondence w (fun n => runUnits n boundary.sourcePre)
       (fun n receiver args => callFn n setter receiver args) initA callA)
-    (b : ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+    (b : ProviderCorrespondence w (fun n => runUnits n boundary.candidatePre)
       (fun n receiver args => callFn n setter receiver args) initB callB) :
     runProgram w fuel source = runProgram w fuel candidate ∧
     (∀ n state, initA n state = initB n state) ∧
     (∀ n receiver args state, callA n receiver args state = callB n receiver args state) :=
-  ⟨boundary.run_eq fuel continuations, commonProviderBehavior a b⟩
+  ⟨boundary.run_eq fuel suffix,
+    commonProviderBehavior (fun n state => congrFun (runUnits_same n boundary.providerPrefixSame) state)
+      (by intro n receiver args state; rfl) a b⟩
 
 /-- The fixture's importer calls `set(true)` once. This dispatcher substitutes
 the supplied operation only when the reached callee is the checked setter. -/
@@ -164,12 +164,11 @@ private theorem injectedUnits_eq {w : World} (fuel : Nat) (setter : Val)
 linked importer schedules preserves the entire result, including throws. -/
 theorem sourceFreeContext {source candidate : Program} {w : World}
     (boundary : SharedProvider source candidate w) (fuel : Nat)
-    (continuations : ∀ state, runUnits fuel boundary.pre boundary.before.ready = .ok () state →
-      runUnits fuel boundary.sourceTail state = runUnits fuel boundary.candidateTail state)
+    (suffix : SameUnits boundary.sourceTail boundary.candidateTail)
     (setter : Val) {initA initB : Nat → M w Unit} {callA callB : Nat → Val → List Val → M w Val}
-    (a : ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+    (a : ProviderCorrespondence w (fun n => runUnits n boundary.sourcePre)
       (fun n receiver args => callFn n setter receiver args) initA callA)
-    (b : ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+    (b : ProviderCorrespondence w (fun n => runUnits n boundary.candidatePre)
       (fun n receiver args => callFn n setter receiver args) initB callB) :
     (initA fuel >>= fun _ => injectedUnits fuel setter callA boundary.sourceTail) boundary.before.ready =
     (initB fuel >>= fun _ => injectedUnits fuel setter callB boundary.candidateTail) boundary.after.ready ∧
@@ -177,26 +176,26 @@ theorem sourceFreeContext {source candidate : Program} {w : World}
       runProgram w fuel source ∧
     (initB fuel >>= fun _ => injectedUnits fuel setter callB boundary.candidateTail) boundary.after.ready =
       runProgram w fuel candidate := by
-  have initEqA : initA fuel = runUnits fuel boundary.pre := by funext state; exact a.initialization fuel state
-  have initEqB : initB fuel = runUnits fuel boundary.pre := by funext state; exact b.initialization fuel state
+  have initEqA : initA fuel = runUnits fuel boundary.sourcePre := by funext state; exact a.initialization fuel state
+  have initEqB : initB fuel = runUnits fuel boundary.candidatePre := by funext state; exact b.initialization fuel state
   rw [injectedUnits_eq fuel setter callA a.invocation, injectedUnits_eq fuel setter callB b.invocation,
     initEqA, initEqB]
-  have sourceEq : (runUnits fuel boundary.pre >>= fun _ => runUnits fuel boundary.sourceTail) boundary.before.ready =
+  have sourceEq : (runUnits fuel boundary.sourcePre >>= fun _ => runUnits fuel boundary.sourceTail) boundary.before.ready =
       runProgram w fuel source := by
     rw [run_after_link fuel boundary.before, boundary.sourceSchedule, runUnits_append]
-  have candidateEq : (runUnits fuel boundary.pre >>= fun _ => runUnits fuel boundary.candidateTail) boundary.after.ready =
+  have candidateEq : (runUnits fuel boundary.candidatePre >>= fun _ => runUnits fuel boundary.candidateTail) boundary.after.ready =
       runProgram w fuel candidate := by
     rw [run_after_link fuel boundary.after, boundary.candidateSchedule, runUnits_append]
-  exact ⟨sourceEq.trans ((boundary.run_eq fuel continuations).trans candidateEq.symm), sourceEq, candidateEq⟩
+  exact ⟨sourceEq.trans ((boundary.run_eq fuel suffix).trans candidateEq.symm), sourceEq, candidateEq⟩
 
 /-- In addition to run equality, retain the actual checked boundary and its
 quantified external-provider obligation for every world. -/
 def ExternalProved (source candidate : Program) (setter : Val) : Prop :=
   ∀ w, ∃ boundary : SharedProvider source candidate w,
     ∀ (fuel : Nat) (initA initB : Nat → M w Unit) (callA callB : Nat → Val → List Val → M w Val),
-      ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+      ProviderCorrespondence w (fun n => runUnits n boundary.sourcePre)
         (fun n receiver args => callFn n setter receiver args) initA callA →
-      ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+      ProviderCorrespondence w (fun n => runUnits n boundary.candidatePre)
         (fun n receiver args => callFn n setter receiver args) initB callB →
       (initA fuel >>= fun _ => injectedUnits fuel setter callA boundary.sourceTail) boundary.before.ready =
         (initB fuel >>= fun _ => injectedUnits fuel setter callB boundary.candidateTail) boundary.after.ready ∧
@@ -217,7 +216,7 @@ def certify {source candidate : Program} (before : CheckedLink source World.prob
   unless (unitsOf [(first, firstEnv)]).all (fun u => match u.stmt with
       | .opaque .. => true
       | _ => false) do throw "provider interface was not retained as opaque code"
-  let some ⟨samePre⟩ := SyntaxMatch.listEq exactUnit (unitsOf [(first, firstEnv)])
+  let some ⟨samePre⟩ := sameUnits? (unitsOf [(first, firstEnv)])
     (unitsOf [(second, secondEnv)]) | throw "provider units or scope differ"
   let some ⟨sameReady⟩ := StateMatch.probe before.ready after.ready | throw "linked initial states differ"
   let some ⟨sameTail⟩ := sameUnits? (unitsOf left) (unitsOf right) | throw "importer continuations differ"
@@ -227,17 +226,16 @@ def certify {source candidate : Program} (before : CheckedLink source World.prob
       after := after.forWorld w
       name := "provider.mjs"
       cells := leftCells
-      pre := unitsOf [(first, firstEnv)]
+      sourcePre := unitsOf [(first, firstEnv)]
+      candidatePre := unitsOf [(second, secondEnv)]
       sourceTail := unitsOf left
       candidateTail := unitsOf right
       ready := congrArg (linkState w) sameReady
+      providerPrefixSame := samePre
       sourceSchedule := by change unitsOf before.linked = _; rw [leftLink]; simp [unitsOf]
-      candidateSchedule := by change unitsOf after.linked = _; rw [rightLink, samePre]; simp [unitsOf]
+      candidateSchedule := by change unitsOf after.linked = _; rw [rightLink]; simp [unitsOf]
       sourceProvider := leftProvider
-      candidateProvider := by
-        change ProviderPrefix "provider.mjs" after.linked (unitsOf [(first, firstEnv)])
-        rw [samePre]
-        exact rightProvider
+      candidateProvider := rightProvider
       sourceCells := leftExports
       candidateCells := by
         change EntryExports.resolve "provider.mjs" after.linked = .ok leftCells
@@ -245,16 +243,10 @@ def certify {source candidate : Program} (before : CheckedLink source World.prob
         exact rightExports
       entryCells := entry
     }
-    have continuation (w : World) (fuel : Nat) : ∀ state,
-        runUnits fuel (boundary w).pre (boundary w).before.ready = .ok () state →
-        runUnits fuel (boundary w).sourceTail state = runUnits fuel (boundary w).candidateTail state := by
-      intro state _
-      have same : (runUnits fuel (unitsOf left) : M w Unit) = runUnits fuel (unitsOf right) := runUnits_same fuel sameTail
-      exact congrFun same state
-    return ⟨⟨⟨fun w fuel => (boundary w).run_eq fuel (continuation w fuel),
+    return ⟨⟨⟨fun w fuel => (boundary w).run_eq fuel sameTail,
       SharedProvider.sameExports boundary⟩, fun w => ⟨boundary w, by
         intro fuel initA initB callA callB a b
-        exact sourceFreeContext (boundary w) fuel (continuation w fuel) setter a b⟩⟩⟩
+        exact sourceFreeContext (boundary w) fuel sameTail setter a b⟩⟩⟩
   else throw "entry live cells differ"
 
 

@@ -73,7 +73,7 @@ the family when every leaf has completed; the contract is in
 
 - **Other fork producers**: optional calls and member access, `if` regions.
   They reuse `LocalSuspension::Fork` and the same join.
-- **The receiver-flow join** in `execution_index.rs` stays a separate
+- **The receiver-flow join** in `execution_index/mod.rs` stays a separate
   lattice.
 
 `World` owners that have no devel reader yet land with their first reader:

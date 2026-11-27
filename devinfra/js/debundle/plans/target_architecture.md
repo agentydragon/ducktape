@@ -38,7 +38,7 @@ source, analysis projection and engine (`analysis_projection.rs`,
 <../docs/bazel_integration.md>).
 
 - **One effect producer.** One domain and one builtin table
-  (`facts/abstract_domain/`, `facts/sync_effects/`) produce a per-statement
+  (`analysis_vocabulary/`, `analysis_domain/`, `facts/sync_effects/`) produce a per-statement
   effect set. Its algorithm is owned by <analysis_consolidation.md>: bounded
   interprocedural may-analysis with ordered proof refinement.
   The effects include:
@@ -51,7 +51,7 @@ source, analysis projection and engine (`analysis_projection.rs`,
   not separate analyses.
 
 - **Cross-module summaries** for imported callables, including vendor bodies
-  under the swap promise (`cross_module_purity.rs`, `staged_analysis/program_summary.rs`).
+  under the swap promise (`cross_module_purity/`, `staged_analysis/program_summary.rs`).
 - **Premises are axioms**: `host_behavior`, `program_premises`,
   `chunk_export_purity`, the `chunk_analysis_options` premise lists and member
   annotations. The engine generates an audit list for each premise: the sites

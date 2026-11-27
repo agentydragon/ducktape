@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -52,12 +53,16 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		}
 		var payload []byte
 		var sequence uint64
-		err = tx.QueryRowContext(ctx, `SELECT payload,admission FROM sampler_command WHERE session_id=$1 AND id=$2`, id, command.CommandId).Scan(&payload, &sequence)
+		var originSourceID sql.NullString
+		var admittedAtSeconds, admittedAtNanos sql.NullInt64
+		err = tx.QueryRowContext(ctx, `SELECT payload,admission,admission_origin_source_id,admission_event_at_seconds,admission_event_at_nanos
+			FROM sampler_command WHERE session_id=$1 AND id=$2`, id, command.CommandId).
+			Scan(&payload, &sequence, &originSourceID, &admittedAtSeconds, &admittedAtNanos)
 		if err == nil {
 			if !bytes.Equal(payload, wire) {
 				return ErrConflict
 			}
-			admission, err = journalEntry(ctx, tx, id, sequence)
+			admission, err = commandAdmissionEntry(ctx, tx, id, payload, sequence, originSourceID, admittedAtSeconds, admittedAtNanos)
 			if err != nil {
 				return err
 			}
@@ -141,8 +146,11 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO sampler_command(session_id,id,payload,admission,outcome,failure_reason)
-			VALUES($1,$2,$3,$4,$5,NULL)`, id, command.CommandId, wire, admission.Cursor,
+		admittedAt := admission.GetEvent().GetAt()
+		_, err = tx.ExecContext(ctx, `INSERT INTO sampler_command(session_id,id,payload,admission,admission_origin_source_id,
+			admission_event_at_seconds,admission_event_at_nanos,outcome,failure_reason)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULL)`, id, command.CommandId, wire, admission.Cursor,
+			admission.GetOrigin().GetSourceId(), admittedAt.GetSeconds(), admittedAt.GetNanos(),
 			int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
 		if err != nil {
 			return err
@@ -157,14 +165,19 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 	defer cancel()
 	var outcome int32
 	var failure sql.NullString
+	var payload []byte
 	var sequence uint64
-	if err := s.db.QueryRowContext(ctx, `SELECT admission,outcome,failure_reason FROM sampler_command WHERE session_id=$1 AND id=$2`, id, commandID).Scan(&sequence, &outcome, &failure); err != nil {
+	var originSourceID sql.NullString
+	var admittedAtSeconds, admittedAtNanos sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `SELECT payload,admission,admission_origin_source_id,admission_event_at_seconds,
+		admission_event_at_nanos,outcome,failure_reason FROM sampler_command WHERE session_id=$1 AND id=$2`, id, commandID).
+		Scan(&payload, &sequence, &originSourceID, &admittedAtSeconds, &admittedAtNanos, &outcome, &failure); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, protocol.ErrMissing
 		}
 		return nil, err
 	}
-	entry, err := journalEntry(ctx, s.db, id, sequence)
+	entry, err := commandAdmissionEntry(ctx, s.db, id, payload, sequence, originSourceID, admittedAtSeconds, admittedAtNanos)
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +186,37 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 		response.FailureReason = failure.String
 	}
 	return response, nil
+}
+
+// commandAdmissionEntry reconstructs the stable admission response from the indexed command row.
+// Rows written before the metadata columns existed, and rows written by an older binary during a
+// mixed-version rollout, retain NULL metadata and use the journal as the compatibility fallback.
+func commandAdmissionEntry(ctx context.Context, q journalQueryer, sessionID string, payload []byte, sequence uint64,
+	originSourceID sql.NullString, admittedAtSeconds, admittedAtNanos sql.NullInt64,
+) (*eventlogpb.EventEntry, error) {
+	if !originSourceID.Valid && !admittedAtSeconds.Valid && !admittedAtNanos.Valid {
+		return journalEntry(ctx, q, sessionID, sequence)
+	}
+	if !originSourceID.Valid || !admittedAtSeconds.Valid || !admittedAtNanos.Valid ||
+		admittedAtNanos.Int64 < 0 || admittedAtNanos.Int64 >= 1_000_000_000 {
+		return nil, errors.New("invalid sampler command admission metadata")
+	}
+	command := &commandpb.Command{}
+	if err := proto.Unmarshal(payload, command); err != nil {
+		return nil, fmt.Errorf("decode sampler command admission payload: %w", err)
+	}
+	at := &timestamppb.Timestamp{Seconds: admittedAtSeconds.Int64, Nanos: int32(admittedAtNanos.Int64)}
+	if err := at.CheckValid(); err != nil {
+		return nil, fmt.Errorf("invalid sampler command admission timestamp: %w", err)
+	}
+	return &eventlogpb.EventEntry{
+		Cursor: sequence,
+		Origin: &eventlogpb.EventOrigin{SourceId: originSourceID.String, Sequence: sequence},
+		Event: &eventpb.Event{
+			At:          at,
+			Observation: &eventpb.Event_CommandAdmitted{CommandAdmitted: &eventpb.CommandAdmitted{Command: command}},
+		},
+	}, nil
 }
 
 // Checkpoint is the last snapshot whose entries and metadata completed export to target.

@@ -1,6 +1,6 @@
 //! Soundness: at-init calls whose callee can't be resolved to a
 //! chunk-declared function must not be skipped by at-init call promotion
-//! (`graph.rs::promote_at_init_calls`). An at-init call routed through a
+//! (`graph/build/at_init.rs::promote_at_init_calls`). An at-init call routed through a
 //! single-assignment alias (`const g = readB; g();`) or an object-literal
 //! method (`api.read()`) fires its body's TDZ-locked cross-module reads at
 //! runtime, so such a statement conservatively depends eagerly on the

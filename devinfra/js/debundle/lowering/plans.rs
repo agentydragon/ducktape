@@ -57,7 +57,7 @@ pub(super) struct ModulePlan {
     /// Local-name → per-member comment text from the spec, for the
     /// bindings this plan claims. Emitted as a `// ...` block above
     /// the binding's source unit statement in the generated module body.
-    /// See [`spec::Member::comment`].
+    /// See [`spec::member_selectors::Member::comment`].
     pub(super) binding_comments: BTreeMap<String, String>,
     /// Local-name → short spec-facing origin for each owned binding claim.
     /// This is diagnostic metadata; lowering behavior is driven by
