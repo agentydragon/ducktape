@@ -1077,10 +1077,7 @@ does not make the creation step opaque. The existing activation and captured
 cell checks still apply, and invocation or escape of the retained callback
 continues through the ordinary conservative transfer.
 
-When the annotated binding is selected in an analyzed defining chunk and
-exported, the same author-trusted `pure_new` contract applies to each
-importer's local binding. The export mapping is resolved after structural
-selectors; source-matched classes need no minified export-name assertion.
+Export propagation of `pure_new` to importers: [design.md § A9](design.md#conditions-on-the-input-chunk-assumptions-a1a11).
 
 `pure_members: [<prop>, …]` is a third trust contract on the same member,
 extending "calls of the bound Ident are pure" to "calls of

@@ -1910,34 +1910,11 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   assert a named binding has a specific side-effect contract the
   static classifier will not re-derive.
 
-  `purity: "pure"` asserts that calls to the bound function value
-  have no observable side effects. The validator does not re-verify
-  the function body — the annotation is an explicit author override
-  that wins over both the inferred classification and A8's
-  shadowing fallback. Used when the function body is too dynamic
-  for static analysis (dynamic dispatch, dynamic property access)
-  but the author knows by construction that the binding is pure.
-
-  `purity: "pure_new"` asserts the analogous constructor contract:
-  `new BoundClass(...)` has no observable side effects beyond
-  evaluating its constructor arguments. The analyzer still classifies
-  every argument expression normally; impure arguments keep the
-  surrounding `new` expression side-effecting. The annotation does
-  not make plain `BoundClass(...)` calls pure.
-
-  `initializer_purity: "pure"` applies only to one selected, simple,
-  top-level variable initializer. It asserts that evaluating the full
-  initializer has no observable effects and cannot throw, but it does not
-  make calls or construction of the resulting value pure. The author must
-  audit any synchronous callback behavior. Direct eager reads and
-  callback-body read dependencies remain in the dependency graph, so this
-  annotation does not suppress their initialization-order constraints.
-  Imports, functions, classes, destructuring, uninitialized declarations,
-  and ambiguous repeated initialized declarations are rejected.
-
-  An incorrect annotation can produce a buggy debundle the same way
-  an incorrect spec selector can — soundness shifts to the spec
-  author. See <purity_soundness.md> "Declared purity".
+  `purity: "pure"`, `purity: "pure_new"` and `initializer_purity: "pure"`
+  (what each admits, what stays classified, rejected declarations):
+  [purity_soundness.md § Declared purity](purity_soundness.md#declared-purity--spec-trust-contracts).
+  The validator does not re-verify the body; an incorrect annotation
+  produces a buggy debundle, so soundness shifts to the spec author.
 
   `chunk_export_purity.<chunk>.pure_exports` is the cross-module form
   of the same contract, addressed to the **defining** chunk rather than
