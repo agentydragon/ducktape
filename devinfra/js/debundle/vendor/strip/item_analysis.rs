@@ -9,9 +9,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use super::shareable::{
-    is_empty_object_var, is_primitive_literal_expr, is_shareable_function_var,
-    is_shareable_global_object_fallback_var, is_shareable_intrinsic_alias_var,
-    is_shareable_literal_var, is_shareable_vite_map_deps_var, is_static_member_call,
+    is_empty_object_var, is_shareable_function_var, is_shareable_global_object_fallback_var,
+    is_shareable_intrinsic_alias_var, is_shareable_literal_expr, is_shareable_literal_var,
+    is_shareable_vite_map_deps_var, is_static_member_call,
 };
 
 pub(super) struct ItemAnalysis {
@@ -653,7 +653,7 @@ fn is_symbol_var(var: &VarDecl) -> bool {
             && call
                 .args
                 .iter()
-                .all(|arg| arg.spread.is_none() && is_primitive_literal_expr(&arg.expr))
+                .all(|arg| arg.spread.is_none() && is_shareable_literal_expr(&arg.expr))
     })
 }
 
