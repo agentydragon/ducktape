@@ -19,7 +19,13 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 
 from cluster.cdk8s import buildbuddy_provider
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
@@ -41,7 +47,7 @@ def chart(app: App) -> Chart:
         chart,
         "buildbuddy-provider-credentials",
         reader=reader,
-        source_namespace="flux-system",
+        source_namespace=CONTROLLER_NAMESPACE,
         source_secret="buildbuddy-org-admin-api-key",
     )
     ExternalSecret(

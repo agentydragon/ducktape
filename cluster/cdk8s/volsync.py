@@ -27,7 +27,13 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from cluster.cdk8s import namespaces, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+)
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -75,7 +81,9 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=https_helm_repository(chart, "backube", "flux-system", url="https://backube.github.io/helm-charts/"),
+        repository=https_helm_repository(
+            chart, "backube", CONTROLLER_NAMESPACE, url="https://backube.github.io/helm-charts/"
+        ),
         chart=NAME,
         version="0.16.0",
         interval="30m",

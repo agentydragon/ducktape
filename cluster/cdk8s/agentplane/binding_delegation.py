@@ -14,6 +14,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import flux
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant, RoleBindingGrant
@@ -91,7 +92,7 @@ def write_delegations(
         # Bootstrap creates these namespaces before the generated owners reconcile.
         depends_on = (
             None
-            if target_namespace in {"ducktape-flux", "flux-system"}
+            if target_namespace in {flux.NAMESPACE, flux.CONTROLLER_NAMESPACE}
             else [flux_kustomization_depends_on(target_dependencies[target_namespace])]
         )
         flux_kustomization(

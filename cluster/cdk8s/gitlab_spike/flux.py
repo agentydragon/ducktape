@@ -7,7 +7,13 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import opentofu
 from cluster.cdk8s.cnpg.health import database_health
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 GITOPS_NAME = "gitlab-spike-gitops"
@@ -43,7 +49,12 @@ def gitops_chart(app: App) -> Chart:
             ("gitlab-spike-proof", "gitlab-spike-benchmark-token", "forgejo-spike-benchmark"),
         ),
         ("forgejo-secrets", "forgejo", ("forgejo-admin-password",), ()),
-        ("flux-secrets", "flux-system", (), ("gitlab-spike-git", "gitlab-spike-registry", "gitlab-spike-webhook")),
+        (
+            "flux-secrets",
+            CONTROLLER_NAMESPACE,
+            (),
+            ("gitlab-spike-git", "gitlab-spike-registry", "gitlab-spike-webhook"),
+        ),
         ("demo-secrets", "gitlab-spike-demo", (), ("gitlab-spike-registry",)),
         ("runner-secrets", "gitlab-spike-ci", (), ("gitlab-spike-runner",)),
     ):

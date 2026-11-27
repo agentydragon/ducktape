@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import opentofu
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "flux-webhook-token"
@@ -19,6 +20,6 @@ def chart(app: App) -> Chart:
         module_name=NAME,
         identity_name=KUBERNETES_IDENTITY,
         secret_accesses=(
-            ("flux-system-secrets", "flux-system", ("github-secrets-sync-pat",), ("github-webhook-token",)),
+            ("flux-system-secrets", CONTROLLER_NAMESPACE, ("github-secrets-sync-pat",), ("github-webhook-token",)),
         ),
     )

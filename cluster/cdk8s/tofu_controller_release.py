@@ -27,7 +27,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 
 NAME = "tofu-controller"
-NAMESPACE = "flux-system"
+NAMESPACE = flux.CONTROLLER_NAMESPACE
 OUTPUT_DIR = f"{GENERATED_ROOT}/tofu-controller"
 VPA_NAME = f"{NAME}-vpa"
 VPA_OUTPUT_DIR = f"{GENERATED_ROOT}/{VPA_NAME}"

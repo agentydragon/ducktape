@@ -39,10 +39,10 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 
 from cluster.cdk8s import ducktape_flux, flux, tofu_state
 from cluster.cdk8s.artifact_generators import artifact
-from cluster.cdk8s.flux import artifact_directory
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE, artifact_directory
 from cluster.cdk8s.secret_ref import SecretKey
 
-NAMESPACE = "flux-system"
+NAMESPACE = CONTROLLER_NAMESPACE
 
 # Requests only. Without them runner pods are BestEffort, so the scheduler counts them as free and
 # stacks a synchronised wave of up to a dozen on one node. Observed per runner: median working set

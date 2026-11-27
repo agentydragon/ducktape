@@ -14,17 +14,22 @@ from grafana_grafanaserviceaccount_crds.org.integreatly.grafana import (
     GrafanaServiceAccountSpecTokens,
 )
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_instance
 from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "flux-grafana-secrets"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-grafana-secrets"
-_NAMESPACE = "flux-system"
 _GRAFANA = "grafana"
 _ACCOUNT = "flux-notifications"
-TOKEN = SecretRef(namespace=_NAMESPACE, name="grafana-flux-token")
+TOKEN = SecretRef(namespace=CONTROLLER_NAMESPACE, name="grafana-flux-token")
 
 
 def chart(app: App) -> Chart:
@@ -32,10 +37,10 @@ def chart(app: App) -> Chart:
     Grafana(
         chart,
         "grafana",
-        metadata=ApiObjectMetadata(name=_GRAFANA, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_GRAFANA, namespace=CONTROLLER_NAMESPACE),
         spec=GrafanaSpec(
             external=GrafanaSpecExternal(
-                url=f"http://{grafana_instance.SERVICE.authority}", tenant_namespace=_NAMESPACE
+                url=f"http://{grafana_instance.SERVICE.authority}", tenant_namespace=CONTROLLER_NAMESPACE
             ),
             client=GrafanaSpecClient(use_kube_auth=True),
         ),
@@ -43,7 +48,7 @@ def chart(app: App) -> Chart:
     GrafanaServiceAccount(
         chart,
         "service-account",
-        metadata=ApiObjectMetadata(name=_ACCOUNT, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_ACCOUNT, namespace=CONTROLLER_NAMESPACE),
         spec=GrafanaServiceAccountSpec(
             instance_name=_GRAFANA,
             role=GrafanaServiceAccountSpecRole.EDITOR,

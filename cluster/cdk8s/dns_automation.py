@@ -7,12 +7,12 @@ from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import external_creds
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/dns-automation"
 NAME = "dns-automation"
-_NAMESPACE = "flux-system"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
 _CREDENTIALS_SOURCE = "aws-route53-dns-automation-credentials"
 
@@ -21,12 +21,14 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     # Consumer-owned identity for reading approved canonical credentials.
     k8s.KubeServiceAccount(
-        chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=_NAMESPACE)
+        chart,
+        "external-creds-reader",
+        metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=CONTROLLER_NAMESPACE),
     )
     ExternalSecret(
         chart,
         "credentials",
-        metadata=ApiObjectMetadata(name=_CREDENTIALS_SECRET, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_CREDENTIALS_SECRET, namespace=CONTROLLER_NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
         data=[

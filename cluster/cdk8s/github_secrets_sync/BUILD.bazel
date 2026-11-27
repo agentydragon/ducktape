@@ -25,6 +25,7 @@ py_library(
         "//cluster/cdk8s/nix_cache:__pkg__",
     ],
     deps = [
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:opentofu",
         "//cluster/cdk8s/nix_cache:ci_token",

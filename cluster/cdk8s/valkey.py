@@ -23,6 +23,7 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
 )
 
 from cluster.cdk8s import disruption_budget, namespaces, node_scheduling
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -50,7 +51,7 @@ def chart(app: App) -> Chart:
         _RELEASE,
         NAMESPACE,
         repository=https_helm_repository(
-            chart, "ot-helm", "flux-system", url="https://ot-container-kit.github.io/helm-charts"
+            chart, "ot-helm", CONTROLLER_NAMESPACE, url="https://ot-container-kit.github.io/helm-charts"
         ),
         chart=_RELEASE,
         version="0.26.1",

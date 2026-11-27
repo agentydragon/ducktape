@@ -7,7 +7,13 @@ from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecDriftDetection, HelmReleaseSpecDriftDetectionMode
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+)
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
@@ -22,7 +28,7 @@ def chart(app: App) -> Chart:
         chart,
         NAME,
         NAMESPACE,
-        repository=oci_helm_repository(chart, NAME, "flux-system", url="oci://ghcr.io/grafana/helm-charts"),
+        repository=oci_helm_repository(chart, NAME, CONTROLLER_NAMESPACE, url="oci://ghcr.io/grafana/helm-charts"),
         chart=NAME,
         version="~5.22",
         interval="30m",

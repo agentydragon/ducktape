@@ -5,7 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import namespaces, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE, Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, initial_request_annotations
@@ -18,7 +18,6 @@ from cluster.cdk8s.vpa_policy import (
 
 NAME = "kyverno"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/app"
-_FLUX_NAMESPACE = "flux-system"
 _ADMISSION_CPU_REQUEST = "100m"
 _ADMISSION_MEMORY_LIMIT = "384Mi"
 _BACKGROUND_CPU_REQUEST = "50m"
@@ -189,8 +188,8 @@ def chart(app: App) -> Chart:
     helm_release(
         chart,
         NAME,
-        _FLUX_NAMESPACE,
-        repository=https_helm_repository(chart, NAME, _FLUX_NAMESPACE, url="https://kyverno.github.io/kyverno/"),
+        CONTROLLER_NAMESPACE,
+        repository=https_helm_repository(chart, NAME, CONTROLLER_NAMESPACE, url="https://kyverno.github.io/kyverno/"),
         chart="kyverno",
         # MODULE.bazel pins the kyverno.io CRD bindings to this chart's appVersion.
         version="3.9.1",

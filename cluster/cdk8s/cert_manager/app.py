@@ -18,6 +18,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.cert_manager.environment import NAMESPACE
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
@@ -32,7 +33,6 @@ from cluster.cdk8s.vpa_policy import (
 NAME = "cert-manager"
 OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
 _REPOSITORY_NAME = "jetstack"
-_REPOSITORY_NAMESPACE = "flux-system"
 _CPU_REQUEST = "10m"
 _CPU_LIMIT = "100m"
 _CONTROLLER_MEMORY_FLOOR = "112Mi"
@@ -44,7 +44,7 @@ _CAINJECTOR_MEMORY_FLOOR = "224Mi"
 _WEBHOOK_MEMORY_FLOOR = "64Mi"
 _WEBHOOK_MEMORY_LIMIT = "128Mi"
 # trust-manager installs from this repository too, from its own chart.
-JETSTACK_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
+JETSTACK_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, CONTROLLER_NAMESPACE)
 
 
 def _component(component: str) -> Pods:
@@ -230,7 +230,7 @@ def chart(app: App) -> Chart:
         NAME,
         NAMESPACE,
         repository=https_helm_repository(
-            chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.jetstack.io"
+            chart, _REPOSITORY_NAME, CONTROLLER_NAMESPACE, url="https://charts.jetstack.io"
         ),
         chart="cert-manager",
         version="v1.21.2",

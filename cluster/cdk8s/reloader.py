@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -77,7 +78,7 @@ def chart(app: App) -> Chart:
         NAME,
         NAMESPACE,
         repository=https_helm_repository(
-            chart, "stakater", "flux-system", url="https://stakater.github.io/stakater-charts"
+            chart, "stakater", CONTROLLER_NAMESPACE, url="https://stakater.github.io/stakater-charts"
         ),
         chart=NAME,
         version="2.*",

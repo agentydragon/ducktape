@@ -28,6 +28,7 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
     ReceiverSpecType,
 )
 
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -35,17 +36,16 @@ from cluster.cdk8s.providers.flux.notification import ReceiverResource
 
 NAME = "haku-ui-image-webhook"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/ui-image-webhook"
-_RECEIVER_NAMESPACE = "flux-system"
 _TOKEN_SECRET = "forgejo-webhook-token"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    secret_copy.secret_copy(chart, _TOKEN_SECRET, reader=secret_copy.reader(chart, _RECEIVER_NAMESPACE))
+    secret_copy.secret_copy(chart, _TOKEN_SECRET, reader=secret_copy.reader(chart, CONTROLLER_NAMESPACE))
     Receiver(
         chart,
         "receiver",
-        metadata=ApiObjectMetadata(name="haku-ui-forgejo", namespace=_RECEIVER_NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku-ui-forgejo", namespace=CONTROLLER_NAMESPACE),
         spec=ReceiverSpec(
             type=ReceiverSpecType.GENERIC,
             secret_ref=ReceiverSpecSecretRef(name=_TOKEN_SECRET),
@@ -57,7 +57,7 @@ def chart(app: App) -> Chart:
                 # The apply leg: fetch the tag-bump commit (and any haku-state push)
                 # immediately; the haku-state-workloads Kustomization then reconciles off the
                 # fresh artifact.
-                ReceiverResource.git_repository("haku-state", namespace="flux-system"),
+                ReceiverResource.git_repository("haku-state", namespace=CONTROLLER_NAMESPACE),
                 # ImageUpdateAutomation's own git source. It clones directly when reconciling,
                 # but a fresh artifact keeps anything else consuming this source current too.
                 ReceiverResource.git_repository("haku-state-write", namespace=NAMESPACE),

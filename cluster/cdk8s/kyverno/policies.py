@@ -36,6 +36,7 @@ from kyverno_validatingpolicy_crds.io.kyverno.policies import (
     ValidatingPolicySpecValidations,
 )
 
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
@@ -81,14 +82,14 @@ def require_gitops_chart(app: App) -> Chart:
     Stakater Reloader (rolling restarts on secret changes)."""
     exempt_service_accounts = [
         # Flux kustomize-controller, helm-controller, and source-controller (for CRD updates)
-        ("kustomize-controller", "flux-system"),
-        ("helm-controller", "flux-system"),
-        ("source-controller", "flux-system"),
+        ("kustomize-controller", CONTROLLER_NAMESPACE),
+        ("helm-controller", CONTROLLER_NAMESPACE),
+        ("source-controller", CONTROLLER_NAMESPACE),
         # The haku-state workload pipe: Flux applies Haku's self-authored workloads by
         # impersonating this SA (Kustomization spec.serviceAccountName), so admission
         # attributes the request to it rather than kustomize-controller. It is a GitOps
         # path, Role-bounded to haku-sandbox (see cluster/cdk8s/haku/workloads.md).
-        ("haku-state-reconciler", "flux-system"),
+        ("haku-state-reconciler", CONTROLLER_NAMESPACE),
         # Kyverno itself (for admission webhooks)
         ("kyverno-admission-controller", "kyverno"),
         # Operators that create child workloads from CRs deployed via GitOps

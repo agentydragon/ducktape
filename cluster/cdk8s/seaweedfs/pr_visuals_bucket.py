@@ -7,7 +7,13 @@ from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecAccess, BucketSpecAccessActions
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+)
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
@@ -20,7 +26,7 @@ _CHART = "pr-visuals-bucket"
 #   into the PR_VISUALS_* repo secrets, and tf-runner reads Secrets in any namespace. The moved
 #   S3Credentials is a new CR with a new key: let github-secrets-sync publish it before the old
 #   CR is pruned, or pr-visuals-publish runs hold a dead key in between.
-_TENANT = "flux-system"
+_TENANT = CONTROLLER_NAMESPACE
 _WRITER = "pr-visuals-writer"
 
 

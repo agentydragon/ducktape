@@ -7,11 +7,13 @@ from dataclasses import dataclass
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 
+from cluster.cdk8s import flux
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 
-NAMESPACE = "ducktape-flux"
+NAMESPACE = flux.NAMESPACE
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
 STORE = SecretStoreRef.cluster("kubernetes-external-creds-secret-store")
@@ -49,7 +51,7 @@ CREDENTIALS = (
         secret_name="llm-anthropic-haku",
         consumers=(
             ApprovedConsumer("litellm", "llm-anthropic-haku-litellm-reader"),
-            ApprovedConsumer("flux-system", "llm-anthropic-haku-flux-reader"),
+            ApprovedConsumer(CONTROLLER_NAMESPACE, "llm-anthropic-haku-flux-reader"),
         ),
     ),
     Credential(
@@ -60,7 +62,9 @@ CREDENTIALS = (
     Credential(
         secret_file="aws-route53-dns-automation.sops.yaml",
         secret_name="aws-route53-dns-automation-credentials",
-        consumers=(ApprovedConsumer("flux-system", "aws-route53-dns-automation-credentials-flux-system-reader"),),
+        consumers=(
+            ApprovedConsumer(CONTROLLER_NAMESPACE, "aws-route53-dns-automation-credentials-flux-system-reader"),
+        ),
     ),
     Credential(
         secret_file="aws-route53-external-dns.sops.yaml",
@@ -97,7 +101,7 @@ CREDENTIALS = (
         consumers=(
             ApprovedConsumer("claude-sandbox", "buildbuddy-api-key-claude-sandbox-reader"),
             ApprovedConsumer("agentplane-staging", "buildbuddy-api-key-agentplane-staging-reader"),
-            ApprovedConsumer("flux-system", "buildbuddy-api-key-flux-system-reader"),
+            ApprovedConsumer(CONTROLLER_NAMESPACE, "buildbuddy-api-key-flux-system-reader"),
             ApprovedConsumer(
                 "agentplane-staging-egress-credentials",
                 "buildbuddy-api-key-agentplane-staging-egress-credentials-reader",
@@ -107,7 +111,7 @@ CREDENTIALS = (
     Credential(
         secret_file="gaffer-repo-fetch-pat.sops.yaml",
         secret_name="gaffer-repo-fetch-pat",
-        consumers=(ApprovedConsumer("flux-system", "gaffer-repo-fetch-pat-flux-system-reader"),),
+        consumers=(ApprovedConsumer(CONTROLLER_NAMESPACE, "gaffer-repo-fetch-pat-flux-system-reader"),),
     ),
     Credential(
         secret_file="gemini.sops.yaml",
@@ -130,7 +134,7 @@ CREDENTIALS = (
         secret_file="github-agentydragon-2.sops.yaml",
         secret_name="github-agentydragon-2",
         consumers=(
-            ApprovedConsumer("flux-system", "github-agentydragon-2-flux-system-reader"),
+            ApprovedConsumer(CONTROLLER_NAMESPACE, "github-agentydragon-2-flux-system-reader"),
             ApprovedConsumer("agents-infra", "github-agentydragon-2-agents-infra-reader"),
             ApprovedConsumer("nix-cache", "github-agentydragon-2-nix-cache-reader"),
             ApprovedConsumer("monitoring", "github-agentydragon-2-monitoring-reader"),
@@ -140,7 +144,7 @@ CREDENTIALS = (
         secret_file="github-agentydragon.sops.yaml",
         secret_name="github-agentydragon",
         consumers=(
-            ApprovedConsumer("flux-system", "github-agentydragon-flux-system-reader"),
+            ApprovedConsumer(CONTROLLER_NAMESPACE, "github-agentydragon-flux-system-reader"),
             ApprovedConsumer("agents-infra", "github-agentydragon-agents-infra-reader"),
             ApprovedConsumer("nix-cache", "github-agentydragon-nix-cache-reader"),
             ApprovedConsumer("monitoring", "github-agentydragon-monitoring-reader"),

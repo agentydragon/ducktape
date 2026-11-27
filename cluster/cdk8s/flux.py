@@ -49,6 +49,9 @@ from cluster.cdk8s.api_objects import api_objects_in
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
 NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
+# The namespace 'flux bootstrap' created (cluster/k8s/flux/flux-system): its controllers reconcile
+# cluster-infrastructure add-ons, and every GitRepository/HelmRepository they read is declared there.
+CONTROLLER_NAMESPACE = "flux-system"
 DUCKTAPE_SOURCE = KustomizationSpecSourceRef(
     kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace=NAMESPACE
 )

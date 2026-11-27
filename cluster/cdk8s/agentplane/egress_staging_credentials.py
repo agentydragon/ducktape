@@ -43,6 +43,7 @@ from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER, SERVICE as AIQUOTA_
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.clickhouse import client as clickhouse
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.haku import mailbox, mailbox_endpoint
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.monitoring import mimir
@@ -703,7 +704,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         "haku-mail",
         reader=reader,
         credentials_namespace=credentials_namespace,
-        source_namespace="flux-system",
+        source_namespace=CONTROLLER_NAMESPACE,
         source=_HAKU_MAIL_TOKEN,
         key="jwt",
     )

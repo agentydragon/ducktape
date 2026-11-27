@@ -17,13 +17,18 @@ from external_secrets_crds.io.external_secrets import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 NAME = "github-secrets-sync-secrets"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
-_NAMESPACE = "flux-system"
 
 
 def _external_secret(
@@ -38,7 +43,7 @@ def _external_secret(
     return ExternalSecret(
         chart,
         id,
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=CONTROLLER_NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
         data=[remote_data(source, secret_key)],
@@ -53,7 +58,9 @@ def chart(app: App) -> Chart:
     # Preserve the established flux-system Secret contract for GitOps controllers
     # and Reflector while the canonical encrypted PAT lives in external-creds.
     k8s.KubeServiceAccount(
-        chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=_NAMESPACE)
+        chart,
+        "external-creds-reader",
+        metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=CONTROLLER_NAMESPACE),
     )
     _external_secret(
         chart,

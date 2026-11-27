@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import opentofu
 from cluster.cdk8s.cdviz import config
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "cdviz-github-webhook"
@@ -29,7 +30,11 @@ def chart(app: App) -> Chart:
     chart = Chart(app, WORKSPACE_NAME, disable_resource_name_hashes=True)
     identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
     opentofu.secret_access(
-        chart, "flux-system-secrets", identity=identity, namespace="flux-system", read=["github-secrets-sync-pat"]
+        chart,
+        "flux-system-secrets",
+        identity=identity,
+        namespace=CONTROLLER_NAMESPACE,
+        read=["github-secrets-sync-pat"],
     )
     opentofu.secret_access(
         chart, "cdviz-secrets", identity=identity, namespace=config.NAMESPACE, write=[config.WEBHOOK_SECRET.name]
