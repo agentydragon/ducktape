@@ -12,7 +12,10 @@ skill_package(
             preserve_paths = True,
         ),
         skill_mapping(
-            srcs = ["//devinfra/ci/skills/shared:reporting.md"],
+            srcs = [
+                "//devinfra/ci/skills/shared:cdviz.md",
+                "//devinfra/ci/skills/shared:reporting.md",
+            ],
             prefix = "references",
         ),
         skill_mapping(
