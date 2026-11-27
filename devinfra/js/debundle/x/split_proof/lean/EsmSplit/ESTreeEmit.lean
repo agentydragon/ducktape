@@ -95,8 +95,6 @@ def programs (asts : Array Json) (B : Bundle) (P : Plan) (source : String)
 /-- The direct CoreJS printer currently handles ASCII binding names. The
 source parser has already checked scope; this check keeps unsupported names
 out of the generated ESTree. -/
--- Reserve `undefined` so the direct printer can use the global identifier for
--- CoreJS `.undef` without a local binding shadowing it.
 private def printableBinding (name : String) : Bool :=
   let initial := fun c => ('a' ≤ c && c ≤ 'z') || ('A' ≤ c && c ≤ 'Z') || c == '_' || c == '$'
   let rest := fun c => initial c || ('0' ≤ c && c ≤ '9')
@@ -105,7 +103,7 @@ private def printableBinding (name : String) : Bool :=
       "do", "else", "enum", "export", "extends", "false", "finally", "for", "function", "if", "import",
       "in", "instanceof", "let", "new", "null", "return", "super", "switch", "this", "throw", "true",
       "try", "typeof", "var", "void", "while", "with", "yield", "implements", "interface", "package",
-      "private", "protected", "public", "static", "eval", "arguments", "undefined"].contains name
+      "private", "protected", "public", "static", "eval", "arguments"].contains name
 
 private def coreIdentifier (name : String) : Except String Json := do
   unless printableBinding name do throw s!"unsupported CoreJS binding name `{name}`"
@@ -113,9 +111,11 @@ private def coreIdentifier (name : String) : Except String Json := do
 
 /-- Translate only the primitive initializer fragment handled by the direct
 constructor route. Unsupported CoreJS syntax fails closed. -/
-private def coreExpr (expr : CoreJS.Expr) (operand := false) : Except String Json :=
+private def coreExpr (shadowed : Bool) (expr : CoreJS.Expr) (operand := false) : Except String Json :=
   match expr with
-  | .undef => pure <| identifier "undefined"
+  | .undef => do
+    if shadowed then throw "undefined initializer is shadowed in the output module"
+    return identifier "undefined"
   | .null => pure <| node "Literal" [("value", .null)]
   | .bool value => pure <| node "Literal" [("value", .bool value)]
   | .str value => pure <| node "Literal" [("value", .str value)]
@@ -140,7 +140,7 @@ private def coreExpr (expr : CoreJS.Expr) (operand := false) : Except String Jso
       | .void => pure "void"
       | .toString => throw "unsupported CoreJS string conversion for direct printing"
     return node "UnaryExpression" [("operator", .str operator), ("prefix", .bool true),
-      ("argument", ← coreExpr argument true)]
+      ("argument", ← coreExpr shadowed argument true)]
   | .binary op left right => do
     let operator ← match op with
       | .add => pure "+"
@@ -163,18 +163,18 @@ private def coreExpr (expr : CoreJS.Expr) (operand := false) : Except String Jso
       | .gt => pure ">"
       | .ge => pure ">="
     return node "BinaryExpression" [("operator", .str operator),
-      ("left", ← coreExpr left true), ("right", ← coreExpr right true)]
+      ("left", ← coreExpr shadowed left true), ("right", ← coreExpr shadowed right true)]
   | _ => throw "unsupported CoreJS initializer for direct printing"
 
-private def coreStatement : CoreJS.Stmt → Except String Json
+private def coreStatement (shadowed : Bool) : CoreJS.Stmt → Except String Json
   | .decl .const name value => do
     let id ← coreIdentifier name
-    let init ← coreExpr value
+    let init ← coreExpr shadowed value
     return node "VariableDeclaration" [("kind", .str "const"), ("declarations", toJson [
       node "VariableDeclarator" [("id", id), ("init", init)]])]
   | .decl .let_ name value => do
     let id ← coreIdentifier name
-    let init ← coreExpr value
+    let init ← coreExpr shadowed value
     return node "VariableDeclaration" [("kind", .str "let"), ("declarations", toJson [
       node "VariableDeclarator" [("id", id), ("init", init)]])]
   | _ => throw "unsupported CoreJS statement for direct printing"
@@ -185,7 +185,13 @@ private def coreModule (m : CoreJS.Module) (hashbang : List (String × Json)) : 
       return node "ImportSpecifier" [("local", ← coreIdentifier localName), ("imported", moduleName published)]
     return node "ImportDeclaration" [("source", literal (relativeUrlSpecifier m.name req.source)),
       ("specifiers", toJson specs), ("attributes", .arr #[])]
-  let body ← m.body.mapM fun (_, stmt) => coreStatement stmt
+  -- An `.undef` is printed as the global identifier; reject it only when
+  -- this output module shadows that identifier with a binding or import.
+  let shadowed := m.imports.any (fun req => req.names.any (fun (_, localName) => localName == "undefined")) ||
+    m.body.any (fun (_, stmt) => match stmt with
+      | .decl _ name _ => name == "undefined"
+      | _ => false)
+  let body ← m.body.mapM fun (_, stmt) => coreStatement shadowed stmt
   let exports ← m.exports.mapM fun (published, localName) => do
     return node "ExportSpecifier" [("local", ← coreIdentifier localName), ("exported", moduleName published)]
   let exportNodes := if exports.isEmpty then [] else [node "ExportNamedDeclaration" [

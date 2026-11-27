@@ -225,3 +225,22 @@ const undefChecked = split({
 assert.equal(undefChecked.status, "certified", undefChecked.log);
 assert.equal(undefChecked.scope, "indexed-local-exports", undefChecked.log);
 assert.equal((await import(pathToFileURL(path.join(undefOut, "entry.mjs")).href)).second, undefined);
+
+// A local binding named undefined is safe when this module has no CoreJS
+// undefined expression to print. Keep this previously accepted shape.
+const shadowSource = path.join(root, "shadow-source.mjs");
+const shadowOut = path.join(root, "shadow-out");
+writeFileSync(shadowSource, "const undefined = 3;\nconst second = undefined;\nexport { second };\n");
+const shadowProduced = split({ source: shadowSource, spec: undefSpec, out: shadowOut, require: "all-outcomes" });
+assert.equal(shadowProduced.status, "certified", shadowProduced.log);
+assert.equal(shadowProduced.scope, "indexed-local-exports", shadowProduced.log);
+assert.equal(shadowProduced.verdict.strategy, "compiled-constructor", shadowProduced.log);
+const shadowChecked = split({
+  source: shadowSource,
+  spec: undefSpec,
+  out: shadowOut,
+  require: "all-outcomes",
+  checkOutput: true,
+});
+assert.equal(shadowChecked.status, "certified", shadowChecked.log);
+assert.equal((await import(pathToFileURL(path.join(shadowOut, "entry.mjs")).href)).second, 3);
