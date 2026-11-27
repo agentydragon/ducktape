@@ -177,6 +177,23 @@ pub struct GateRejectionOutcome<'a> {
     pub rejection: &'a GateRejectionReport,
 }
 
+/// Print a graph-backed edit's result: a gate rejection as its JSON envelope
+/// (then the error), otherwise the unassessed-write warning and the report.
+pub fn report_edit<R: Serialize>(
+    output: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
+    verb: MutationVerb,
+    format: Option<OutputFormat>,
+    report: Result<R>,
+    outcome: impl FnOnce(&R) -> &MutationOutcome,
+    text: impl FnOnce(&R, &mut String) -> Result<()>,
+) -> Result<()> {
+    let report = report.map_err(|err| emit_gate_rejection_json(output, verb, format, err))?;
+    outcome(&report).warn_if_unassessed_write(stderr)?;
+    command_output::write_report(&report, OutputFormat::resolve(format), output, text)?;
+    Ok(())
+}
+
 /// Attach any rejection-report failure to the original typed gate rejection.
 pub fn emit_gate_rejection_json(
     output: &mut dyn std::io::Write,

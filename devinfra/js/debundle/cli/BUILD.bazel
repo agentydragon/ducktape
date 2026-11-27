@@ -82,6 +82,24 @@ rust_library(
     ],
 )
 
+# The assess → check → write transaction shared by graph-backed ownership edits.
+rust_library(
+    name = "graph_edit",
+    srcs = ["graph_edit.rs"],
+    crate_root = "graph_edit.rs",
+    edition = "2024",
+    deps = [
+        ":candidate_assessment",
+        ":edit_gate",
+        ":outcome",
+        "//devinfra/js/debundle:gate",
+        "//devinfra/js/debundle:pipeline",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_tree",
+        "@crates//:anyhow",
+    ],
+)
+
 rust_library(
     name = "binding",
     srcs = ["binding.rs"],
