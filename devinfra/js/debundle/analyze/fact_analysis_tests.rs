@@ -168,14 +168,25 @@ fn at_init_call_recorded() {
 /// A call inside a function body lives in `calls.lazy`, not
 /// `calls.eager`. The call only fires when the function is
 /// invoked, so promotion treats it as a lazy edge of the
-/// containing function.
+/// containing function. Class instance field initializers fire
+/// per-construction, not at class-decl time, matching how the read
+/// collectors treat instance fields as lazy. VarDecl-bound arrow
+/// functions are function carriers like function declarations.
 #[test]
-fn body_call_recorded() {
-    let module = parse("function f() { g(); } function g() {}");
-    let facts = analyze_facts(&module);
-    // f's decl: its body calls g lazily.
-    assert!(facts[0].calls.eager.is_empty());
-    assert_eq!(facts[0].calls.lazy, BTreeSet::from([test_id("g")]),);
+fn body_calls_are_lazy() {
+    for (source, ordinal, callee) in [
+        ("function f() { g(); } function g() {}", 0, "g"),
+        ("function f() {} class C { x = f(); }", 1, "f"),
+        ("function g() {} const f = () => g();", 1, "g"),
+    ] {
+        let facts = analyze_facts(&parse(source));
+        assert!(facts[ordinal].calls.eager.is_empty(), "{source}");
+        assert_eq!(
+            facts[ordinal].calls.lazy,
+            BTreeSet::from([test_id(callee)]),
+            "{source}"
+        );
+    }
 }
 
 /// A local alias preserves the function identity for promotion.
@@ -196,18 +207,6 @@ fn class_static_init_call_is_at_init() {
     assert!(facts[1].calls.lazy.is_empty());
 }
 
-/// Class instance field initializers fire per-construction, not
-/// at class-decl time. Calls inside them are `calls.lazy`,
-/// matching how the existing read collectors treat instance
-/// fields as lazy.
-#[test]
-fn class_instance_field_call_is_lazy() {
-    let module = parse("function f() {} class C { x = f(); }");
-    let facts = analyze_facts(&module);
-    assert!(facts[1].calls.eager.is_empty());
-    assert_eq!(facts[1].calls.lazy, BTreeSet::from([test_id("f")]),);
-}
-
 /// Nested calls in argument positions are still seen by the
 /// collector. `console.log(readB())` records both `console` (in
 /// reads.eager) and `readB` (in calls.eager).
@@ -222,125 +221,82 @@ fn nested_call_arguments_record_inner_callee() {
     assert_eq!(facts[1].calls.eager, BTreeSet::from([test_id("readB")]),);
 }
 
-/// VarDecl-bound arrow functions participate in calls.lazy the
-/// same way function declarations do. `const f = () => g()` is
-/// a function carrier; the `g()` inside is lazy.
+/// A rebind at depth 1 shows up in both `rebinds.lazy` and
+/// `rebinds.first_order_lazy`; at-init promotion and the direct
+/// `lazy_rebind` dependency edge both read from the first-order subset,
+/// so the dependency graph emits a constraining `LazyRebind` edge.
 #[test]
-fn vardecl_arrow_body_call_recorded() {
-    let module = parse("function g() {} const f = () => g();");
-    let facts = analyze_facts(&module);
-    // f's vardecl: g() is a lazy body call.
-    assert!(facts[1].calls.eager.is_empty());
-    assert_eq!(facts[1].calls.lazy, BTreeSet::from([test_id("g")]),);
+fn first_order_lazy_rebinds_fire_when_the_carrier_runs() {
+    for (label, source, binding) in [
+        (
+            "function's immediate body",
+            "let s = 0; function f() { s = 1; }",
+            "s",
+        ),
+        (
+            // The method's function body is the immediate body, just like
+            // a bare `function f() { ... }`.
+            "class method body",
+            "let counter = 0; class C { bump(b) { counter = b; } }",
+            "counter",
+        ),
+        (
+            // The engine doesn't suspend until it reaches the first `await`.
+            "before the first await of an async body",
+            "let s = 0; async function f() { s = 1; await Promise.resolve(); }",
+            "s",
+        ),
+    ] {
+        let facts = analyze_facts(&parse(source));
+        assert_eq!(
+            facts[1].rebinds.lazy,
+            BTreeSet::from([test_id(binding)]),
+            "{label}"
+        );
+        assert_eq!(
+            facts[1].rebinds.first_order_lazy,
+            BTreeSet::from([test_id(binding)]),
+            "{label}"
+        );
+    }
 }
 
-/// A binding rebind inside a function's immediate body
-/// shows up in both `rebinds.lazy` and `rebinds.first_order_lazy`.
-/// At-init promotion and the direct `lazy_rebind` dependency edge
-/// both read from the first-order subset.
+/// A rebind or call inside a nested closure (depth ≥ 2) fires only when
+/// the nested closure fires: invoking the outer function synchronously
+/// only stashes it (see `e2e/cases/initialization/nested_closure_{read,rebind}`).
+/// One after the first `await` of an async body runs in a microtask after
+/// the at-init caller has finished. Either stays in the coarse `lazy` set
+/// (it IS lazy from the chunk's top-level POV) but not in `first_order_lazy`.
 #[test]
-fn first_order_lazy_rebind_in_immediate_body() {
-    let module = parse("let s = 0; function f() { s = 1; }");
-    let facts = analyze_facts(&module);
-    // f's decl: body rebinds s at depth 1.
-    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("s")]));
-    assert_eq!(
-        facts[1].rebinds.first_order_lazy,
-        BTreeSet::from([test_id("s")])
-    );
-}
+fn first_order_uses_skip_nested_closures_and_post_await_code() {
+    for (label, rebind_source, call_source) in [
+        (
+            "nested closure",
+            "let s = 0; function f() { globalThis.fire = () => { s = 1; }; }",
+            "function g() {} function f() { globalThis.fire = () => { g(); }; }",
+        ),
+        (
+            "after await",
+            "let s = 0; async function f() { await Promise.resolve(); s = 1; }",
+            "function g() {} async function f() { await Promise.resolve(); g(); }",
+        ),
+    ] {
+        let facts = analyze_facts(&parse(rebind_source));
+        assert_eq!(
+            facts[1].rebinds.lazy,
+            BTreeSet::from([test_id("s")]),
+            "{label}"
+        );
+        assert!(facts[1].rebinds.first_order_lazy.is_empty(), "{label}");
 
-/// A binding rebind inside a class method body sits at depth 1
-/// (the method's function body is the immediate body, just like
-/// a bare `function f() { ... }`). Must show up in
-/// `rebinds.first_order_lazy` so the dependency graph emits a
-/// constraining `LazyRebind` edge for it.
-#[test]
-fn first_order_lazy_rebind_in_class_method_body() {
-    let module = parse("let counter = 0; class C { bump(b) { counter = b; } }");
-    let facts = analyze_facts(&module);
-    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("counter")]));
-    assert_eq!(
-        facts[1].rebinds.first_order_lazy,
-        BTreeSet::from([test_id("counter")])
-    );
-}
-
-/// A binding rebind inside a nested closure (depth ≥ 2) shows
-/// up in `rebinds.lazy` but NOT in `rebinds.first_order_lazy`
-/// — invoking the outer function synchronously only stashes
-/// the closure; the rebind doesn't fire. See
-/// `e2e/cases/initialization/nested_closure_{read,rebind}`.
-#[test]
-fn first_order_lazy_rebind_skips_nested_closure() {
-    let module = parse(
-        "let s = 0; \
-         function f() { globalThis.fire = () => { s = 1; }; }",
-    );
-    let facts = analyze_facts(&module);
-    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("s")]));
-    assert!(facts[1].rebinds.first_order_lazy.is_empty());
-}
-
-/// Same depth distinction for calls: a call in the immediate
-/// body fires when the function is invoked, but a call inside
-/// a nested closure only fires when the nested closure fires.
-#[test]
-fn first_order_body_call_skips_nested_closure() {
-    let module = parse(
-        "function g() {} \
-         function f() { globalThis.fire = () => { g(); }; }",
-    );
-    let facts = analyze_facts(&module);
-    assert_eq!(facts[1].calls.lazy, BTreeSet::from([test_id("g")]));
-    assert!(facts[1].calls.first_order_lazy.is_empty());
-}
-
-/// A rebind that lexically precedes the first `await` in an async
-/// function body runs synchronously when the function is invoked
-/// (the engine doesn't suspend until it reaches the await), so it
-/// belongs in `rebinds.first_order_lazy`.
-#[test]
-fn first_order_lazy_rebind_keeps_pre_await_in_async_body() {
-    let module = parse(
-        "let s = 0; \
-         async function f() { s = 1; await Promise.resolve(); }",
-    );
-    let facts = analyze_facts(&module);
-    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("s")]));
-    assert_eq!(
-        facts[1].rebinds.first_order_lazy,
-        BTreeSet::from([test_id("s")])
-    );
-}
-
-/// A rebind that lexically follows the first `await` in an async
-/// function body runs in a microtask after the at-init caller has
-/// finished — it doesn't fire synchronously when the function is
-/// invoked, so it must not appear in `rebinds.first_order_lazy`.
-/// The coarse `rebinds.lazy` still records it (it IS lazy from the
-/// chunk's top-level POV).
-#[test]
-fn first_order_lazy_rebind_skips_after_await_in_async_body() {
-    let module = parse(
-        "let s = 0; \
-         async function f() { await Promise.resolve(); s = 1; }",
-    );
-    let facts = analyze_facts(&module);
-    assert_eq!(facts[1].rebinds.lazy, BTreeSet::from([test_id("s")]));
-    assert!(facts[1].rebinds.first_order_lazy.is_empty());
-}
-
-/// Same await-boundary distinction for body calls.
-#[test]
-fn first_order_body_call_skips_after_await_in_async_body() {
-    let module = parse(
-        "function g() {} \
-         async function f() { await Promise.resolve(); g(); }",
-    );
-    let facts = analyze_facts(&module);
-    assert_eq!(facts[1].calls.lazy, BTreeSet::from([test_id("g")]));
-    assert!(facts[1].calls.first_order_lazy.is_empty());
+        let facts = analyze_facts(&parse(call_source));
+        assert_eq!(
+            facts[1].calls.lazy,
+            BTreeSet::from([test_id("g")]),
+            "{label}"
+        );
+        assert!(facts[1].calls.first_order_lazy.is_empty(), "{label}");
+    }
 }
 
 #[test]
@@ -542,28 +498,23 @@ fn class_extends_clause_eager_read() {
     assert!(!facts[0].reads.eager.contains(&test_id("X")));
 }
 
+/// A computed key expression (`k.foo` reads `k`) and a static field
+/// initializer evaluate at init. An instance field initializer evaluates
+/// per instance, not at class-decl time.
 #[test]
-fn computed_key_eager_read() {
-    let module = parse("const M = { [k.foo]: 1 };");
-    let facts = analyze_facts(&module);
-    // The key expression `k.foo` reads `k` at-init.
-    assert!(facts[0].reads.eager.contains(&test_id("k")));
-}
-
-#[test]
-fn class_static_init_eager_read() {
-    let module = parse("class C { static x = Y; }");
-    let facts = analyze_facts(&module);
-    assert!(facts[0].reads.eager.contains(&test_id("Y")));
-}
-
-#[test]
-fn class_instance_init_is_lazy() {
-    let module = parse("class C { x = Y; }");
-    let facts = analyze_facts(&module);
-    // Instance field initializer evaluates per-instance, not at
-    // class-decl time.
-    assert!(!facts[0].reads.eager.contains(&test_id("Y")));
+fn initializer_reads_are_eager_only_when_evaluated_at_init() {
+    for (source, binding, eager) in [
+        ("const M = { [k.foo]: 1 };", "k", true),
+        ("class C { static x = Y; }", "Y", true),
+        ("class C { x = Y; }", "Y", false),
+    ] {
+        let facts = analyze_facts(&parse(source));
+        assert_eq!(
+            facts[0].reads.eager.contains(&test_id(binding)),
+            eager,
+            "{source}"
+        );
+    }
 }
 
 #[test]
@@ -659,20 +610,6 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     }
 }
 
-#[test]
-fn vendor_prune_policy_records_static_object_local_effects() {
-    let module = parse("const EMPTY = {}; Object.freeze(EMPTY);");
-    let default_facts = analyze_facts(&module);
-    assert!(default_facts[1].local_effects.is_empty());
-
-    let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert_eq!(
-        vendor_facts[1].local_effects,
-        BTreeSet::from([test_id("EMPTY")])
-    );
-    assert!(vendor_facts[1].purity.is_pure());
-}
-
 fn analyze_facts_with_policy(module: &Module, policy: LocalEffectPolicy) -> Vec<StatementFacts> {
     let hints = AnalysisInputs {
         local_effect_policy: policy,
@@ -744,44 +681,34 @@ fn local_property_writes_policy_admits_string_literal_computed_key() {
     assert!(facts[1].purity.is_pure());
 }
 
+/// Shapes only the vendor-prune policy records as pure local effects on
+/// one root binding; the default policy records none of them.
 #[test]
-fn vendor_prune_policy_records_intrinsic_alias_local_effects() {
-    let module = parse(
-        r#"const assign = Object.assign;
+fn vendor_prune_policy_records_local_effects() {
+    for (label, source, ordinal, root) in [
+        (
+            "static object",
+            "const EMPTY = {}; Object.freeze(EMPTY);",
+            1,
+            "EMPTY",
+        ),
+        (
+            "intrinsic alias",
+            r#"const assign = Object.assign;
 function target() {}
 assign(target, { deep: true });"#,
-    );
-    let default_facts = analyze_facts(&module);
-    assert!(default_facts[2].local_effects.is_empty());
-
-    let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert_eq!(
-        vendor_facts[2].local_effects,
-        BTreeSet::from([test_id("target")])
-    );
-    assert!(vendor_facts[2].purity.is_pure());
-}
-
-#[test]
-fn vendor_prune_policy_records_var_init_local_effects() {
-    let module = parse(
-        "function Base() {}\nfunction Derived() {}\nvar proto = (Derived.prototype = new Base());",
-    );
-    let default_facts = analyze_facts(&module);
-    assert!(default_facts[2].local_effects.is_empty());
-
-    let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert_eq!(
-        vendor_facts[2].local_effects,
-        BTreeSet::from([test_id("Derived")])
-    );
-    assert!(vendor_facts[2].purity.is_pure());
-}
-
-#[test]
-fn vendor_prune_policy_records_object_iteration_local_effects() {
-    let module = parse(
-        r#"const define = Object.defineProperty;
+            2,
+            "target",
+        ),
+        (
+            "var init",
+            "function Base() {}\nfunction Derived() {}\nvar proto = (Derived.prototype = new Base());",
+            2,
+            "Derived",
+        ),
+        (
+            "object iteration",
+            r#"const define = Object.defineProperty;
 var methods = {
   clear: function () { return this.splice(0); },
   replace: function (items) { return this.splice(0, this.length, items); }
@@ -791,22 +718,12 @@ Object.entries(methods).forEach(function (entry) {
   var key = entry[0], value = entry[1];
   key !== "concat" && define(ObservableArray.prototype, key, value);
 });"#,
-    );
-    let default_facts = analyze_facts(&module);
-    assert!(default_facts[3].local_effects.is_empty());
-
-    let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert_eq!(
-        vendor_facts[3].local_effects,
-        BTreeSet::from([test_id("ObservableArray")])
-    );
-    assert!(vendor_facts[3].purity.is_pure());
-}
-
-#[test]
-fn vendor_prune_policy_records_target_first_wrapper_local_effects() {
-    let module = parse(
-        r#"function define(target, key, value) {
+            3,
+            "ObservableArray",
+        ),
+        (
+            "target-first wrapper",
+            r#"function define(target, key, value) {
   Object.defineProperty(target, key, { configurable: true, value });
 }
 var methods = {
@@ -817,26 +734,62 @@ Object.entries(methods).forEach(function (entry) {
   var key = entry[0], value = entry[1];
   key !== "concat" && define(ObservableArray.prototype, key, value);
 });"#,
-    );
-    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert_eq!(
-        facts[3].local_effects,
-        BTreeSet::from([test_id("ObservableArray")])
-    );
-    assert!(facts[3].purity.is_pure());
+            3,
+            "ObservableArray",
+        ),
+        (
+            "local binding write",
+            "let assigned;\nconst source = { value: 1 };\nassigned = source.value;",
+            2,
+            "assigned",
+        ),
+        (
+            "commonjs module IIFE",
+            r#"var module = { exports: {} };
+(function (target) {
+  (function () {
+var has = {}.hasOwnProperty;
+function clsx() {}
+target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.classNames = clsx);
+  })();
+})(module);"#,
+            1,
+            "module",
+        ),
+    ] {
+        let module = parse(source);
+        let default_facts = analyze_facts(&module);
+        assert!(default_facts[ordinal].local_effects.is_empty(), "{label}");
+
+        let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
+        assert_eq!(
+            vendor_facts[ordinal].local_effects,
+            BTreeSet::from([test_id(root)]),
+            "{label}"
+        );
+        assert!(vendor_facts[ordinal].purity.is_pure(), "{label}");
+    }
 }
 
 #[test]
-fn vendor_prune_policy_keeps_unknown_object_iteration_effects_hard() {
-    let module = parse(
-        r#"var methods = { clear: function () {} };
+fn vendor_prune_policy_keeps_unknown_effects_hard() {
+    for (label, source) in [
+        (
+            "unknown object iteration",
+            r#"var methods = { clear: function () {} };
 Object.entries(methods).forEach(function (entry) {
   sideEffect(entry);
 });"#,
-    );
-    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert!(facts[1].local_effects.is_empty());
-    assert!(!facts[1].purity.is_pure());
+        ),
+        (
+            "undeclared binding write",
+            "const source = { value: 1 };\nexternal = source.value;",
+        ),
+    ] {
+        let facts = analyze_facts_with_policy(&parse(source), LocalEffectPolicy::VendorPrune);
+        assert!(facts[1].local_effects.is_empty(), "{label}");
+        assert!(!facts[1].purity.is_pure(), "{label}");
+    }
 }
 
 #[test]
@@ -879,42 +832,6 @@ push(tasks, task);
         facts[1].local_effects,
         BTreeSet::from([test_id("scheduler")])
     );
-}
-
-#[test]
-fn vendor_prune_policy_records_local_binding_writes() {
-    let module = parse("let assigned;\nconst source = { value: 1 };\nassigned = source.value;");
-    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert_eq!(
-        facts[2].local_effects,
-        BTreeSet::from([test_id("assigned")])
-    );
-    assert!(facts[2].purity.is_pure());
-}
-
-#[test]
-fn vendor_prune_policy_ignores_undeclared_binding_writes() {
-    let module = parse("const source = { value: 1 };\nexternal = source.value;");
-    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert!(facts[1].local_effects.is_empty());
-    assert!(!facts[1].purity.is_pure());
-}
-
-#[test]
-fn vendor_prune_policy_records_commonjs_module_iife_local_effects() {
-    let module = parse(
-        r#"var module = { exports: {} };
-(function (target) {
-  (function () {
-var has = {}.hasOwnProperty;
-function clsx() {}
-target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.classNames = clsx);
-  })();
-})(module);"#,
-    );
-    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
-    assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("module")]));
-    assert!(facts[1].purity.is_pure());
 }
 
 /// The policy-independent layer of `analyze_chunk` produces identical
@@ -1090,60 +1007,27 @@ fn has_side_effect_for(src: &str) -> Vec<bool> {
 }
 
 #[test]
-fn function_decl_is_not_side_effecting() {
-    assert_eq!(
-        has_side_effect_for("function f() { return io(); }"),
-        vec![false]
-    );
-}
-
-#[test]
-fn class_decl_pure_without_static_init() {
-    assert_eq!(
-        has_side_effect_for("class C { m() { return io(); } }"),
-        vec![false]
-    );
-    assert_eq!(
-        has_side_effect_for("class C { static x = 1; }"),
-        vec![false]
-    );
-    assert_eq!(
-        has_side_effect_for("class C { static x = io(); }"),
-        vec![true]
-    );
-    assert_eq!(has_side_effect_for("class C { static {} }"), vec![true]);
-}
-
-#[test]
-fn immutable_symbol_const_is_an_inert_computed_class_key() {
-    assert_eq!(
-        has_side_effect_for("const brand = Symbol('brand'); class C { [brand]() {} }"),
-        vec![false, false]
-    );
-}
-
-#[test]
-fn bare_expression_classified_by_purity() {
-    // Plain ident-read expression statement: pure.
-    assert_eq!(has_side_effect_for("X;"), vec![false]);
-    // Function call expression statement: side-effecting.
-    assert_eq!(has_side_effect_for("io();"), vec![true]);
-}
-
-#[test]
-fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
-    // After the comma-list pre-split, a multi-declarator
-    // var-decl becomes one row per declarator. So a
-    // mixed-purity comma-list produces both a Pure row and
-    // an Impure row, not a single conservative row.
-    assert_eq!(
-        has_side_effect_for("const A = 1, B = compute();"),
-        vec![false, true]
-    );
-    assert_eq!(
-        has_side_effect_for("const A = 1, B = 2, C = 3;"),
-        vec![false, false, false]
-    );
+fn statements_are_side_effecting_only_when_evaluation_can_be() {
+    for (source, expected) in [
+        ("function f() { return io(); }", vec![false]),
+        ("class C { m() { return io(); } }", vec![false]),
+        ("class C { static x = 1; }", vec![false]),
+        ("class C { static x = io(); }", vec![true]),
+        ("class C { static {} }", vec![true]),
+        // An immutable symbol const is an inert computed class key.
+        (
+            "const brand = Symbol('brand'); class C { [brand]() {} }",
+            vec![false, false],
+        ),
+        ("X;", vec![false]),
+        ("io();", vec![true]),
+        // After the comma-list pre-split, a multi-declarator var-decl is one
+        // row per declarator, not a single conservative row.
+        ("const A = 1, B = compute();", vec![false, true]),
+        ("const A = 1, B = 2, C = 3;", vec![false, false, false]),
+    ] {
+        assert_eq!(has_side_effect_for(source), expected, "{source}");
+    }
 }
 
 fn statement_kinds(source: &str) -> Vec<StatementKind> {

@@ -102,30 +102,129 @@ console.log("same");"#],
     );
 }
 
+// Pin the zero-match and ambiguous-match error paths for anonymous-statement
+// selectors. Each `anonymous_statements[].match` must address exactly one
+// top-level statement; the resolver never picks one match silently, even when
+// source order is well-defined. Like the validator's "cycle = reject"
+// philosophy, a stale or duplicated selector is loud at validation time rather
+// than silently skipping the co-move. The outcome names the offending logical
+// module, its kind (`no_match`: find the new shape or remove the entry;
+// `ambiguous`: refine with context or accept indistinguishable duplicates), and
+// the selector source verbatim.
 #[test]
-fn repeated_anonymous_context_stays_ambiguous() {
-    let outcome = expect_selector_outcome(
-        FixtureOpts::new(
-            r#"const first = "same";
+fn anonymous_selectors_reject_zero_or_multiple_matches() {
+    for (label, opts, kind, module, preview) in [
+        (
+            "repeated context stays ambiguous",
+            FixtureOpts::new(
+                r#"const first = "same";
 console.log("same");
 const second = "same";
 console.log("same");
 export { first, second };
 "#,
-            vec![logical_module_with_anon_alpha(
-                "selected",
-                &[],
-                &[r#"const anchor = "same";
+                vec![logical_module_with_anon_alpha(
+                    "selected",
+                    &[],
+                    &[r#"const anchor = "same";
 console.log("same");"#],
-            )],
+                )],
+            ),
+            "ambiguous",
+            "selected",
+            "const anchor = \"same\"; console.log(\"same\");",
         ),
-        "ambiguous",
-        "selected",
-    );
-    assert_eq!(
-        outcome["selector_preview"],
-        "const anchor = \"same\"; console.log(\"same\");"
-    );
+        (
+            "context requires adjacency",
+            FixtureOpts::new(
+                r#"const first = "first";
+const spacer = 0;
+console.log("same");
+export { first, spacer };
+"#,
+                vec![logical_module_with_anon_alpha(
+                    "selected",
+                    &[],
+                    &[r#"const anchor = "first";
+console.log("same");"#],
+                )],
+            ),
+            "no_match",
+            "selected",
+            "const anchor = \"first\"; console.log(\"same\");",
+        ),
+        (
+            // An upstream refactor renamed or removed the leading console.log, but
+            // the spec still claims it.
+            "stale selector matches no top-level statement",
+            FixtureOpts::new(
+                r#"console.log("a");
+var X = (() => "x")();
+const Existing = "existing";
+console.log(Existing);
+export { X, Existing };
+"#,
+                vec![logical_module_with_anon(
+                    "x_module",
+                    &[Member::new("X")],
+                    &[r#"console.log("nope");"#],
+                )],
+            ),
+            "no_match",
+            "x_module",
+            r#"console.log("nope");"#,
+        ),
+        (
+            // Both positions produce `ExprStmt(Call(console.log, ["dup"]))`;
+            // EqIgnoreSpan treats them as equal.
+            "identical top-level statements stay ambiguous",
+            FixtureOpts::new(
+                r#"console.log("dup");
+var X = (() => "x")();
+console.log("dup");
+const Existing = "existing";
+console.log(Existing);
+export { X, Existing };
+"#,
+                vec![logical_module_with_anon(
+                    "x_module",
+                    &[Member::new("X")],
+                    &[r#"console.log("dup");"#],
+                )],
+            ),
+            "ambiguous",
+            "x_module",
+            r#"console.log("dup");"#,
+        ),
+        (
+            "alpha selector still rejects ambiguous matches",
+            FixtureOpts::new(
+                r#"function decorate(args, target, prop) {
+  console.log(`${prop}:${target.constructor.name}:${args.length}`);
+}
+const FirstToken = Symbol("first");
+const SecondToken = Symbol("second");
+class FirstSubject {}
+class SecondSubject {}
+decorate([FirstToken], FirstSubject.prototype, "statusFlag");
+decorate([SecondToken], SecondSubject.prototype, "statusFlag");
+export { FirstSubject, SecondSubject };
+"#,
+                vec![logical_module_with_anon_alpha(
+                    "first_subject",
+                    &binding_members(["decorate", "FirstToken", "FirstSubject"]),
+                    &[r#"applyMetadata([token], Subject.prototype, "statusFlag");"#],
+                )],
+            ),
+            "ambiguous",
+            "first_subject",
+            r#"applyMetadata([token], Subject.prototype, "statusFlag");"#,
+        ),
+    ] {
+        println!("case: {label}");
+        let outcome = expect_selector_outcome(opts, kind, module);
+        assert_eq!(outcome["selector_preview"], preview, "{label}");
+    }
 }
 
 #[test]
@@ -199,91 +298,66 @@ console.log("same");"#],
 }
 
 #[test]
-fn anonymous_context_requires_adjacency() {
-    let outcome = expect_selector_outcome(
-        FixtureOpts::new(
-            r#"const first = "first";
-const spacer = 0;
-console.log("same");
-export { first, spacer };
-"#,
-            vec![logical_module_with_anon_alpha(
-                "selected",
-                &[],
-                &[r#"const anchor = "first";
-console.log("same");"#],
-            )],
-        ),
-        "no_match",
-        "selected",
-    );
-    assert_eq!(
-        outcome["selector_preview"],
-        "const anchor = \"first\"; console.log(\"same\");"
-    );
-}
-
-#[test]
-fn anonymous_context_requires_an_anonymous_final_statement() {
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            r#"const first = "first";
+fn invalid_anonymous_selectors_are_rejected() {
+    for (label, opts, messages) in [
+        (
+            "context final statement must be anonymous",
+            FixtureOpts::new(
+                r#"const first = "first";
 const second = "second";
 export { first, second };
 "#,
-            vec![logical_module_with_anon_alpha(
-                "selected",
-                &[],
-                &[r#"const anchor = "first";
+                vec![logical_module_with_anon_alpha(
+                    "selected",
+                    &[],
+                    &[r#"const anchor = "first";
 const target = "second";"#],
-            )],
+                )],
+            ),
+            &["invalid", "final statement declares a binding"][..],
         ),
-        &["invalid", "final statement declares a binding"],
-    );
-}
-
-#[test]
-fn anonymous_context_rejects_a_declaring_candidate_behind_a_hole() {
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            r#"const first = "first";
+        (
+            "context rejects a declaring candidate behind a hole",
+            FixtureOpts::new(
+                r#"const first = "first";
 const second = "second";
 export { first, second };
 "#,
-            vec![logical_module_with_anon_alpha(
-                "selected",
-                &[],
-                &[r#"const anchor = "first";
+                vec![logical_module_with_anon_alpha(
+                    "selected",
+                    &[],
+                    &[r#"const anchor = "first";
 STMT_TARGET;"#],
-            )],
+                )],
+            ),
+            &[
+                "invalid",
+                "final statement at body index 1 declares a binding",
+            ],
         ),
-        &[
-            "invalid",
-            "final statement at body index 1 declares a binding",
-        ],
-    );
-}
-
-#[test]
-fn exact_anonymous_match_remains_one_statement() {
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            r#"const first = "first";
+        (
+            "exact match must be one statement",
+            FixtureOpts::new(
+                r#"const first = "first";
 console.log("same");
 export { first };
 "#,
-            vec![logical_module_with_anon(
-                "selected",
-                &[],
-                &[r#"const first = "first";
+                vec![logical_module_with_anon(
+                    "selected",
+                    &[],
+                    &[r#"const first = "first";
 console.log("same");"#],
-            )],
+                )],
+            ),
+            &[
+                "invalid",
+                "exact `match` must contain exactly one top-level statement",
+            ],
         ),
-        &[
-            "invalid",
-            "exact `match` must contain exactly one top-level statement",
-        ],
-    );
+    ] {
+        println!("case: {label}");
+        expect_rejection_containing_all(opts, messages);
+    }
 }
 
 // Round-trip pin for anonymous-statement member support.
@@ -410,95 +484,6 @@ export { keep };
     );
     // End-to-end: the moved side effect actually executes under Node.
     assert_entry_output(&fixture, "anon-side-effect\n");
-}
-
-// Pin the zero-match error path for anonymous-statement selectors.
-//
-// When an `anonymous_statements[].match` source doesn't match any
-// top-level statement in the chunk, the materializer must reject
-// the spec with a diagnostic that includes:
-//
-//   1. The logical module's id (so the author knows which entry
-//      is broken).
-//   2. The selector source verbatim (so the author can spot what
-//      changed).
-//   3. The `no_match` outcome kind, so the author knows the
-//      remediation is "find the new shape" or "remove the entry."
-//
-// Mirrors the validator's "cycle = reject" philosophy: a stale
-// anonymous-statement selector becomes loud at validation time
-// rather than silently skipping the co-move.
-#[test]
-fn rejects_anonymous_statement_match_with_no_top_level_match() {
-    let opts = FixtureOpts::new(
-        r#"console.log("a");
-var X = (() => "x")();
-const Existing = "existing";
-console.log(Existing);
-export { X, Existing };
-"#,
-        vec![logical_module_with_anon(
-            "x_module",
-            &[Member::new("X")],
-            // Selector that doesn't appear in the chunk: the author's
-            // upstream an upstream refactor renamed or removed the leading
-            // console.log, but the spec still claims it.
-            &[r#"console.log("nope");"#],
-        )],
-    );
-
-    // Names the offending logical module so the author knows which spec
-    // entry to fix, and carries the selector source verbatim so the author
-    // can see what's stale.
-    let outcome = expect_selector_outcome(opts, "no_match", "x_module");
-    assert_eq!(outcome["selector_preview"], r#"console.log("nope");"#);
-}
-
-// Pin the ambiguous-match error path for anonymous-statement
-// selectors.
-//
-// Anonymous-statement selectors are unique-by-design: each
-// `match` source must address exactly one top-level statement.
-// When the chunk contains two structurally-identical top-level
-// statements (e.g. two `console.log("dup")` calls) and the
-// selector matches both, the materializer must reject the spec
-// with a diagnostic that includes:
-//
-//   1. The logical module's id.
-//   2. The selector source verbatim.
-//   3. The matching statement ordinals so the author can refine
-//      by writing two distinct selectors (probably with
-//      surrounding context) or accept that the chunk genuinely
-//      contains indistinguishable duplicates.
-//
-// Mirrors the validator's "cycle = reject" philosophy: the
-// resolver never picks one match silently, even if the chunk's
-// source order is well-defined — the spec author has to make
-// the choice explicit.
-#[test]
-fn rejects_anonymous_statement_match_with_multiple_top_level_matches() {
-    // Two source-order positions both produce
-    // `ExprStmt(Call(console.log, ["dup"]))`. EqIgnoreSpan treats
-    // them as equal — there's no way to disambiguate from the
-    // selector source alone.
-    let opts = FixtureOpts::new(
-        r#"console.log("dup");
-var X = (() => "x")();
-console.log("dup");
-const Existing = "existing";
-console.log(Existing);
-export { X, Existing };
-"#,
-        vec![logical_module_with_anon(
-            "x_module",
-            &[Member::new("X")],
-            &[r#"console.log("dup");"#],
-        )],
-    );
-
-    // Names the offending logical module and carries the selector source verbatim.
-    let outcome = expect_selector_outcome(opts, "ambiguous", "x_module");
-    assert_eq!(outcome["selector_preview"], r#"console.log("dup");"#);
 }
 
 // Pin source-order interleaving of anonymous-statement members
@@ -849,149 +834,39 @@ export { selectedValue, existingValue };
 }
 
 #[test]
-fn source_matches_single_declarator_survives_binding_name_drift() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+fn projected_source_matches_peel_only_the_selected_binding() {
+    for (
+        label,
+        source,
+        module,
+        member,
+        module_present,
+        module_absent,
+        residual_present,
+        residual_absent,
+        expected,
+    ) in [
+        (
+            "single declarator survives binding-name drift",
             r#"const runtimeBinding = { kind: "selected", enabled: true },
   siblingBinding = { kind: "other", enabled: false };
 const Existing = "existing";
 console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
 export { runtimeBinding, siblingBinding, Existing };
 "#,
-            vec![logical_module(
-                "selected_config",
-                &[Member::source_alpha(
-                    "selectedConfig",
-                    r#"const oldBinding = { kind: "selected", enabled: true };"#,
-                )],
-            )],
-        )
-        .with_import_order(&["selected_config", "residual"]),
-    );
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected_config.js",
-        &["const selectedConfig", r#""selected""#],
-        &["siblingBinding", "const Existing"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["siblingBinding", "const Existing"],
-        &["const runtimeBinding"],
-    );
-    assert_entry_output(&fixture, "selected other existing\n");
-}
-
-#[test]
-fn multi_statement_native_source_match_resolves() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const runtimePrefix = "OK:";
-function runtimeFormat(value) {
-  return runtimePrefix + value.trim().toUpperCase();
-}
-console.log(runtimeFormat(" ok "));
-export { runtimePrefix, runtimeFormat };
-"#,
-            vec![logical_module(
-                "format",
-                &[Member::source_alpha_target(
-                    "formatValue",
-                    "formatValue",
-                    r#"const prefix = "OK:";
-function formatValue(value) {
-  return prefix + value.trim().toUpperCase();
-}"#,
-                )],
-            )],
-        )
-        .with_import_order(&["format", "residual"]),
-    );
-
-    assert_entry_output(&fixture, "OK:OK\n");
-}
-
-#[test]
-fn alpha_all_native_source_match_resolves() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function runtimeFormat(value) {
-  return value.trim().toUpperCase();
-}
-console.log(runtimeFormat(" ok "));
-export { runtimeFormat };
-"#,
-        vec![logical_module(
-            "format",
-            &[Member::source_alpha_target(
-                "formatValue",
-                "runtimeFormat",
-                r#"function runtimeFormat(value) {
-  return value.trim().toUpperCase();
-}"#,
-            )],
-        )],
-    ));
-
-    assert_entry_output(&fixture, "OK\n");
-}
-
-#[test]
-fn alpha_all_function_source_match_without_projection_resolves() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function runtimeFormat(value) {
-  return value.trim().toUpperCase();
-}
-console.log(runtimeFormat(" ok "));
-export { runtimeFormat };
-"#,
-        vec![logical_module(
-            "format",
-            &[Member::source_alpha(
-                "formatValue",
-                r#"function formatValue(value) {
-  return value.trim().toUpperCase();
-}"#,
-            )],
-        )],
-    ));
-
-    assert_entry_output(&fixture, "OK\n");
-}
-
-#[test]
-fn alpha_all_native_source_match_with_extends_resolves() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"class RuntimeWidget extends Object {
-  label() {
-    return "runtime";
-  }
-}
-console.log(new RuntimeWidget().label());
-export { RuntimeWidget };
-"#,
-        vec![logical_module(
-            "widget",
-            &[Member::source_alpha_target(
-                "runtimeWidget",
-                "RuntimeWidget",
-                r#"class RuntimeWidget extends Object {
-  label() {
-    return "runtime";
-  }
-}"#,
-            )],
-        )],
-    ));
-
-    assert_entry_output(&fixture, "runtime\n");
-}
-
-#[test]
-fn source_matches_binding_projection_uses_multideclarator_context() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            "selected_config",
+            Member::source_alpha(
+                "selectedConfig",
+                r#"const oldBinding = { kind: "selected", enabled: true };"#,
+            ),
+            &["const selectedConfig", r#""selected""#][..],
+            &["siblingBinding", "const Existing"][..],
+            &["siblingBinding", "const Existing"][..],
+            &["const runtimeBinding"][..],
+            "selected other existing\n",
+        ),
+        (
+            "projection uses multi-declarator context",
             r#"const runtimeLocalPart = "primary",
   runtimeDomain = "example.test",
   runtimeAddress = `${runtimeLocalPart}@${runtimeDomain}`;
@@ -999,33 +874,213 @@ const duplicateLocalPart = "primary";
 console.log(runtimeLocalPart, duplicateLocalPart, runtimeAddress);
 export { runtimeLocalPart, runtimeDomain, runtimeAddress, duplicateLocalPart };
 "#,
-            vec![logical_module(
-                "selected_config",
-                &[Member::source_alpha_target(
-                    "selectedLocalPart",
-                    "localPart",
-                    r#"const localPart = "primary",
+            "selected_config",
+            Member::source_alpha_target(
+                "selectedLocalPart",
+                "localPart",
+                r#"const localPart = "primary",
   domain = "example.test",
   address = `${localPart}@${domain}`;"#,
-                )],
-            )],
-        )
-        .with_import_order(&["selected_config", "residual"]),
-    );
+            ),
+            &["const selectedLocalPart", r#""primary""#],
+            &["runtimeDomain", "runtimeAddress", "duplicateLocalPart"],
+            &["runtimeDomain", "runtimeAddress", "duplicateLocalPart"],
+            &["runtimeLocalPart"],
+            "primary primary primary@example.test\n",
+        ),
+        (
+            "projection selects a single declarator from a comma list",
+            r#"const siblingBinding = { kind: "other", enabled: false },
+  runtimeBinding = { kind: "selected", enabled: true };
+const Existing = "existing";
+console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
+export { siblingBinding, runtimeBinding, Existing };
+"#,
+            "selected_config",
+            Member::source_alpha_target(
+                "selectedConfig",
+                "config",
+                r#"const config = { kind: "selected", enabled: true };"#,
+            ),
+            &["const selectedConfig", r#""selected""#],
+            &["siblingBinding", "const Existing"],
+            &["siblingBinding", "const Existing"],
+            &["runtimeBinding"],
+            "selected other existing\n",
+        ),
+        (
+            "projection context selects a single declarator from a comma list",
+            r#"const helperBinding = { kind: "helper" },
+  runtimeBinding = { kind: "selected", enabled: true },
+  trailingBinding = { kind: "trailing" };
+function runtimeReader() {
+  return runtimeBinding.kind;
+}
+console.log(runtimeReader(), helperBinding.kind, trailingBinding.kind);
+export { helperBinding, runtimeBinding, trailingBinding, runtimeReader };
+"#,
+            "selected_config",
+            Member::source_alpha_target(
+                "selectedConfig",
+                "config",
+                r#"const config = { kind: "selected", enabled: true };
+function readConfig() {
+  return config.kind;
+}"#,
+            ),
+            &["const selectedConfig", r#""selected""#],
+            &["helperBinding", "trailingBinding", "runtimeReader"],
+            &["helperBinding", "trailingBinding", "runtimeReader"],
+            &["runtimeBinding"],
+            "selected helper trailing\n",
+        ),
+        (
+            "projection uses following-statement context",
+            r#"const traceContexts = ["load"];
+const selectedRegistry = {};
+for (const context of traceContexts)
+  selectedRegistry[context] = () => context;
+const duplicateRegistry = {};
+console.log(selectedRegistry !== duplicateRegistry, Object.keys(duplicateRegistry).length);
+export { traceContexts, selectedRegistry, duplicateRegistry };
+"#,
+            "selected_registry",
+            Member::source_alpha_target(
+                "traceCommandRegistry",
+                "registry",
+                r#"const registry = {};
+for (const context of traceContexts)
+  registry[context] = () => context;"#,
+            ),
+            &["const traceCommandRegistry = {}"],
+            &["duplicateRegistry"],
+            &["duplicateRegistry"],
+            &["const selectedRegistry"],
+            "true 0\n",
+        ),
+    ] {
+        println!("case: {label}");
+        let fixture = run_fixture(
+            FixtureOpts::new(source, vec![logical_module(module, &[member])])
+                .with_import_order(&[module, "residual"]),
+        );
+        assert_module_source(
+            &fixture.out_root,
+            &format!("static/app/modules/{module}.js"),
+            module_present,
+            module_absent,
+        );
+        assert_module_source(
+            &fixture.out_root,
+            "static/app/modules/residual/unhandled.js",
+            residual_present,
+            residual_absent,
+        );
+        assert_entry_output(&fixture, expected);
+    }
+}
 
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected_config.js",
-        &["const selectedLocalPart", r#""primary""#],
-        &["runtimeDomain", "runtimeAddress", "duplicateLocalPart"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["runtimeDomain", "runtimeAddress", "duplicateLocalPart"],
-        &["runtimeLocalPart"],
-    );
-    assert_entry_output(&fixture, "primary primary primary@example.test\n");
+#[test]
+fn native_source_matches_resolve() {
+    for (label, opts, expected) in [
+        (
+            "multi-statement match",
+            FixtureOpts::new(
+                r#"const runtimePrefix = "OK:";
+function runtimeFormat(value) {
+  return runtimePrefix + value.trim().toUpperCase();
+}
+console.log(runtimeFormat(" ok "));
+export { runtimePrefix, runtimeFormat };
+"#,
+                vec![logical_module(
+                    "format",
+                    &[Member::source_alpha_target(
+                        "formatValue",
+                        "formatValue",
+                        r#"const prefix = "OK:";
+function formatValue(value) {
+  return prefix + value.trim().toUpperCase();
+}"#,
+                    )],
+                )],
+            )
+            .with_import_order(&["format", "residual"]),
+            "OK:OK\n",
+        ),
+        (
+            "alpha-all match",
+            FixtureOpts::new(
+                r#"function runtimeFormat(value) {
+  return value.trim().toUpperCase();
+}
+console.log(runtimeFormat(" ok "));
+export { runtimeFormat };
+"#,
+                vec![logical_module(
+                    "format",
+                    &[Member::source_alpha_target(
+                        "formatValue",
+                        "runtimeFormat",
+                        r#"function runtimeFormat(value) {
+  return value.trim().toUpperCase();
+}"#,
+                    )],
+                )],
+            ),
+            "OK\n",
+        ),
+        (
+            "alpha-all function match without projection",
+            FixtureOpts::new(
+                r#"function runtimeFormat(value) {
+  return value.trim().toUpperCase();
+}
+console.log(runtimeFormat(" ok "));
+export { runtimeFormat };
+"#,
+                vec![logical_module(
+                    "format",
+                    &[Member::source_alpha(
+                        "formatValue",
+                        r#"function formatValue(value) {
+  return value.trim().toUpperCase();
+}"#,
+                    )],
+                )],
+            ),
+            "OK\n",
+        ),
+        (
+            "alpha-all match with extends",
+            FixtureOpts::new(
+                r#"class RuntimeWidget extends Object {
+  label() {
+    return "runtime";
+  }
+}
+console.log(new RuntimeWidget().label());
+export { RuntimeWidget };
+"#,
+                vec![logical_module(
+                    "widget",
+                    &[Member::source_alpha_target(
+                        "runtimeWidget",
+                        "RuntimeWidget",
+                        r#"class RuntimeWidget extends Object {
+  label() {
+    return "runtime";
+  }
+}"#,
+                    )],
+                )],
+            ),
+            "runtime\n",
+        ),
+    ] {
+        println!("case: {label}");
+        assert_entry_output(&run_fixture(opts), expected);
+    }
 }
 
 #[test]
@@ -1078,89 +1133,12 @@ export { runtimeA, runtimeB, runtimeC, Existing };
 }
 
 #[test]
-fn source_matches_binding_projection_selects_single_declarator_from_comma_list() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const siblingBinding = { kind: "other", enabled: false },
-  runtimeBinding = { kind: "selected", enabled: true };
-const Existing = "existing";
-console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
-export { siblingBinding, runtimeBinding, Existing };
-"#,
-            vec![logical_module(
-                "selected_config",
-                &[Member::source_alpha_target(
-                    "selectedConfig",
-                    "config",
-                    r#"const config = { kind: "selected", enabled: true };"#,
-                )],
-            )],
-        )
-        .with_import_order(&["selected_config", "residual"]),
-    );
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected_config.js",
-        &["const selectedConfig", r#""selected""#],
-        &["siblingBinding", "const Existing"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["siblingBinding", "const Existing"],
-        &["runtimeBinding"],
-    );
-    assert_entry_output(&fixture, "selected other existing\n");
-}
-
-#[test]
-fn source_matches_binding_projection_context_selects_single_declarator_from_comma_list() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const helperBinding = { kind: "helper" },
-  runtimeBinding = { kind: "selected", enabled: true },
-  trailingBinding = { kind: "trailing" };
-function runtimeReader() {
-  return runtimeBinding.kind;
-}
-console.log(runtimeReader(), helperBinding.kind, trailingBinding.kind);
-export { helperBinding, runtimeBinding, trailingBinding, runtimeReader };
-"#,
-            vec![logical_module(
-                "selected_config",
-                &[Member::source_alpha_target(
-                    "selectedConfig",
-                    "config",
-                    r#"const config = { kind: "selected", enabled: true };
-function readConfig() {
-  return config.kind;
-}"#,
-                )],
-            )],
-        )
-        .with_import_order(&["selected_config", "residual"]),
-    );
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected_config.js",
-        &["const selectedConfig", r#""selected""#],
-        &["helperBinding", "trailingBinding", "runtimeReader"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["helperBinding", "trailingBinding", "runtimeReader"],
-        &["runtimeBinding"],
-    );
-    assert_entry_output(&fixture, "selected helper trailing\n");
-}
-
-#[test]
-fn source_matches_reject_ambiguous_multideclarator_matches() {
-    let opts = FixtureOpts::new(
-        r#"let firstA = 100,
+fn projected_source_matches_reject_ambiguous_matches() {
+    for (label, opts, name, module, target) in [
+        (
+            "multi-declarator binding group",
+            FixtureOpts::new(
+                r#"let firstA = 100,
   firstB = null,
   firstC = `${firstA}:${firstB === null}:bar`;
 let secondA = 100,
@@ -1168,63 +1146,80 @@ let secondA = 100,
   secondC = `${secondA}:${secondB === null}:bar`;
 export { firstA, firstB, firstC, secondA, secondB, secondC };
 "#,
-        vec![logical_module_with_binding_groups(
-            "selected_values",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"let a = 100,
+                vec![logical_module_with_binding_groups(
+                    "selected_values",
+                    &[],
+                    &[BindingGroup::source_alpha(
+                        r#"let a = 100,
   b = null,
   c = `${a}:${b === null}:bar`;"#,
-                &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
-            )],
-        )],
-    );
-
-    let outcomes = run_rejection_fixture(opts).selector_outcomes();
-    let name_a = find_outcome(&outcomes, "ambiguous", "NameA");
-    assert_eq!(name_a["placement"]["logical_module"], "selected_values");
-    assert_eq!(name_a["target_binding"], "a");
-}
-
-#[test]
-fn source_matches_binding_projection_uses_following_statement_context() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const traceContexts = ["load"];
-const selectedRegistry = {};
-for (const context of traceContexts)
-  selectedRegistry[context] = () => context;
-const duplicateRegistry = {};
-console.log(selectedRegistry !== duplicateRegistry, Object.keys(duplicateRegistry).length);
-export { traceContexts, selectedRegistry, duplicateRegistry };
+                        &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
+                    )],
+                )],
+            ),
+            "NameA",
+            "selected_values",
+            "a",
+        ),
+        (
+            "binding projection",
+            FixtureOpts::new(
+                r#"const firstLocalPart = "primary",
+  firstDomain = "example.test",
+  firstAddress = `${firstLocalPart}@${firstDomain}`;
+const secondLocalPart = "primary",
+  secondDomain = "example.test",
+  secondAddress = `${secondLocalPart}@${secondDomain}`;
+export { firstLocalPart, firstDomain, firstAddress, secondLocalPart, secondDomain, secondAddress };
 "#,
-            vec![logical_module(
-                "selected_registry",
-                &[Member::source_alpha_target(
-                    "traceCommandRegistry",
-                    "registry",
-                    r#"const registry = {};
+                vec![logical_module(
+                    "selected_config",
+                    &[Member::source_alpha_target(
+                        "selectedLocalPart",
+                        "localPart",
+                        r#"const localPart = "primary",
+  domain = "example.test",
+  address = `${localPart}@${domain}`;"#,
+                    )],
+                )],
+            ),
+            "selectedLocalPart",
+            "selected_config",
+            "localPart",
+        ),
+        (
+            "binding projection with following context",
+            FixtureOpts::new(
+                r#"const traceContexts = ["load"];
+const firstRegistry = {};
+for (const context of traceContexts)
+  firstRegistry[context] = () => context;
+const secondRegistry = {};
+for (const context of traceContexts)
+  secondRegistry[context] = () => context;
+export { firstRegistry, secondRegistry };
+"#,
+                vec![logical_module(
+                    "selected_registry",
+                    &[Member::source_alpha_target(
+                        "traceCommandRegistry",
+                        "registry",
+                        r#"const registry = {};
 for (const context of traceContexts)
   registry[context] = () => context;"#,
+                    )],
                 )],
-            )],
-        )
-        .with_import_order(&["selected_registry", "residual"]),
-    );
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected_registry.js",
-        &["const traceCommandRegistry = {}"],
-        &["duplicateRegistry"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["duplicateRegistry"],
-        &["const selectedRegistry"],
-    );
-    assert_entry_output(&fixture, "true 0\n");
+            ),
+            "traceCommandRegistry",
+            "selected_registry",
+            "registry",
+        ),
+    ] {
+        let outcomes = run_rejection_fixture(opts).selector_outcomes();
+        let outcome = find_outcome(&outcomes, "ambiguous", name);
+        assert_eq!(outcome["placement"]["logical_module"], module, "{label}");
+        assert_eq!(outcome["target_binding"], target, "{label}");
+    }
 }
 
 #[test]
@@ -1297,92 +1292,5 @@ export { firstRuntime, secondRuntime };
     assert_eq!(
         outcome["selector_preview"],
         r#"const oldBinding = { kind: "selected", enabled: true };"#
-    );
-}
-
-#[test]
-fn source_matches_binding_projection_rejects_ambiguous_matches() {
-    let opts = FixtureOpts::new(
-        r#"const firstLocalPart = "primary",
-  firstDomain = "example.test",
-  firstAddress = `${firstLocalPart}@${firstDomain}`;
-const secondLocalPart = "primary",
-  secondDomain = "example.test",
-  secondAddress = `${secondLocalPart}@${secondDomain}`;
-export { firstLocalPart, firstDomain, firstAddress, secondLocalPart, secondDomain, secondAddress };
-"#,
-        vec![logical_module(
-            "selected_config",
-            &[Member::source_alpha_target(
-                "selectedLocalPart",
-                "localPart",
-                r#"const localPart = "primary",
-  domain = "example.test",
-  address = `${localPart}@${domain}`;"#,
-            )],
-        )],
-    );
-
-    let outcomes = run_rejection_fixture(opts).selector_outcomes();
-    let outcome = find_outcome(&outcomes, "ambiguous", "selectedLocalPart");
-    assert_eq!(outcome["placement"]["logical_module"], "selected_config");
-    assert_eq!(outcome["target_binding"], "localPart");
-}
-
-#[test]
-fn source_matches_binding_projection_context_rejects_ambiguous_matches() {
-    let opts = FixtureOpts::new(
-        r#"const traceContexts = ["load"];
-const firstRegistry = {};
-for (const context of traceContexts)
-  firstRegistry[context] = () => context;
-const secondRegistry = {};
-for (const context of traceContexts)
-  secondRegistry[context] = () => context;
-export { firstRegistry, secondRegistry };
-"#,
-        vec![logical_module(
-            "selected_registry",
-            &[Member::source_alpha_target(
-                "traceCommandRegistry",
-                "registry",
-                r#"const registry = {};
-for (const context of traceContexts)
-  registry[context] = () => context;"#,
-            )],
-        )],
-    );
-
-    let outcomes = run_rejection_fixture(opts).selector_outcomes();
-    let outcome = find_outcome(&outcomes, "ambiguous", "traceCommandRegistry");
-    assert_eq!(outcome["placement"]["logical_module"], "selected_registry");
-    assert_eq!(outcome["target_binding"], "registry");
-}
-
-#[test]
-fn alpha_anonymous_statement_selector_still_rejects_ambiguous_matches() {
-    let opts = FixtureOpts::new(
-        r#"function decorate(args, target, prop) {
-  console.log(`${prop}:${target.constructor.name}:${args.length}`);
-}
-const FirstToken = Symbol("first");
-const SecondToken = Symbol("second");
-class FirstSubject {}
-class SecondSubject {}
-decorate([FirstToken], FirstSubject.prototype, "statusFlag");
-decorate([SecondToken], SecondSubject.prototype, "statusFlag");
-export { FirstSubject, SecondSubject };
-"#,
-        vec![logical_module_with_anon_alpha(
-            "first_subject",
-            &binding_members(["decorate", "FirstToken", "FirstSubject"]),
-            &[r#"applyMetadata([token], Subject.prototype, "statusFlag");"#],
-        )],
-    );
-
-    let outcome = expect_selector_outcome(opts, "ambiguous", "first_subject");
-    assert_eq!(
-        outcome["selector_preview"],
-        r#"applyMetadata([token], Subject.prototype, "statusFlag");"#
     );
 }

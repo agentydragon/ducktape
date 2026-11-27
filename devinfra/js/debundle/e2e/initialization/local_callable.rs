@@ -429,9 +429,11 @@ console.log(holder.read());
 }
 
 #[test]
-fn fresh_local_record_field_assignment_retains_callback_until_use() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function wrap(callback) {
+fn fresh_local_record_own_field_writes_retain_callback_until_use() {
+    for (label, source, expected) in [
+        (
+            "field assignment",
+            r#"function wrap(callback) {
   const result = { run: null };
   result.run = callback;
   return result;
@@ -445,21 +447,11 @@ const dynamic = ((object) => {
 const later = dynamic;
 console.log(later, holder.run());
 "#,
-        vec![
-            logical_module("values/dynamic", &binding_members(["dynamic", "prefix"])),
-            logical_module(
-                "values/later",
-                &binding_members(["later", "holder", "wrap"]),
-            ),
-        ],
-    ));
-    assert_preserved_entry_output(&fixture, "1 1\n");
-}
-
-#[test]
-fn distinct_own_field_writes_use_the_same_record_proof() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function wrap(callback, tag) {
+            "1 1\n",
+        ),
+        (
+            "distinct own field writes share the record proof",
+            r#"function wrap(callback, tag) {
   const result = { run: null, tag: 0 };
   result.run = callback;
   result.tag = tag;
@@ -474,15 +466,22 @@ const dynamic = ((object) => {
 const later = dynamic;
 console.log(later, holder.run(), holder.tag);
 "#,
-        vec![
-            logical_module("values/dynamic", &binding_members(["dynamic", "prefix"])),
-            logical_module(
-                "values/later",
-                &binding_members(["later", "holder", "wrap"]),
-            ),
-        ],
-    ));
-    assert_preserved_entry_output(&fixture, "1 1 2\n");
+            "1 1 2\n",
+        ),
+    ] {
+        println!("case: {label}");
+        let fixture = run_fixture(FixtureOpts::new(
+            source,
+            vec![
+                logical_module("values/dynamic", &binding_members(["dynamic", "prefix"])),
+                logical_module(
+                    "values/later",
+                    &binding_members(["later", "holder", "wrap"]),
+                ),
+            ],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+    }
 }
 
 #[test]
@@ -521,9 +520,14 @@ const later = dynamic;\n"
     }
 }
 
+/// A local factory result that is published, called, produced by a reassigned
+/// factory, or read through an accessor keeps conservative reachability.
 #[test]
-fn published_local_factory_result_keeps_later_read() {
-    let source = r#"function retain(read) { return { read }; }
+fn exposed_local_factory_results_keep_later_read() {
+    for (label, source) in [
+        (
+            "published",
+            r#"function retain(read) { return { read }; }
 const prefix = new globalThis.Date();
 const holder = retain(() => later);
 globalThis.saved = holder;
@@ -532,13 +536,11 @@ const dynamic = ((object) => {
   return 1;
 })({});
 const later = dynamic;
-"#;
-    expect_local_factory_late_read_conflict(source);
-}
-
-#[test]
-fn called_local_factory_result_keeps_later_read() {
-    let source = r#"function retain(read) { return { read }; }
+"#,
+        ),
+        (
+            "called",
+            r#"function retain(read) { return { read }; }
 const prefix = new globalThis.Date();
 const holder = retain(() => later);
 holder.read();
@@ -547,13 +549,11 @@ const dynamic = ((object) => {
   return 1;
 })({});
 const later = dynamic;
-"#;
-    expect_local_factory_late_read_conflict(source);
-}
-
-#[test]
-fn reassigned_local_factory_keeps_conservative_reachability() {
-    let source = r#"function retain(read) { return { read }; }
+"#,
+        ),
+        (
+            "reassigned factory",
+            r#"function retain(read) { return { read }; }
 retain = function replacement(read) { return { read }; };
 const prefix = new globalThis.Date();
 const holder = retain(() => later);
@@ -562,13 +562,11 @@ const dynamic = ((object) => {
   return 1;
 })({});
 const later = dynamic;
-"#;
-    expect_local_factory_late_read_conflict(source);
-}
-
-#[test]
-fn accessor_return_from_local_factory_keeps_conservative_reachability() {
-    let source = r#"function retain(read) { return { get read() { return read(); } }; }
+"#,
+        ),
+        (
+            "accessor return",
+            r#"function retain(read) { return { get read() { return read(); } }; }
 const prefix = new globalThis.Date();
 const holder = retain(() => later);
 const dynamic = ((object) => {
@@ -576,8 +574,12 @@ const dynamic = ((object) => {
   return 1;
 })({});
 const later = dynamic;
-"#;
-    expect_local_factory_late_read_conflict(source);
+"#,
+        ),
+    ] {
+        println!("case: {label}");
+        expect_local_factory_late_read_conflict(source);
+    }
 }
 
 #[test]
@@ -645,9 +647,11 @@ const later = dynamic;
 }
 
 #[test]
-fn earlier_unknown_call_does_not_promote_unescaped_local_reader() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const prefix = new globalThis.Date();
+fn unknown_calls_do_not_expose_unescaped_local_readers() {
+    for (label, source) in [
+        (
+            "earlier unknown call",
+            r#"const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
   return 1;
@@ -656,16 +660,10 @@ const later = dynamic;
 function readLater() { return later; }
 console.log(later);
 "#,
-        unescaped_local_callable_modules(),
-    ));
-
-    assert_unescaped_local_callable_split(&fixture);
-}
-
-#[test]
-fn global_or_empty_object_fallback_does_not_expose_local_callables() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const prefix = (() => {
+        ),
+        (
+            "global or empty object fallback",
+            r#"const prefix = (() => {
 const runtime = typeof window !== "undefined" ? window : globalThis || {};
 const entry = new runtime.Error();
 runtime.registry = runtime.registry || {};
@@ -680,16 +678,22 @@ const later = dynamic;
 function readLater() { return later; }
 console.log(later);
 "#,
-        unescaped_local_callable_modules(),
-    ));
-
-    assert_unescaped_local_callable_split(&fixture);
+        ),
+    ] {
+        println!("case: {label}");
+        let fixture = run_fixture(FixtureOpts::new(source, unescaped_local_callable_modules()));
+        assert_unescaped_local_callable_split(&fixture);
+    }
 }
 
+/// Each shape lets unknown code reach a local callable or object, so the
+/// later read stays possible during the unknown call.
 #[test]
-fn callback_escaped_after_unknown_call_remains_a_possible_accessor() {
-    expect_dynamic_and_later_conflict(
-        r#"new globalThis.Date();
+fn escaped_local_callables_stay_reachable_from_unknown_calls() {
+    for (label, source) in [
+        (
+            "escaped after unknown call",
+            r#"new globalThis.Date();
 globalThis.callback = readLater;
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -698,13 +702,10 @@ const dynamic = ((object) => {
 const later = dynamic;
 function readLater() { later; }
 "#,
-    );
-}
-
-#[test]
-fn callback_at_active_call_site_remains_reachable_after_nested_unknown_call() {
-    expect_dynamic_and_later_conflict(
-        r#"const target = { set x(value) { value(); } };
+        ),
+        (
+            "active call site after nested unknown call",
+            r#"const target = { set x(value) { value(); } };
 function exposeArgument() {
   consume(arguments);
   target.x = arguments[0];
@@ -713,13 +714,10 @@ const dynamic = (exposeArgument(readLater), 1);
 var later = dynamic;
 function readLater() { return later; }
 "#,
-    );
-}
-
-#[test]
-fn implicit_arguments_object_keeps_passed_local_callables_reachable() {
-    expect_dynamic_and_later_conflict(
-        r#"function exposeArgument(callback) { consume(arguments); }
+        ),
+        (
+            "implicit arguments object",
+            r#"function exposeArgument(callback) { consume(arguments); }
 exposeArgument(readLater);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -728,7 +726,51 @@ const dynamic = ((object) => {
 const later = dynamic;
 function readLater() { return later; }
 "#,
-    );
+        ),
+        (
+            "unsupported top-level escape",
+            r#"foreignTag`${readLater}`;
+new globalThis.Date();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+function readLater() { return later; }
+"#,
+        ),
+        (
+            "unsupported callable body",
+            r#"function opaqueAccessor() { foreignTag`${readLater}`; }
+opaqueAccessor();
+new globalThis.Date();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+function readLater() { return later; }
+"#,
+        ),
+        (
+            "this passed to unknown code",
+            r#"const receiver = {
+  inspectReceiver() { consume(this); },
+  readLater,
+};
+receiver.inspectReceiver();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+function readLater() { return later; }
+"#,
+        ),
+    ] {
+        println!("case: {label}");
+        expect_dynamic_and_later_conflict(source);
+    }
 }
 
 #[test]
@@ -783,55 +825,6 @@ function readLater() { later; }
         .with_admission_overrides(&["a1_eval"]),
         &["values/dynamic", "values/later"],
         &[],
-    );
-}
-
-#[test]
-fn unsupported_top_level_escape_keeps_later_local_callables_reachable() {
-    expect_dynamic_and_later_conflict(
-        r#"foreignTag`${readLater}`;
-new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return 1;
-})({});
-const later = dynamic;
-function readLater() { return later; }
-"#,
-    );
-}
-
-#[test]
-fn unsupported_callable_body_keeps_later_local_callables_reachable() {
-    expect_dynamic_and_later_conflict(
-        r#"function opaqueAccessor() { foreignTag`${readLater}`; }
-opaqueAccessor();
-new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return 1;
-})({});
-const later = dynamic;
-function readLater() { return later; }
-"#,
-    );
-}
-
-#[test]
-fn passing_this_to_unknown_code_keeps_local_object_reachable() {
-    expect_dynamic_and_later_conflict(
-        r#"const receiver = {
-  inspectReceiver() { consume(this); },
-  readLater,
-};
-receiver.inspectReceiver();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return 1;
-})({});
-const later = dynamic;
-function readLater() { return later; }
-"#,
     );
 }
 
@@ -945,9 +938,15 @@ export { Reader, reader, Cache, cache, marker, later };
     assert_preserved_entry_output(&run_fixture(fixture), "0 42 42\n");
 }
 
+/// Colocated, the setter runs before `later` is assigned; split, it would
+/// read the later value, so the split is rejected.
 #[test]
-fn replaced_own_field_descriptor_can_invoke_a_setter() {
-    let source = r#"import { prepare } from './peer.js';
+fn exposed_setter_on_a_fresh_instance_keeps_the_cycle() {
+    let peers = [("static/peer", "export function prepare() { return {}; }")];
+    for (label, source, cache_statements) in [
+        (
+            "replaced own field descriptor",
+            r#"import { prepare } from './peer.js';
 let later = 0;
 let observed = -1;
 class Cache { value = 0; }
@@ -960,41 +959,15 @@ cache.value = 1;
 later = 42;
 console.log(observed, later);
 export { Cache, cache, marker, later, observed };
-"#;
-    let peers = [("static/peer", "export function prepare() { return {}; }")];
-    let mut colocated = FixtureOpts::new(source, vec![])
-        .with_extra_chunks(&peers)
-        .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "values/cache",
-                &binding_members(["Cache", "cache", "marker", "observed"]),
-                &[
-                    "Object.defineProperty(cache, 'value', { set(value) { observed = later; }, configurable: true });",
-                    "cache.value = 1;",
-                ],
-            ),
-            logical_module_with_anon(
-                "values/later",
-                &[Member::new("later")],
-                &["later = 42;"],
-            ),
-        ],
-    )
-    .with_extra_chunks(&peers)
-    .with_unassigned_mode(unassigned_mode_inline());
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
-}
-
-#[test]
-fn deleted_class_field_exposes_inherited_setter() {
-    let source = r#"import { prepare } from './peer.js';
+"#,
+            &[
+                "Object.defineProperty(cache, 'value', { set(value) { observed = later; }, configurable: true });",
+                "cache.value = 1;",
+            ][..],
+        ),
+        (
+            "deleted class field exposes inherited setter",
+            r#"import { prepare } from './peer.js';
 let later = 0;
 let observed = -1;
 class Cache { value = 0; }
@@ -1008,35 +981,35 @@ cache.value = 1;
 later = 42;
 console.log(observed, later);
 export { Cache, cache, marker, later, observed };
-"#;
-    let peers = [("static/peer", "export function prepare() { return {}; }")];
-    let mut colocated = FixtureOpts::new(source, vec![])
+"#,
+            &[
+                "Object.defineProperty(Cache.prototype, 'value', { set(value) { observed = later; }, configurable: true });",
+                "delete cache.value;",
+                "cache.value = 1;",
+            ],
+        ),
+    ] {
+        println!("case: {label}");
+        let mut colocated = FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&peers)
+            .with_unassigned_mode(unassigned_mode_inline());
+        colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+        assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+
+        let mut split = FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "values/cache",
+                    &binding_members(["Cache", "cache", "marker", "observed"]),
+                    cache_statements,
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
         .with_extra_chunks(&peers)
         .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "values/cache",
-                &binding_members(["Cache", "cache", "marker", "observed"]),
-                &[
-                    "Object.defineProperty(Cache.prototype, 'value', { set(value) { observed = later; }, configurable: true });",
-                    "delete cache.value;",
-                    "cache.value = 1;",
-                ],
-            ),
-            logical_module_with_anon(
-                "values/later",
-                &[Member::new("later")],
-                &["later = 42;"],
-            ),
-        ],
-    )
-    .with_extra_chunks(&peers)
-    .with_unassigned_mode(unassigned_mode_inline());
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
+        split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+        expect_atomic_conflict_rejection(split, &["values/cache", "values/later"], &[]);
+    }
 }
