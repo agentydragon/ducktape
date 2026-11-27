@@ -261,14 +261,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    pub(super) fn merge_array_effects(&mut self, outcome: &mut Outcome, mut nested: Outcome) {
-        self.apply_rebind_effects(&nested.effects.rebinds);
-        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-        outcome.executed_owners.extend(nested.executed_owners);
-        outcome.unknown_call |= nested.unknown_call;
-        outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
-    }
-
     pub(super) fn execute_array_iteration(
         &mut self,
         span: CallSite,
@@ -392,7 +384,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.state.array_iteration_unsupported |= previous_unsupported;
             let returned = nested.returns.clone();
             let callback_executed_completely = nested.body_invoked && nested.complete;
-            self.merge_array_effects(outcome, nested);
+            self.absorb_nested_call(outcome, nested);
             let current_source = self.evaluate(&proof.source, env, captures);
             let current_source = self.dense_array_iteration_transfer(&current_source, |executor| {
                 executor.array_slots_intact(row.requires)
