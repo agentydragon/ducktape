@@ -123,7 +123,7 @@ func TestWatchSessionsResumesAfterStreamDisconnect(t *testing.T) {
 	hub := sessionWatchHub(t, databaseURL, "session-watch-resume-"+uuid.NewString())
 	service := sessionWatchService(queueStore, hub)
 	id := uuid.NewString()
-	if _, err := createSession(queueStore, ctx, id, "test-watch-resume", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(queueStore, ctx, id, "test-watch-resume", uuid.NewString(), &sessionpb.SessionSpec{}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -162,7 +162,7 @@ func TestWatchSessionsReportsMaterializationAndEnvironmentDeletion(t *testing.T)
 	service := sessionWatchService(queueStore, hub)
 	id, failedID, environmentUID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	for _, sessionID := range []string{id, failedID} {
-		if _, err := createSession(queueStore, ctx, sessionID, "test-watch-deletion", environmentUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(queueStore, ctx, sessionID, "test-watch-deletion", environmentUID, &sessionpb.SessionSpec{}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -218,7 +218,7 @@ func TestWatchSessionsWakesAcrossReplicaHubs(t *testing.T) {
 	_ = receiveCaughtUp(t, runA)
 	_ = receiveCaughtUp(t, runB)
 	id := uuid.NewString()
-	if _, err := createSession(queueStore, ctx, id, "test-watch-replicas", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(queueStore, ctx, id, "test-watch-replicas", uuid.NewString(), &sessionpb.SessionSpec{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	for name, run := range map[string]*sessionWatchRun{"replica A": runA, "replica B": runB} {
@@ -236,7 +236,7 @@ func TestWatchSessionsReplaysSnapshotAfterListenerReconnect(t *testing.T) {
 	service := sessionWatchService(queueStore, hub)
 	ids := []string{uuid.NewString(), uuid.NewString()}
 	for _, id := range ids {
-		if _, err := createSession(queueStore, ctx, id, "test-watch-reconnect", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(queueStore, ctx, id, "test-watch-reconnect", uuid.NewString(), &sessionpb.SessionSpec{}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -328,9 +328,8 @@ func TestSessionWatchScopeBindsTokensAndReadsToIdentity(t *testing.T) {
 	for _, caller := range []store.IdentityCaller{owner, other} {
 		id, sandboxUID := uuid.NewString(), uuid.NewString()
 		spec := &sessionpb.SessionSpec{}
-		testPlacement(spec, "test-watch-identity-"+id, sandboxUID)
-		if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, id, "test-watch-identity-"+id, sandboxUID, spec, nil, nil,
-			store.SessionExecution{Identity: caller.Identity}, caller); err != nil {
+		if _, err := createSessionForCaller(queueStore, ctx, id, "test-watch-identity-"+id, sandboxUID, spec, nil,
+			caller.Identity, caller); err != nil {
 			t.Fatal(err)
 		}
 	}

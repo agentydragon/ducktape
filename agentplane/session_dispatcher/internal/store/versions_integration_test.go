@@ -24,7 +24,7 @@ func TestDispatchVersionsCaptureOldWriterUpdatesAndDeletions(t *testing.T) {
 	const sessionID = "test-version-retained-session"
 	const sandboxName = "test-version-private-sandbox-name"
 	const sandboxUID = "00000000-0000-4000-8000-000000000091"
-	_, err := enqueueWithSession(t, store, ctx, sessionID, sandboxName, sandboxUID, input(commandID, "test-version-private-command-body"), nil)
+	_, err := enqueueWithSession(t, store, ctx, sessionID, sandboxName, sandboxUID, input(commandID, "test-version-private-command-body"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestDispatchVersionsCaptureOldWriterUpdatesAndDeletions(t *testing.T) {
 		}
 	}
 
-	_, err = enqueueWithSession(t, store, ctx, sessionID, sandboxName, sandboxUID, input(commandID, "test-version-private-command-body"), nil)
+	_, err = enqueueWithSession(t, store, ctx, sessionID, sandboxName, sandboxUID, input(commandID, "test-version-private-command-body"))
 	if err != nil {
 		t.Fatal("reuse deleted command ID:", err)
 	}
@@ -156,7 +156,7 @@ func TestDispatchTombstonePruningAdvancesDurableCoverageFloor(t *testing.T) {
 	secondCommand := "test-version-prune-higher-expired"
 	recentCommand := "test-version-prune-recent"
 	for _, commandID := range []string{firstCommand, secondCommand, recentCommand} {
-		if _, err := enqueueWithSession(t, store, ctx, "test-version-prune-session", "test-version-prune-sandbox", "00000000-0000-4000-8000-000000000092", input(commandID, "test-version-prune-payload"), nil); err != nil {
+		if _, err := enqueueWithSession(t, store, ctx, "test-version-prune-session", "test-version-prune-sandbox", "00000000-0000-4000-8000-000000000092", input(commandID, "test-version-prune-payload")); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := store.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", commandID); err != nil {
@@ -240,7 +240,7 @@ func TestDispatchTombstonePruningRequiresCoverageRow(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 2)
 	commandID := "test-version-prune-missing-floor"
-	if _, err := enqueueWithSession(t, store, ctx, "test-version-prune-missing-floor-session", "test-version-prune-missing-floor-sandbox", "00000000-0000-4000-8000-000000000093", input(commandID, "test-version-payload"), nil); err != nil {
+	if _, err := enqueueWithSession(t, store, ctx, "test-version-prune-missing-floor-session", "test-version-prune-missing-floor-sandbox", "00000000-0000-4000-8000-000000000093", input(commandID, "test-version-payload")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id=$1", commandID); err != nil {

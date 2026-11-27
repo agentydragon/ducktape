@@ -129,7 +129,7 @@ func (s *Service) caller(ctx context.Context) (store.Caller, error) {
 		return store.ServiceCaller{SPIFFEID: identity.Caller.SPIFFEID}, nil
 	case auth.DelegatedServiceIdentityAdmission:
 		caller := store.IdentityCaller{Identity: &identitypb.Identity{Name: identity.EffectiveCaller.Name, Uid: identity.EffectiveCaller.UID}, Proof: store.IdentityServiceDelegation{ActorSPIFFEID: identity.Actor.SPIFFEID, Action: store.ActionCorrelation{RequestID: identity.Provenance.GetAction().GetRequestId(), ExecutionID: identity.Provenance.GetAction().GetExecutionId()}}}
-		if err := store.ValidateCaller(caller, nil); err != nil {
+		if err := store.ValidateCaller(caller); err != nil {
 			return nil, status.Error(codes.Unauthenticated, "delegated service attribution is incomplete")
 		}
 		return caller, nil
@@ -335,7 +335,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, expectedSan
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.Store.EnqueueForCaller(ctx, sessionID, session.SandboxName, session.SandboxUID, command, nil, caller)
+	row, err := s.Store.Enqueue(ctx, sessionID, session.SandboxName, session.SandboxUID, command, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -463,7 +463,7 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		execution.Identity = identity
 	}
 	row, err = s.Store.CreateSessionWithAdmissionCheck(ctx, request.GetSessionId(), target.GetName(), current.UID, sessionPlacement,
-		request.GetSpec(), request.SetupScript, nil, execution, caller, func(ctx context.Context) error {
+		request.GetSpec(), request.SetupScript, execution, caller, func(ctx context.Context) error {
 			if isIdentityCaller {
 				return s.checkIdentityPlacement(ctx, identityCaller, current, execution.Identity)
 			}
