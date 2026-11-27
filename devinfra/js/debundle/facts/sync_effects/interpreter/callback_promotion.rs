@@ -64,19 +64,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .lazy_effects_for_source_unit(owner);
                 let reads = reads.clone();
                 let rebinds = rebinds.clone();
-                let referenced: Values = reads
-                    .iter()
-                    .flat_map(|id| {
-                        self.state
-                            .world
-                            .module
-                            .prefix_values
-                            .get(id)
-                            .into_iter()
-                            .flatten()
-                            .cloned()
-                    })
-                    .collect();
+                let referenced = self.retained_prefix_values(reads.iter());
                 self.taint_objects(&referenced);
                 self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
             }
@@ -94,19 +82,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let (reads, rebinds) = self.inputs.synchronous_effects(owner, false);
             let reads = reads.clone();
             let rebinds = rebinds.clone();
-            let referenced: Values = reads
-                .iter()
-                .flat_map(|id| {
-                    self.state
-                        .world
-                        .module
-                        .prefix_values
-                        .get(id)
-                        .into_iter()
-                        .flatten()
-                        .cloned()
-                })
-                .collect();
+            let referenced = self.retained_prefix_values(reads.iter());
             self.taint_objects(&referenced);
             self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
         }

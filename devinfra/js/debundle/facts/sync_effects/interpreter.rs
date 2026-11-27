@@ -2190,16 +2190,13 @@ impl Executor<'_, '_> {
         fact: &StatementFacts,
         effects: &SynchronousCalls,
     ) {
-        let values: Values = fact
-            .reads
-            .eager
-            .iter()
-            .chain(&fact.reads.lazy)
-            .chain(effects.reads.iter().map(|(binding, _)| binding))
-            .filter_map(|binding| self.state.world.module.prefix_values.get(binding))
-            .flatten()
-            .cloned()
-            .collect();
+        let values = self.retained_prefix_values(
+            fact.reads
+                .eager
+                .iter()
+                .chain(&fact.reads.lazy)
+                .chain(effects.reads.iter().map(|(binding, _)| binding)),
+        );
         self.unsettle(&values);
     }
 

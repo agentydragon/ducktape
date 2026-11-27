@@ -445,21 +445,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) -> Result<LocalConstructor, ConstructionRejection> {
         let constructor = self.eligible_local_constructor(key, args.len())?.clone();
         if self.inputs.export_reentry_enabled {
-            let exported: Values = self
-                .inputs
-                .reentry_bindings
-                .iter()
-                .flat_map(|id| {
-                    self.state
-                        .world
-                        .module
-                        .prefix_values
-                        .get(id)
-                        .into_iter()
-                        .flatten()
-                        .cloned()
-                })
-                .collect();
+            let exported = self.retained_prefix_values(self.inputs.reentry_bindings.iter());
             self.taint_objects(&exported);
         }
         for (index, _) in &constructor.property_reads {
