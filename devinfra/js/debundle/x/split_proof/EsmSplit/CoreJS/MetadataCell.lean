@@ -28,7 +28,9 @@ theorem eval_captured {s : State W} {env : Env} {names : List Name}
   have read : readVar (env.capture names) slot s = .ok (.obj receiver) s := by
     simp only [readVar, found, M.bind_apply, getState, hb]
     rfl
-  simp only [path, evalExpr, M.pure_bind, M.bind_apply, read]
+  have key (label : String) (state : State W) :
+      (pure (.str label) : M W Val) state = .ok (.str label) state := rfl
+  simp only [path, evalExpr, M.bind_apply, read, key]
 
 /-- Executable consumer check: look for the actual immutable cell and object
 in the ready link. A missing, TDZ, mutable, primitive or dangling root fails. -/

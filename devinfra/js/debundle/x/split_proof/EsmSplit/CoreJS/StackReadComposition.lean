@@ -124,12 +124,12 @@ theorem movedWithReachedReads (stack : String) (genuine : Val → Prop)
     simp [moved, bind, splitWrite, putInitial, markWritten]
   have lookupOne : getProp noCall (.obj registry) (.str stack) (written W stack (.num 1)) =
       .ok (.num 1) (written W stack (.num 1)) := by
-    simp [getProp, getFrom, stringKey, lookupProp, getState, State.objectCount, findProp,
+    simp [getProp, getPropWith, getFrom, getFromWith, stringKey, lookupProp, getState, State.objectCount, findProp,
       State.objAt, registry, bind, pure, written, marked, initial, SharedStackString.initial,
       emptyObject, receiverObject, StackReadBoundary.overrideObject]
   have lookupTwo : getProp noCall (.obj registry) (.str stack) (written W stack (.num 2)) =
       .ok (.num 2) (written W stack (.num 2)) := by
-    simp [getProp, getFrom, stringKey, lookupProp, getState, State.objectCount, findProp,
+    simp [getProp, getPropWith, getFrom, getFromWith, stringKey, lookupProp, getState, State.objectCount, findProp,
       State.objAt, registry, bind, pure, written, marked, initial, SharedStackString.initial,
       emptyObject, receiverObject, StackReadBoundary.overrideObject]
   refine ⟨originalRun, movedRun (.num 1), movedRun (.num 2), lookupOne, lookupTwo, ?_⟩

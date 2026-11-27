@@ -159,33 +159,84 @@ private def checkUpdatedCallback : IO Unit := do
     throw (IO.userError "callback state or effects changed")
   assertExtended final #["callback"]
 
--- A real getter demonstrates why a projected callback cannot serve as the
--- queue-aware implementation of an operation that invokes user code.
-private def checkGetterBoundary : IO Unit := do
-  let setup : M World.probe (Val × Addr) := do
-    let getter ← makeFunc emptyEnv (.mk "get x" .normal false []
-      [log "getter", .ret (.str "value")])
-    let object ← alloc { proto := some objectProto, props := [
-      (.str "x", .accessor getter .undef true true)] }
-    pure (getter, object)
-  let .ok (getter, object) state := setup (initialState World.probe 0) |
-    throw (IO.userError "unable to install getter")
-  let .ok (.str "value") direct := nestedCall 48 getter (.obj object) [] ⟨state, jobs⟩ |
-    throw (IO.userError "queue-carrying getter should return")
-  assertExtended direct #["getter"]
-  let project : Call World.probe := fun f r a s => (nestedCall 48 f r a ⟨s, jobs⟩).erase
-  let .ok (.str "value") projected := TurnM.lift (getProp project (.obj object) (.str "x")) ⟨state, jobs⟩ |
-    throw (IO.userError "projected getter should preserve the ordinary result")
-  unless (StateMatch.probe projected.state direct.state).isSome do
-    throw (IO.userError "the projected getter lost more than its FIFO")
-  assertQueue projected
+private def getterSetup (ending : Ending) : M World.probe (Env × Addr × Addr) := do
+  let last := if ending == .returns then Stmt.ret .this else endingStmt ending
+  let getter ← makeFunc emptyEnv (.mk "get x" .normal false [] [
+    .expr (.assign (.member .this (.str "seen")) (.str "mutated")), last])
+  let proto ← alloc { proto := some objectProto, props := [
+    (.str "x", .accessor getter .undef true true)] }
+  let receiver ← alloc { proto := some proto, props := [
+    (.str "data", .data (.str "value") true true true)] }
+  let env ← declare emptyEnv [("base", ⟨some (.obj receiver), false⟩)]
+  pure (env, receiver, proto)
+
+private def checkGetter (ending : Ending) : IO Unit := do
+  let .ok (env, receiver, proto) state := getterSetup ending (initialState World.probe 0) |
+    throw (IO.userError "unable to install inherited getter")
+  let .ok handle state := (toW (.obj receiver) : M World.probe WVal) state |
+    throw (IO.userError "unable to hand the receiver to the modeled host")
+  let fuel := 48
+  let envRead key := readProperty (getPropWith TurnM.lift (nestedCall fuel))
+    (TurnM.lift (evalExpr fuel env (.var "base"))) (TurnM.lift (evalExpr fuel env key)) ⟨state, jobs⟩
+  let legacyHost := perform (callFn fuel)
+    (fun f args => constructTarget fuel f f args) 0 [] (.get handle (.prim (.str "x"))) state
+  let hostRead := requestGet TurnM.lift (getPropWith TurnM.lift (nestedCall fuel)) handle (.prim (.str "x")) ⟨state, jobs⟩
+  let sourceRead := envRead (.str "x")
+  let legacy := evalExpr (fuel + 1) env (.get (.var "base") (.str "x")) state
+  let verify := fun (actual : Turn World.probe) (old : State World.probe) => do
+    unless (StateMatch.probe old actual.state).isSome do throw (IO.userError "ordinary state changed")
+    assertExtended actual #[]
+    -- The own write must land on the receiver, never on the prototype that holds the getter.
+    let some (.data (.str "mutated") ..) := (actual.state.objAt receiver).bind (·.props.lookup (.str "seen")) |
+      throw (IO.userError "getter did not mutate its receiver")
+    unless ((actual.state.objAt proto).bind (·.props.lookup (.str "seen"))).isNone do
+      throw (IO.userError "getter mutated the prototype")
+  match sourceRead, legacy, hostRead, legacyHost with
+  | .ok (.obj a) first, .ok (.obj b) old, .ok (.value (.handle 0)) host, .ok (.value (.handle 0)) oldHost =>
+    unless ending == .returns && a == receiver && b == receiver do throw (IO.userError "wrong receiver")
+    verify first old
+    verify host oldHost
+  | .throw (.str "value") first, .throw (.str "value") old, .throw (.str "value") host, .throw (.str "value") oldHost =>
+    unless ending == .throws do throw (IO.userError "unexpected throw")
+    verify first old
+    verify host oldHost
+  | .unknown why first, .unknown oldWhy old, .unknown hostWhy host, .unknown oldHostWhy oldHost =>
+    unless ending == .refuses && why == "host function not modeled is called" &&
+        oldWhy == why && hostWhy == why && oldHostWhy == why do
+      throw (IO.userError "unexpected refusal")
+    verify first old
+    verify host oldHost
+  | _, _, _, _ => throw (IO.userError "property reads disagree")
+
+  let untouched := fun (actual : Turn World.probe) => do
+    assertQueue actual
+    unless (StateMatch.probe state actual.state).isSome do throw (IO.userError "a getter was evaluated")
+  let .ok (.str "value") dataRead := envRead (.str "data") |
+    throw (IO.userError "own data property did not read")
+  untouched dataRead
+  let .ok (.value (.prim (.str "value"))) hostData :=
+      requestGet TurnM.lift (getPropWith TurnM.lift (nestedCall fuel)) handle (.prim (.str "data")) ⟨state, jobs⟩ |
+    throw (IO.userError "modeled data property did not read")
+  untouched hostData
+  let .throw (.error .reference _) missing := envRead (.var "absent") |
+    throw (IO.userError "key expression must fail before lookup")
+  untouched missing
+  let .unknown "an object is converted to a primitive" keyFailure := envRead (.var "base") |
+    throw (IO.userError "object key should still be refused")
+  untouched keyFailure
+  let .unknown "the world names an object it was not handed" badHandle :=
+      requestGet TurnM.lift (getPropWith TurnM.lift (nestedCall fuel)) handle (.handle 50) ⟨state, jobs⟩ |
+    throw (IO.userError "bad key handle should fail before lookup")
+  untouched badHandle
 
 def main : IO Unit := do
   checkUpdatedBody .returns
   checkUpdatedBody .throws
   checkUpdatedBody .refuses
   checkUpdatedCallback
-  checkGetterBoundary
+  checkGetter .returns
+  checkGetter .throws
+  checkGetter .refuses
   checkAlias true
   checkAlias false
   checkReentry false

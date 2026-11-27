@@ -279,7 +279,7 @@ theorem reachFrame_getFrom {r R cells A} (away : Away r R A) (call : Call W)
       ReachFrame r R cells A (SafeVal A) (call f base []))
     {a} (ha : A (.obj a)) (base : Val) (hb : SafeVal A base) (key : PropertyKey) :
     ReachFrame r R cells A (SafeVal A) (getFrom call a base key) := by
-  unfold getFrom
+  unfold getFrom getFromWith
   apply (reachFrame_lookupProp away ha key).bind
   intro result safe
   cases result with
@@ -300,7 +300,7 @@ private theorem reachFrame_protoProp {r R cells A} (away : Away r R A) (call : C
     (root : A (.obj objectProto)) (owner : String) (names : List String)
     (base : Val) (hb : SafeVal A base) (key : PropertyKey) :
     ReachFrame r R cells A (SafeVal A) (protoProp call owner names base key) := by
-  cases key <;> simp only [protoProp] <;> try split
+  cases key <;> simp only [protoProp, protoPropWith] <;> try split
   all_goals first
   | exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
   | exact reachFrame_getFrom away call framed root base hb _
@@ -338,7 +338,7 @@ theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
       ReachFrame r R cells A (SafeVal A) (call f base []))
     (root : A (.obj objectProto)) (base key : Val) (hb : SafeVal A base) :
     ReachFrame r R cells A (SafeVal A) (getProp call base key) := by
-  cases base <;> simp only [getProp] <;>
+  cases base <;> simp only [getProp, getPropWith] <;>
     try first
     | exact reachFrame_throwErr r R cells A _ _ _
     | exact reachFrame_unknown r R cells A _ _

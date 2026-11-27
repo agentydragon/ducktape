@@ -17,7 +17,7 @@ private theorem dispatchCall_lift
     dispatchCall TurnM.lift (fun f closed r argv => TurnM.lift (localBody f closed r argv))
       (fun code cells told => TurnM.lift (opaqueBody code cells told)) callee this args =
     TurnM.lift (dispatchCall (fun run => run) localBody opaqueBody callee this args) := by
-  cases callee <;> simp only [dispatchCall, TurnM.lift_bind]
+  cases callee <;> simp only [dispatchCall, dispatchCallWithDeferred, TurnM.lift_bind]
   congr
   funext obj
   cases obj.code with

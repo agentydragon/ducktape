@@ -70,7 +70,7 @@ macro_rules
 
 theorem getFrom_le {call call' : Call W} (h : Call.le call call') (a : Addr) (base : Val) (k : PropertyKey) :
     getFrom call a base k ⊑ getFrom call' a base k := by
-  unfold getFrom
+  unfold getFrom getFromWith
   repeat' mono_step
   exact h _ _ _
 
@@ -88,12 +88,12 @@ theorem copySpread_le {call call' : Call W} (h : Call.le call call') (target : A
 
 theorem protoProp_le {call call' : Call W} (h : Call.le call call') (owner : String) (names : List String) (base : Val)
     (k : PropertyKey) : protoProp call owner names base k ⊑ protoProp call' owner names base k := by
-  cases k <;> simp only [protoProp] <;> try split
+  cases k <;> simp only [protoProp, protoPropWith] <;> try split
   all_goals first | exact M.le_refl _ | exact getFrom_le h _ _ _
 
 theorem getProp_le {call call' : Call W} (h : Call.le call call') (base key : Val) :
     getProp call base key ⊑ getProp call' base key := by
-  unfold getProp
+  unfold getProp getPropWith
   repeat' first | exact getFrom_le h _ _ _ | exact protoProp_le h _ _ _ _ | mono_step
 
 theorem getSuperProp_le {call call' : Call W} (h : Call.le call call') (home : Option Addr) (receiver key : Val) :
@@ -364,7 +364,7 @@ theorem Mono.fields_succ (env : Env) (a : Addr) (fs : List (PropertyKey × Expr)
 
 theorem Mono.call_succ (callee this : Val) (args : List Val) :
     (callFn (n + 1) callee this args : M W _) ⊑ callFn (m + 1) callee this args := by
-  unfold callFn dispatchCall runLocalCall
+  unfold callFn dispatchCall dispatchCallWithDeferred runLocalCall
   mono ih
   apply AsyncPrefix.invokeBody_le
   mono ih

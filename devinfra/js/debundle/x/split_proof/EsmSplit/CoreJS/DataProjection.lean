@@ -49,7 +49,8 @@ private theorem field_eq (h : ReceiverAt s env base cell obj record) (hp : f.own
       | zero => rfl
       | succ n =>
         have hg := getProp_ownData (callFn (W := _) (n + 1)) h.object hd
-        simp only [Field.statement, execStmt, evalExpr, writeField, M.pure_bind, M.bind_apply, hv, hg]
+        have key : (pure (.str f.key) : M _ Val) s = .ok (.str f.key) s := rfl
+        simp only [Field.statement, execStmt, evalExpr, writeField, M.bind_apply, hv, key, hg]
 
 private def writes (n : Nat) (env : Env) (fs : List Field) : M W Flow :=
   match n, fs with

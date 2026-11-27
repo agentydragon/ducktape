@@ -4199,6 +4199,24 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "corejs_property_turn",
+    srcs = ["EsmSplit/CoreJS/PropertyTurn.lean"],
+    deps = [":corejs_call_turn"],
+)
+
+lean_proof_test(
+    name = "corejs_property_turn_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PropertyTurn"],
+    required_theorems = [
+        "CoreJS.evalGet_projects",
+        "CoreJS.getProp_projects",
+        "CoreJS.performGet_projects",
+    ],
+    deps = [":corejs_property_turn"],
+)
+
 executable_test(
     name = "call_turn_test",
     src = "CallTurnTest.lean",

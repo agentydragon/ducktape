@@ -106,6 +106,21 @@ private def prefixOf (cut : Cut) (args : List Val) (fuel : Nat) : M W Prefix := 
   | .ret value => pure (.completed value)
   | _ => unknown "model: invalid control flow before await"
 
+/-- At the staged boundary the verified ordinal and address choose a cut.
+Ordinary call dispatch still reads the actual closure; only that deferred
+async body may run the authenticated suspension rule. -/
+private def invokeCut (fuel : Nat) (cut : Cut) (args : List Val) : TurnM W Val :=
+  dispatchCallWithDeferred TurnM.lift
+    (fun f closed receiver argv => TurnM.lift (runLocalCall (execStmts (fuel - 1)) f closed receiver argv))
+    (fun f closed _ argv reason => fun turn =>
+      if f.kind == .asyncFn && f.name == cut.parts.scope.name then
+        match launch promiseProto (prefixOf { cut with closed } argv) fuel turn with
+        | .ok promise next => .ok promise next
+        | .unknown why stopped => .unknown why stopped
+        | .fuel => .fuel
+      else .unknown s!"deferred function {f.name}: {reason}" turn)
+    (fun code cells told => TurnM.lift (converse (fuel - 1) code cells told)) (.obj cut.callee) .undef args
+
 abbrev Immediate := TurnResult
 
 /-- Erase the driver-only result: keep the exact shared result, including
@@ -141,9 +156,10 @@ private def runUnitWithCuts (cuts : List (Name × Cut)) (fuel : Nat) (unit : Lin
       TurnResult.andThen (readVar unit.env name) entered fun callee prepared =>
         if callee != .obj cut.callee then ordinary fuel unit turn else
         TurnResult.andThen (evalArgs (n + 1) unit.env args) prepared fun argv evaluated =>
-          match launch promiseProto (prefixOf cut argv) (n + 1) evaluated with
+          match invokeCut (n + 1) cut argv evaluated with
           | .ok promise started =>
             TurnResult.andThen (finishDirect unit.env target promise) started fun _ done => .ok () done
+          | .throw reason stopped => .throw reason stopped
           | .unknown why stopped => .unknown why stopped
           | .fuel => .fuel
   | _, _ => ordinary fuel unit turn

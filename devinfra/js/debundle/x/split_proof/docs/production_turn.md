@@ -139,3 +139,50 @@ example setters, constructors, and iterators). The shared recursion interfaces
 here do not authorize projecting a queue-bearing operation through any of
 those paths. The production evaluator still has no enqueue rule, and its
 publication gate is unchanged.
+
+## Property reads and the first staged source enqueue
+
+Ordinary source reads and the modeled host `.get` share the same property
+lookup in the callback's effect. An inherited accessor runs with the
+original receiver. The read returns the accessor's updated turn, including
+a heap write and queued work before a throw or refusal. The key expression,
+key conversion, and host handle checks run before lookup, so those failures
+cannot call a getter. A data read does not enter call dispatch. The existing
+state-only observations are exact at the same fuel and without host premises.
+
+The staged primitive-await pair exercises a much smaller call graph.
+The actual source and reread output need module linking and exact captures,
+resolved direct calls, plain parameter binding for `setValue`, lexical
+declaration/read/write, primitive literals and addition, and return/throw.
+At the authenticated async declaration, the staged model reaches the
+deferred-closure branch of the shared call table. There it evaluates the
+primitive operand, allocates the Promise, and enqueues the continuation.
+The unchanged staging test checks pending Promises and FIFO before the
+explicit drain; the swapped negative still reverses its observable trace.
+Ordinary call dispatch still refuses deferred code. No certificate changes
+that rule, and the production gate still refuses this placement.
+
+The staged experiment recognizes the actual ordinal and closure, but uses
+a staging-only table of cuts. Before selecting this behavior in the
+production evaluator, put the authenticated cut in lowered closure data
+and check that exact data on source and reread. Carry the turn through the
+module declarations/calls and resumed code. Refuse or prove unreachable
+the following paths in that narrow fragment; never project a possible
+queue-producing callback to a state-only call:
+
+- Member, optional and super calls/reads still need their recursive
+  callers threaded through the shared lookup. Computed assignment,
+  updates, setters, and the modeled host `.set` can re-enter separately.
+  A simple lexical assignment does not.
+- Constructors, class heritage and static/field initialization can call
+  or read getters. Destructuring, argument/array spread, and `for…of` use
+  iterators and iterator cleanup. Object spread/rest can read getters.
+  None is needed for the staged pair.
+- Descriptor conversion, `instanceof`, RegExp helpers and other callback
+  primitives, dynamic/global property paths, arbitrary opaque host code
+  and modeled host requests other than the reviewed direct call/read
+  paths need separate overlap checks if reachable. The staged pair has
+  no such requests or native global assumptions.
+- Thenables or object operands, reactions, and another suspension in a
+  continuation need additional semantics. Matching model refusals do not
+  justify publication.
