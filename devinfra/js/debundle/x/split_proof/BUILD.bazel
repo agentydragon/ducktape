@@ -1940,6 +1940,7 @@ lean_library(
 lean_library(
     name = "corejs_eval",
     srcs = ["EsmSplit/CoreJS/Eval.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [
         ":corejs_iterator",
         ":module_order",
@@ -1984,20 +1985,6 @@ lean_proof_test(
         ":corejs_syntax_match",
         ":corejs_value",
     ],
-)
-
-test_runner(
-    name = "error_realm_test_runner",
-    src = "ErrorRealmTest.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
-    deps = [":corejs_eval"],
-)
-
-test_runner(
-    name = "global_env_test_runner",
-    src = "GlobalEnvTest.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
-    deps = [":corejs_eval"],
 )
 
 # The CoreJS model. `model/differential.mjs` runs it against Node.
