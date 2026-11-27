@@ -27,6 +27,8 @@
 - **Debundle case coverage.** [Adapter and checker work](PLAN.md#more-of-debundles-cases-through-the-lean-checker) and [saved corpus results](debundle_cases/results/summary.md).
 - **Translation validation.** [Translation plan](translation/PLAN.md).
 
+- **Generator construction.** The current constructor does not promise generator or async-generator suspension and iteration. Define the desired supported cases and their behavior before adding construction rules; keep reached generator behavior unknown or refused.
+
 ## Lean build and runtime wiring
 
 - **Remove the [rules_lean patch](../../../../../patches/martianoff_rules_lean_proof_gates.patch) one hunk at a time.** When upstream can pass `--error=hasSorry` to each Lean compile, configure it there and drop the compiler hunk. Drop the audit hunks when upstream can check the transitive axioms of each named declaration (including imported definitions) and reject missing names and empty import-only audits. Verify those cases with the unpatched rules before removing the patch from [MODULE.bazel](../../../../../MODULE.bazel). These checks still apply to proofs compiled at build time.
