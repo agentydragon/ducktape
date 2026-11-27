@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedInlinePlan
+import EsmSplit.CoreJS.PrimitiveRhs
 
 /-! A proof-carrying indexed constructor for the actual decoded inline source
 and authored plan. Its output is the same indexed program used by local export
@@ -8,6 +9,21 @@ rows; no emitted program or execution pair is supplied as evidence. -/
 namespace CoreJS.IndexedInlineConstructor
 
 open LinkedBehavior
+
+/-- Source-only admission for unique lexical declarations with primitive
+initializers and reads from earlier bindings. A lexical let without an
+initializer retains the model's `undef` initializer. -/
+def staticDeclarations : List Name → List (Nat × Stmt) → Bool
+  | _, [] => true
+  | earlier, (_, .decl .const name init) :: rest =>
+      !earlier.contains name && (PrimitiveRhs.check earlier.contains init).isSome &&
+        staticDeclarations (name :: earlier) rest
+  | earlier, (_, .decl .let_ name .undef) :: rest =>
+      !earlier.contains name && staticDeclarations (name :: earlier) rest
+  | earlier, (_, .decl .let_ name init) :: rest =>
+      !earlier.contains name && (PrimitiveRhs.check earlier.contains init).isSome &&
+        staticDeclarations (name :: earlier) rest
+  | _, _ => false
 
 /-- Count authored selectors before the planner deduplicates their units. -/
 def SelectorsOnce (body : List (Nat × Stmt)) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Prop :=
