@@ -1,7 +1,9 @@
 use source_identity::{SourceUnitOrdinal, StatementId};
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use binding_targets::declaration_name_strings;
 use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
@@ -259,6 +261,16 @@ pub fn parse_js_module(
         unresolved_mark,
         top_level_mark,
     })
+}
+
+/// Read a source file and parse it under its own path, with the two context
+/// messages callers repeat. Callers that parse under a different source name
+/// (a graph-verified logical path, for example) keep their own read.
+pub fn parse_js_module_file(path: &Path) -> Result<ParsedJsModule> {
+    let source = fs::read_to_string(path)
+        .with_context(|| format!("reading source file {}", path.display()))?;
+    parse_js_module(&path.display().to_string(), source)
+        .with_context(|| format!("parsing source file {}", path.display()))
 }
 
 /// Parse a module to a bare `Module` with hygiene contexts assigned.
