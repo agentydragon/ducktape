@@ -216,6 +216,7 @@ rust_library(
         ":comment",
         ":edit_gate",
         ":graph_compatibility",
+        ":graph_edit",
         ":module",
         ":outcome",
         "//devinfra/js/debundle:analysis",
