@@ -539,7 +539,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Some(NativeIterableReceipt {
                 source: None,
                 yields: NativeIterableYields::ExactSlots(yields),
-                heap_contents: analysis::facts::HeapContentCells::default(),
+                heap_contents: analysis::facts::statement_facts::HeapContentCells::default(),
                 input: NativeIterableInput::Borrowed,
                 coverage: EffectCoverageFragment::native_iterable_protocol(&dependencies),
             });
@@ -664,18 +664,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             _ => return None,
         };
         dependencies.extend(&self.settled_prefix_dependencies());
-        let mut heap_contents = analysis::facts::HeapContentCells::default();
+        let mut heap_contents = analysis::facts::statement_facts::HeapContentCells::default();
         heap_contents.reads.insert(match kind {
-            Kind::Set => analysis::facts::EffectCell::SetContents(*object),
-            Kind::Object => analysis::facts::EffectCell::ArrayContents(*object),
+            Kind::Set => analysis::facts::statement_facts::EffectCell::SetContents(*object),
+            Kind::Object => analysis::facts::statement_facts::EffectCell::ArrayContents(*object),
             _ => unreachable!("native iterable admission only models Set or Array sources"),
         });
         let input = if let NativeIterableUse::SetConstruction { site, input } = operation {
-            heap_contents
-                .allocations
-                .insert(analysis::facts::EffectCell::SetContents(
-                    site.allocation_id(),
-                ));
+            heap_contents.allocations.insert(
+                analysis::facts::statement_facts::EffectCell::SetContents(site.allocation_id()),
+            );
             input
         } else {
             NativeIterableInput::Borrowed

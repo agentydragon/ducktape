@@ -888,11 +888,13 @@ pub fn materialize_logical_modules(
 /// Pairs each claimed chunk with its loaded analysis facts, if analysis was loaded.
 fn attach_loaded_facts<'a>(
     claimed: Vec<materialize::LogicalChunkPlan<'a>>,
-    mut loaded_chunks: Option<&mut BTreeMap<String, analysis::facts::ChunkFactAnalysis>>,
+    mut loaded_chunks: Option<
+        &mut BTreeMap<String, analysis::facts::statement_facts::ChunkFactAnalysis>,
+    >,
 ) -> Result<
     Vec<(
         materialize::LogicalChunkPlan<'a>,
-        Option<analysis::facts::ChunkFactAnalysis>,
+        Option<analysis::facts::statement_facts::ChunkFactAnalysis>,
     )>,
 > {
     claimed

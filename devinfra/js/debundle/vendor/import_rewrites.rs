@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::local_namespace_iife_target;
+use analysis::facts::local_effects::local_namespace_iife_target;
 use binding_targets::public_export_name;
 use js_ast::{is_binding_identifier, member_property};
 use source_identity::ChunkId;

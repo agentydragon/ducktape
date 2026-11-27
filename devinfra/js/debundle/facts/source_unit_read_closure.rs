@@ -13,7 +13,7 @@ use petgraph::graphmap::DiGraphMap;
 use roaring::RoaringBitmap;
 use swc_ecma_ast::Id;
 
-use super::StatementFacts;
+use super::statement_facts::StatementFacts;
 
 #[derive(Clone, Default)]
 struct LazyEffectBits {

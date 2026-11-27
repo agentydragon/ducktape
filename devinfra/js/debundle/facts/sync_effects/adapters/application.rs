@@ -17,8 +17,8 @@ use world::effect_coverage::EffectCoverageFragment;
 // Module-qualified: the builtin table's `Invocation` also has a
 // tagged-template form the kernel never requests.
 use super::super::runtime_inference::{CallOperands, CallTransfer, RuntimeOperation, RuntimeValue};
-use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
+use analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason;
 use analysis_domain::builtins;
 use analysis_vocabulary::execution_evidence::{
     AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
@@ -1039,8 +1039,8 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         let (selection, effects) =
             array_transfer::select_method(self.executor, receivers, property)?;
         for cell in [
-            analysis::facts::EffectCell::ObjectShape(selection.object()),
-            analysis::facts::EffectCell::OwnProperty {
+            analysis::facts::statement_facts::EffectCell::ObjectShape(selection.object()),
+            analysis::facts::statement_facts::EffectCell::OwnProperty {
                 origin: selection.object(),
                 property: selection.property().into(),
             },

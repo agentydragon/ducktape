@@ -180,9 +180,9 @@ pub struct SynchronousCalls {
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
     pub initialization_coverage_refusal:
-        Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
+        Option<crate::facts::initialization_effects::OwnerInitializationCoverageRefusalReason>,
     /// Report-only outcome of the owner's attempted kernel lane, if any.
-    pub root_attempt: Option<crate::facts::RootAttempt>,
+    pub root_attempt: Option<crate::facts::initialization_effects::RootAttempt>,
     /// Report-only, source-site may-accesses; never a legacy graph input.
     pub evaluation_effects: super::evaluation_effects::EvaluationEffects,
     // SavedSynchronousCalls transports both verdicts through the artifact's

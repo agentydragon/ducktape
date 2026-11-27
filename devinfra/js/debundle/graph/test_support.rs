@@ -1,4 +1,4 @@
-use analysis::StatementFacts;
+use analysis::facts::statement_facts::StatementFacts;
 
 pub(crate) fn build_dependency_graph(
     facts: &[StatementFacts],

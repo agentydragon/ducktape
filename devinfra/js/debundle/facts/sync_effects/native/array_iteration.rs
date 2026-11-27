@@ -11,8 +11,8 @@
 
 use super::super::adapters::application::LocalExecutionContext;
 use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
-use analysis::facts::EffectCell;
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
+use analysis::facts::statement_facts::EffectCell;
 use analysis_domain::builtins::IterationResult;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::{

@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use swc_ecma_ast::Id;
 
-use analysis::facts::CallbackFactoryBarrierFact;
+use analysis::facts::statement_facts::CallbackFactoryBarrierFact;
 use analysis_domain::item_views::StatementKind;
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::inputs::CommutingStatementsRef;
@@ -62,8 +62,8 @@ pub struct SourceUnit {
     pub heap_native_integrity_uses: Vec<analysis_vocabulary::report_schema::NativeIntegrityUse>,
     pub synchronous_execution:
         Option<analysis_vocabulary::report_schema::SynchronousExecutionReport>,
-    pub callback_factory_uses: Vec<analysis::facts::CallbackFactoryUseFact>,
-    pub returned_record_uses: Vec<analysis::facts::ReturnedRecordUseFact>,
+    pub callback_factory_uses: Vec<analysis::facts::statement_facts::CallbackFactoryUseFact>,
+    pub returned_record_uses: Vec<analysis::facts::statement_facts::ReturnedRecordUseFact>,
 }
 
 /// Declaration-based classification, independent of syntax kind and destination.
