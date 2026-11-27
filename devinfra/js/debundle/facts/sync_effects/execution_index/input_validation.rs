@@ -758,25 +758,15 @@ impl ExecutionIndex {
             self.resolve_selected_object_freeze_input(input);
             return;
         }
-        let candidates: Vec<_> = self
-            .binding_declaration_writes
-            .iter()
-            .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-            .flat_map(|(binding, writes)| {
-                writes.iter().filter_map(move |write| {
-                    (write.simple_identifier
-                        && write.direct_top_level
-                        && input.selected_statement_span.contains(write.binding_span))
-                    .then_some((binding.clone(), write.clone()))
-                })
-            })
-            .collect();
+        let candidates =
+            self.source_match_declarations(&input.selected_binding, input.selected_statement_span);
         let [(binding, declaration)] = candidates.as_slice() else {
-            self.native_operation_input_errors.push(format!(
-                "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                input.selected_binding,
-                candidates.len()
-            ));
+            self.native_operation_input_errors
+                .push(source_match_declaration_count(
+                    request,
+                    &input.selected_binding,
+                    candidates.len(),
+                ));
             return;
         };
         if matches!(
