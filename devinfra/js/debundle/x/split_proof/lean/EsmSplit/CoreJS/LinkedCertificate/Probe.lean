@@ -2,7 +2,6 @@ import EsmSplit.CoreJS.LinkedCertificate.Proof
 import EsmSplit.CoreJS.LinkedCertificate.QuoteCoreJS
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.ProbeReplay
-import EsmSplit.CoreJS.StateMatch
 
 namespace CoreJS.LinkedBehavior
 
@@ -82,14 +81,6 @@ structure ProbeWitness (source candidate : Program) where
   candidateRun : runProgram (premises.specialize World.probe) fuel candidate = .ok () candidateState
   statesAgree : probeStatesEqual premises sourceState candidateState = true
 
-private def premisedStateAgreement (premises : HostPremises)
-    (sourceState candidateState : State (premises.specialize World.probe)) :
-    Option (PLift (sourceState = candidateState)) := by
-  letI : DecidableEq (premises.specialize World.probe).σ := by
-    change DecidableEq Unit
-    infer_instance
-  exact StateMatch.state sourceState candidateState
-
 private theorem replayPremisedEquivalentFor {premises : HostPremises} {source candidate : Program} {fuel : Nat}
     {sourceState candidateState : State (premises.specialize World.probe)}
     (sourceReplay : ∀ w, runProgram (premises.specialize w) fuel source =
@@ -138,27 +129,9 @@ private theorem replayPremisedEquivalentFor {premises : HostPremises} {source ca
       ⟨fuel, sourceRunAtWorld, by simp⟩,
       ⟨fuel, candidateRunAtWorld, by simp⟩⟩
 
-/-- A compiled replay check. It accepts only when both programs have a
-successful probe run, their complete probe states match, both reached schedules
-have replay witnesses, and their public exports match. -/
-def replayPremisedPrograms {source candidate : Program}
-    (pair : CheckedProbePair source candidate) (probe : ProbeWitness source candidate) :
-    Option (PLift (EquivalentFor probe.premises source candidate ∧ SameExports source candidate)) := do
-  let allowLogical := source.modules.length == 1 && source.modules.all (fun m => m.imports.isEmpty)
-  let sourceSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical pair.before
-  let candidateSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical pair.after
-  let stateAgreement ← premisedStateAgreement probe.premises probe.sourceState probe.candidateState
-  if exportsMatched : exportsMatchFrom pair.before pair.after then
-    return ⟨⟨replayPremisedEquivalentFor
-        (sourceSupported.down probe.sourceState probe.sourceRun) (candidateSupported.down probe.candidateState probe.candidateRun)
-        stateAgreement.down,
-      pair.sameExports exportsMatched⟩⟩
-  else none
-
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
 #audit_linked_programs replayPremisedEquivalentFor
 #audit_linked_programs CheckedProbePair.sameExports
-#audit_linked_programs replayPremisedPrograms
 
 inductive RefusalCode where
   | probeMismatch | probeThrow | probeUnknown | probeFuel
