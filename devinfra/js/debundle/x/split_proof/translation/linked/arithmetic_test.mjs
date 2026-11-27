@@ -44,7 +44,7 @@ const eagerSubtraction = sequentialSplit(
   undefined,
   undefined,
   "",
-  "terminal-declarations"
+  "indexed-local-exports"
 );
 assertCertifiedResult(eagerSubtraction, 4);
 assert.equal(eagerSubtraction.verdict.strategy, "compiled-constructor", eagerSubtraction.log);
@@ -55,7 +55,7 @@ assert.deepEqual(
     eagerSubtraction.files.specFile,
     eagerSubtraction.out,
     ["--check-output"],
-    "terminal-declarations"
+    "indexed-local-exports"
   ).verdict,
   eagerSubtraction.verdict
 );
@@ -69,7 +69,7 @@ const wrongOperatorCheck = lower(
   eagerSubtraction.files.specFile,
   eagerSubtraction.out,
   ["--check-output"],
-  "terminal-declarations"
+  "indexed-local-exports"
 );
 assert.equal(wrongOperatorCheck.verdict.status, "rejected", wrongOperatorCheck.log);
 assert.equal(readFileSync(eagerEntry, "utf8"), wrongOperator);

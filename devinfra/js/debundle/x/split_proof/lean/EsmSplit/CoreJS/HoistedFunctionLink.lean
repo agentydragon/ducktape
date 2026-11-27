@@ -103,15 +103,6 @@ private theorem runUnits_inert_adjacent (fuel : Nat) (pivot other : LinkedUnit)
         exact runUnits_nonempty_region (fuel + 1) other suffix s 0
       _ = runUnits (fuel + 1) (other :: pivot :: suffix) s := hRun.symm
 
-private theorem runUnits_append_local (fuel : Nat) (pre suffix : List LinkedUnit) :
-    (runUnits fuel (pre ++ suffix) : M w Unit) =
-      (runUnits fuel pre >>= fun _ => runUnits fuel suffix) := by
-  induction pre with
-  | nil => rfl
-  | cons unit rest ih =>
-    obtain ⟨id, stmt, env⟩ := unit
-    simp only [List.cons_append, runUnits, ih, M.bind_assoc]
-
 /-- Move one inert execution step across a block, keeping every intermediate
 result and state. The proof deliberately makes no normal-completion assumption. -/
 private theorem runUnits_move_inert (fuel : Nat) (pivot : LinkedUnit)
@@ -128,7 +119,7 @@ private theorem runUnits_move_inert (fuel : Nat) (pivot : LinkedUnit)
         pre ++ (pivot :: other :: (crossed ++ suffix)) := by simp [List.append_assoc]
     have rightList : pre ++ (other :: crossed) ++ [pivot] ++ suffix =
         pre ++ (other :: (crossed ++ [pivot] ++ suffix)) := by simp [List.append_assoc]
-    rw [leftList, rightList, runUnits_append_local, runUnits_append_local]
+    rw [leftList, rightList, runUnits_append, runUnits_append]
     cases hpre : runUnits fuel pre s with
     | ok _ state =>
       simp only [M.bind_apply, hpre]

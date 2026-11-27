@@ -27,6 +27,16 @@ pub struct VendorImportRewrites {
     emitted_shared_import_for: BTreeSet<String>,
 }
 
+/// Count one rewritten reference for a vendor chunk/export. Both the directive
+/// builder and the identifier rewriter report here.
+fn count_rewritten_reference(
+    counts: &mut BTreeMap<(ChunkId, String), usize>,
+    chunk: ChunkId,
+    chunk_export: String,
+) {
+    *counts.entry((chunk, chunk_export)).or_insert(0) += 1;
+}
+
 impl VendorImportRewrites {
     /// Apply the replacements collected from this file's import directives.
     pub fn finish(mut self, body: &mut Vec<ModuleItem>) -> BTreeMap<(ChunkId, String), usize> {
@@ -89,20 +99,14 @@ impl VendorImportRewrites {
                     source: package,
                     local: local_id.0.to_string(),
                 });
-                *self
-                    .references_rewritten
-                    .entry((chunk, chunk_export))
-                    .or_insert(0) += 1;
+                count_rewritten_reference(&mut self.references_rewritten, chunk, chunk_export);
             }
             VendorImportAction::PackageDefault { package } => {
                 directive = Some(DeferredImport::Default {
                     source: package,
                     local: local_id.0.to_string(),
                 });
-                *self
-                    .references_rewritten
-                    .entry((chunk, chunk_export))
-                    .or_insert(0) += 1;
+                count_rewritten_reference(&mut self.references_rewritten, chunk, chunk_export);
             }
             VendorImportAction::PackageNamed {
                 package,
@@ -131,10 +135,7 @@ impl VendorImportRewrites {
                         },
                     );
                 } else {
-                    *self
-                        .references_rewritten
-                        .entry((chunk, chunk_export))
-                        .or_insert(0) += 1;
+                    count_rewritten_reference(&mut self.references_rewritten, chunk, chunk_export);
                 }
             }
             VendorImportAction::FacadeMember {
@@ -173,10 +174,7 @@ impl VendorImportRewrites {
                     source,
                     local: local_id.0.to_string(),
                 });
-                *self
-                    .references_rewritten
-                    .entry((chunk, chunk_export))
-                    .or_insert(0) += 1;
+                count_rewritten_reference(&mut self.references_rewritten, chunk, chunk_export);
             }
         }
         directive
@@ -321,18 +319,16 @@ impl PartialSwapIdentRewriter<'_> {
                 ..
             } => {
                 reexports.push(crate::make_named_reexport(source, export, &exported));
-                *self
-                    .references_by_symbol
-                    .entry((*chunk_id, chunk_export.clone()))
-                    .or_insert(0) += 1;
+                count_rewritten_reference(
+                    self.references_by_symbol,
+                    *chunk_id,
+                    chunk_export.clone(),
+                );
                 return false;
             }
             _ => return true,
         };
-        *self
-            .references_by_symbol
-            .entry((chunk_id, chunk_export.clone()))
-            .or_insert(0) += 1;
+        count_rewritten_reference(self.references_by_symbol, chunk_id, chunk_export.clone());
         true
     }
 }
