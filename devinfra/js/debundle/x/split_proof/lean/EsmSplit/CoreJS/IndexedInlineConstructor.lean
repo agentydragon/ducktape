@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedInlinePlan
+import EsmSplit.CoreJS.PrimitiveRhs
 
 /-! A proof-carrying indexed constructor for the actual decoded inline source
 and authored plan. Its output is the same indexed program used by local export
@@ -8,6 +9,21 @@ rows; no emitted program or execution pair is supplied as evidence. -/
 namespace CoreJS.IndexedInlineConstructor
 
 open LinkedBehavior
+
+/-- Source-only admission for unique lexical declarations with primitive
+initializers and reads from earlier bindings. A lexical let without an
+initializer retains the model's `undef` initializer. -/
+def staticDeclarations : List Name → List (Nat × Stmt) → Bool
+  | _, [] => true
+  | earlier, (_, .decl .const name init) :: rest =>
+      !earlier.contains name && (PrimitiveRhs.check earlier.contains init).isSome &&
+        staticDeclarations (name :: earlier) rest
+  | earlier, (_, .decl .let_ name .undef) :: rest =>
+      !earlier.contains name && staticDeclarations (name :: earlier) rest
+  | earlier, (_, .decl .let_ name init) :: rest =>
+      !earlier.contains name && (PrimitiveRhs.check earlier.contains init).isSome &&
+        staticDeclarations (name :: earlier) rest
+  | _, _ => false
 
 /-- Count authored selectors before the planner deduplicates their units. -/
 def SelectorsOnce (body : List (Nat × Stmt)) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Prop :=
@@ -21,6 +37,7 @@ instance (body : List (Nat × Stmt)) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
 
 structure Construction (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) where
   checked : IndexedInlinePlan.Checked decoded B S
+  staticSource : staticDeclarations [] decoded.source.body = true
   publicEntry : S.privateEntryBody = false
   sequential : S.sequential = true
   selectorsOnce : SelectorsOnce decoded.source.body B S
@@ -38,6 +55,8 @@ structure Construction (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundl
 indexed construction with its placement, live exports and all-outcome proofs. -/
 def construct (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
     Except String (Construction decoded B S) := do
+  let .isTrue staticSource := (inferInstance : Decidable (staticDeclarations [] decoded.source.body = true)) |
+    throw "expected unique lexical declarations with primitive initializers and earlier reads"
   let .isTrue publicEntry := (inferInstance : Decidable (S.privateEntryBody = false)) |
     throw "checked split requires no private entry body"
   let .isTrue sequential := (inferInstance : Decidable (S.sequential = true)) |
@@ -60,7 +79,7 @@ def construct (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundle) (S : E
     apply IndexedInlinePlan.placementOwner checked
     rw [SparseProjectedOrder.split_indexed_fileUnitPlacements checked.schedule.safePaths]
     exact member
-  return ⟨checked, publicEntry, sequential, selectorsOnce, schedule, labels, rfl,
+  return ⟨checked, staticSource, publicEntry, sequential, selectorsOnce, schedule, labels, rfl,
     splitProgramIndexed decoded.source.body B P, rfl, placed, ownerProof,
     IndexedInlinePlan.sameExports checked, IndexedInlinePlan.allOutcomes checked⟩
 

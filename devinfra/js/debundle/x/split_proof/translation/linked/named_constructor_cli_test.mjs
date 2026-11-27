@@ -93,6 +93,18 @@ assert.equal(split({ source, spec, out: letOut, require: "all-outcomes", checkOu
 assert.equal(readFileSync(letEntry, "utf8"), letChanged);
 writeFileSync(letEntry, letOriginal);
 
+// An uninitialized lexical declaration keeps its original live cell.
+writeFileSync(source, "let seed; export let result = seed;\n");
+const uninitializedOut = path.join(root, "uninitialized-let-out");
+const uninitialized = split({ source, spec, out: uninitializedOut, require: "all-outcomes" });
+assert.equal(uninitialized.status, "certified", uninitialized.log);
+assert.equal(uninitialized.scope, "named-declarations");
+assert.equal((await import(pathToFileURL(path.join(uninitializedOut, "entry.mjs")))).result, undefined);
+assert.equal(
+  split({ source, spec, out: uninitializedOut, require: "all-outcomes", checkOutput: true }).status,
+  "certified"
+);
+
 // Exercise tampering against the same source and placement that produced `out`.
 writeFileSync(source, "const seed = 7; export const result = seed;\n");
 assert.equal(run({ checkOutput: true }).status, "certified");
@@ -126,12 +138,20 @@ for (const [label, originalSource] of [
     const target = path.join(root, `${label}-${guarantee}`);
     const fresh = split({ source, spec, out: target, require: guarantee });
     assert.equal(fresh.status, "refused", fresh.log);
+    if (label === "omitted-debugger") {
+      assert.equal(fresh.scope, "named-declarations", fresh.log);
+      assert.match(fresh.reason, /source provenance: unsupported omitted source node 2/);
+    }
     assert(!existsSync(target));
     mkdirSync(target);
     const sentinel = path.join(target, "sentinel.txt");
     writeFileSync(sentinel, "preserve existing bytes\n");
     const existing = split({ source, spec, out: target, require: guarantee, allowExistingOut: true });
     assert.equal(existing.status, "refused", existing.log);
+    if (label === "omitted-debugger") {
+      assert.equal(existing.scope, "named-declarations", existing.log);
+      assert.match(existing.reason, /source provenance: unsupported omitted source node 2/);
+    }
     assert.equal(readFileSync(sentinel, "utf8"), "preserve existing bytes\n");
   }
 }

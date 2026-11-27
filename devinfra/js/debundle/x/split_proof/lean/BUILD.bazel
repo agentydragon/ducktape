@@ -1123,15 +1123,17 @@ lean_library(
     ],
     deps = [
         ":corejs_certificates",
+        ":corejs_checked_split",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
+        ":corejs_resolved_placement",
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
         ":lowersplit_input",
         ":lowersplit_support",
-        ":named_declaration_split",
         ":ordered_const_syntax",
         ":planner",
     ],
@@ -2938,6 +2940,7 @@ lean_library(
     deps = [
         ":corejs_indexed_checked_split",
         ":corejs_indexed_inline_plan",
+        ":corejs_runtime",
     ],
 )
 
