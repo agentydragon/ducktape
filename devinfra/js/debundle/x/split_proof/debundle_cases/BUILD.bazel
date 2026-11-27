@@ -28,10 +28,10 @@ js_binary(
 )
 
 js_test(
-    name = "pinned_certificates_test",
+    name = "ordinary_certification_test",
     size = "large",
-    args = ["--check-certificates"],
-    data = _RUNNER_DATA + ["results/certificates.jsonl"],
+    args = ["--certify"],
+    data = _RUNNER_DATA,
     entry_point = "run_cases.mjs",
     env = _RUNNER_ENV,
     shard_count = 6,
