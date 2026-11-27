@@ -241,3 +241,16 @@ js_test(
     entry_point = "await_placement_boundary_test.mjs",
     env = _TEST_ENV,
 )
+
+js_test(
+    name = "await_staged_link_test",
+    data = [
+        "//devinfra/js/debundle/x/split_proof:await_staged_link_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    entry_point = "await_staged_link_test.mjs",
+    env = {
+        "AWAIT_STAGED_LINK": "$(rootpath //devinfra/js/debundle/x/split_proof:await_staged_link_test_runner)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+)

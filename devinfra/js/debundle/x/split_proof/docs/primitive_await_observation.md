@@ -59,7 +59,19 @@ At every quota and evaluator bound, the drain lemma preserves the outcome,
 complete state (including writes before a rejection or refusal), and any
 remaining ordered queue.
 
-The missing step is to derive the drain lemma's input from linking and
-evaluating the actual published module graph, including correspondence for
-the residual code and its binding addresses. The swapped-call control has
-a different queue order despite the same in-turn observation.
+The staged-link test now derives both premises for one concrete placement
+in the probe world at fuel 96. The production printer stages the authored
+two-file plan; its readback verifies the unit syntax, original ordinals,
+imports, and live export cells. The test decodes those reread files, checks
+exact immediate state equality, and builds position-by-position queue
+correspondence before using the drain lemma. The check also works when the
+module throws with both jobs pending. Swapping the calls keeps the exact
+immediate state and public cell addresses, but fails queue correspondence
+and changes `A7B7` to `B7A7`. Moving only the captured `trace` binding
+would make the original assignment target an import. The bridge refuses
+that placement rather than reuse its original writable lowering.
+
+The staging callback always refuses publication. This witness does not
+derive immediate state and queue correspondence for every world, fuel, or
+placement, and the production proof still runs the ordinary evaluator.
+Those obligations remain before this placement can be certified.

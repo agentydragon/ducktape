@@ -4,9 +4,10 @@ import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.PrimitiveAwait
 import EsmSplit.CoreJS.Scope
 import EsmSplit.ESTreeUnits
+import EsmSplit.Plan
 
 /-!
-An explicit model entry for a single module with discarded primitive awaits
+An explicit model entry for linked modules with discarded primitive awaits
 in ordinary async declarations. The bridge recognizes calls syntactically in
 module expression statements and const initializers, then checks the callee
 against the actual linked function object. Aliases, nested call sites and any
@@ -28,30 +29,57 @@ variable {W : World}
 structure Input where
   private mk ::
   program : Program
-  cuts : List FromESTree.PrimitiveAwaitParts
+  cuts : List (Nat × FromESTree.PrimitiveAwaitParts)
+
+private def registerCuts (source : LinkedInput.DecodedSource) :
+    List (Nat × FromESTree.PrimitiveAwaitParts) :=
+  source.nodes.toList.zipIdx.filterMap fun (node, id) => do
+    let parts ← (FromESTree.primitiveAwaitParts node).toOption
+    let some (.funDecl f) := source.source.body.lookup id | none
+    let some (_, _, _, some _) := f.opaqueBody | none
+    if f.kind == .asyncFn && f.name == parts.scope.name then some (id, parts) else none
+
+private def decodeSource (source : Json) (entry : String) : Except String LinkedInput.DecodedSource := do
+  let decoded ← LinkedInput.decodeSingletonSourceNodes (← ESTreeUnits.nodes source) entry
+  unless decoded.source.imports.isEmpty && !decoded.hasTemplates do
+    throw "await model requires an import-free original without templates"
+  return decoded
 
 def decode (source : Json) (entry : String) : Except String Input := do
-  let nodes ← ESTreeUnits.nodes source
-  let decoded ← LinkedInput.decodeSingletonSourceNodes nodes entry
-  unless decoded.source.imports.isEmpty && !decoded.hasTemplates do
-    throw "await model requires an import-free module without templates"
-  let cuts := nodes.toList.zipIdx.filterMap fun (node, id) => do
-    let parts ← (FromESTree.primitiveAwaitParts node).toOption
-    let some (.funDecl f) := decoded.source.body.lookup id | none
-    let some (_, _, _, some _) := f.opaqueBody | none
-    if f.kind == .asyncFn && f.name == parts.scope.name then some parts else none
-  return ⟨decoded.program, cuts⟩
+  let decoded ← decodeSource source entry
+  return ⟨decoded.program, registerCuts decoded⟩
+
+/-- Reread a placed graph through the existing syntax, ordinal and live-cell
+checks. Source cuts transfer only by their checked original declaration IDs. -/
+def decodePlaced (source files : Json) (plan : EsmSplit.Plan) : Except String (Input × Input) := do
+  let original ← decodeSource source plan.entry
+  let (before, after) ← LinkedInput.decodePair source (Json.mkObj []) files plan
+  let cuts := registerCuts original
+  for (id, part) in cuts do
+    let some owner := after.modules.find? (fun m => (m.body.lookup id).isSome) |
+      throw s!"missing placed async declaration {id}"
+    let imports := owner.imports.flatMap fun i => i.names.map Prod.snd
+    -- Cut code came from the original module. It cannot be reused if a
+    -- captured name became an import: an assignment would then need a
+    -- frozen target, even though both lookups still reach the same cell.
+    if let some name := part.scope.free.find? imports.contains then
+      throw s!"placed async declaration {id} captures imported binding {name}"
+  return (⟨before, cuts⟩, ⟨after, cuts⟩)
 
 private structure Cut where
   callee : Addr
   closed : Env
   parts : FromESTree.PrimitiveAwaitParts
 
-private def bindCuts (env : Env) (parts : List FromESTree.PrimitiveAwaitParts) :
-    M W (List (Name × Cut)) :=
-  parts.mapM fun part => do
+private def bindCuts (linked : List (Module × Env))
+    (parts : List (Nat × FromESTree.PrimitiveAwaitParts)) : M W (List (Name × Cut)) :=
+  parts.mapM fun (id, part) => do
     let name := part.scope.name
-    let .obj addr ← readVar env name | unknown "model: expected the linked async declaration"
+    let some unit := (unitsOf linked).find? (·.id == id) |
+      unknown "model: missing async declaration ordinal"
+    let .funDecl f := unit.stmt | unknown "model: expected an async declaration at the checked ordinal"
+    unless f.kind == .asyncFn && f.name == name do unknown "model: async declaration changed"
+    let .obj addr ← readVar unit.env name | unknown "model: expected the linked async declaration"
     let some (.closure _ closed _) := (← getObj addr).code | unknown "model: expected an async closure"
     return (name, ⟨addr, closed, part⟩)
 
@@ -136,18 +164,21 @@ private def runUnitsWithCuts (cuts : List (Name × Cut)) (fuel : Nat) :
 `PrimitiveAwait.drain` on the returned turn. -/
 def runImmediate (W : World) (fuel : Nat) (input : Input) : Immediate W Env :=
   thenSync (link input.program) ⟨initialState W input.program.regions, []⟩ fun linked entered =>
-    match linked with
-    | [(_, env)] =>
+    let entry := match linked with
+      | [one] => some one
+      | _ => linked.find? fun (m, _) => m.name == input.program.entry
+    match entry with
+    | some (_, env) =>
       match input.cuts with
       | [] => thenSync (runUnits fuel (unitsOf linked)) entered fun () done => .ok env done
       | parts =>
-        thenSync (bindCuts env parts) entered fun cuts ready =>
+        thenSync (bindCuts linked parts) entered fun cuts ready =>
           match runUnitsWithCuts cuts fuel (unitsOf linked) ready with
           | .ok () done => .ok env done
           | .throw reason stopped => .throw reason stopped
           | .unknown why stopped => .unknown why stopped
           | .fuel => .fuel
-    | _ => .unknown "expected exactly one linked module" entered
+    | none => .unknown "expected the linked entry module" entered
 
 /-- Once a module has linked, the no-cut path agrees with the shared
 evaluator at every bound. Equality retains object identity and all stateful

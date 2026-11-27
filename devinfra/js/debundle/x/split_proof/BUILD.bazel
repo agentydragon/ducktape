@@ -4064,6 +4064,7 @@ lean_library(
         ":corejs_primitive_await",
         ":corejs_scope",
         ":estree_units",
+        ":plan",
     ],
 )
 
@@ -4096,4 +4097,24 @@ lean_proof_test(
         "CoreJS.PrimitiveAwait.runJob_corresponds",
     ],
     deps = [":corejs_primitive_await_correspondence"],
+)
+
+test_runner(
+    name = "await_staged_link_test_runner",
+    src = "AwaitStagedLinkTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":corejs_entry_exports",
+        ":corejs_eval",
+        ":corejs_linked_primitive_await",
+        ":corejs_primitive_await",
+        ":corejs_primitive_await_correspondence",
+        ":corejs_state_match",
+        ":corejs_syntax_match",
+        ":estree_emit",
+        ":estree_units",
+        ":lowersplit_input",
+        ":plan",
+        ":split_files",
+    ],
 )
