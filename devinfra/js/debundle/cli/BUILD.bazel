@@ -27,6 +27,7 @@ rust_library(
         "//devinfra/js/debundle:command_diagnostics",
         "//devinfra/js/debundle:gate",
         "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:report_io",
         "//devinfra/js/debundle:source_identity",
         "//devinfra/js/debundle/artifacts:output_layout",
         "//devinfra/js/debundle/esm_schedule",

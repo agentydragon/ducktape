@@ -452,8 +452,7 @@ fn write_rejection_artifact<T: Serialize>(
     value: &T,
 ) -> Result<()> {
     let path = rejection_artifact_path(dependency_graph_path, filename);
-    fs::write(&path, serde_json::to_string_pretty(value)?)
-        .with_context(|| format!("writing {}", path.display()))
+    report_io::write_json(path, value)
 }
 
 /// Remove the previous gate result when replacing it with a completed
