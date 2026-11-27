@@ -33,46 +33,15 @@ DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mj
 
 ## Which accepted cases have artifact certificates?
 
-[Per-case certificate results](results/certificates.jsonl) are separate from the diagnostic report.
-In the historical two-mode run, of 122 saved `agree-accept` cases, 111 certified with the structural checker, passed a fresh
-`--check-output` on the published files, and matched the fixture's expected stdout and exit status
-in Node for both original and emitted entry. With `privateEntryBody: true`, the planner may split the declaration prefix of the entry into
-a private implementation module to keep glue exports off the public entry namespace. The
-export-alias collision case exercises this layout. For nested entries with fixed providers,
-the checker sees their original routes in a deployment rooted at the fixture directory.
-For a retained unit that uses a namespace import, the checker requires a fixed provider
-with inline named exports and checks the cells of every export. The emitted JavaScript
-keeps its namespace receiver: the delegator fixture increments an exported binding and
-reads its new value through `this.value`. The report records the synthetic deployment origin; emitted entries run as Node ES modules. These certificates request **normal completion**
-under the default host profile; no fixture-specific host assumptions are supplied. This checks the
-diagnostic runner's stdout observation, not every Rust export or probe assertion.
+The ordinary splitter runs once for every saved `agree-accept` diagnostic case, including nested entries with fixed providers. A refusal records the CLI’s reason in `emission.blocker` and its reason code when available; the output directory must remain absent. After an acceptance the runner checks the published files from disk and runs the original and emitted entries in Node. Both must exit successfully and match the fixture’s expected stdout. Missing cases, adapter errors, and failed disk or runtime checks fail the test.
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof/debundle_cases
-bbr test "$p:pinned_certificates_test"
+bbr test "$p:ordinary_certification_test" "$p:corpus_certificate_test"
 bb run "$p:debundle_cases" -- --certify --out "$out/certificates.jsonl"
 ```
 
-The test selects every certified case from the saved certificate report, independently of the
-diagnostic cohort. A refusal, failed disk check, runtime mismatch or missing case fails the pin.
-The census reuses the diagnostic owner plan but supplies the original JS to the normal certifying
-CLI. It requests emission once, including for nested entries with fixed providers. An emission refusal records the ordinary CLI’s reason in `emission.blocker` and its reason code when available. A published
-tree that fails recheck is an error. Review a new census before updating the report: keep existing
-successes and add newly certified cases.
-
-### What to do about the 11 refusals
-
-These are first blockers, not claims that the splits are safe:
-
-- **Referrer-sensitive code (3):** dynamic import, `import.meta.url`, and URL rebasing need the
-  original referrer. Replay with an explicit deployment origin and test the resolved URL before
-  moving a unit across modules.
-- **Host built-ins (4):** two decorator-helper cases reach `Object`; one case each reaches
-  `WeakMap` and `Set`. Separate reading a stable intrinsic from calling or constructing it, and
-  model only the operation the fixture needs. Do not assume all uses are inert.
-- **Reordered initializers (4):** three fail the local-allocation rule; `frozen_callback` fails
-  because a callback can reach the moved region. Reduce the first crossed pair, try an
-  order-preserving placement, and extend a move rule only with evidence for allocation and reads.
+The separate `corpus_certificate_test` requires a compiled constructor to emit a supported placement. It checks its live export in Node, rechecks the files, and rejects a tampered provider and a wrong owner. The [historical structural report](https://github.com/agentydragon/ducktape/blob/c42cc83cf15aa5bf544ca998624af8932b2370ef/devinfra/js/debundle/x/split_proof/debundle_cases/results/certificates.jsonl) records earlier results under different proof rules.
 
 ## What the adapter does
 

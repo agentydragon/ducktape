@@ -1,5 +1,5 @@
 // Certify the same owner assignment used for diagnostic comparison, from the JS bytes.
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 
@@ -48,7 +48,10 @@ export function certify({ stage, chunkFile, plan, want, providers, run, lowerspl
   }
   const args = [manifest, output, "--require", "normal-completion"];
   const emission = verdict(run(lowersplit, args, { timeout: certificateTimeoutMs }), "emission");
-  if (emission.blocker !== undefined) return { outcome: "rejected", emission };
+  if (emission.blocker !== undefined) {
+    if (existsSync(output)) return { outcome: "error:refusal-output", emission };
+    return { outcome: "rejected", emission };
+  }
 
   const disk = verdict(run(lowersplit, [...args, "--check-output"], { timeout: certificateTimeoutMs }), "disk check");
   if (disk.blocker !== undefined) return { outcome: "error:disk", emission, disk };
