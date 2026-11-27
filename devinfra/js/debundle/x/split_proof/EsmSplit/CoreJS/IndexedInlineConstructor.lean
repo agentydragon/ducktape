@@ -12,12 +12,12 @@ namespace CoreJS.IndexedInlineConstructor
 
 open LinkedBehavior
 
-/-- An inline const may allocate a dense array from supported operands.
+/-- An inline const may allocate an empty object or a dense array of supported operands.
 The order-preserving proof uses the original initializer expression unchanged. -/
 private def constInitializer (earlier : List Name) (init : Expr) : Bool :=
   match init with
-  | .arr (first :: rest) =>
-    (first :: rest).all fun element => (PrimitiveRhs.check earlier.contains element).isSome
+  | .arr elements => elements.all fun element => (PrimitiveRhs.check earlier.contains element).isSome
+  | .obj [] => true
   | _ => (PrimitiveRhs.check earlier.contains init).isSome
 
 /-- Source-only admission for unique declarations with bounded initializers.
