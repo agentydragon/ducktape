@@ -2930,6 +2930,23 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_indexed_inline_constructor",
+    srcs = ["EsmSplit/CoreJS/IndexedInlineConstructor.lean"],
+    deps = [
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_plan",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_inline_constructor_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedInlineConstructor"],
+    required_theorems = ["CoreJS.IndexedInlineConstructor.construct"],
+    deps = [":corejs_indexed_inline_constructor"],
+)
+
+lean_library(
     name = "lexical_function_source",
     srcs = ["EsmSplit/CoreJS/LexicalFunctionSource.lean"],
     deps = [":corejs_single_module"],

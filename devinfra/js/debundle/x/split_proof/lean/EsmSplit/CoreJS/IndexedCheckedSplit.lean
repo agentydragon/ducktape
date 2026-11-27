@@ -34,7 +34,7 @@ private theorem isConst_sound {stmt : Stmt} (accepted : isConst stmt = true) :
   case decl kind name init =>
     cases kind <;> simp [isConst] at accepted ⊢
 
-private theorem places {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+theorem places {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
     (singleton : sourceProgram.modules = [source]) (sourceSafe : EsmSplit.safeModulePath source.name = true)
     (safe : ∀ m ∈ P.mods, EsmSplit.safeModulePath m.name = true)
