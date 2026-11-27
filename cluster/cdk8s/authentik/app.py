@@ -26,7 +26,7 @@ from python.runfiles import Runfiles
 from cluster.cdk8s import cilium, opentofu
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.authentik.db import NAMESPACE
-from cluster.cdk8s.flux import write_kustomization
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE, write_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -255,7 +255,7 @@ def _network_policy(chart: Chart) -> None:
             # Outposts sync their config from the server API.
             IngressRule.from_endpoints(_namespace_source(NAMESPACE), ports=[_HTTP, _HTTPS, _METRICS]),
             # tofu-controller's tf-runner calls the Authentik API.
-            IngressRule.from_endpoints(_namespace_source("flux-system"), ports=[_HTTP]),
+            IngressRule.from_endpoints(_namespace_source(CONTROLLER_NAMESPACE), ports=[_HTTP]),
             # Cilium sees the provider pod's identity, not its impersonated root ServiceAccounts.
             IngressRule.from_endpoints(
                 {

@@ -17,7 +17,13 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import node_scheduling, ntfy, piraeus_storage
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
@@ -421,7 +427,7 @@ def chart(app: App) -> Chart:
         repository=https_helm_repository(
             chart,
             _HELM_REPOSITORY,
-            "flux-system",
+            CONTROLLER_NAMESPACE,
             url="https://prometheus-community.github.io/helm-charts",
             interval="12h",
         ),

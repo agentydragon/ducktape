@@ -2,6 +2,7 @@
 
 from cdk8s import App, Chart
 
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 
@@ -22,5 +23,7 @@ _DEPLOYMENTS = (
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     for deployment in _DEPLOYMENTS:
-        requests_only_vpa(chart, deployment, namespace="flux-system", container_name="manager", update_mode="Initial")
+        requests_only_vpa(
+            chart, deployment, namespace=CONTROLLER_NAMESPACE, container_name="manager", update_mode="Initial"
+        )
     return chart

@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import opentofu
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.nix_cache import ci_token
 
@@ -22,7 +23,7 @@ def chart(app: App) -> Chart:
         secret_accesses=(
             (
                 "flux-system-secrets",
-                "flux-system",
+                CONTROLLER_NAMESPACE,
                 (
                     # keep-sorted start
                     "buildbuddy-api-key",

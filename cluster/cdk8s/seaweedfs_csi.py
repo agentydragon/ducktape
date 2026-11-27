@@ -13,6 +13,7 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepository, GitR
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 
 from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
@@ -209,7 +210,7 @@ def chart(app: App) -> Chart:
     source = GitRepository(
         chart,
         "source",
-        metadata=ApiObjectMetadata(name="seaweedfs-csi-driver", namespace="flux-system"),
+        metadata=ApiObjectMetadata(name="seaweedfs-csi-driver", namespace=CONTROLLER_NAMESPACE),
         spec=GitRepositorySpec(
             interval="24h",
             url="https://github.com/seaweedfs/seaweedfs-csi-driver",

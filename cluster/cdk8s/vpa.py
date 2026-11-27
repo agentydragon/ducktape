@@ -12,6 +12,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -19,10 +20,9 @@ NAME = "vpa"
 NAMESPACE = "kube-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/vpa"
 _REPOSITORY_NAME = "fairwinds-stable"
-_REPOSITORY_NAMESPACE = "flux-system"
 _ADMISSION_DEPLOYMENT = f"{NAME}-admission-controller"
 # Goldilocks installs from this repository too, from its own chart.
-REPOSITORY_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
+REPOSITORY_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, CONTROLLER_NAMESPACE)
 
 # The chart's metrics readiness can succeed before TLS is ready. Wait for the admission listener,
 # which opens after cache sync and certificate loading.
@@ -63,7 +63,7 @@ def chart(app: App) -> Chart:
         NAME,
         NAMESPACE,
         repository=https_helm_repository(
-            chart, _REPOSITORY_NAME, _REPOSITORY_NAMESPACE, url="https://charts.fairwinds.com/stable"
+            chart, _REPOSITORY_NAME, CONTROLLER_NAMESPACE, url="https://charts.fairwinds.com/stable"
         ),
         chart=NAME,
         version="5.0.1",

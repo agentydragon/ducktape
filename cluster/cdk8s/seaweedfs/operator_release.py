@@ -16,13 +16,13 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
 )
 
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.seaweedfs import namespace
 
 NAME = "seaweedfs-operator"
 OUTPUT_DIR = f"{GENERATED_ROOT}/seaweedfs/operator"
-_REPOSITORY_NAMESPACE = "flux-system"
 
 
 def chart(app: App) -> Chart:
@@ -32,7 +32,7 @@ def chart(app: App) -> Chart:
         NAME,
         namespace.NAME,
         repository=https_helm_repository(
-            chart, NAME, _REPOSITORY_NAMESPACE, url="https://seaweedfs.github.io/seaweedfs-operator/"
+            chart, NAME, CONTROLLER_NAMESPACE, url="https://seaweedfs.github.io/seaweedfs-operator/"
         ),
         chart=NAME,
         version="0.1.42",  # operator v1.0.39 (latest stable as of 2026-09-14)

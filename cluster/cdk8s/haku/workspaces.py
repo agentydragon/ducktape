@@ -11,7 +11,13 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.haku.namespace import NAMESPACE
@@ -75,7 +81,7 @@ def _external_secrets(chart: Chart) -> None:
     # tf/gitops/haku-state's `haku` account: its git credentials, which Reflector mirrors on to
     # the other haku-state git consumers, and the pull secret for Haku's own UI image.
     reader = secret_copy.reader(chart, NAMESPACE)
-    secret_copy.secret_copy(chart, "haku-forgejo-git", reader=reader, mirror_namespaces=["flux-system"])
+    secret_copy.secret_copy(chart, "haku-forgejo-git", reader=reader, mirror_namespaces=[CONTROLLER_NAMESPACE])
     secret_copy.secret_copy(
         chart, "haku-forgejo-registry-pull", reader=reader, secret_type="kubernetes.io/dockerconfigjson"
     )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
@@ -21,7 +22,7 @@ def chart(app: App) -> Chart:
         NAME,
         NAMESPACE,
         repository=https_helm_repository(
-            chart, NAME, "flux-system", url="https://kubernetes-sigs.github.io/metrics-server/"
+            chart, NAME, CONTROLLER_NAMESPACE, url="https://kubernetes-sigs.github.io/metrics-server/"
         ),
         chart="metrics-server",
         version="3.14.0",

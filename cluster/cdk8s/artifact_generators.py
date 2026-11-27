@@ -18,7 +18,14 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecSourcesKind,
 )
 
-from cluster.cdk8s.flux import DUCKTAPE_SOURCE, NAMESPACE, Kustomization, flux_kustomization, literal_artifact_path
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    DUCKTAPE_SOURCE,
+    NAMESPACE,
+    Kustomization,
+    flux_kustomization,
+    literal_artifact_path,
+)
 from cluster.cdk8s.generation import write_app
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -30,7 +37,10 @@ _DUCKTAPE_ARTIFACT_SOURCE = ArtifactGeneratorSpecSources(
     namespace=DUCKTAPE_SOURCE.namespace,
 )
 _FLUX_SYSTEM_SOURCE = ArtifactGeneratorSpecSources(
-    alias="repo", kind=ArtifactGeneratorSpecSourcesKind.GIT_REPOSITORY, name="flux-system", namespace="flux-system"
+    alias="repo",
+    kind=ArtifactGeneratorSpecSourcesKind.GIT_REPOSITORY,
+    name="flux-system",
+    namespace=CONTROLLER_NAMESPACE,
 )
 
 
@@ -61,7 +71,7 @@ def artifact_generators(flux_chart: Chart) -> Kustomization:
         "artifact-generators",
         DUCKTAPE_SOURCE,
         path=f"./{_ARTIFACT_GENERATORS_DIR}",
-        depends_on=[KustomizationSpecDependsOn(name="flux-system", namespace="flux-system")],
+        depends_on=[KustomizationSpecDependsOn(name="flux-system", namespace=CONTROLLER_NAMESPACE)],
     )
 
 

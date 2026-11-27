@@ -35,6 +35,7 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from cluster.cdk8s import namespaces, pod_policy
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring.namespace import NAMESPACE as MONITORING_NAMESPACE
@@ -76,7 +77,7 @@ def _secret_store(scope: Construct) -> None:
             name=SECRET_STORE,
             annotations={"description": "Scoped ESO access to ntfy credentials for ntfy, Flux, and Alertmanager."},
         ),
-        namespaces=[NAMESPACE, "flux-system", MONITORING_NAMESPACE],
+        namespaces=[NAMESPACE, CONTROLLER_NAMESPACE, MONITORING_NAMESPACE],
         remote_namespace=NAMESPACE,
         service_account=ESO_SERVICE_ACCOUNT,
     )

@@ -18,7 +18,13 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces, node_scheduling, piraeus_metrics, piraeus_storage
 from cluster.cdk8s.container_resources import quantities
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
@@ -210,7 +216,7 @@ def operator_chart(app: App) -> Chart:
     chart = Chart(app, "piraeus-operator", disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels=PRIVILEGED_POD_SECURITY)
     repository = oci_helm_repository(
-        chart, "piraeus-operator", "flux-system", url="oci://ghcr.io/piraeusdatastore/piraeus-operator"
+        chart, "piraeus-operator", CONTROLLER_NAMESPACE, url="oci://ghcr.io/piraeusdatastore/piraeus-operator"
     )
     helm_release(
         chart,
@@ -399,7 +405,7 @@ def cluster_chart(app: App) -> Chart:
             only_when_node_ready=ready_node,
         )
     repository = oci_helm_repository(
-        chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"
+        chart, "piraeus-charts", CONTROLLER_NAMESPACE, url="oci://ghcr.io/piraeusdatastore/helm-charts"
     )
     helm_release(
         chart,

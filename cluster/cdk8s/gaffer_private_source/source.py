@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+)
 from cluster.cdk8s.image_automation import ImageUpdatePush
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -44,7 +50,7 @@ def gaffer_private_source(
         flux_chart,
         "gaffer-private-source",
         directory,
-        namespace="flux-system",
+        namespace=CONTROLLER_NAMESPACE,
         wait=None,
         timeout="10m",
         depends_on=[flux_kustomization_depends_on(flux_image_automation_ghcr)],

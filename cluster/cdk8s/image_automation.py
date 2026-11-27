@@ -39,11 +39,12 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
     ImageUpdateAutomationSpecUpdateStrategy,
 )
 
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 
 # The ducktape-automation GitHub App's credentials: a SOPS Secret Flux decrypts into flux-system
 # (cluster/k8s/flux/flux-system). A GitRepository's secretRef resolves in its own namespace.
-GITHUB_APP_NAMESPACE = "flux-system"
+GITHUB_APP_NAMESPACE = CONTROLLER_NAMESPACE
 GITHUB_APP_SECRET = "ducktape-automation-github-app"
 _COMMIT_MESSAGE = (
     "chore: update images [skip ci]\n"

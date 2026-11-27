@@ -43,7 +43,7 @@ from cluster.cdk8s.providers.flux.notification import ReceiverResource
 
 NAME = "gitlab-spike-delivery"
 _NAME = "gitlab-spike"
-_NAMESPACE = "flux-system"
+_NAMESPACE = flux.CONTROLLER_NAMESPACE
 
 
 def chart(app: App) -> Chart:

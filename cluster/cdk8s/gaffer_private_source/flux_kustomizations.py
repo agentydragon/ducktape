@@ -5,7 +5,7 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE, Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
 def gaffer_private_bridge(chart: Chart, kyverno: Kustomization) -> Kustomization:
@@ -19,7 +19,7 @@ def gaffer_private_bridge(chart: Chart, kyverno: Kustomization) -> Kustomization
         chart,
         name,
         KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=name),
-        namespace="flux-system",
+        namespace=CONTROLLER_NAMESPACE,
         path="./k8s",
         timeout="5m",
         wait=None,

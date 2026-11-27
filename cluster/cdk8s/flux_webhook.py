@@ -46,7 +46,7 @@ from cluster.cdk8s.providers.flux.notification import ReceiverResource
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "flux-webhook"
-NAMESPACE = "flux-system"
+NAMESPACE = flux.CONTROLLER_NAMESPACE
 # The public host of the Receivers: Forgejo refuses private addresses, so its webhooks cannot use the in-cluster Service.
 WEBHOOK_HOST = "flux-webhook.allegedly.works"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-webhook"
@@ -96,11 +96,11 @@ def chart(app: App) -> Chart:
             events=["push", "registry_package"],
             secret_ref=ReceiverSpecSecretRef(name="github-webhook-token"),
             resources=[
-                ReceiverResource.git_repository("flux-system", namespace="flux-system"),
+                ReceiverResource.git_repository("flux-system", namespace=flux.CONTROLLER_NAMESPACE),
                 # Public Flux control objects retain a dedicated sparse checkout. Reconcile
                 # it immediately on a Ducktape push rather than waiting for its poll.
                 ReceiverResource.git_repository(flux.DUCKTAPE_SOURCE.name, namespace=flux.DUCKTAPE_SOURCE.namespace),
-                ReceiverResource.image_repository("tf-runner", namespace="flux-system"),
+                ReceiverResource.image_repository("tf-runner", namespace=flux.CONTROLLER_NAMESPACE),
             ],
         ),
     )
@@ -146,9 +146,9 @@ def chart(app: App) -> Chart:
             provider_ref=AlertSpecProviderRef(name=grafana.name),
             event_severity=AlertSpecEventSeverity.INFO,
             event_sources=_alert_sources(
-                (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
+                (AlertSpecEventSourcesKind.KUSTOMIZATION, flux.CONTROLLER_NAMESPACE),
                 (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
-                (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
+                (AlertSpecEventSourcesKind.HELM_RELEASE, flux.CONTROLLER_NAMESPACE),
             ),
         ),
     )
@@ -166,10 +166,10 @@ def chart(app: App) -> Chart:
             provider_ref=AlertSpecProviderRef(name=ntfy_provider.name),
             event_severity=AlertSpecEventSeverity.ERROR,
             event_sources=_alert_sources(
-                (AlertSpecEventSourcesKind.KUSTOMIZATION, "flux-system"),
+                (AlertSpecEventSourcesKind.KUSTOMIZATION, flux.CONTROLLER_NAMESPACE),
                 (AlertSpecEventSourcesKind.KUSTOMIZATION, "ducktape-flux"),
-                (AlertSpecEventSourcesKind.HELM_RELEASE, "flux-system"),
-                (AlertSpecEventSourcesKind.GIT_REPOSITORY, "flux-system"),
+                (AlertSpecEventSourcesKind.HELM_RELEASE, flux.CONTROLLER_NAMESPACE),
+                (AlertSpecEventSourcesKind.GIT_REPOSITORY, flux.CONTROLLER_NAMESPACE),
                 (AlertSpecEventSourcesKind.GIT_REPOSITORY, "ducktape-flux"),
             ),
         ),

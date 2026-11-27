@@ -2087,6 +2087,7 @@ py_library(
         ":image_automation",
         ":manifest_roots",
         ":terraform",
+        "//cluster/cdk8s:flux",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:imagerepository",
         "//cluster/cdk8s/providers/vpa:policy",

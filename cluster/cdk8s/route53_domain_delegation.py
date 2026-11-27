@@ -6,6 +6,7 @@ from cdk8s import App, Chart
 from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import opentofu
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.route53 import HOSTED_ZONES
 from cluster.cdk8s.secret_ref import SecretRef
@@ -16,7 +17,6 @@ TF_MODULE_NAME = "route53-domain-delegation"
 # Keep the existing backend schema through the root rename so Crossplane uses the same state.
 STATE_SCHEMA = "dns_records"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
-_NAMESPACE = "flux-system"
 
 
 class Route53DomainDelegationVars(BaseModel):
@@ -38,7 +38,7 @@ def chart(app: App) -> Chart:
         management_policies=["Observe", "Create", "Update"],
         variables=Route53DomainDelegationVars(route53_zone_id=HOSTED_ZONES["allegedly.works"]),
         env=[
-            opentofu.secret_env(key, SecretRef(namespace=_NAMESPACE, name=_CREDENTIALS_SECRET).key(key))
+            opentofu.secret_env(key, SecretRef(namespace=CONTROLLER_NAMESPACE, name=_CREDENTIALS_SECRET).key(key))
             for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
         ],
     )

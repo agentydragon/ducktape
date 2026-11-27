@@ -15,14 +15,13 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE, Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "haku-workloads"
 OUTPUT_DIR = f"{GENERATED_ROOT}/haku/workloads"
 
-_FLUX_NAMESPACE = "flux-system"
 _RECONCILER = "haku-state-reconciler"
 _DEPLOYER_ROLE = "haku-state-workload-deployer"
 _WRITE_VERBS = ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -35,7 +34,7 @@ def chart(app: App) -> Chart:
         "source",
         metadata=ApiObjectMetadata(
             name="haku-state",
-            namespace=_FLUX_NAMESPACE,
+            namespace=CONTROLLER_NAMESPACE,
             annotations={
                 "description": "Haku's own state repo (internal Forgejo, plaintext HTTP). Source for the "
                 "haku-state-workloads Kustomization, which reconciles Haku-authored manifests under k8s/ into "
@@ -55,7 +54,7 @@ def chart(app: App) -> Chart:
         "reconciler",
         metadata=k8s.ObjectMeta(
             name=_RECONCILER,
-            namespace=_FLUX_NAMESPACE,
+            namespace=CONTROLLER_NAMESPACE,
             annotations={
                 "description": (
                     "Impersonation identity for the haku-state-workloads Kustomization. Lives in "
@@ -111,13 +110,13 @@ def chart(app: App) -> Chart:
         "deployer-binding",
         metadata=k8s.ObjectMeta(name=_DEPLOYER_ROLE, namespace=NAMESPACE),
         role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_DEPLOYER_ROLE),
-        subjects=[k8s.Subject(kind="ServiceAccount", name=_RECONCILER, namespace=_FLUX_NAMESPACE)],
+        subjects=[k8s.Subject(kind="ServiceAccount", name=_RECONCILER, namespace=CONTROLLER_NAMESPACE)],
     )
     flux_kustomization(
         chart,
         "haku-state-workloads",
         KustomizationSpecSourceRef(kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=source.name),
-        namespace=_FLUX_NAMESPACE,
+        namespace=CONTROLLER_NAMESPACE,
         description=(
             "Reconciles Haku-authored workload manifests (haku-state k8s/) into haku-sandbox. "
             "Impersonates the constrained haku-state-reconciler SA, so it may apply only what that SA's "

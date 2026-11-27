@@ -22,7 +22,13 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.clickhouse.client import NAMESPACE
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+)
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -111,7 +117,7 @@ def helmrelease_chart(app: App) -> Chart:
         NAME,
         NAMESPACE,
         repository=oci_helm_repository(
-            chart, _CHART_NAME, "flux-system", url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart"
+            chart, _CHART_NAME, CONTROLLER_NAMESPACE, url="oci://ghcr.io/altinity/clickhouse-operator-helm-chart"
         ),
         chart=_CHART_NAME,
         version="0.27.3",

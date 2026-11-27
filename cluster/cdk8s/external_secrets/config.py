@@ -20,6 +20,7 @@ from external_secret_store_crds.io.external_secrets import ClusterSecretStoreSpe
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
+from cluster.cdk8s.flux import CONTROLLER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "external-secrets-config"
@@ -109,7 +110,7 @@ def chart(app: App) -> Chart:
             # stays on ESO only because the one above already put it here.
             "haku-sandbox",
         ],
-        remote_namespace="flux-system",
+        remote_namespace=CONTROLLER_NAMESPACE,
     )
     # Every namespace that pulls a private git.allegedly.works/ducktape-ci/* image reads
     # the source Secret through here via its own ExternalSecret

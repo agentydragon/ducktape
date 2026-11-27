@@ -15,14 +15,20 @@ from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepositorySpecSecretRef,
 )
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "flux-image-automation-forgejo"
 # Flux's own namespace, where the image-reflector controller reads these.
-NAMESPACE = "flux-system"
+NAMESPACE = CONTROLLER_NAMESPACE
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-image-automation-forgejo"
 REGISTRY = "git.allegedly.works/ducktape-ci"
 

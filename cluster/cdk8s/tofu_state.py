@@ -23,7 +23,13 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.cnpg.health import database_health
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import (
+    CONTROLLER_NAMESPACE,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.secret_ref import SecretRef
@@ -33,7 +39,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}"
 CREDENTIALS_FILE = "db/credentials.sops.yaml"
 DATABASE = cluster.PostgresRef.generated(name="tofu-state-db-ovh", namespace=_NAMESPACE)
 STATE_DATABASE_NAME = "tfstate"
-STATE_PASSWORD = SecretRef(namespace="flux-system", name="tofu-state-db-credentials").key("password")
+STATE_PASSWORD = SecretRef(namespace=CONTROLLER_NAMESPACE, name="tofu-state-db-credentials").key("password")
 STATE_CONNECTION_STRING = (
     f"postgres://tfstate@{DATABASE.rw.host}:{DATABASE.rw.port.number}/{STATE_DATABASE_NAME}?sslmode=disable"
 )
