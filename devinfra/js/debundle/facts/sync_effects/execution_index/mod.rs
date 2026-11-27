@@ -1054,7 +1054,7 @@ pub struct ExecutionIndex {
     /// Top-level `const` declarations, exported or not: a store throws.
     pub top_const_bindings: BTreeSet<Id>,
     /// Every binding read or written anywhere inside a callable body,
-    /// including after an `await` (unlike `CallableFacts::{reads,rebinds}`).
+    /// including after an `await` (unlike `Callable::{reads,rebinds}`).
     pub captured_bindings: BTreeSet<Id>,
     pub other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
