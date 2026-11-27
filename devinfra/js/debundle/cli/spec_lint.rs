@@ -32,7 +32,7 @@ use std::io::Write;
 use transform_command::TransformArgs;
 use transform_inputs::load_transform_spec_source;
 
-use crate::validate::run_captured_pass;
+use validate::run_captured_pass;
 
 #[derive(Debug, ClapArgs)]
 pub struct SpecLintArgs {

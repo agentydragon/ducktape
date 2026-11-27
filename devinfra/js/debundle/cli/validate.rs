@@ -145,7 +145,7 @@ pub fn run_validate_cmd(
 
 /// One dry-run keep-going pipeline pass with every per-chunk report forced
 /// into a private capture directory, as `spec validate` and `spec lint` run it.
-pub(crate) struct CapturedPass {
+pub struct CapturedPass {
     capture: tempfile::TempDir,
     /// The pass's own failure. The keep-going pass writes the per-chunk
     /// reports *and then* fails the pipeline with the collected findings —
@@ -155,7 +155,7 @@ pub(crate) struct CapturedPass {
     pub expected_chunks: BTreeSet<String>,
 }
 
-pub(crate) fn run_captured_pass(
+pub fn run_captured_pass(
     stderr: &mut (dyn std::io::Write + Send),
     transform: TransformArgs,
 ) -> Result<CapturedPass> {
@@ -204,10 +204,7 @@ pub(crate) fn run_captured_pass(
 
 impl CapturedPass {
     /// Every per-chunk `filename` report, keyed by chunk.
-    pub(crate) fn chunk_reports<T: DeserializeOwned>(
-        &self,
-        filename: &str,
-    ) -> Result<Vec<(String, T)>> {
+    pub fn chunk_reports<T: DeserializeOwned>(&self, filename: &str) -> Result<Vec<(String, T)>> {
         let mut reports = Vec::new();
         collect_chunk_reports(
             self.capture.path(),

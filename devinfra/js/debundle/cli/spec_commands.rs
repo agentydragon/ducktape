@@ -1,15 +1,15 @@
 //! `spec` authoring commands: arguments, adapters, and output formats.
-use crate::contract_audit::{AuditContractsArgs, run as run_audit_contracts};
 use crate::propose_commutations::ProposeCommutationsArgs;
-use crate::validate::{ValidateArgs, run_validate_cmd};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use command_output::{emit_report, infallible, write_report, write_section};
+use contract_audit::{AuditContractsArgs, run as run_audit_contracts};
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
 use resolved_placement::{ResolvePlacementArgs, ResolvePlacementsArgs};
 use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
+use validate::{ValidateArgs, run_validate_cmd};
 
 use match_selector::{MatchSelectorConfig, render_match_selector_text, run_match_selector};
 use selector_codemod::driver::{SelectorCodemodConfig, run_selector_codemod};
@@ -135,7 +135,7 @@ enum SpecNsCommand {
     /// `inferable` finding leaves the dependency graph, gate verdict and
     /// emitted order unchanged when withheld; `inconclusive` findings are
     /// leads only. Never edits the spec; exits 0 whenever reports exist.
-    Lint(crate::spec_lint::SpecLintArgs),
+    Lint(spec_lint::SpecLintArgs),
     /// Recompute full acceptance after removing one authored chunk-export
     /// contract at a time, under all remaining assumptions.
     #[command(name = "audit-contracts")]
@@ -393,7 +393,7 @@ fn run_synthesize_selectors_cmd(
 
 fn run_match_selector_cmd(args: MatchSelectorArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if args.explain {
-        let config = crate::selector_explanation::ExplanationConfig {
+        let config = selector_explanation::ExplanationConfig {
             source_file: args.source_file,
             source_root: args.source_root,
             chunk: args.chunk,
@@ -404,12 +404,12 @@ fn run_match_selector_cmd(args: MatchSelectorArgs, output: &mut dyn std::io::Wri
             anonymous: args.anonymous,
             statements: args.statements.context("--explain requires --statements")?,
         };
-        let report = crate::selector_explanation::explain(&config)?;
+        let report = selector_explanation::explain(&config)?;
         return emit_report(
             output,
             args.format,
             &report,
-            infallible(crate::selector_explanation::render),
+            infallible(selector_explanation::render),
             "writing selector explanation",
         );
     }
@@ -537,7 +537,7 @@ pub(super) fn run(
             run_validate_cmd(stderr, v, output).context("running keep-going selector validation")
         }
         SpecNsCommand::AuditContracts(a) => run_audit_contracts(stderr, a, output),
-        SpecNsCommand::Lint(args) => crate::spec_lint::run(stderr, args, output),
+        SpecNsCommand::Lint(args) => spec_lint::run(stderr, args, output),
         SpecNsCommand::ProjectAnalysis(args) => args.run(stderr),
         SpecNsCommand::ResolvePlacement(args) => args.run(stderr),
         SpecNsCommand::ResolvePlacements(args) => args.run(stderr),

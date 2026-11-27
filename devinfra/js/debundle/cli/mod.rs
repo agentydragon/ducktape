@@ -2,22 +2,17 @@ pub mod gate;
 pub mod invocation;
 mod module_apply;
 pub mod scc_cluster;
-pub mod validate;
 
 mod bindings_commands;
-mod contract_audit;
 mod inspection_commands;
 mod integrity_explanation;
 mod module_proposals;
 mod modules_commands;
 mod propose_commutations;
 mod selected_view_apply;
-mod selector_explanation;
-mod selector_input;
 mod snapshot;
 mod source_unit_apply;
 mod spec_commands;
-mod spec_lint;
 mod static_imports;
 
 use analyze_command::AnalyzeArgs;

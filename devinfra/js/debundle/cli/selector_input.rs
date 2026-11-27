@@ -11,7 +11,7 @@ use spec::annotations::AnonymousStatementSelector;
 use spec_modules::{read_flat_transform_spec, read_module_file};
 
 #[derive(Debug, Serialize)]
-pub(super) struct SelectedSelector {
+pub struct SelectedSelector {
     pub origin: String,
     #[serde(flatten)]
     pub parsed: ParsedSourceMatchSelector,
@@ -38,7 +38,7 @@ impl SelectedSelector {
     }
 }
 
-pub(super) fn inline_selector(
+pub fn inline_selector(
     match_source: String,
     target_binding: Option<String>,
     anonymous: bool,
@@ -60,7 +60,7 @@ pub(super) fn inline_selector(
 
 /// `file.yaml#/source_matches/0`, or `--spec file.yaml --selector '#/…'`.
 /// JSON Pointer escaping allows chunk/module paths in a flat spec's address.
-pub(super) fn load_selectors(
+pub fn load_selectors(
     address: &str,
     spec_file: Option<&Path>,
     target_binding: Option<&str>,

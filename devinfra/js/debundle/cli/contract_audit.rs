@@ -18,7 +18,7 @@ use transform_inputs::load_transform_spec_source;
 use command_output::{emit_report, write_section};
 
 #[derive(Debug, Args)]
-pub(super) struct AuditContractsArgs {
+pub struct AuditContractsArgs {
     #[command(flatten)]
     transform: TransformArgs,
     /// Exact key in chunk_export_purity. A source-marker key is a policy
@@ -306,7 +306,7 @@ impl CheckpointSession {
     }
 }
 
-pub(super) fn run(
+pub fn run(
     stderr: &mut (dyn std::io::Write + Send),
     args: AuditContractsArgs,
     output: &mut dyn std::io::Write,

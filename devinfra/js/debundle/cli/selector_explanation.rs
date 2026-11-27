@@ -10,10 +10,10 @@ use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use source_match::template_free_identifiers;
 use source_match_diagnostics::{RangeExplanation, explain_range};
 
-use crate::selector_input::{SelectedSelector, inline_selector, load_selectors};
+use selector_input::{SelectedSelector, inline_selector, load_selectors};
 use source_input::resolve_chunk_source_file;
 
-pub(super) struct ExplanationConfig {
+pub struct ExplanationConfig {
     pub source_file: Option<PathBuf>,
     pub source_root: Option<PathBuf>,
     pub chunk: Option<PathBuf>,
@@ -26,7 +26,7 @@ pub(super) struct ExplanationConfig {
 }
 
 #[derive(Serialize)]
-pub(super) struct ExplanationReport {
+pub struct ExplanationReport {
     source_file: PathBuf,
     statements: Vec<StatementRow>,
     comparisons: Vec<Comparison>,
@@ -41,7 +41,7 @@ struct Comparison {
     result: RangeExplanation,
 }
 
-pub(super) fn explain(config: &ExplanationConfig) -> Result<ExplanationReport> {
+pub fn explain(config: &ExplanationConfig) -> Result<ExplanationReport> {
     js_ast::with_swc_globals(|| {
         let source_file = resolve_chunk_source_file(
             config.source_file.as_deref(),
@@ -88,7 +88,7 @@ pub(super) fn explain(config: &ExplanationConfig) -> Result<ExplanationReport> {
     })
 }
 
-pub(super) fn render(report: &ExplanationReport, out: &mut String) {
+pub fn render(report: &ExplanationReport, out: &mut String) {
     let _ = writeln!(
         out,
         "Local structural comparison: ownership, uniqueness, and external reference constraints are not checked."
