@@ -263,6 +263,15 @@ application race from a harness race or infrastructure failure. Investigate
 why a retry changes the outcome, including caches, retained state, execution order,
 random seeds and external dependencies; do not assume independent attempts.
 
+For a flaky browser or visual test, isolate what differs before naming a cause.
+Diff the failing capture against a passing one from the same source and locate the
+changed pixels. Glyph-edge differences point to font loading or rasterization; a
+moved or partly drawn element points to an unsettled animation, transition or
+layout shift; different content points to a data or readiness race. Check which
+determinism controls (`deterministic_browser_context`, fonts, animations, clock)
+applied to that capture. Reproduce by repeating the capture on one worker and
+across workers, and settle the race with an explicit readiness predicate.
+
 Evaluate changes to the test and harness as well as the application: event-driven
 predicate waits, explicit happens-before relationships, fixture scope and ownership,
 isolation, setup/cleanup ordering, target boundaries and safe concurrency. Preserve
