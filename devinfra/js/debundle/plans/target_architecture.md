@@ -183,7 +183,7 @@ empty at the end.
   checking.
 - <synchronous_execution_fallback.md>: `Havoc` reach. It decides how many
   swapped opaque pairs commute.
-- <staged_pipeline.md>: when finer-grained S3 or vendor-strip actions justify
+- <staged_pipeline.md>: when finer-grained per-chunk analysis or vendor-strip actions justify
   their added artifact and action costs.
 - <translation_validation_gate.md>: stages 3 and 4, and the migration from
   Pass 1 and Pass 2.
