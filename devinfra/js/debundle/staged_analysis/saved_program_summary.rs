@@ -23,6 +23,7 @@ use swc_common::Span;
 
 use super::program_summary::ProgramSummary;
 use purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
+use spec_wire::{decode_map, encode_map, try_encode_map};
 
 type RetainedCallbackSignatures = BTreeMap<String, Vec<spec::RetainedCallbackSignature>>;
 
@@ -65,104 +66,43 @@ impl<'a> SavedProgramSummary<'a> {
         ordinals: &ContextOrdinals,
         purities: &mut PuritySnapshot<'a>,
     ) -> Result<Self> {
-        let bindings = summary
-            .bindings
-            .iter()
-            .map(|(chunk, bindings)| {
-                (
-                    chunk.clone(),
-                    bindings
-                        .iter()
-                        .map(|(name, purity)| (name.clone(), purities.snapshot(purity)))
-                        .collect(),
-                )
-            })
-            .collect();
-        let value_inputs = summary
-            .value_inputs
-            .iter()
-            .map(|(chunk, inputs)| {
-                Ok((
-                    chunk.clone(),
-                    inputs
-                        .iter()
-                        .map(|input| SavedValueInput::snapshot(input, ordinals))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let imported_callables = summary
-            .imported_callables
-            .iter()
-            .map(|(chunk, callables)| {
-                (
-                    chunk.clone(),
-                    callables
-                        .iter()
-                        .map(|(name, callable)| {
-                            (name.clone(), SavedCallableSummary::snapshot(callable))
-                        })
-                        .collect(),
-                )
-            })
-            .collect();
-        let native_operation_inputs = summary
-            .native_operation_inputs
-            .iter()
-            .map(|(chunk, inputs)| {
-                Ok((
-                    chunk.clone(),
-                    inputs
-                        .iter()
-                        .map(|input| SavedNativeOperationInput::snapshot(input, ordinals))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let initializer_call_effect_inputs = summary
-            .initializer_call_effect_inputs
-            .iter()
-            .map(|(chunk, inputs)| {
-                Ok((
-                    chunk.clone(),
-                    inputs
-                        .iter()
-                        .map(|input| SavedInitializerCallEffectInput::snapshot(input, ordinals))
-                        .collect::<Result<Vec<_>>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let inferred_set_constructions = summary
-            .inferred_set_constructions
-            .iter()
-            .map(|(chunk, constructions)| {
-                Ok((
-                    chunk.clone(),
-                    constructions
-                        .iter()
-                        .map(|(site, construction)| {
-                            Ok((
-                                *site,
-                                SavedInferredSetConstruction::snapshot(construction, ordinals)?,
-                            ))
-                        })
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let argument_inputs = summary
-            .argument_inputs
-            .iter()
-            .map(|(chunk, inputs)| {
-                Ok((
-                    chunk.clone(),
-                    inputs
-                        .iter()
-                        .map(|input| SavedArgumentInput::snapshot(input, ordinals))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
+        let bindings = encode_map(&summary.bindings, |bindings| {
+            encode_map(bindings, |purity| purities.snapshot(purity))
+        });
+        let value_inputs = try_encode_map(&summary.value_inputs, |inputs| {
+            inputs
+                .iter()
+                .map(|input| SavedValueInput::snapshot(input, ordinals))
+                .collect::<Result<_>>()
+        })?;
+        let imported_callables = encode_map(&summary.imported_callables, |callables| {
+            encode_map(callables, SavedCallableSummary::snapshot)
+        });
+        let native_operation_inputs = try_encode_map(&summary.native_operation_inputs, |inputs| {
+            inputs
+                .iter()
+                .map(|input| SavedNativeOperationInput::snapshot(input, ordinals))
+                .collect::<Result<_>>()
+        })?;
+        let initializer_call_effect_inputs =
+            try_encode_map(&summary.initializer_call_effect_inputs, |inputs| {
+                inputs
+                    .iter()
+                    .map(|input| SavedInitializerCallEffectInput::snapshot(input, ordinals))
+                    .collect::<Result<Vec<_>>>()
+            })?;
+        let inferred_set_constructions =
+            try_encode_map(&summary.inferred_set_constructions, |constructions| {
+                try_encode_map(constructions, |construction| {
+                    SavedInferredSetConstruction::snapshot(construction, ordinals)
+                })
+            })?;
+        let argument_inputs = try_encode_map(&summary.argument_inputs, |inputs| {
+            inputs
+                .iter()
+                .map(|input| SavedArgumentInput::snapshot(input, ordinals))
+                .collect::<Result<_>>()
+        })?;
         Ok(Self {
             bindings,
             value_inputs,
@@ -204,97 +144,40 @@ impl<'a> SavedProgramSummary<'a> {
         ordinals: &ContextOrdinals,
         purities: &RestoredPurities,
     ) -> Result<ProgramSummary> {
-        let bindings = self
-            .bindings
-            .into_iter()
-            .map(|(chunk, bindings)| {
-                Ok((
-                    chunk,
-                    bindings
-                        .into_iter()
-                        .map(|(name, id)| Ok((name, purities.get(id)?)))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let value_inputs = self
-            .value_inputs
-            .into_iter()
-            .map(|(chunk, inputs)| {
-                Ok((
-                    chunk,
-                    inputs
-                        .into_iter()
-                        .map(|input| input.restore(ordinals))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let imported_callables = self
-            .imported_callables
-            .into_iter()
-            .map(|(chunk, callables)| {
-                Ok((
-                    chunk,
-                    callables
-                        .into_iter()
-                        .map(|(name, callable)| Ok((name, callable.restore()?)))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let native_operation_inputs = self
-            .native_operation_inputs
-            .into_iter()
-            .map(|(chunk, inputs)| {
-                Ok((
-                    chunk,
-                    inputs
-                        .into_iter()
-                        .map(|input| input.restore(ordinals))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let initializer_call_effect_inputs = self
-            .initializer_call_effect_inputs
-            .into_iter()
-            .map(|(chunk, inputs)| {
-                Ok((
-                    chunk,
-                    inputs
-                        .into_iter()
-                        .map(|input| input.restore(ordinals))
-                        .collect::<Result<Vec<_>>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let inferred_set_constructions = self
-            .inferred_set_constructions
-            .into_iter()
-            .map(|(chunk, constructions)| {
-                Ok((
-                    chunk,
-                    constructions
-                        .into_iter()
-                        .map(|(site, construction)| Ok((site, construction.restore(ordinals)?)))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-        let argument_inputs = self
-            .argument_inputs
-            .into_iter()
-            .map(|(chunk, inputs)| {
-                Ok((
-                    chunk,
-                    inputs
-                        .into_iter()
-                        .map(|input| input.restore(ordinals))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
+        let bindings = decode_map(self.bindings, |bindings| {
+            decode_map(bindings, |id| purities.get(id))
+        })?;
+        let value_inputs = decode_map(self.value_inputs, |inputs| {
+            inputs
+                .into_iter()
+                .map(|input| input.restore(ordinals))
+                .collect()
+        })?;
+        let imported_callables = decode_map(self.imported_callables, |callables| {
+            decode_map(callables, |callable| callable.restore())
+        })?;
+        let native_operation_inputs = decode_map(self.native_operation_inputs, |inputs| {
+            inputs
+                .into_iter()
+                .map(|input| input.restore(ordinals))
+                .collect()
+        })?;
+        let initializer_call_effect_inputs =
+            decode_map(self.initializer_call_effect_inputs, |inputs| {
+                inputs
+                    .into_iter()
+                    .map(|input| input.restore(ordinals))
+                    .collect()
+            })?;
+        let inferred_set_constructions = decode_map(self.inferred_set_constructions, |c| {
+            decode_map(c, |construction| construction.restore(ordinals))
+        })?;
+        let argument_inputs = decode_map(self.argument_inputs, |inputs| {
+            inputs
+                .into_iter()
+                .map(|input| input.restore(ordinals))
+                .collect()
+        })?;
         Ok(ProgramSummary {
             structural_flows: Default::default(),
             bindings,
