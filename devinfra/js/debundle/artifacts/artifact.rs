@@ -291,6 +291,16 @@ impl ChunkBundle {
         self.chunks.iter().find(|chunk| chunk.chunk_id == chunk_id)
     }
 
+    /// The loaded chunk whose chunk-table entry carries this name. The table
+    /// already indexes names to IDs, so this is the lookup behind
+    /// `chunks.iter().find(|c| chunk_table.name(c.chunk_id) == name)`, which
+    /// every provider-input path repeated while naming its own failure.
+    pub fn chunk_named(&self, name: &str) -> Option<&ChunkArtifact> {
+        self.chunk_table
+            .get(name)
+            .and_then(|id| self.find_chunk(id))
+    }
+
     pub fn chunk(&self, chunk_id: ChunkId) -> Result<&ChunkArtifact> {
         self.find_chunk(chunk_id)
             .with_context(|| format!("missing artifact chunk {}", self.chunk_table.name(chunk_id)))
