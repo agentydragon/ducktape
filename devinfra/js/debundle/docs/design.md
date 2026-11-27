@@ -3597,7 +3597,7 @@ excluded chunk are **intentionally left unchanged** in the plain
 package mapping. The emitted tree is therefore not directly runnable
 under bare Node when a full swap is configured. Pinned by
 `full_swap_with_caller_preserves_import_for_removed_chunk` in
-<../e2e/vendor_swap_test.rs>.
+<../e2e/vendor_swap/full_swap.rs>.
 
 ### Partial swap: consumer rewrites and the consumer gates
 
