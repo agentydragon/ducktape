@@ -2,6 +2,7 @@ import EsmSplit.Cli
 import EsmSplit.CoreJS.Declaration.Artifacts
 import EsmSplit.CoreJS.JointStatic
 import EsmSplit.CoreJS.IndexedCheckedSplit
+import EsmSplit.CoreJS.IndexedSourceSchedule
 import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
@@ -348,16 +349,16 @@ private structure LocalExportSource where
 private def decodeLocalExportSource (original : Json) (sourceText entry : String) : Except String LocalExportSource := do
   let decoded ← CoreJS.LinkedInput.decodeIndexedSource original sourceText entry
   let source := decoded.program
-  let [m] := source.modules | throw "expected one source module"
+  let bundle := sourceBundle decoded.nodes
+  let sequence ← CoreJS.IndexedSourceSchedule.checkSequence decoded bundle
+  let m := sequence.source
   let rows := decoded.localExports
-  let row :: _ := rows | throw "expected a local export row"
+  unless !rows.isEmpty do throw "expected a local export row"
   unless m.exports == rows.flatMap (·.names) do throw "local export rows differ from the public export table"
-  unless m.body.isEmpty || m.body.any (fun (id, _) => id < row.ordinal) do
-    throw "expected an executable declaration before the export row"
   unless (CoreJS.OrderedConstSyntax.checkBody m.body).isSome &&
       (CoreJS.OrderedConstSyntax.checkEarlierReads [] m.body).isSome do
     throw "expected unique const declarations with source primitive initializers and earlier reads"
-  return ⟨source, rows, sourceBundle decoded.nodes⟩
+  return ⟨source, rows, bundle⟩
 
 /-- Construct from the actual indexed source, bundle, export rows and authored
 placement. Both terminal and interior rows use the same proof and writer. -/
