@@ -340,6 +340,11 @@ debundle_graph_e2e_test(name = "effect_tv_class_construction_test")
 
 debundle_graph_e2e_test(
     name = "effect_tv_conditional_logical_test",
+    srcs = glob(
+        ["effect_tv_conditional_logical/*.rs"],
+        exclude = ["effect_tv_conditional_logical/mod.rs"],
+    ),
+    source = "effect_tv_conditional_logical/mod.rs",
     deps = [
         "@crates//:serde_json",
     ],
