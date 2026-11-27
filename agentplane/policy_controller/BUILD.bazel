@@ -30,7 +30,10 @@ oci_load(
 py_library(
     name = "settings",
     srcs = ["settings.py"],
-    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    visibility = [
+        "//agentplane/policy_controller/testing:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = [
         "//agentplane/net/peertls:config",
         "@pypi//pydantic",

@@ -43,7 +43,10 @@ go_binary(
     name = "policy-controller",
     embed = [":cmd_lib"],
     pure = "on",
-    visibility = ["//agentplane/policy_controller:__pkg__"],
+    visibility = [
+        "//agentplane/policy_controller:__pkg__",
+        "//agentplane/policy_controller/testing:__pkg__",
+    ],
 )
 
 go_test(

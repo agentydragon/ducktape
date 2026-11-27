@@ -86,6 +86,10 @@ Only `testing/` packages with importers outside the owning service (checked by i
     [`unstored_ranges.py`](../history_service/testing/unstored_ranges.py),
     [`protojson.py`](../history_service/testing/protojson.py): correction-aware event paging, unstored ranges,
     ThreadEntity ProtoJSON.
+- `policy_controller/testing/`
+  - [`policy_controller_process.py`](../policy_controller/testing/policy_controller_process.py): the production Policy
+    Controller in a child process (`policy_controller`), serving PolicyService over mTLS to the supplied services from
+    a test API server. Its Go counterpart for in-process consumers is `policyfixture`.
 - `environments/testing/` ([README](../environments/testing/README.md))
   - [`environment_service_process.py`](../environments/testing/environment_service_process.py): production EnvironmentService (+ optional Runtime proxy) in a
     child process.

@@ -28,7 +28,6 @@ from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settings import IngressSettings, Settings
-from agentplane.history_service.testing.fake_policy_service import fake_policy_service
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
     APP_URI,
@@ -38,6 +37,7 @@ from agentplane.net.peertls.config import (
     ClientTLS,
     PolicyServicePeer,
 )
+from agentplane.policy_controller.testing.policy_controller_process import policy_controller
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, GrpcHealth, go_process
@@ -373,7 +373,13 @@ async def go_history_service(
         reader_listener = listeners.enter_context(listen_tcp())
         svid_ca = svid_ca or make_ca("history test services")
         policy_target = await services.enter_async_context(
-            fake_policy_service(api, namespace=policy_namespace, ca=svid_ca, directory=directory / "policy-tls")
+            policy_controller(
+                api,
+                policy_namespace=policy_namespace,
+                ca=svid_ca,
+                directory=directory / "policy-tls",
+                readers=[HISTORY_SERVICE_URI],
+            )
         )
         config = directory / "history-service.yaml"
         reader_fd = reader_listener.socket.fileno()
