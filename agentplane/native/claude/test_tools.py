@@ -556,7 +556,7 @@ async def test_forwarding_has_no_cli_opt_out(claude: ClaudeLauncher, flag: str) 
     ) as process:
         assert process.process is not None
         assert await asyncio.wait_for(process.process.wait(), timeout=10) == 1
-    assert f"unknown option '{flag}'" in (claude.logs / "stderr.jsonl").read_text()
+    assert f"unknown option '{flag}'" in (claude.logs / "stderr.log").read_text()
     assert process.stdout_frames() == []
 
 
