@@ -105,16 +105,16 @@ The sections below hold details, not competing priority queues.
 
 ### Architecture review follow-ups
 
-**Split selector resolution from placement checking.** Both the Rust and Lean
-workflows need Rust's [selector resolver](docs/selector_resolution.md).
-Starting from `spec resolve-placement`, make it a standalone binary: given
-the pinned source and the authored selectors, produce the requested plan
-(source digest, resolved unit identities, destination modules and authored
-import priority). It should report missing or ambiguous selectors on its own.
-A successful resolution says where the author wants the units to go.
+**Give the Rust gate a separate binary.** Both workflows consume Rust's
+selector resolver, which already stands on its own: `debundle spec
+resolve-placement` and `//devinfra/js/debundle:debundle_resolve_placement`
+produce the requested plan (source digest, resolved unit identities,
+destination modules and authored import priority) and report missing or
+ambiguous selectors without a gate run
+(<docs/selector_resolution.md> § Exporting resolved ownership).
 
-Give the Rust gate a separate binary. It and the [Lean splitter](x/split_proof/PLAN.md)
-must consume the same versioned placement interface. Write one resolved plan
+The gate binary and the [Lean splitter](x/split_proof/PLAN.md) must consume the
+same versioned placement interface. Write one resolved plan
 to disk and pass that very file to each binary with the pinned source and its
 checker-specific assumptions. Keep selectors and checker verdicts out of this
 interface. Lean must check placement, observable behavior and its own
