@@ -137,19 +137,7 @@ func (h *Handler) CreateSession(ctx context.Context, request *apppb.CreateSessio
 }
 
 func sessionRPCError(err error, operation string) error {
-	var timeout *sessionclient.DispatcherRequestTimeoutError
-	var missing *sessionclient.SessionNotFoundError
-	var service *sessionclient.ServiceError
-	var refused *sessionclient.RefusedError
 	switch {
-	case errors.As(err, &timeout):
-		return status.Error(codes.DeadlineExceeded, err.Error())
-	case errors.As(err, &missing):
-		return status.Error(codes.NotFound, err.Error())
-	case errors.As(err, &service):
-		return sessionUpstreamRPCError(service.Code, service.Details, err, operation)
-	case errors.As(err, &refused):
-		return status.Error(refused.Code, refused.Details)
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, "Request canceled")
 	case errors.Is(err, context.DeadlineExceeded):
