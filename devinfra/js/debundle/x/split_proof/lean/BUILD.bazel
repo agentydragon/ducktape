@@ -670,6 +670,10 @@ lean_proof_test(
         "CoreJS.OrderedRegion.planned_runs_with_exports",
         "CoreJS.OrderedRegion.planned_scopes",
         "CoreJS.OrderedRegion.sameUnits_capture",
+        "CoreJS.declareDeclTops_ok",
+        "CoreJS.execute_lexical",
+        "CoreJS.execute_lexical_initialized",
+        "CoreJS.initFunctions_declarations",
         "CoreJS.link_singleModuleConst",
     ],
     deps = [":ordered_region"],
@@ -2626,6 +2630,9 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.IndexedAllocatedCells"],
     required_theorems = [
+        "CoreJS.IndexedAllocatedCells.declareTops_binding",
+        "CoreJS.IndexedAllocatedCells.declareTops_bindings",
+        "CoreJS.IndexedAllocatedCells.declareTops_present",
         "CoreJS.IndexedAllocatedCells.row_allocated_cells",
         "CoreJS.IndexedAllocatedCells.scope_cell_present",
     ],
@@ -2638,6 +2645,7 @@ lean_library(
     deps = [
         ":corejs_indexed_allocated_cells",
         ":corejs_projected_order",
+        ":corejs_single_module",
     ],
 )
 
@@ -2647,6 +2655,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.IndexedEntryLink"],
     required_theorems = [
         "CoreJS.IndexedEntryLink.source_const_init",
+        "CoreJS.IndexedEntryLink.source_decl_init",
         "CoreJS.IndexedEntryLink.link_allocation_failure",
         "CoreJS.IndexedEntryLink.link_after_const_allocation",
         "CoreJS.IndexedEntryLink.import_free_source_tops",
@@ -2665,6 +2674,7 @@ lean_proof_test(
         "CoreJS.IndexedEntryLink.resolved_entries_equal",
         "CoreJS.IndexedEntryLink.scopes_find",
         "CoreJS.IndexedEntryLink.indexed_initFunctions_consts",
+        "CoreJS.IndexedEntryLink.indexed_initFunctions_declarations",
         "CoreJS.IndexedEntryLink.initFunctions_consts",
         "CoreJS.IndexedEntryLink.sorted_initFunctions_consts",
     ],
@@ -2707,8 +2717,11 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.IndexedConstLink"],
     required_theorems = [
+        "CoreJS.IndexedConstLink.declarations_same_exports_of_order_kept",
         "CoreJS.IndexedConstLink.same_exports_of_order_kept",
         "CoreJS.IndexedConstLink.source_allocation",
+        "CoreJS.IndexedConstLink.source_decl_allocation",
+        "CoreJS.IndexedConstLink.source_decl_bindings",
     ],
     deps = [":corejs_indexed_const_link"],
 )
@@ -2753,7 +2766,7 @@ lean_proof_test(
 lean_library(
     name = "lexical_function_source",
     srcs = ["EsmSplit/CoreJS/LexicalFunctionSource.lean"],
-    deps = [":corejs_certificate_support_base"],
+    deps = [":corejs_single_module"],
 )
 
 lean_proof_test(
