@@ -50,33 +50,105 @@ private structure Numbering where
   callable : Nat := 1
   templates : Array TemplateSite := #[]
 
-/-- One top-level source item emitted by the linked decoder, carrying the
-original AST node and the exact value classified from it. Imports and
-statements the model intentionally skips are absent; indexed-source coverage
-rejects such inputs before a checked construction can use this trace. -/
+/-- One top-level source slot in the linked decoder's trace. Non-executable
+items remain explicit omitted slots so indexed-source coverage can refuse
+them without shifting later source ordinals. -/
 inductive SourceItem where
-  | executable (ordinal : Nat) (statement : Stmt) (node syntaxNode : Json)
-  | localExport (row : EsmSplit.LocalExportUnit) (node : Json)
+  | executable (ordinal : Nat) (statement : Stmt)
+  | localExport (row : EsmSplit.LocalExportUnit)
+  | omitted (ordinal : Nat)
 
 def SourceItem.ordinal : SourceItem → Nat
-  | .executable ordinal _ _ _ => ordinal
-  | .localExport row _ => row.ordinal
-
-def SourceItem.node : SourceItem → Json
-  | .executable _ _ node _ => node
-  | .localExport _ node => node
+  | .executable ordinal _ => ordinal
+  | .localExport row => row.ordinal
+  | .omitted ordinal => ordinal
 
 def SourceItem.executable? : SourceItem → Option (Nat × Stmt)
-  | .executable ordinal statement _ _ => some (ordinal, statement)
-  | .localExport _ _ => none
-
-def SourceItem.unit? : SourceItem → Option (Nat × Stmt × Json)
-  | .executable ordinal statement _ syntaxNode => some (ordinal, statement, syntaxNode)
-  | .localExport _ _ => none
+  | .executable ordinal statement => some (ordinal, statement)
+  | .localExport _ | .omitted _ => none
 
 def SourceItem.localExport? : SourceItem → Option EsmSplit.LocalExportUnit
-  | .executable _ _ _ _ => none
-  | .localExport row _ => some row
+  | .executable _ _ | .omitted _ => none
+  | .localExport row => some row
+
+def SourceItem.omitted? : SourceItem → Option Nat
+  | .omitted ordinal => some ordinal
+  | .executable _ _ | .localExport _ => none
+
+private theorem perm_cons_append_rotate (item : Nat) :
+    ∀ (front back : List Nat),
+      List.Perm (item :: (front ++ back)) (front ++ item :: back)
+  | [], _ => by simp
+  | head :: tail, back => by
+    simp only [List.cons_append]
+    exact (List.Perm.swap item head (tail ++ back)).symm.trans
+      (List.Perm.cons head (perm_cons_append_rotate item tail back))
+
+/-- Partitioning the decoder's trace into executable and metadata projections
+preserves every original ordinal, up to the projection's grouping order. -/
+theorem sourceItemOrdinalsPermProjections (items : List SourceItem) :
+    List.Perm (items.map SourceItem.ordinal)
+      (((items.filterMap SourceItem.executable?).map Prod.fst ++
+        ((items.filterMap SourceItem.localExport?).map (·.ordinal) ++
+          items.filterMap SourceItem.omitted?))) := by
+  induction items with
+  | nil => simp
+  | cons item tail ih =>
+    cases item with
+    | executable ordinal statement =>
+      change List.Perm (ordinal :: tail.map SourceItem.ordinal)
+        (ordinal :: ((tail.filterMap SourceItem.executable?).map Prod.fst ++
+          ((tail.filterMap SourceItem.localExport?).map (·.ordinal) ++
+            tail.filterMap SourceItem.omitted?)))
+      exact List.Perm.cons ordinal ih
+    | localExport row =>
+      let executableIds := (tail.filterMap SourceItem.executable?).map Prod.fst
+      let metadataIds := (tail.filterMap SourceItem.localExport?).map (·.ordinal)
+      let omittedIds := tail.filterMap SourceItem.omitted?
+      have prepend : List.Perm (row.ordinal :: tail.map SourceItem.ordinal)
+          (row.ordinal :: (executableIds ++ (metadataIds ++ omittedIds))) := List.Perm.cons row.ordinal ih
+      have rotate : List.Perm (row.ordinal :: (executableIds ++ (metadataIds ++ omittedIds)))
+          (executableIds ++ row.ordinal :: (metadataIds ++ omittedIds)) := by
+        exact perm_cons_append_rotate row.ordinal executableIds (metadataIds ++ omittedIds)
+      change List.Perm (row.ordinal :: tail.map SourceItem.ordinal)
+        (executableIds ++ row.ordinal :: (metadataIds ++ omittedIds))
+      exact prepend.trans rotate
+    | omitted ordinal =>
+      let executableIds := (tail.filterMap SourceItem.executable?).map Prod.fst
+      let metadataIds := (tail.filterMap SourceItem.localExport?).map (·.ordinal)
+      let omittedIds := tail.filterMap SourceItem.omitted?
+      have prepend : List.Perm (ordinal :: tail.map SourceItem.ordinal)
+          (ordinal :: (executableIds ++ (metadataIds ++ omittedIds))) := List.Perm.cons ordinal ih
+      have rotate : List.Perm (ordinal :: (executableIds ++ (metadataIds ++ omittedIds)))
+          (executableIds ++ (metadataIds ++ ordinal :: omittedIds)) := by
+        simpa [List.append_assoc] using
+          perm_cons_append_rotate ordinal (executableIds ++ metadataIds) omittedIds
+      change List.Perm (ordinal :: tail.map SourceItem.ordinal)
+        (executableIds ++ (metadataIds ++ ordinal :: omittedIds))
+      exact prepend.trans rotate
+
+
+private inductive ParsedSourceItem where
+  | executable (statement : Stmt) (syntaxNode : Json)
+  | localExport (names : List (Name × Name))
+  | omitted
+
+private def ParsedSourceItem.sourceItem (ordinal : Nat) : ParsedSourceItem → SourceItem
+  | .executable statement _ => .executable ordinal statement
+  | .localExport names => .localExport ⟨ordinal, names⟩
+  | .omitted => .omitted ordinal
+
+private theorem ParsedSourceItem.sourceItem_ordinal (ordinal : Nat) (item : ParsedSourceItem) :
+    (item.sourceItem ordinal).ordinal = ordinal := by
+  cases item <;> rfl
+
+private def ParsedSourceItem.executable? : ParsedSourceItem → Bool
+  | .executable _ _ => true
+  | .localExport _ | .omitted => false
+
+private def ParsedSourceItem.unit? (ordinal : Nat) : ParsedSourceItem → Option (Nat × Stmt × Json)
+  | .executable statement syntaxNode => some (ordinal, statement, syntaxNode)
+  | .localExport _ | .omitted => none
 
 private partial def callableOffsets (j : Json) (offsets : Array (Option Nat)) : Array (Option Nat) :=
   let offsets := if (j.getObjVal? "opaqueCaptures").isOk then
@@ -117,18 +189,33 @@ private def numberSites (unit : Nat) (scripts : Std.HashSet (Nat × Nat)) (j : J
   let parts := if parts.size == offsets.size then parts else {}
   (annotateSites unit parts scripts j).run {}
 
-private structure Parsed where
+private structure Parsed (nodeCount : Nat) where
   imports : List Import
   exports : List (Name × Name)
-  localExports : List EsmSplit.LocalExportUnit
-  sourceItems : List SourceItem
+  sourceItems : Array ParsedSourceItem
   templates : List TemplateSite
 
-private def Parsed.units (p : Parsed) : List (Nat × Stmt × Json) :=
-  p.sourceItems.filterMap SourceItem.unit?
+private def Parsed.units {nodeCount : Nat} (p : Parsed nodeCount) : List (Nat × Stmt × Json) :=
+  (List.range nodeCount).filterMap fun ordinal =>
+    (p.sourceItems[ordinal]?).bind fun item => item.unit? ordinal
 
-private def Parsed.body (p : Parsed) (base : Nat) : List (Nat × Stmt) :=
-  (p.sourceItems.filterMap SourceItem.executable?).map fun (ordinal, statement) =>
+private def Parsed.coreSourceItems {nodeCount : Nat} (p : Parsed nodeCount) : List SourceItem :=
+  (List.range nodeCount).map fun ordinal =>
+    (p.sourceItems[ordinal]?).getD .omitted |>.sourceItem ordinal
+
+private theorem Parsed.coreSourceItems_ordinals {nodeCount : Nat} (p : Parsed nodeCount) :
+    p.coreSourceItems.map SourceItem.ordinal = List.range nodeCount := by
+  simp only [Parsed.coreSourceItems, List.map_map]
+  have ordinalFn :
+      SourceItem.ordinal ∘ (fun ordinal =>
+        (p.sourceItems[ordinal]?.getD .omitted).sourceItem ordinal) = id := by
+    funext ordinal
+    exact ParsedSourceItem.sourceItem_ordinal ordinal _
+  rw [ordinalFn]
+  simp
+
+private def Parsed.body {nodeCount : Nat} (p : Parsed nodeCount) (base : Nat) : List (Nat × Stmt) :=
+  (p.coreSourceItems.filterMap SourceItem.executable?).map fun (ordinal, statement) =>
     (base + ordinal, statement)
 
 /-- A structural proof retains non-pivots. A recorded replay retains a unit
@@ -226,7 +313,7 @@ private def namespaceCaptures (captures : List (Name × List Name)) (stmt : Stmt
 
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
     (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Option String := none) :
-    Except StructuralRefusal Parsed := do
+    Except StructuralRefusal (Parsed nodes.size) := do
   let mut imports := #[]
   let mut namespaces := #[]
   for j in nodes do
@@ -241,13 +328,12 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
       imports := imports.push (← (ModuleInput.importDecl path j).mapError StructuralRefusal.unclassified)
   let names := namespaces.toList.map Prod.fst ++ imports.toList.flatMap fun i => i.names.map Prod.snd
   let mut exports := #[]
-  let mut localExports : Array EsmSplit.LocalExportUnit := #[]
-  let mut sourceItems : Array SourceItem := #[]
+  let mut sourceItems : Array ParsedSourceItem := Array.replicate nodes.size .omitted
   let mut templates := #[]
   for (j, i) in nodes.zipIdx do
     let origin : Except StructuralRefusal Nat := match origins with
       | none => pure (base + i)
-      | some ids => match ids[(sourceItems.filterMap SourceItem.executable?).size]? with
+      | some ids => match ids[(sourceItems.toList.filter ParsedSourceItem.executable?).length]? with
         | some id => pure id
         | none => throw (.unclassified "emitted body length differs from the placement")
     let decode (ast : Json) (exported : Bool) :
@@ -255,9 +341,9 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
       let unitOrigin ← origin
       format.lower profile names unitOrigin (provider.map fun referrer => (referrer, unitOrigin - base)) ast exported
     match ← (typ j).mapError StructuralRefusal.unclassified with
-    | "ImportDeclaration" => pure ()
+    | "ImportDeclaration" => sourceItems := sourceItems.set! i .omitted
     -- Neither statement changes the modeled state, so neither gets a unit.
-    | "EmptyStatement" | "DebuggerStatement" => pure ()
+    | "EmptyStatement" | "DebuggerStatement" => sourceItems := sourceItems.set! i .omitted
     | "ExportNamedDeclaration" =>
       (ModuleInput.noAttributes j).mapError StructuralRefusal.unclassified
       unless (← (j.getObjVal? "source").mapError StructuralRefusal.unclassified) == .null do
@@ -267,15 +353,13 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
       if declaration == .null then
         let names ← specs.mapM fun sp => (FromESTree.exportSpec sp).mapError StructuralRefusal.unclassified
         exports := exports ++ names
-        let row : EsmSplit.LocalExportUnit := ⟨i, names.toList⟩
-        localExports := localExports.push row
-        sourceItems := sourceItems.push (.localExport row j)
+        sourceItems := sourceItems.set! i (.localExport names.toList)
       else
         unless specs.isEmpty do throw (.unclassified "expected an inline declaration export")
         let (s, names, sites) ← decode declaration true
         let s ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified
         templates := templates ++ sites.toArray
-        sourceItems := sourceItems.push (.executable i s j declaration)
+        sourceItems := sourceItems.set! i (.executable s declaration)
         for name in names do exports := exports.push (name, name)
     | "ExportDefaultDeclaration" =>
       let unitOrigin ← origin
@@ -286,23 +370,22 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         (StructuralRefusal.mapReason fun why => s!"statement {i}: {why}")
       let s ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified
       templates := templates ++ sites.toArray
-      sourceItems := sourceItems.push (.executable i s j j)
+      sourceItems := sourceItems.set! i (.executable s j)
       exports := exports.push ("default", name)
     | _ =>
       let (s, _, sites) ← (decode j false).mapError
         (StructuralRefusal.mapReason fun why => s!"statement {i}: {why}")
       let s ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified
       templates := templates ++ sites.toArray
-      sourceItems := sourceItems.push (.executable i s j j)
+      sourceItems := sourceItems.set! i (.executable s j)
   return {
     imports := imports.toList
     exports := exports.toList
-    localExports := localExports.toList
-    sourceItems := sourceItems.toList
+    sourceItems := sourceItems
     templates := templates.toList
   }
 
-private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module where
+private def Parsed.numbered {nodeCount : Nat} (p : Parsed nodeCount) (name : String) (base : Nat) : Module where
   name := name
   imports := p.imports
   body := p.body base
@@ -326,7 +409,7 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
     offset := offset + nodes.size
   return (modules.toList, templates.toList)
 
-private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
+private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) {nodeCount : Nat} (original : Parsed nodeCount)
     (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0)
     (provider : Option String := none) : Except StructuralRefusal (Module × List TemplateSite) := do
   let file ← (files.getObjVal? m.name).mapError StructuralRefusal.unclassified
@@ -534,29 +617,51 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : Ho
     Except String (Program × Program) :=
   DecodedDeployment.programs <$> decodeSingleton source providers files P profile
 
-private structure DecodedSingletonSource where
+/-! The one-pass decoded source shape is available before construction-specific
+coverage is enforced. Callers that need to distinguish an unsupported source
+slot from a different route can inspect these nodes and classifications, then
+use `checkIndexedSource` without parsing the input again. -/
+structure DecodedSource where
+  nodes : Array Json
   program : Program
   source : Module
   singleton : program.modules = [source]
   localExports : List EsmSplit.LocalExportUnit
+  hasTemplates : Bool
   sourceItems : List SourceItem
+  localExportProjection : localExports = sourceItems.filterMap SourceItem.localExport?
   executableProjection : source.body = sourceItems.filterMap SourceItem.executable?
+  sourceOrdinals : sourceItems.map SourceItem.ordinal = List.range nodes.size
+  sourceProjection : List.Perm (sourceItems.map SourceItem.ordinal)
+    (((source.body.map Prod.fst ++ localExports.map (·.ordinal)) ++ sourceItems.filterMap SourceItem.omitted?))
 
 private def decodeSingletonSourceNodes (nodes : Array Json) (entry : String) :
-    Except String DecodedSingletonSource := do
+    Except String DecodedSource := do
   let original ← (parse .linked .empty "bundle.mjs" nodes 0).mapError StructuralRefusal.reason
-  unless original.imports.isEmpty do throw "checked construction requires an import-free original"
-  unless original.templates.isEmpty do throw "checked construction does not install template objects"
   let source := original.numbered entry 0
-  have executableProjection : source.body = original.sourceItems.filterMap SourceItem.executable? := by
-    simp [source, Parsed.numbered, Parsed.body, SourceItem.executable?]
+  have sourceOrdinals : original.coreSourceItems.map SourceItem.ordinal = List.range nodes.size :=
+    original.coreSourceItems_ordinals
+  have executableProjection : source.body = original.coreSourceItems.filterMap SourceItem.executable? := by
+    simp [source, Parsed.numbered, Parsed.body, Parsed.coreSourceItems]
+  let localExports := original.coreSourceItems.filterMap SourceItem.localExport?
+  let sourceItems := original.coreSourceItems
+  have localExportProjection : localExports = sourceItems.filterMap SourceItem.localExport? := rfl
+  have sourceProjection : List.Perm (sourceItems.map SourceItem.ordinal)
+      (((source.body.map Prod.fst ++ localExports.map (·.ordinal)) ++ sourceItems.filterMap SourceItem.omitted?)) := by
+    simpa [executableProjection, localExportProjection] using
+      sourceItemOrdinalsPermProjections sourceItems
   return {
+    nodes := nodes
     program := { entry, modules := [source] }
     source := source
     singleton := rfl
-    localExports := original.localExports
-    sourceItems := original.sourceItems
+    localExports := localExports
+    hasTemplates := !original.templates.isEmpty
+    sourceItems := sourceItems
+    localExportProjection := localExportProjection
     executableProjection := executableProjection
+    sourceOrdinals := sourceOrdinals
+    sourceProjection := sourceProjection
   }
 
 /-- Lower an import-free original in one pass, retaining each actual standalone
@@ -565,6 +670,8 @@ and default exports remain in the module export table. -/
 def decodeSingletonSourceWithLocalExports (source : Json) (entry : String) :
     Except String (Program × List EsmSplit.LocalExportUnit) := do
   let decoded ← decodeSingletonSourceNodes (← ESTreeUnits.nodes source) entry
+  unless decoded.source.imports.isEmpty do throw "checked construction requires an import-free original"
+  unless !decoded.hasTemplates do throw "checked construction does not install template objects"
   return (decoded.program, decoded.localExports)
 
 /-- Project the program from the same source decoder for rules that do not use
@@ -586,26 +693,31 @@ def checkSourceUnitCoverage (count : Nat) (program : Program) (localExports : Li
     throw s!"unsupported omitted source node {ordinal}"
   throw "executable units and local export rows do not cover each source ordinal once"
 
-/-- The nodes used for footprints and printing are the same ones the linked
-lowerer used to recover the executable units and ordered local-export rows. -/
-structure IndexedSource where
-  nodes : Array Json
-  program : Program
-  source : Module
-  singleton : program.modules = [source]
-  localExports : List EsmSplit.LocalExportUnit
-  sourceItems : List SourceItem
-  executableProjection : source.body = sourceItems.filterMap SourceItem.executable?
+/-- The indexed source retains the linked decoder's CoreJS classification and
+the original node count used by source-unit coverage. -/
+structure IndexedSource extends DecodedSource where
   coverage : (sourceUnitIds program localExports).Perm (List.range nodes.size)
+
+/-- Enforce indexed construction coverage on a classification that has already
+been decoded. This preserves the exact refusal and does not parse or lower the
+source a second time. -/
+def checkIndexedSource (decoded : DecodedSource) : Except String IndexedSource := do
+  unless decoded.source.imports.isEmpty do throw "checked construction requires an import-free original"
+  unless !decoded.hasTemplates do throw "checked construction does not install template objects"
+  let ⟨coverage⟩ ← checkSourceUnitCoverage decoded.nodes.size decoded.program decoded.localExports
+  return { toDecodedSource := decoded, coverage := coverage }
+
+/-- Decode the CoreJS source and complete source-item trace once, before
+construction-specific coverage is applied. -/
+def decodeSourceClassification (original : Json) (sourceText entry : String) :
+    Except String DecodedSource := do
+  let nodes ← ESTreeUnits.checkedNodes original sourceText
+  decodeSingletonSourceNodes nodes entry
 
 /-- Retain the full source ordinals for an authored constructor. A node the
 linked model skips, such as a debugger or empty statement, prevents coverage. -/
 def decodeIndexedSource (original : Json) (sourceText entry : String) : Except String IndexedSource := do
-  let nodes ← ESTreeUnits.checkedNodes original sourceText
-  let decoded ← decodeSingletonSourceNodes nodes entry
-  let ⟨coverage⟩ ← checkSourceUnitCoverage nodes.size decoded.program decoded.localExports
-  return ⟨nodes, decoded.program, decoded.source, decoded.singleton, decoded.localExports,
-    decoded.sourceItems, decoded.executableProjection, coverage⟩
+  checkIndexedSource (← decodeSourceClassification original sourceText entry)
 
 /-- Lower the independently parsed files using the constructor's file names
 and source ordinals. Bodies, binding names, imports and exports come from the
