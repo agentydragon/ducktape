@@ -2907,3 +2907,22 @@ lean_proof_test(
     ],
     deps = [":corejs_certificate_support_base"],
 )
+
+lean_library(
+    name = "primitive_rhs_frame",
+    srcs = ["EsmSplit/CoreJS/PrimitiveRhsFrame.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "primitive_rhs_frame_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PrimitiveRhsFrame"],
+    required_theorems = [
+        "CoreJS.PrimitiveRhs.checked_inert",
+        "CoreJS.PrimitiveRhs.eval_inert",
+        "CoreJS.PrimitiveRhs.lexical_outcome",
+        "CoreJS.PrimitiveRhs.inert_logical",
+    ],
+    deps = [":primitive_rhs_frame"],
+)
