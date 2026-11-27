@@ -306,15 +306,11 @@ pub(super) fn resolve_value_inputs(
             continue;
         }
         let prefix = format!("chunk_analysis_options.{chunk_name}.value_inputs");
-        let chunk = artifact
-            .chunks
-            .iter()
-            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
-            .with_context(|| {
-                format!(
-                    "chunk_analysis_options.{chunk_name}.value_inputs names no loaded provider chunk"
-                )
-            })?;
+        let chunk = artifact.chunk_named(chunk_name).with_context(|| {
+            format!(
+                "chunk_analysis_options.{chunk_name}.value_inputs names no loaded provider chunk"
+            )
+        })?;
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "chunk_analysis_options.{chunk_name}.value_inputs provider is outside the existing analyzed import closure"
@@ -439,10 +435,7 @@ pub(super) fn resolve_native_operation_inputs(
         if operation_inputs.is_empty() && native_call_identity_inputs.is_empty() {
             continue;
         }
-        let chunk = artifact
-            .chunks
-            .iter()
-            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+        let chunk = artifact.chunk_named(chunk_name)
             .with_context(|| {
                 format!(
                     "chunk_analysis_options.{chunk_name}.native_operation_inputs names no loaded provider chunk"
@@ -582,9 +575,7 @@ pub(super) fn resolve_argument_inputs(
         }
         let prefix = format!("chunk_analysis_options.{chunk_name}.argument_inputs");
         let chunk = artifact
-            .chunks
-            .iter()
-            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .chunk_named(chunk_name)
             .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
@@ -611,7 +602,8 @@ pub(super) fn resolve_argument_inputs(
             declarations.len() == options.argument_inputs.len(),
             "{prefix} source-site count does not match authored inputs"
         );
-        let source_facts = analysis::facts::collect_chunk_source_facts_from_items(facts.body, None);
+        let source_facts =
+            analysis::facts::analyze::collect_chunk_source_facts_from_items(facts.body, None);
         let mut selected = Vec::new();
         for (input_index, (contract, declaration)) in
             options.argument_inputs.iter().zip(declarations).enumerate()
@@ -720,9 +712,7 @@ pub(super) fn resolve_no_accessor_install_callables(
         }
         let prefix = format!("chunk_analysis_options.{chunk_name}.no_accessor_install_callables");
         let chunk = artifact
-            .chunks
-            .iter()
-            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .chunk_named(chunk_name)
             .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),

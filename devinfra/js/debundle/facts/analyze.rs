@@ -1,5 +1,7 @@
+use super::statement_facts::{StructuralChunkSourceFacts, StructuralStatementFacts};
 use super::*;
 use analysis_domain::dynamic_scope::DynamicScopeFact;
+use js_ast::item_var_decl;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
@@ -134,7 +136,7 @@ pub fn collect_chunk_source_facts_from_items<'a>(
                 !shadowed.contains("Promise"),
             );
             item.visit_with(&mut collector);
-            let top_level_var_initializer_candidates = var_decl_of_item(item)
+            let top_level_var_initializer_candidates = item_var_decl(item)
                 .filter(|var| var.kind == VarDeclKind::Var)
                 .into_iter()
                 .flat_map(|var| &var.decls)

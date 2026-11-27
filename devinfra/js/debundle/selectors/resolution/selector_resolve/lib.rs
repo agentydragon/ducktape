@@ -26,7 +26,7 @@ use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use analysis::facts::StructuralChunkSourceFacts;
+use analysis::facts::statement_facts::StructuralChunkSourceFacts;
 use analysis_domain::item_views::StatementKind;
 use anyhow::{Context, Result};
 use js_ast::statement_for_source_unit_ordinal;
@@ -268,7 +268,7 @@ impl<'m> Chunk<'m> {
 
     /// Collect a census when there are no prepared facts for this module.
     pub fn analyze(name: impl Into<String>, module: &'m Module) -> Self {
-        let structural = analysis::facts::collect_chunk_source_facts(module, None);
+        let structural = analysis::facts::analyze::collect_chunk_source_facts(module, None);
         Self::new(name, module, Cow::Owned(structural))
     }
 

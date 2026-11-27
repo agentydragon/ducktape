@@ -2474,6 +2474,7 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
+    SESSION_SUMMARY_WATCH_503[Unscheduled: the unfiltered summary watch returns 503 at page load]
 ```
 
 Revisit replacing `ReadSessionEvents` with `FollowSession` and `follow = false` once callers can
@@ -2605,6 +2606,15 @@ electric" ([`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--his
 watch facade, and build it once against whichever History representation is chosen rather than
 first over the fold tables. **Question for review:** build the replacement now over the fold, or
 after the History representation decision, over journal records?
+
+### `SESSION_SUMMARY_WATCH_503` — the unfiltered summary watch returns 503 at page load
+
+**Observed 2026-11-26; cause not diagnosed.** The notification-mode `session-summaries:watch` (no
+selection; `sessions/electric_sync.tsx`) returned 503 on three staging page loads and showed no retry
+within about 8 s. Fetched by hand afterwards, the same URL streamed normally, and History's logs showed
+nothing, so the 503 may come from the app gateway or from load-time state. That watch is what triggers
+`#scopeChanged` to re-resolve the Thread scope. Check whether `followWatch` retries it and what produced
+the 503. **Exit:** the cause is fixed, or recorded as benign.
 
 ## 13. Delivery boundaries, APIs and harness identity
 

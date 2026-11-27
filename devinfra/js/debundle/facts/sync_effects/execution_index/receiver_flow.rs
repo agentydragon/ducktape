@@ -173,45 +173,7 @@ pub(super) fn evaluate_receiver_value(
             return result;
         }
         ValueExpr::Binding(binding) => {
-            if let Some((reference, available_after)) = rules.index.ordinary_input_refs.get(binding)
-            {
-                result
-                    .fact
-                    .roots
-                    .insert(NativeReceiverRoot::OrdinaryDirect {
-                        reference: reference.clone(),
-                        available_after: *available_after,
-                    });
-                result
-                    .fact
-                    .capture_dependencies
-                    .insert((reference.clone(), *available_after));
-                return result;
-            }
-            let builtin_roots = intrinsic_roots(
-                value,
-                &BTreeMap::new(),
-                &rules.index.census_globals,
-                rules.declared,
-                &BTreeMap::new(),
-                &CallableReturnInputs::default(),
-            );
-            if !builtin_roots.is_empty() {
-                result.fact.roots = builtin_roots;
-                result.fact.complete = true;
-                return result;
-            }
-            if let Some(fact) = context.read(ReceiverFlowKey::Binding(binding.clone())) {
-                result.fact = fact.clone();
-                result.pending = !fact.complete;
-            } else if rules.pending_bindings.contains(binding) {
-                result.pending = true;
-            } else {
-                result.fact.opaque = true;
-                result.fact.complete = true;
-            }
-            let targets = result.fact.callable_targets.clone();
-            read_callable_capture_dependencies(&targets, context, &mut result.fact);
+            result = evaluate_binding_receiver(value, binding, context, rules);
         }
         ValueExpr::Alloc(Kind::Function, function) => {
             result.fact.callable_targets.insert(*function);
@@ -227,73 +189,14 @@ pub(super) fn evaluate_receiver_value(
             result.fact.complete = true;
         }
         ValueExpr::ObjectLiteral(_, fields) => {
-            let mut ordinary_refs = BTreeSet::new();
-            result.fact.safe = true;
-            result.fact.complete = true;
-            for (_, field) in fields.iter() {
-                let field = evaluate_receiver_value(field, context, rules);
-                result.pending |= field.pending;
-                result.fact.safe &= field.fact.safe;
-                result.fact.opaque |= field.fact.opaque;
-                result
-                    .fact
-                    .callable_targets
-                    .extend(field.fact.callable_targets);
-                result
-                    .fact
-                    .callable_dependencies
-                    .extend(field.fact.callable_dependencies);
-                result
-                    .fact
-                    .capture_dependencies
-                    .extend(field.fact.capture_dependencies);
-                result.fact.complete &= field.fact.complete;
-                for root in field.fact.roots {
-                    match root {
-                        NativeReceiverRoot::OrdinaryDirect {
-                            reference,
-                            available_after,
-                        }
-                        | NativeReceiverRoot::OrdinaryDescendant {
-                            reference,
-                            available_after,
-                        } => {
-                            ordinary_refs.insert((reference, available_after));
-                        }
-                        NativeReceiverRoot::Intrinsic(_)
-                        | NativeReceiverRoot::IntrinsicPrototype(_)
-                        | NativeReceiverRoot::IntrinsicDescendant(_)
-                        | NativeReceiverRoot::ArrayIteratorPrototype
-                        | NativeReceiverRoot::SetIteratorPrototype
-                        | NativeReceiverRoot::BundleGlobal => {}
-                    }
-                }
-            }
-            if !ordinary_refs.is_empty() {
-                result.fact.safe = false;
-                result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    NativeIntrinsic::UnknownGlobalValue,
-                ));
-            }
-            result.fact.roots.extend(ordinary_refs.into_iter().map(
-                |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
-                    reference,
-                    available_after,
-                },
-            ));
-            // A returned object containing a callable can expose that callable's
-            // later native return through a projection. This bounded model does
-            // not inspect arbitrary object protocols, so keep that escape opaque.
-            if !result.fact.callable_targets.is_empty() {
-                result.fact.safe = false;
-                result.fact.opaque = true;
-            }
+            result = evaluate_object_literal_receiver(fields, context, rules);
         }
-        ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
-            result.fact.safe = true;
-            result.fact.complete = true;
-        }
-        ValueExpr::Primitive(_)
+        // One arm for every result that cannot denote an object. The variants
+        // stay written out because this match has no fallback: a new value kind
+        // has to say what it does to receiver safety.
+        ValueExpr::Undefined
+        | ValueExpr::NonCallable(_)
+        | ValueExpr::Primitive(_)
         | ValueExpr::StrictEquality(..)
         | ValueExpr::LogicalNot(_)
         | ValueExpr::Void(_) => {
@@ -301,226 +204,399 @@ pub(super) fn evaluate_receiver_value(
             result.fact.complete = true;
         }
         ValueExpr::Member(base, property, _, _) => {
-            let base = evaluate_receiver_value(base, context, rules);
-            result.pending = base.pending;
-            // A primitive or fresh-container receiver does not prove that its
-            // inherited property is primitive or fresh. Keep arbitrary member
-            // reads opaque; captured-rooted reads retain descendant taint via
-            // `receiver_member_roots` below.
-            result.fact.safe = false;
-            result.fact.opaque = base.fact.opaque;
-            result.fact.callable_dependencies = base.fact.callable_dependencies;
-            result.fact.capture_dependencies = base.fact.capture_dependencies;
-            result.fact.complete = base.fact.complete;
-            result.fact.roots = receiver_member_roots(&base.fact.roots, property.as_deref());
-            if base.fact.roots.is_empty() || !base.fact.callable_targets.is_empty() {
-                result.fact.opaque = true;
-            }
-            if result.fact.opaque {
-                result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    NativeIntrinsic::UnknownGlobalValue,
-                ));
-            }
+            result = evaluate_member_receiver(base, property.as_deref(), context, rules);
         }
         ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
-            let options = value.branching_alternatives();
-            result.fact.safe = true;
-            result.fact.complete = true;
-            for option in options {
-                let option = evaluate_receiver_value(option, context, rules);
-                result.pending |= option.pending;
-                result.fact.safe &= option.fact.safe;
-                result.fact.opaque |= option.fact.opaque;
-                result.fact.roots.extend(option.fact.roots);
-                result
-                    .fact
-                    .callable_targets
-                    .extend(option.fact.callable_targets);
-                result
-                    .fact
-                    .callable_dependencies
-                    .extend(option.fact.callable_dependencies);
-                result
-                    .fact
-                    .capture_dependencies
-                    .extend(option.fact.capture_dependencies);
-                result.fact.complete &= option.fact.complete;
-            }
-            if result.fact.opaque {
-                result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    NativeIntrinsic::UnknownGlobalValue,
-                ));
-            }
+            result = evaluate_branching_receiver(value, context, rules);
         }
         ValueExpr::Call(callee, args, _) => {
-            let callee_value = evaluate_receiver_value(callee, context, rules);
-            result.pending = callee_value.pending;
-            result.fact.complete = callee_value.fact.complete;
-            result
-                .fact
-                .roots
-                .extend(callee_value.fact.roots.iter().cloned());
-            result.fact.opaque |= callee_value.fact.opaque;
-            result
-                .fact
-                .callable_dependencies
-                .extend(callee_value.fact.callable_dependencies.iter().copied());
-            result
-                .fact
-                .capture_dependencies
-                .extend(callee_value.fact.capture_dependencies.iter().cloned());
-            let mut ordinary_refs: BTreeSet<_> = result
-                .fact
-                .roots
-                .iter()
-                .filter_map(NativeReceiverRoot::cloned_ordinary_input)
-                .collect();
-            for argument in args.iter() {
-                let argument = evaluate_receiver_value(argument, context, rules);
-                result.pending |= argument.pending;
-                result.fact.complete &= argument.fact.complete;
-                result.fact.opaque |= argument.fact.opaque;
-                result
-                    .fact
-                    .callable_dependencies
-                    .extend(argument.fact.callable_dependencies.iter().copied());
-                result
-                    .fact
-                    .capture_dependencies
-                    .extend(argument.fact.capture_dependencies.iter().cloned());
-                result
-                    .fact
-                    .roots
-                    .extend(argument.fact.roots.iter().cloned());
-                for root in argument.fact.roots {
-                    if let NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } = root
-                    {
-                        ordinary_refs.insert((reference, available_after));
-                    }
-                }
-            }
-            if !ordinary_refs.is_empty() {
-                result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    NativeIntrinsic::UnknownGlobalValue,
-                ));
-                result.fact.roots.extend(ordinary_refs.iter().map(
-                    |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
-                        reference: reference.clone(),
-                        available_after: *available_after,
-                    },
-                ));
-            }
-            if callee_value.fact.callable_targets.is_empty() {
-                result.pending |= callee_value.pending;
-                if !callee_value.pending {
-                    result.fact.opaque = true;
-                }
-            } else {
-                for function in callee_value.fact.callable_targets {
-                    result.fact.callable_dependencies.insert(function);
-                    if let Some(summary) = context.read(ReceiverFlowKey::Callable(function)) {
-                        for outcome in &summary.outcomes {
-                            match outcome {
-                                CallableReturnOutcome::Safe => result.fact.safe = true,
-                                CallableReturnOutcome::Descendant(reference, available_after) => {
-                                    result
-                                        .fact
-                                        .capture_dependencies
-                                        .insert((reference.clone(), *available_after));
-                                    result.fact.roots.insert(
-                                        NativeReceiverRoot::OrdinaryDescendant {
-                                            reference: reference.clone(),
-                                            available_after: *available_after,
-                                        },
-                                    );
-                                }
-                                CallableReturnOutcome::Intrinsic(root) => {
-                                    result
-                                        .fact
-                                        .roots
-                                        .insert(NativeReceiverRoot::Intrinsic(*root));
-                                }
-                                CallableReturnOutcome::Unknown => result.fact.opaque = true,
-                            }
-                        }
-                        result.fact.opaque |= summary.opaque;
-                        result
-                            .fact
-                            .capture_dependencies
-                            .extend(summary.capture_dependencies.iter().cloned());
-                        result
-                            .fact
-                            .callable_dependencies
-                            .extend(summary.callable_dependencies.iter().copied());
-                        result.fact.complete &= summary.complete;
-                        result.pending |= !summary.complete;
-                    } else {
-                        result.fact.complete = false;
-                        result.pending = true;
-                    }
-                }
-            }
-            result.fact.complete &= !result.pending;
-            if result.fact.opaque {
-                result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    NativeIntrinsic::UnknownGlobalValue,
-                ));
-            }
+            result = evaluate_call_receiver(callee, args, context, rules);
         }
         ValueExpr::New(callee, args, _) => {
-            let callee = evaluate_receiver_value(callee, context, rules);
-            result.pending = callee.pending;
-            result.fact.complete = callee.fact.complete;
-            result.fact.roots.extend(callee.fact.roots);
-            result
-                .fact
-                .capture_dependencies
-                .extend(callee.fact.capture_dependencies);
-            result.fact.opaque = true;
-            for argument in args.iter() {
-                let argument = evaluate_receiver_value(argument, context, rules);
-                result.pending |= argument.pending;
-                result.fact.complete &= argument.fact.complete;
-                result
-                    .fact
-                    .callable_dependencies
-                    .extend(argument.fact.callable_dependencies);
-                result
-                    .fact
-                    .capture_dependencies
-                    .extend(argument.fact.capture_dependencies);
-                result.fact.roots.extend(argument.fact.roots);
-            }
-            result.fact.complete &= !result.pending;
-            let ordinary_refs: BTreeSet<_> = result
-                .fact
-                .roots
-                .iter()
-                .filter_map(NativeReceiverRoot::cloned_ordinary_input)
-                .collect();
-            if !ordinary_refs.is_empty() {
-                result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
-                    NativeIntrinsic::UnknownGlobalValue,
-                ));
-                result.fact.roots.extend(ordinary_refs.into_iter().map(
-                    |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    },
-                ));
-            }
+            result = evaluate_new_receiver(callee, args, context, rules);
         }
         ValueExpr::Unknown => {
             result.fact.opaque = true;
             result.fact.complete = true;
         }
+    }
+    result
+}
+
+fn evaluate_binding_receiver(
+    value: &ValueExpr,
+    binding: &Id,
+    context: &mut impl FactContext<ReceiverFlowKey, ReceiverFlowFact>,
+    rules: &ReceiverFlowRules<'_>,
+) -> ReceiverFlowValue {
+    let mut result = ReceiverFlowValue::default();
+    if let Some((reference, available_after)) = rules.index.ordinary_input_refs.get(binding) {
+        result
+            .fact
+            .roots
+            .insert(NativeReceiverRoot::OrdinaryDirect {
+                reference: reference.clone(),
+                available_after: *available_after,
+            });
+        result
+            .fact
+            .capture_dependencies
+            .insert((reference.clone(), *available_after));
+        return result;
+    }
+    let builtin_roots = intrinsic_roots(
+        value,
+        &BTreeMap::new(),
+        &rules.index.census_globals,
+        rules.declared,
+        &BTreeMap::new(),
+        &CallableReturnInputs::default(),
+    );
+    if !builtin_roots.is_empty() {
+        result.fact.roots = builtin_roots;
+        result.fact.complete = true;
+        return result;
+    }
+    if let Some(fact) = context.read(ReceiverFlowKey::Binding(binding.clone())) {
+        result.fact = fact.clone();
+        result.pending = !fact.complete;
+    } else if rules.pending_bindings.contains(binding) {
+        result.pending = true;
+    } else {
+        result.fact.opaque = true;
+        result.fact.complete = true;
+    }
+    let targets = result.fact.callable_targets.clone();
+    read_callable_capture_dependencies(&targets, context, &mut result.fact);
+    result
+}
+
+fn evaluate_object_literal_receiver(
+    fields: &[(Option<String>, ValueExpr)],
+    context: &mut impl FactContext<ReceiverFlowKey, ReceiverFlowFact>,
+    rules: &ReceiverFlowRules<'_>,
+) -> ReceiverFlowValue {
+    let mut result = ReceiverFlowValue::default();
+    let mut ordinary_refs = BTreeSet::new();
+    result.fact.safe = true;
+    result.fact.complete = true;
+    for (_, field) in fields.iter() {
+        let field = evaluate_receiver_value(field, context, rules);
+        result.pending |= field.pending;
+        result.fact.safe &= field.fact.safe;
+        result.fact.opaque |= field.fact.opaque;
+        result
+            .fact
+            .callable_targets
+            .extend(field.fact.callable_targets);
+        result
+            .fact
+            .callable_dependencies
+            .extend(field.fact.callable_dependencies);
+        result
+            .fact
+            .capture_dependencies
+            .extend(field.fact.capture_dependencies);
+        result.fact.complete &= field.fact.complete;
+        for root in field.fact.roots {
+            match root {
+                NativeReceiverRoot::OrdinaryDirect {
+                    reference,
+                    available_after,
+                }
+                | NativeReceiverRoot::OrdinaryDescendant {
+                    reference,
+                    available_after,
+                } => {
+                    ordinary_refs.insert((reference, available_after));
+                }
+                NativeReceiverRoot::Intrinsic(_)
+                | NativeReceiverRoot::IntrinsicPrototype(_)
+                | NativeReceiverRoot::IntrinsicDescendant(_)
+                | NativeReceiverRoot::ArrayIteratorPrototype
+                | NativeReceiverRoot::SetIteratorPrototype
+                | NativeReceiverRoot::BundleGlobal => {}
+            }
+        }
+    }
+    if !ordinary_refs.is_empty() {
+        result.fact.safe = false;
+        result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
+            NativeIntrinsic::UnknownGlobalValue,
+        ));
+    }
+    result.fact.roots.extend(
+        ordinary_refs
+            .into_iter()
+            .map(
+                |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
+                    reference,
+                    available_after,
+                },
+            ),
+    );
+    // A returned object containing a callable can expose that callable's
+    // later native return through a projection. This bounded model does
+    // not inspect arbitrary object protocols, so keep that escape opaque.
+    if !result.fact.callable_targets.is_empty() {
+        result.fact.safe = false;
+        result.fact.opaque = true;
+    }
+    result
+}
+
+fn evaluate_member_receiver(
+    base: &ValueExpr,
+    property: Option<&str>,
+    context: &mut impl FactContext<ReceiverFlowKey, ReceiverFlowFact>,
+    rules: &ReceiverFlowRules<'_>,
+) -> ReceiverFlowValue {
+    let mut result = ReceiverFlowValue::default();
+    let base = evaluate_receiver_value(base, context, rules);
+    result.pending = base.pending;
+    // A primitive or fresh-container receiver does not prove that its
+    // inherited property is primitive or fresh. Keep arbitrary member
+    // reads opaque; captured-rooted reads retain descendant taint via
+    // `receiver_member_roots` below.
+    result.fact.safe = false;
+    result.fact.opaque = base.fact.opaque;
+    result.fact.callable_dependencies = base.fact.callable_dependencies;
+    result.fact.capture_dependencies = base.fact.capture_dependencies;
+    result.fact.complete = base.fact.complete;
+    result.fact.roots = receiver_member_roots(&base.fact.roots, property);
+    if base.fact.roots.is_empty() || !base.fact.callable_targets.is_empty() {
+        result.fact.opaque = true;
+    }
+    if result.fact.opaque {
+        result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
+            NativeIntrinsic::UnknownGlobalValue,
+        ));
+    }
+    result
+}
+
+fn evaluate_branching_receiver(
+    value: &ValueExpr,
+    context: &mut impl FactContext<ReceiverFlowKey, ReceiverFlowFact>,
+    rules: &ReceiverFlowRules<'_>,
+) -> ReceiverFlowValue {
+    let mut result = ReceiverFlowValue::default();
+    let options = value.branching_alternatives();
+    result.fact.safe = true;
+    result.fact.complete = true;
+    for option in options {
+        let option = evaluate_receiver_value(option, context, rules);
+        result.pending |= option.pending;
+        result.fact.safe &= option.fact.safe;
+        result.fact.opaque |= option.fact.opaque;
+        result.fact.roots.extend(option.fact.roots);
+        result
+            .fact
+            .callable_targets
+            .extend(option.fact.callable_targets);
+        result
+            .fact
+            .callable_dependencies
+            .extend(option.fact.callable_dependencies);
+        result
+            .fact
+            .capture_dependencies
+            .extend(option.fact.capture_dependencies);
+        result.fact.complete &= option.fact.complete;
+    }
+    if result.fact.opaque {
+        result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
+            NativeIntrinsic::UnknownGlobalValue,
+        ));
+    }
+    result
+}
+
+fn evaluate_call_receiver(
+    callee: &ValueExpr,
+    args: &[ValueExpr],
+    context: &mut impl FactContext<ReceiverFlowKey, ReceiverFlowFact>,
+    rules: &ReceiverFlowRules<'_>,
+) -> ReceiverFlowValue {
+    let mut result = ReceiverFlowValue::default();
+    let callee_value = evaluate_receiver_value(callee, context, rules);
+    result.pending = callee_value.pending;
+    result.fact.complete = callee_value.fact.complete;
+    result
+        .fact
+        .roots
+        .extend(callee_value.fact.roots.iter().cloned());
+    result.fact.opaque |= callee_value.fact.opaque;
+    result
+        .fact
+        .callable_dependencies
+        .extend(callee_value.fact.callable_dependencies.iter().copied());
+    result
+        .fact
+        .capture_dependencies
+        .extend(callee_value.fact.capture_dependencies.iter().cloned());
+    let mut ordinary_refs: BTreeSet<_> = result
+        .fact
+        .roots
+        .iter()
+        .filter_map(NativeReceiverRoot::cloned_ordinary_input)
+        .collect();
+    for argument in args.iter() {
+        let argument = evaluate_receiver_value(argument, context, rules);
+        result.pending |= argument.pending;
+        result.fact.complete &= argument.fact.complete;
+        result.fact.opaque |= argument.fact.opaque;
+        result
+            .fact
+            .callable_dependencies
+            .extend(argument.fact.callable_dependencies.iter().copied());
+        result
+            .fact
+            .capture_dependencies
+            .extend(argument.fact.capture_dependencies.iter().cloned());
+        result
+            .fact
+            .roots
+            .extend(argument.fact.roots.iter().cloned());
+        for root in argument.fact.roots {
+            if let NativeReceiverRoot::OrdinaryDirect {
+                reference,
+                available_after,
+            }
+            | NativeReceiverRoot::OrdinaryDescendant {
+                reference,
+                available_after,
+            } = root
+            {
+                ordinary_refs.insert((reference, available_after));
+            }
+        }
+    }
+    if !ordinary_refs.is_empty() {
+        result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
+            NativeIntrinsic::UnknownGlobalValue,
+        ));
+        result
+            .fact
+            .roots
+            .extend(ordinary_refs.iter().map(|(reference, available_after)| {
+                NativeReceiverRoot::OrdinaryDescendant {
+                    reference: reference.clone(),
+                    available_after: *available_after,
+                }
+            }));
+    }
+    if callee_value.fact.callable_targets.is_empty() {
+        result.pending |= callee_value.pending;
+        if !callee_value.pending {
+            result.fact.opaque = true;
+        }
+    } else {
+        for function in callee_value.fact.callable_targets {
+            result.fact.callable_dependencies.insert(function);
+            if let Some(summary) = context.read(ReceiverFlowKey::Callable(function)) {
+                for outcome in &summary.outcomes {
+                    match outcome {
+                        CallableReturnOutcome::Safe => result.fact.safe = true,
+                        CallableReturnOutcome::Descendant(reference, available_after) => {
+                            result
+                                .fact
+                                .capture_dependencies
+                                .insert((reference.clone(), *available_after));
+                            result
+                                .fact
+                                .roots
+                                .insert(NativeReceiverRoot::OrdinaryDescendant {
+                                    reference: reference.clone(),
+                                    available_after: *available_after,
+                                });
+                        }
+                        CallableReturnOutcome::Intrinsic(root) => {
+                            result
+                                .fact
+                                .roots
+                                .insert(NativeReceiverRoot::Intrinsic(*root));
+                        }
+                        CallableReturnOutcome::Unknown => result.fact.opaque = true,
+                    }
+                }
+                result.fact.opaque |= summary.opaque;
+                result
+                    .fact
+                    .capture_dependencies
+                    .extend(summary.capture_dependencies.iter().cloned());
+                result
+                    .fact
+                    .callable_dependencies
+                    .extend(summary.callable_dependencies.iter().copied());
+                result.fact.complete &= summary.complete;
+                result.pending |= !summary.complete;
+            } else {
+                result.fact.complete = false;
+                result.pending = true;
+            }
+        }
+    }
+    result.fact.complete &= !result.pending;
+    if result.fact.opaque {
+        result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
+            NativeIntrinsic::UnknownGlobalValue,
+        ));
+    }
+    result
+}
+
+fn evaluate_new_receiver(
+    callee: &ValueExpr,
+    args: &[ValueExpr],
+    context: &mut impl FactContext<ReceiverFlowKey, ReceiverFlowFact>,
+    rules: &ReceiverFlowRules<'_>,
+) -> ReceiverFlowValue {
+    let mut result = ReceiverFlowValue::default();
+    let callee = evaluate_receiver_value(callee, context, rules);
+    result.pending = callee.pending;
+    result.fact.complete = callee.fact.complete;
+    result.fact.roots.extend(callee.fact.roots);
+    result
+        .fact
+        .capture_dependencies
+        .extend(callee.fact.capture_dependencies);
+    result.fact.opaque = true;
+    for argument in args.iter() {
+        let argument = evaluate_receiver_value(argument, context, rules);
+        result.pending |= argument.pending;
+        result.fact.complete &= argument.fact.complete;
+        result
+            .fact
+            .callable_dependencies
+            .extend(argument.fact.callable_dependencies);
+        result
+            .fact
+            .capture_dependencies
+            .extend(argument.fact.capture_dependencies);
+        result.fact.roots.extend(argument.fact.roots);
+    }
+    result.fact.complete &= !result.pending;
+    let ordinary_refs: BTreeSet<_> = result
+        .fact
+        .roots
+        .iter()
+        .filter_map(NativeReceiverRoot::cloned_ordinary_input)
+        .collect();
+    if !ordinary_refs.is_empty() {
+        result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
+            NativeIntrinsic::UnknownGlobalValue,
+        ));
+        result.fact.roots.extend(
+            ordinary_refs
+                .into_iter()
+                .map(
+                    |(reference, available_after)| NativeReceiverRoot::OrdinaryDescendant {
+                        reference,
+                        available_after,
+                    },
+                ),
+        );
     }
     result
 }

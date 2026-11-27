@@ -1,3 +1,4 @@
+use js_ast::item_var_decl;
 use std::collections::{BTreeMap, BTreeSet};
 
 use binding_targets::{
@@ -7,8 +8,9 @@ use binding_targets::{
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::{ChunkValueFlow, StructuralStatementFacts, metadata_decorate_call};
-use analysis_domain::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
+use super::statement_facts::StructuralStatementFacts;
+use super::{ChunkValueFlow, metadata_decorate_call};
+use analysis_domain::item_views::{TopLevelItemView, collect_declared_names};
 use analysis_vocabulary::inputs::{KnownEffect, LocalEffectPolicy};
 use purity::{PurityScope, classify_expr_purity};
 
@@ -204,7 +206,7 @@ fn ident_declarators_initialized_by(
     item: &ModuleItem,
     matches: impl Fn(&Expr) -> bool,
 ) -> BTreeSet<Id> {
-    let Some(var) = var_decl_of_item(item) else {
+    let Some(var) = item_var_decl(item) else {
         return BTreeSet::new();
     };
     var.decls
@@ -466,7 +468,7 @@ fn vendor_prune_local_effect_targets(
     if let ModuleItem::Stmt(Stmt::Expr(expr_stmt)) = item {
         return vendor_prune_expr_local_effect_targets(&expr_stmt.expr, local_effect_context);
     }
-    let Some(var) = var_decl_of_item(item) else {
+    let Some(var) = item_var_decl(item) else {
         return BTreeSet::new();
     };
     var.decls

@@ -13,6 +13,7 @@ use anyhow::{Result, bail};
 use execution_index::callable_capabilities::{
     InferredCallableCapabilities, PreparedCallableCapabilities,
 };
+use execution_index::positively_identified_contradiction;
 use inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::BytePos;
@@ -138,9 +139,7 @@ impl IterativeRules for CallableProjectionRules<'_> {
     }
 
     fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let previous = current.clone();
-        current.merge(contribution);
-        *current != previous
+        current.merge(contribution)
     }
 }
 
@@ -230,7 +229,184 @@ pub fn resolve_imported_callable_summaries(
         asserted_callback_factory_proofs(bindings, modules, asserted, diagnostics);
     // The bundle-owned globals are a whole-program greatest fixed point over
     // every module's writes; a second preparation reads them.
-    let prepare = |bundle_globals: &BundleGlobalNames| -> Result<_> {
+    let preparation = ProviderPreparation {
+        bindings,
+        modules,
+        required: &required,
+        selected_value_inputs,
+        selected_native_operation_inputs,
+        predefined_globals,
+        namespace_privacy_members,
+    };
+    let PreparedProviders {
+        mut prepared,
+        mut resolved_value_inputs,
+        mut resolved_native_operation_inputs,
+    } = preparation.prepare(&BundleGlobalNames::default())?;
+    let mut bundle_globals = BundleGlobalNames::default();
+    if predefined_globals != spec::PredefinedGlobals::Unknown {
+        bundle_globals =
+            execution_index::bundle_globals::resolve(prepared.iter().map(|(module, facts)| {
+                (
+                    facts,
+                    no_accessor_install_callables
+                        .get(*module)
+                        .map_or(&[][..], Vec::as_slice),
+                )
+            }));
+        if bundle_globals != BundleGlobalNames::default() {
+            // The first census has supplied its global-name result. Retire
+            // its complete source indexes before constructing their replacements.
+            drop(prepared);
+            PreparedProviders {
+                prepared,
+                resolved_value_inputs,
+                resolved_native_operation_inputs,
+            } = preparation.prepare(&bundle_globals)?;
+        }
+    }
+    let known_original_external_writes = resolve_known_original_external_writes(
+        modules,
+        &prepared,
+        requested_original_provider_exports,
+    );
+    reject_contradicted_native_operation_inputs(selected_native_operation_inputs, &prepared)?;
+    let inferred_set_constructions =
+        preflow_set_constructions(&prepared, &intrinsics_never_written);
+
+    // Author declarations are available before flow. Inferred wrapper proofs
+    // depend on the completed flow and must never feed this solve back into itself.
+    // Stability comes from raw source declarations, not purity assertions.
+    let source_stable = resolve_stable_imports(bindings, modules, &BTreeMap::new());
+    let declared_imports = solve_callable_import_projections(bindings, export_summaries.clone());
+    let fresh_factory_imports = collect_fresh_factory_imports(
+        modules,
+        &declared_imports,
+        &source_stable,
+        closed_factory_imports,
+    );
+    let fresh_factory_members = collect_fresh_factory_members(
+        modules,
+        &prepared,
+        &source_stable,
+        closed_factory_imports,
+        callback_factory_members,
+    );
+    // All source identities are qualified once, then the existing flow rules
+    // close imports, calls and object carriers in one program-wide store.
+    // These are possible values, not imported execution/availability proofs.
+    diagnostics.progress(
+        "*",
+        progress::Phase::ProgramValueFlow,
+        progress::State::Start,
+    );
+    let flow_views = collect_flow_views(modules, diagnostics);
+    let mut structural_flows = solve_program_value_flows(
+        bindings,
+        &flow_views,
+        &fresh_factory_imports,
+        &fresh_factory_members,
+        &resolved_native_operation_inputs,
+        &inferred_set_constructions,
+        diagnostics,
+    );
+    diagnostics.progress("*", progress::Phase::ProgramValueFlow, progress::State::End);
+    add_inferred_wrapper_summaries(
+        bindings,
+        modules,
+        &prepared,
+        &flow_views,
+        &structural_flows,
+        &mut export_summaries,
+    );
+    let native_integrity = refine_native_integrity(
+        bindings,
+        modules,
+        &mut prepared,
+        &export_summaries,
+        &intrinsics_never_written,
+    )?;
+    validate_descriptor_copy_assertions(
+        bindings,
+        modules,
+        descriptor_copy_asserted,
+        &required,
+        &prepared,
+    )?;
+    reject_contradicted_array_spread_inputs(
+        selected_imported_primitive_array_spread_inputs,
+        &prepared,
+    )?;
+    let inferred = preparation.infer_capabilities(
+        prepared,
+        descriptor_copy_asserted,
+        &flow_views,
+        &native_integrity,
+        &structural_flows,
+    );
+    add_descriptor_copy_summaries(
+        bindings,
+        modules,
+        descriptor_copy_asserted,
+        &required,
+        &inferred,
+        &mut export_summaries,
+    )?;
+    add_inferred_capability_summaries(
+        bindings,
+        modules,
+        &required,
+        &inferred,
+        &mut export_summaries,
+    );
+    let mut imported_callables = solve_callable_import_projections(bindings, export_summaries);
+    add_importer_cell_reads(bindings, &mut structural_flows, &mut imported_callables);
+    Ok(ResolvedCallableSummaries {
+        bundle_globals,
+        imported_callables,
+        native_integrity: Some(native_integrity),
+        value_inputs: resolved_value_inputs,
+        native_operation_inputs: resolved_native_operation_inputs,
+        imported_primitive_array_spread_inputs: BTreeMap::new(),
+        selected_imported_primitive_array_spread_inputs:
+            selected_imported_primitive_array_spread_inputs.clone(),
+        inferred_set_constructions,
+        argument_inputs: argument_inputs.clone(),
+        structural_flows,
+        known_original_external_writes,
+    })
+}
+/// The provider inputs `resolve_imported_callable_summaries` prepares once
+/// per bundle-globals census and later infers capabilities from.
+struct ProviderPreparation<'a> {
+    bindings: &'a ProgramBindings,
+    modules: &'a BTreeMap<SourceModuleKey, ModulePurityFacts<'a>>,
+    required: &'a BTreeSet<ExportId>,
+    selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
+    selected_native_operation_inputs:
+        &'a BTreeMap<SourceModuleKey, Vec<SelectedNativeOperationInput>>,
+    predefined_globals: spec::PredefinedGlobals,
+    namespace_privacy_members: &'a BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+}
+
+/// One bundle-globals census of every provider.
+struct PreparedProviders<'a> {
+    prepared: BTreeMap<&'a SourceModuleKey, PreparedCallableCapabilities>,
+    resolved_value_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedBindingValueInput>>,
+    resolved_native_operation_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedNativeOperationInput>>,
+}
+
+impl<'a> ProviderPreparation<'a> {
+    fn prepare(&self, bundle_globals: &BundleGlobalNames) -> Result<PreparedProviders<'a>> {
+        let ProviderPreparation {
+            bindings,
+            modules,
+            required,
+            selected_value_inputs,
+            selected_native_operation_inputs,
+            predefined_globals,
+            namespace_privacy_members,
+        } = *self;
         let mut prepared = BTreeMap::new();
         let mut resolved_value_inputs = BTreeMap::new();
         let mut resolved_native_operation_inputs = BTreeMap::new();
@@ -298,51 +474,66 @@ pub fn resolve_imported_callable_summaries(
             prepared_module.locate_native_writes(module, facts.locator());
             prepared.insert(module, prepared_module);
         }
-        Ok((
+        Ok(PreparedProviders {
             prepared,
             resolved_value_inputs,
             resolved_native_operation_inputs,
-        ))
-    };
-    let (mut prepared, mut resolved_value_inputs, mut resolved_native_operation_inputs) =
-        prepare(&BundleGlobalNames::default())?;
-    let mut bundle_globals = BundleGlobalNames::default();
-    if predefined_globals != spec::PredefinedGlobals::Unknown {
-        bundle_globals =
-            execution_index::bundle_globals::resolve(prepared.iter().map(|(module, facts)| {
-                (
-                    facts,
-                    no_accessor_install_callables
-                        .get(*module)
-                        .map_or(&[][..], Vec::as_slice),
-                )
-            }));
-        if bundle_globals != BundleGlobalNames::default() {
-            // The first census has supplied its global-name result. Retire
-            // its complete source indexes before constructing their replacements.
-            drop(prepared);
-            (
-                prepared,
-                resolved_value_inputs,
-                resolved_native_operation_inputs,
-            ) = prepare(&bundle_globals)?;
-        }
+        })
     }
-    let known_original_external_writes = resolve_known_original_external_writes(
-        modules,
-        &prepared,
-        requested_original_provider_exports,
-    );
-    reject_contradicted_native_operation_inputs(selected_native_operation_inputs, &prepared)?;
-    let inferred_set_constructions =
-        preflow_set_constructions(&prepared, &intrinsics_never_written);
 
-    // Author declarations are available before flow. Inferred wrapper proofs
-    // depend on the completed flow and must never feed this solve back into itself.
-    // Stability comes from raw source declarations, not purity assertions.
-    let source_stable = resolve_stable_imports(bindings, modules, &BTreeMap::new());
-    let declared_imports = solve_callable_import_projections(bindings, export_summaries.clone());
-    let fresh_factory_imports: BTreeMap<_, BTreeSet<_>> = modules
+    fn infer_capabilities(
+        &self,
+        prepared: BTreeMap<&'a SourceModuleKey, PreparedCallableCapabilities>,
+        descriptor_copy_asserted: &BTreeMap<
+            SourceModuleKey,
+            BTreeMap<String, Vec<spec::DescriptorCopyFactorySignature>>,
+        >,
+        flow_views: &BTreeMap<&SourceModuleKey, Vec<TopLevelItemView<'_>>>,
+        native_integrity: &NativeIntegrity,
+        structural_flows: &value_flow::ProgramValueFlows,
+    ) -> BTreeMap<&'a SourceModuleKey, InferredCallableCapabilities> {
+        let ProviderPreparation {
+            bindings,
+            modules,
+            required,
+            ..
+        } = *self;
+        prepared
+            .into_iter()
+            .map(|(module, prepared)| {
+                let views = &flow_views[module];
+                let required_stable_providers = descriptor_copy_asserted
+                    .get(module)
+                    .into_iter()
+                    .flat_map(|exports| exports.keys())
+                    .filter_map(|export| modules[module].exports.get(export.as_str()))
+                    .cloned()
+                    .collect();
+                (
+                    module,
+                    execution_index::callable_capabilities::infer_callable_capabilities(
+                        views,
+                        prepared,
+                        native_integrity,
+                        &required_stable_providers,
+                        modules[module].exports.keys().any(|export| {
+                            required.contains(&prepared_export_id(bindings, module, export))
+                        }),
+                        || structural_flows.get(module).expect("prepared program flow"),
+                    ),
+                )
+            })
+            .collect()
+    }
+}
+
+fn collect_fresh_factory_imports(
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    declared_imports: &BTreeMap<SourceModuleKey, BTreeMap<String, CallableSummary>>,
+    source_stable: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+    closed_factory_imports: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
+    modules
         .keys()
         .map(|module| {
             let eligible = declared_imports[module]
@@ -360,8 +551,17 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             (module.clone(), eligible)
         })
-        .collect();
-    let fresh_factory_members: BTreeMap<_, BTreeMap<_, BTreeSet<_>>> = modules
+        .collect()
+}
+
+fn collect_fresh_factory_members(
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+    source_stable: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+    closed_factory_imports: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+    callback_factory_members: &BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    modules
         .keys()
         .map(|module| {
             let mut eligible = BTreeMap::new();
@@ -385,16 +585,14 @@ pub fn resolve_imported_callable_summaries(
             }
             (module.clone(), eligible)
         })
-        .collect();
-    // All source identities are qualified once, then the existing flow rules
-    // close imports, calls and object carriers in one program-wide store.
-    // These are possible values, not imported execution/availability proofs.
-    diagnostics.progress(
-        "*",
-        progress::Phase::ProgramValueFlow,
-        progress::State::Start,
-    );
-    let flow_views: BTreeMap<_, _> = modules
+        .collect()
+}
+
+fn collect_flow_views<'a>(
+    modules: &'a BTreeMap<SourceModuleKey, ModulePurityFacts<'a>>,
+    diagnostics: &Diagnostics,
+) -> BTreeMap<&'a SourceModuleKey, Vec<TopLevelItemView<'a>>> {
+    modules
         .iter()
         .map(|(module, facts)| {
             let views = top_level_item_views(facts.body);
@@ -412,9 +610,23 @@ pub fn resolve_imported_callable_summaries(
             }
             (module, views)
         })
-        .collect();
+        .collect()
+}
+
+fn solve_program_value_flows(
+    bindings: &ProgramBindings,
+    flow_views: &BTreeMap<&SourceModuleKey, Vec<TopLevelItemView<'_>>>,
+    fresh_factory_imports: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+    fresh_factory_members: &BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+    resolved_native_operation_inputs: &BTreeMap<SourceModuleKey, Vec<ResolvedNativeOperationInput>>,
+    inferred_set_constructions: &BTreeMap<
+        SourceModuleKey,
+        BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
+    >,
+    diagnostics: &Diagnostics,
+) -> value_flow::ProgramValueFlows {
     let empty_sets = BTreeMap::new();
-    let mut structural_flows = value_flow::program_value_flows(
+    value_flow::program_value_flows(
         bindings,
         flow_views
             .iter()
@@ -432,21 +644,21 @@ pub fn resolve_imported_callable_summaries(
             }),
         diagnostics.metrics(),
         diagnostics.progress_observer(),
-    );
-    diagnostics.progress("*", progress::Phase::ProgramValueFlow, progress::State::End);
-    add_inferred_wrapper_summaries(
-        bindings,
-        modules,
-        &prepared,
-        &flow_views,
-        &structural_flows,
-        &mut export_summaries,
-    );
+    )
+}
+
+fn refine_native_integrity(
+    bindings: &ProgramBindings,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    prepared: &mut BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+    export_summaries: &BTreeMap<ExportId, CallableExportProof>,
+    intrinsics_never_written: &BTreeSet<NativeIntrinsic>,
+) -> Result<NativeIntegrity> {
     // This projection is the source-only input to native branch refinement.
     // Generic inferred callback factories are deliberately added after the
     // completed all-module native census and cannot flow back into it.
     let source_only_imports = solve_callable_import_projections(bindings, export_summaries.clone());
-    for (module, facts) in &mut prepared {
+    for (module, facts) in prepared.iter_mut() {
         facts.refine_native_branches(
             source_only_imports
                 .get(module.as_str())
@@ -460,7 +672,7 @@ pub fn resolve_imported_callable_summaries(
     if !intrinsics_never_written.is_empty() {
         execution_index::apply_intrinsics_never_written(
             &mut native_integrity,
-            &intrinsics_never_written,
+            intrinsics_never_written,
         )
         .map_err(|refutations| {
             anyhow::anyhow!(
@@ -469,59 +681,14 @@ pub fn resolve_imported_callable_summaries(
             )
         })?;
     }
-    validate_descriptor_copy_assertions(
-        bindings,
-        modules,
-        descriptor_copy_asserted,
-        &required,
-        &prepared,
-    )?;
-    reject_contradicted_array_spread_inputs(
-        selected_imported_primitive_array_spread_inputs,
-        &prepared,
-    )?;
-    let inferred: BTreeMap<_, _> = prepared
-        .into_iter()
-        .map(|(module, prepared)| {
-            let views = &flow_views[module];
-            let required_stable_providers = descriptor_copy_asserted
-                .get(module)
-                .into_iter()
-                .flat_map(|exports| exports.keys())
-                .filter_map(|export| modules[module].exports.get(export.as_str()))
-                .cloned()
-                .collect();
-            (
-                module,
-                execution_index::callable_capabilities::infer_callable_capabilities(
-                    views,
-                    prepared,
-                    &native_integrity,
-                    &required_stable_providers,
-                    modules[module].exports.keys().any(|export| {
-                        required.contains(&prepared_export_id(bindings, module, export))
-                    }),
-                    || structural_flows.get(module).expect("prepared program flow"),
-                ),
-            )
-        })
-        .collect();
-    add_descriptor_copy_summaries(
-        bindings,
-        modules,
-        descriptor_copy_asserted,
-        &required,
-        &inferred,
-        &mut export_summaries,
-    )?;
-    add_inferred_capability_summaries(
-        bindings,
-        modules,
-        &required,
-        &inferred,
-        &mut export_summaries,
-    );
-    let mut imported_callables = solve_callable_import_projections(bindings, export_summaries);
+    Ok(native_integrity)
+}
+
+fn add_importer_cell_reads(
+    bindings: &ProgramBindings,
+    structural_flows: &mut value_flow::ProgramValueFlows,
+    imported_callables: &mut BTreeMap<SourceModuleKey, BTreeMap<String, CallableSummary>>,
+) {
     for (module, calls) in structural_flows.take_importer_cell_reads(bindings) {
         for (callee, cells) in calls {
             imported_callables
@@ -533,20 +700,6 @@ pub fn resolve_imported_callable_summaries(
                 .extend(cells);
         }
     }
-    Ok(ResolvedCallableSummaries {
-        bundle_globals,
-        imported_callables,
-        native_integrity: Some(native_integrity),
-        value_inputs: resolved_value_inputs,
-        native_operation_inputs: resolved_native_operation_inputs,
-        imported_primitive_array_spread_inputs: BTreeMap::new(),
-        selected_imported_primitive_array_spread_inputs:
-            selected_imported_primitive_array_spread_inputs.clone(),
-        inferred_set_constructions,
-        argument_inputs: argument_inputs.clone(),
-        structural_flows,
-        known_original_external_writes,
-    })
 }
 
 /// The export key for one module export. The callable-export table is
@@ -662,11 +815,13 @@ fn reject_contradicted_native_operation_inputs(
                 .known_global_native_operation_mutation_owner(input.evidence.operation)
                 .map(|owner| (module, owner))
         }) {
-            bail!(
-                "{} is contradicted by a positively identified global {name} replacement or operation mutation in provider {module}, source unit {}",
-                input.evidence.spec_location,
-                owner.0
+            let contradiction = positively_identified_contradiction(
+                &input.evidence.spec_location,
+                &format!("global {name} replacement or operation mutation"),
+                Some(module.as_str()),
+                owner,
             );
+            bail!("{contradiction}");
         }
     }
     if selected_native_operation_inputs
@@ -691,10 +846,13 @@ fn reject_contradicted_native_operation_inputs(
             })
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_call_identity_inputs");
-        bail!(
-            "{request} is contradicted by a positively identified required Object.freeze slot write in provider {module}, source unit {}",
-            owner.0
+        let contradiction = positively_identified_contradiction(
+            request,
+            "required Object.freeze slot write",
+            Some(module.as_str()),
+            owner,
         );
+        bail!("{contradiction}");
     }
     if selected_native_operation_inputs
         .values()
@@ -718,10 +876,13 @@ fn reject_contradicted_native_operation_inputs(
             })
             .map(|input| input.evidence.spec_location.as_str())
             .unwrap_or("native_operation_inputs");
-        bail!(
-            "{request} is contradicted by a positively identified required Set construction protocol slot write in provider {module}, source unit {}",
-            owner.0
+        let contradiction = positively_identified_contradiction(
+            request,
+            "required Set construction protocol slot write",
+            Some(module.as_str()),
+            owner,
         );
+        bail!("{contradiction}");
     }
     Ok(())
 }

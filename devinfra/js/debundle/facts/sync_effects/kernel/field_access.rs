@@ -1,7 +1,7 @@
 use super::context::{Disposition, KernelContext, Unproved};
 use super::continuation::{absorb, completing, value_of};
 use super::frame::{LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue};
-use analysis::facts::EffectCell;
+use analysis::facts::statement_facts::EffectCell;
 use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;
 use swc_common::Span;
 use swc_ecma_ast::Id;

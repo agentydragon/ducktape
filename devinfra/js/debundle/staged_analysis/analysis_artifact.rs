@@ -15,8 +15,8 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use analysis::facts::ChunkFactAnalysis;
 use analysis::facts::saved::SavedChunkFactAnalysis;
+use analysis::facts::statement_facts::ChunkFactAnalysis;
 use analysis_codec::ContextOrdinals;
 use anyhow::{Context, Result, ensure};
 use purity::saved::{PuritySnapshot, RestoredPurities};

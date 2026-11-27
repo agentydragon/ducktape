@@ -83,6 +83,24 @@ impl ValueExpr {
             .expect("alternative expression: conditional, sequence and alternatives values carry their arms")
     }
 
+    /// Whether the result of this expression can never denote an object:
+    /// `undefined`, a value known only to be primitive, or the Boolean /
+    /// `undefined` result of `===`, `!` or `void`. Operands stay attached because
+    /// calls and unavailable reads inside them still flow; what this states is
+    /// the kind of the result, which is the question the native-root,
+    /// pre-publication-write and receiver-safety checks ask.
+    pub fn cannot_denote_an_object(&self) -> bool {
+        matches!(
+            self,
+            Self::Undefined
+                | Self::NonCallable(_)
+                | Self::Primitive(_)
+                | Self::StrictEquality(..)
+                | Self::LogicalNot(_)
+                | Self::Void(_)
+        )
+    }
+
     pub fn from_expr(expr: &Expr) -> Self {
         Self::from_expr_with_coverage(expr).0
     }

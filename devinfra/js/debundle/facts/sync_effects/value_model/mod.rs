@@ -825,18 +825,10 @@ impl DiscardedHeritageCall {
         // user code that could retain a value or change the selected base.
         if call.type_args.is_some()
             || call.args.iter().any(|argument| {
-                argument.spread.is_some()
-                    || !matches!(
-                        argument.expr.unwrap_parens(),
-                        Expr::Ident(_)
-                            | Expr::Lit(
-                                Lit::Str(_)
-                                    | Lit::Bool(_)
-                                    | Lit::Null(_)
-                                    | Lit::Num(_)
-                                    | Lit::BigInt(_)
-                            )
-                    )
+                argument.spread.is_some() || {
+                    let operand = argument.expr.unwrap_parens();
+                    !matches!(operand, Expr::Ident(_)) && !js_ast::is_primitive_literal(operand)
+                }
             })
         {
             return None;

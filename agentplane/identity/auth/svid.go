@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
@@ -99,6 +100,8 @@ func svidStatus(ctx context.Context, err error) error {
 	case ctx.Err() != nil:
 		return status.FromContextError(ctx.Err()).Err()
 	case errors.Is(err, ErrUnavailable):
+		// The caller sees only UNAVAILABLE; this log keeps which lookup failed and why.
+		slog.WarnContext(ctx, "workload SVID resolution unavailable", "error", err)
 		return status.Error(codes.Unavailable, "workload SVID authentication unavailable")
 	default:
 		return status.Error(codes.Unauthenticated, "invalid workload SVID")

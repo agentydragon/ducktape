@@ -39,7 +39,7 @@ use crate::{
     DependencyEdge, DependencyGraph, DependencyGraphBuildError, GraphOptions,
     build_dependency_graph_with,
 };
-use analysis::facts::StatementFacts;
+use analysis::facts::statement_facts::StatementFacts;
 use analysis::reports::spec_lint::CommutingStatementsUnused;
 use analysis_vocabulary::inputs::ResolvedCommutingStatements;
 

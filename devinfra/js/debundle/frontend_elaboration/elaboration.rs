@@ -5,12 +5,13 @@
 //! callers consume.
 
 use crate::chunk_ast::ChunkAstAnalysis;
-use analysis::facts::StructuralChunkSourceFacts;
+use analysis::facts::statement_facts::StructuralChunkSourceFacts;
 use analysis_projection::{self, AnalysisProjection, AnalysisSpec, ChunkGraphInputs};
 use analysis_vocabulary::inputs::{AnalysisAssumptions, SourceDeclaration};
 use anyhow::{Context, Result, ensure};
 use artifact::{
-    ChunkBundle, JsFile, export_policies, normalized_chunk_ids, prune_artifact_to_chunk_ids,
+    ChunkBundle, JsFile, ensure_commuting_statements_materialize, export_policies,
+    normalized_chunk_ids, prune_artifact_to_chunk_ids,
 };
 use chunk_preparation::{finish_frontend_chunk, solve_selectors};
 use graph_provenance::GraphProvenance;
@@ -147,13 +148,7 @@ pub fn project_analysis(
         "project_analysis requires at least one chunk_id"
     );
     let selected: BTreeSet<&str> = chunk_ids.iter().map(String::as_str).collect();
-    for (chunk, options) in &spec.chunk_analysis_options {
-        ensure!(
-            options.commuting_statements.is_empty()
-                || selected.contains(artifact::paths::normalize_module_path(chunk)?.as_str()),
-            "chunk_analysis_options.{chunk}.commuting_statements names a chunk this run does not materialize"
-        );
-    }
+    ensure_commuting_statements_materialize(&spec.chunk_analysis_options, &selected)?;
     let chunk_export_purity =
         export_policies::resolve_source_export_policies(&artifact, &spec.chunk_export_purity)?;
     if spec.materialize_logical_modules.prune_other_chunks {

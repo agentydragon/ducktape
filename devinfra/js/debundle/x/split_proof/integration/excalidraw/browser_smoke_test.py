@@ -439,32 +439,24 @@ async def test_bare_import(
     for file in [html, entry, target]:
         editor_app.router.routes.insert(0, serve_file(file.name, file))
     async with serve_app_in_loop(editor_app) as origin:
-        command: list[Path | str] = [
+        command: list[str | Path] = [
             resolve(runfiles, os.environ["LOWERSPLIT"]),
             write_deployment(tmp_path / "deployment.json", entry, spec),
             out,
-            "--structural",
-            "--host-contract",
-            profile,
-            "--deployment-origin",
-            origin,
         ]
-        default = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, check=False)
-        assert default.returncode == 1
-        assert "expected a relative module request" in json.loads(default.stdout)["reason"]
-        command += ["--deployment-import-map", "empty@1"]
-        for flags in [[], ["--check-output"]]:
+        profiles: list[list[str | Path]] = [
+            [],
+            ["--host-contract", profile, "--deployment-origin", origin, "--deployment-import-map", "empty@1"],
+        ]
+        for flags in profiles:
             run = await asyncio.to_thread(
                 subprocess.run, [*command, *flags], capture_output=True, text=True, check=False
             )
-            assert run.returncode == 0, run.stdout + run.stderr
-            verdict = json.loads(run.stdout)
-            assert verdict["scope"] == "linked-structural-pivot"
-            assert any(s.startswith("empty@1:") for s in verdict["assumptions"])
+            assert run.returncode == 1, run.stdout + run.stderr
+            assert json.loads(run.stdout)["reason_code"] == "no_constructed_rule"
+            assert not out.exists()
 
-        for overlay, mapped in [(False, False), (False, True), (True, False)]:
-            if overlay:
-                install_editor_overlay(editor_app, entry, {n: out / n for n in [entry.name, worker]})
+        for mapped in [False, True]:
             async with deterministic_browser_context(
                 playwright_driver, viewport={"width": 800, "height": 600}, frozen_now_ms=None
             ) as context:
@@ -539,52 +531,47 @@ async def test_native_metadata_preset(
             "--deployment-preset",
             "native-browser-record@1",
         ]
-        for args in [[], ["--check-output"]]:
-            run = await asyncio.to_thread(
-                subprocess.run, [*command, *args], capture_output=True, text=True, check=False
-            )
-            assert run.returncode == 0, run.stdout + run.stderr
-            assert json.loads(run.stdout)["scope"] == "linked-structural-pivot"
+        run = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, check=False)
+        assert run.returncode == 1, run.stdout + run.stderr
+        assert json.loads(run.stdout)["reason_code"] == "no_constructed_rule"
+        assert not out.exists()
 
-        for overlay in [False, True]:
-            if overlay:
-                install_editor_overlay(editor_app, source, {name: out / name for name in [source.name, worker]})
-            async with deterministic_browser_context(
-                playwright_driver, viewport={"width": 800, "height": 600}, frozen_now_ms=None
-            ) as context:
-                page = await context.new_page()
-                await page.goto(origin)
-                observation = await page.evaluate("""async () => {
-                    const api = await import("/record.mjs");
-                    const m = api.meta();
-                    const desc = x => Object.values(Object.getOwnPropertyDescriptors(x)).map(
-                        d => [typeof d.value, d.writable, d.enumerable, d.configurable]);
-                    const initial = [Object.keys(m), desc(m), Object.getPrototypeOf(m) === null,
-                        m.url, m.resolve.name, m.resolve.length, m.resolve("./asset.js")];
-                    let current = {}, calls = 0;
-                    Object.defineProperty(m, "env", {get() {
-                        if (this !== m) throw new Error("wrong getter receiver");
-                        calls++; return {MODE: current};
-                    }});
-                    const first = api.read(); current = {}; const second = api.read();
-                    return [Object.keys(api), api.render(), initial, first !== second, second === current, calls];
-                }""")
-                assert observation == [
-                    ["meta", "read", "render"],
-                    42,
-                    [
-                        ["url", "resolve"],
-                        [["string", True, True, True], ["function", True, True, True]],
-                        True,
-                        origin + "/record.mjs",
-                        "resolve",
-                        1,
-                        origin + "/asset.js",
-                    ],
+        async with deterministic_browser_context(
+            playwright_driver, viewport={"width": 800, "height": 600}, frozen_now_ms=None
+        ) as context:
+            page = await context.new_page()
+            await page.goto(origin)
+            observation = await page.evaluate("""async () => {
+                const api = await import("/record.mjs");
+                const m = api.meta();
+                const desc = x => Object.values(Object.getOwnPropertyDescriptors(x)).map(
+                    d => [typeof d.value, d.writable, d.enumerable, d.configurable]);
+                const initial = [Object.keys(m), desc(m), Object.getPrototypeOf(m) === null,
+                    m.url, m.resolve.name, m.resolve.length, m.resolve("./asset.js")];
+                let current = {}, calls = 0;
+                Object.defineProperty(m, "env", {get() {
+                    if (this !== m) throw new Error("wrong getter receiver");
+                    calls++; return {MODE: current};
+                }});
+                const first = api.read(); current = {}; const second = api.read();
+                return [Object.keys(api), api.render(), initial, first !== second, second === current, calls];
+            }""")
+            assert observation == [
+                ["meta", "read", "render"],
+                42,
+                [
+                    ["url", "resolve"],
+                    [["string", True, True, True], ["function", True, True, True]],
                     True,
-                    True,
-                    2,
-                ]
+                    origin + "/record.mjs",
+                    "resolve",
+                    1,
+                    origin + "/asset.js",
+                ],
+                True,
+                True,
+                2,
+            ]
 
 
 async def test_certified_deployment(

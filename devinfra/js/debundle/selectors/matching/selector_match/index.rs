@@ -99,15 +99,15 @@ impl Index {
         index
     }
 
-    pub(crate) fn children_of(&self, id: NodeId) -> &[NodeId] {
+    pub fn children_of(&self, id: NodeId) -> &[NodeId] {
         self.children.get(id as usize).map_or(&[], Vec::as_slice)
     }
 
-    pub(crate) fn kind_of(&self, id: NodeId) -> NodeKind {
+    pub fn kind_of(&self, id: NodeId) -> NodeKind {
         self.kind[id as usize]
     }
 
-    pub(crate) fn ident_of(&self, id: NodeId) -> Option<&str> {
+    pub fn ident_of(&self, id: NodeId) -> Option<&str> {
         self.ident.get(id as usize).and_then(|slot| slot.as_deref())
     }
 
@@ -127,13 +127,13 @@ impl Index {
         self.bool_lit.get(id as usize).copied().flatten()
     }
 
-    pub(crate) fn prop_name_of(&self, id: NodeId) -> Option<&str> {
+    pub fn prop_name_of(&self, id: NodeId) -> Option<&str> {
         self.prop_name
             .get(id as usize)
             .and_then(|slot| slot.as_deref())
     }
 
-    pub(crate) fn operator_of(&self, id: NodeId) -> Option<&str> {
+    pub fn operator_of(&self, id: NodeId) -> Option<&str> {
         self.operator
             .get(id as usize)
             .and_then(|slot| slot.as_deref())
@@ -168,28 +168,8 @@ impl Index {
         self.kind_of(id).as_tag()
     }
 
-    pub fn node_kind(&self, id: NodeId) -> NodeKind {
-        self.kind_of(id)
-    }
-
     /// Node ids are dense: every node is one of `0..node_count()`.
     pub fn node_count(&self) -> usize {
         self.kind.len()
-    }
-
-    pub fn children(&self, id: NodeId) -> &[NodeId] {
-        self.children_of(id)
-    }
-
-    pub fn ident(&self, id: NodeId) -> Option<&str> {
-        self.ident_of(id)
-    }
-
-    pub fn prop_name(&self, id: NodeId) -> Option<&str> {
-        self.prop_name_of(id)
-    }
-
-    pub fn operator(&self, id: NodeId) -> Option<&str> {
-        self.operator_of(id)
     }
 }

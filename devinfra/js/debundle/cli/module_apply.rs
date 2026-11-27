@@ -15,7 +15,7 @@ use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
 use candidate_assessment::{
     CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
 };
-use outcome::{MutationVerb, emit_gate_rejection_json};
+use outcome::{MutationVerb, report_edit};
 
 #[derive(Debug, Args)]
 pub struct ModulesApplyArgs {
@@ -74,63 +74,66 @@ pub fn run_modules_apply(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    let effect_context = args.effect_assessment.resolve_for_verified_write(
-        &args.modules_root,
-        source_context,
-        args.tree_config.as_deref(),
-        analysis_engine_sha256,
-    )?;
-    let (assignments, import_order) = read_assignment_request(
-        &args.graph,
-        args.plan.as_deref(),
-        args.assignments.as_deref(),
-        args.import_order.as_deref(),
-    )?;
-    let input = graph::DependencyGraphInput::read(&args.graph)?;
-    let readable_names = args
-        .readable_names
-        .as_ref()
-        .map(|path| from_slice(&fs::read(path)?).context("parsing readable names"))
-        .transpose()?
-        .unwrap_or_default();
-    let selector_overrides = args
-        .selector_overrides
-        .as_ref()
-        .map(|path| from_slice(&fs::read(path)?).context("parsing selector overrides"))
-        .transpose()?
-        .unwrap_or_default();
-    let outcome = run_source_unit_apply(
-        stderr,
-        &args.modules_root,
-        &args.graph,
-        input,
-        &args.source_root,
-        source_context,
-        SourceUnitApplyOptions {
-            tree_config: args.tree_config.as_deref(),
-            chunk_logical_destinations: args.plan.is_some(),
-            assignments,
-            import_order,
-            readable_names,
-            selector_overrides,
-            dry_run: args.dry_run,
-            effect_assessment_context: effect_context.as_ref(),
-        },
-    )
-    .map_err(|err| emit_gate_rejection_json(output, MutationVerb::Apply, args.format, err))?;
-    outcome.outcome.warn_if_unassessed_write(stderr)?;
-    let report = ApplyOutcome {
-        effect_assessment_unavailable: outcome
-            .effect_relocation_assessment
-            .is_none()
-            .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
-        outcome,
-    };
-    command_output::write_report(
-        &report,
-        OutputFormat::resolve(args.format),
+    let report = (|| {
+        let effect_context = args.effect_assessment.resolve_for_verified_write(
+            &args.modules_root,
+            source_context,
+            args.tree_config.as_deref(),
+            analysis_engine_sha256,
+        )?;
+        let (assignments, import_order) = read_assignment_request(
+            &args.graph,
+            args.plan.as_deref(),
+            args.assignments.as_deref(),
+            args.import_order.as_deref(),
+        )?;
+        let input = graph::DependencyGraphInput::read(&args.graph)?;
+        let readable_names = args
+            .readable_names
+            .as_ref()
+            .map(|path| from_slice(&fs::read(path)?).context("parsing readable names"))
+            .transpose()?
+            .unwrap_or_default();
+        let selector_overrides = args
+            .selector_overrides
+            .as_ref()
+            .map(|path| from_slice(&fs::read(path)?).context("parsing selector overrides"))
+            .transpose()?
+            .unwrap_or_default();
+        let outcome = run_source_unit_apply(
+            stderr,
+            &args.modules_root,
+            &args.graph,
+            input,
+            &args.source_root,
+            source_context,
+            SourceUnitApplyOptions {
+                tree_config: args.tree_config.as_deref(),
+                chunk_logical_destinations: args.plan.is_some(),
+                assignments,
+                import_order,
+                readable_names,
+                selector_overrides,
+                dry_run: args.dry_run,
+                effect_assessment_context: effect_context.as_ref(),
+            },
+        )?;
+        Ok(ApplyOutcome {
+            effect_assessment_unavailable: outcome
+                .effect_relocation_assessment
+                .is_none()
+                .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
+            outcome,
+        })
+    })();
+    report_edit(
         output,
-        |out, text| {
+        stderr,
+        MutationVerb::Apply,
+        args.format,
+        report,
+        |report: &ApplyOutcome| &report.outcome.outcome,
+        |out: &ApplyOutcome, text| {
             use std::fmt::Write;
             writeln!(
                 text,
@@ -146,8 +149,7 @@ pub fn run_modules_apply(
             )?;
             Ok(())
         },
-    )?;
-    Ok(())
+    )
 }
 
 pub(super) fn read_assignment_request(

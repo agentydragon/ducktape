@@ -430,99 +430,7 @@ impl LocalExpression {
             Expr::Lit(Lit::Bool(_)) => Some(Self::PrimitiveLiteral(PrimKinds::BOOLEAN)),
             Expr::Lit(Lit::Null(_)) => Some(Self::PrimitiveLiteral(PrimKinds::NULL)),
             Expr::Lit(Lit::BigInt(_)) => Some(Self::PrimitiveLiteral(PrimKinds::BIGINT)),
-            Expr::Object(object) => {
-                let properties = object
-                    .props
-                    .iter()
-                    .map(|property| {
-                        let PropOrSpread::Prop(property) = property else {
-                            return None;
-                        };
-                        match property.as_ref() {
-                            Prop::Shorthand(binding) => Some(PropertyDefinition::Data {
-                                name: Some(binding.sym.to_string()),
-                                value: Self::Value(ValueExpr::Binding(binding.to_id())),
-                            }),
-                            // `__proto__: null` sets no own property. It
-                            // occupies the dynamic-key slot, as the value
-                            // lowering records it, so no own-key projection
-                            // of the literal is proved; a non-null
-                            // prototype adds inherited lookups and stays out.
-                            Prop::KeyValue(pair)
-                                if static_property_name(&pair.key).as_deref()
-                                    == Some("__proto__") =>
-                            {
-                                matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_)))
-                                    .then_some(PropertyDefinition::Data {
-                                        name: None,
-                                        value: Self::PrimitiveLiteral(PrimKinds::NULL),
-                                    })
-                            }
-                            Prop::KeyValue(pair) => Some(PropertyDefinition::Data {
-                                name: Some(literal_definition_name(&pair.key)?),
-                                value: Self::lower_with_binary(
-                                    &pair.value,
-                                    class_template,
-                                    allow_binary,
-                                )?,
-                            }),
-                            Prop::Method(method)
-                                if method.function.decorators.is_empty()
-                                    && method
-                                        .function
-                                        .params
-                                        .iter()
-                                        .all(|parameter| parameter.decorators.is_empty()) =>
-                            {
-                                Some(PropertyDefinition::Method {
-                                    name: Some(literal_definition_name(&method.key)?),
-                                    value: Self::Closure(DeferredCallableCreation::Method {
-                                        callable: method.function.span.lo.0,
-                                        home_object: object.span.lo.0,
-                                    }),
-                                })
-                            }
-                            Prop::Getter(getter)
-                                if getter.function.decorators.is_empty()
-                                    && getter
-                                        .function
-                                        .params
-                                        .iter()
-                                        .all(|parameter| parameter.decorators.is_empty()) =>
-                            {
-                                Some(PropertyDefinition::Getter {
-                                    name: Some(literal_definition_name(&getter.key)?),
-                                    value: Self::Closure(DeferredCallableCreation::Getter {
-                                        callable: getter.function.span.lo.0,
-                                        home_object: object.span.lo.0,
-                                    }),
-                                })
-                            }
-                            Prop::Setter(setter)
-                                if setter.function.decorators.is_empty()
-                                    && setter
-                                        .function
-                                        .params
-                                        .iter()
-                                        .all(|parameter| parameter.decorators.is_empty()) =>
-                            {
-                                Some(PropertyDefinition::Setter {
-                                    name: Some(literal_definition_name(&setter.key)?),
-                                    value: Self::Closure(DeferredCallableCreation::Setter {
-                                        callable: setter.function.span.lo.0,
-                                        home_object: object.span.lo.0,
-                                    }),
-                                })
-                            }
-                            _ => None,
-                        }
-                    })
-                    .collect::<Option<Arc<[_]>>>()?;
-                Some(Self::Record {
-                    allocation: object.span.lo.0,
-                    properties,
-                })
-            }
+            Expr::Object(object) => Self::lower_object(object, class_template, allow_binary),
             Expr::Array(array) => Some(Self::Array {
                 allocation: array.span.lo.0,
                 elements: array
@@ -579,23 +487,9 @@ impl LocalExpression {
                     })
                     .collect::<Option<Arc<[_]>>>()?,
             )),
-            Expr::Cond(conditional) => Some(Self::Conditional {
-                test: Arc::new(Self::lower_with_binary(
-                    &conditional.test,
-                    class_template,
-                    allow_binary,
-                )?),
-                consequent: Arc::new(Self::lower_with_binary(
-                    &conditional.cons,
-                    class_template,
-                    allow_binary,
-                )?),
-                alternate: Arc::new(Self::lower_with_binary(
-                    &conditional.alt,
-                    class_template,
-                    allow_binary,
-                )?),
-            }),
+            Expr::Cond(conditional) => {
+                Self::lower_conditional(conditional, class_template, allow_binary)
+            }
             Expr::Bin(binary) if logical_operator(binary.op).is_some() => Some(Self::Logical {
                 op: logical_operator(binary.op)?,
                 left: Arc::new(Self::lower_with_binary(
@@ -626,46 +520,14 @@ impl LocalExpression {
                 })
             }
             Expr::Call(call) if !call.args.iter().any(|argument| argument.spread.is_some()) => {
-                let Callee::Expr(callee) = &call.callee else {
-                    return None;
-                };
-                let callee = LocalCallee::lower(callee, class_template)?;
-                Some(Self::Call {
-                    callee,
-                    arguments: call
-                        .args
-                        .iter()
-                        .map(|argument| {
-                            Self::lower_with_binary(&argument.expr, class_template, allow_binary)
-                        })
-                        .collect::<Option<Arc<[_]>>>()?,
-                    span: call.span,
-                })
+                Self::lower_call(call, class_template, allow_binary)
             }
             // An empty keyed-collection `new` keeps its shared value transfer.
             Expr::New(construction)
                 if construction.type_args.is_none()
                     && !empty_keyed_collection_new(construction) =>
             {
-                let Expr::Ident(callee) = construction.callee.unwrap_parens() else {
-                    return None;
-                };
-                let arguments = construction.args.as_deref().unwrap_or_default();
-                if callee.sym == "eval"
-                    || arguments.iter().any(|argument| argument.spread.is_some())
-                {
-                    return None;
-                }
-                Some(Self::Construct {
-                    callee: callee.to_id(),
-                    arguments: arguments
-                        .iter()
-                        .map(|argument| {
-                            Self::lower_with_binary(&argument.expr, class_template, allow_binary)
-                        })
-                        .collect::<Option<Arc<[_]>>>()?,
-                    span: construction.span,
-                })
+                Self::lower_construct(construction, class_template, allow_binary)
             }
             Expr::Member(member) => {
                 let (receiver, property) = ident_member(member)?;
@@ -676,55 +538,7 @@ impl LocalExpression {
                 })
             }
             Expr::Assign(assignment) if assignment.op == AssignOp::Assign => {
-                let value = Arc::new(Self::lower_with_binary(
-                    &assignment.right,
-                    class_template,
-                    allow_binary,
-                )?);
-                match &assignment.left {
-                    AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
-                        Some(Self::Assign {
-                            binding: binding.id.to_id(),
-                            value,
-                            span: assignment.span,
-                        })
-                    }
-                    AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
-                        if class_template
-                            && matches!(member.obj.unwrap_parens(), Expr::This(_))
-                            && let MemberProp::PrivateName(private) = &member.prop
-                        {
-                            return Some(Self::DefineThisField {
-                                property: private.name.to_string(),
-                                value,
-                            });
-                        }
-                        if class_template
-                            && matches!(member.obj.unwrap_parens(), Expr::This(_))
-                            && let MemberProp::Ident(property) = &member.prop
-                            && property.sym != "__proto__"
-                        {
-                            return Some(Self::AssignThisField {
-                                property: property.sym.to_string(),
-                                value,
-                                span: assignment.span,
-                            });
-                        }
-                        let (receiver, property) = ident_member(member)?;
-                        // `__proto__` is the Object.prototype accessor, not an
-                        // own data slot.
-                        if property.sym == "__proto__" {
-                            return None;
-                        }
-                        Some(Self::AssignField {
-                            receiver: receiver.to_id(),
-                            property: property.sym.to_string(),
-                            value,
-                            span: assignment.span,
-                        })
-                    }
-                    _ => None,
-                }
+                Self::lower_assignment(assignment, class_template, allow_binary)
             }
             Expr::Update(update) if !class_template => {
                 let Expr::Ident(binding) = update.arg.unwrap_parens() else {
@@ -743,6 +557,216 @@ impl LocalExpression {
                     .then(|| unconditional_value(&value).then_some(Self::Value(value)))
                     .flatten()
             }
+        }
+    }
+
+    fn lower_object(object: &ObjectLit, class_template: bool, allow_binary: bool) -> Option<Self> {
+        let properties = object
+            .props
+            .iter()
+            .map(|property| {
+                let PropOrSpread::Prop(property) = property else {
+                    return None;
+                };
+                match property.as_ref() {
+                    Prop::Shorthand(binding) => Some(PropertyDefinition::Data {
+                        name: Some(binding.sym.to_string()),
+                        value: Self::Value(ValueExpr::Binding(binding.to_id())),
+                    }),
+                    // `__proto__: null` sets no own property. It
+                    // occupies the dynamic-key slot, as the value
+                    // lowering records it, so no own-key projection
+                    // of the literal is proved; a non-null
+                    // prototype adds inherited lookups and stays out.
+                    Prop::KeyValue(pair)
+                        if static_property_name(&pair.key).as_deref() == Some("__proto__") =>
+                    {
+                        matches!(pair.value.unwrap_parens(), Expr::Lit(Lit::Null(_))).then_some(
+                            PropertyDefinition::Data {
+                                name: None,
+                                value: Self::PrimitiveLiteral(PrimKinds::NULL),
+                            },
+                        )
+                    }
+                    Prop::KeyValue(pair) => Some(PropertyDefinition::Data {
+                        name: Some(literal_definition_name(&pair.key)?),
+                        value: Self::lower_with_binary(&pair.value, class_template, allow_binary)?,
+                    }),
+                    Prop::Method(method)
+                        if method.function.decorators.is_empty()
+                            && method
+                                .function
+                                .params
+                                .iter()
+                                .all(|parameter| parameter.decorators.is_empty()) =>
+                    {
+                        Some(PropertyDefinition::Method {
+                            name: Some(literal_definition_name(&method.key)?),
+                            value: Self::Closure(DeferredCallableCreation::Method {
+                                callable: method.function.span.lo.0,
+                                home_object: object.span.lo.0,
+                            }),
+                        })
+                    }
+                    Prop::Getter(getter)
+                        if getter.function.decorators.is_empty()
+                            && getter
+                                .function
+                                .params
+                                .iter()
+                                .all(|parameter| parameter.decorators.is_empty()) =>
+                    {
+                        Some(PropertyDefinition::Getter {
+                            name: Some(literal_definition_name(&getter.key)?),
+                            value: Self::Closure(DeferredCallableCreation::Getter {
+                                callable: getter.function.span.lo.0,
+                                home_object: object.span.lo.0,
+                            }),
+                        })
+                    }
+                    Prop::Setter(setter)
+                        if setter.function.decorators.is_empty()
+                            && setter
+                                .function
+                                .params
+                                .iter()
+                                .all(|parameter| parameter.decorators.is_empty()) =>
+                    {
+                        Some(PropertyDefinition::Setter {
+                            name: Some(literal_definition_name(&setter.key)?),
+                            value: Self::Closure(DeferredCallableCreation::Setter {
+                                callable: setter.function.span.lo.0,
+                                home_object: object.span.lo.0,
+                            }),
+                        })
+                    }
+                    _ => None,
+                }
+            })
+            .collect::<Option<Arc<[_]>>>()?;
+        Some(Self::Record {
+            allocation: object.span.lo.0,
+            properties,
+        })
+    }
+
+    fn lower_conditional(
+        conditional: &CondExpr,
+        class_template: bool,
+        allow_binary: bool,
+    ) -> Option<Self> {
+        Some(Self::Conditional {
+            test: Arc::new(Self::lower_with_binary(
+                &conditional.test,
+                class_template,
+                allow_binary,
+            )?),
+            consequent: Arc::new(Self::lower_with_binary(
+                &conditional.cons,
+                class_template,
+                allow_binary,
+            )?),
+            alternate: Arc::new(Self::lower_with_binary(
+                &conditional.alt,
+                class_template,
+                allow_binary,
+            )?),
+        })
+    }
+
+    fn lower_call(call: &CallExpr, class_template: bool, allow_binary: bool) -> Option<Self> {
+        let Callee::Expr(callee) = &call.callee else {
+            return None;
+        };
+        let callee = LocalCallee::lower(callee, class_template)?;
+        Some(Self::Call {
+            callee,
+            arguments: call
+                .args
+                .iter()
+                .map(|argument| {
+                    Self::lower_with_binary(&argument.expr, class_template, allow_binary)
+                })
+                .collect::<Option<Arc<[_]>>>()?,
+            span: call.span,
+        })
+    }
+
+    fn lower_construct(
+        construction: &NewExpr,
+        class_template: bool,
+        allow_binary: bool,
+    ) -> Option<Self> {
+        let Expr::Ident(callee) = construction.callee.unwrap_parens() else {
+            return None;
+        };
+        let arguments = construction.args.as_deref().unwrap_or_default();
+        if callee.sym == "eval" || arguments.iter().any(|argument| argument.spread.is_some()) {
+            return None;
+        }
+        Some(Self::Construct {
+            callee: callee.to_id(),
+            arguments: arguments
+                .iter()
+                .map(|argument| {
+                    Self::lower_with_binary(&argument.expr, class_template, allow_binary)
+                })
+                .collect::<Option<Arc<[_]>>>()?,
+            span: construction.span,
+        })
+    }
+
+    fn lower_assignment(
+        assignment: &AssignExpr,
+        class_template: bool,
+        allow_binary: bool,
+    ) -> Option<Self> {
+        let value = Arc::new(Self::lower_with_binary(
+            &assignment.right,
+            class_template,
+            allow_binary,
+        )?);
+        match &assignment.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => Some(Self::Assign {
+                binding: binding.id.to_id(),
+                value,
+                span: assignment.span,
+            }),
+            AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                if class_template
+                    && matches!(member.obj.unwrap_parens(), Expr::This(_))
+                    && let MemberProp::PrivateName(private) = &member.prop
+                {
+                    return Some(Self::DefineThisField {
+                        property: private.name.to_string(),
+                        value,
+                    });
+                }
+                if class_template
+                    && matches!(member.obj.unwrap_parens(), Expr::This(_))
+                    && let MemberProp::Ident(property) = &member.prop
+                    && property.sym != "__proto__"
+                {
+                    return Some(Self::AssignThisField {
+                        property: property.sym.to_string(),
+                        value,
+                        span: assignment.span,
+                    });
+                }
+                let (receiver, property) = ident_member(member)?;
+                // `__proto__` is the Object.prototype accessor, not an
+                // own data slot.
+                if property.sym == "__proto__" {
+                    return None;
+                }
+                Some(Self::AssignField {
+                    receiver: receiver.to_id(),
+                    property: property.sym.to_string(),
+                    value,
+                    span: assignment.span,
+                })
+            }
+            _ => None,
         }
     }
 

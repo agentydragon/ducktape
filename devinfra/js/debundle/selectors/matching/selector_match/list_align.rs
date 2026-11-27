@@ -308,7 +308,7 @@ pub fn var_declarator_alignment_prepared(
 /// placement of [`align_var_declarators`]). One [`Bindings`] is threaded across the
 /// whole scan with snapshot/restore, so an alpha binding committed by an earlier
 /// pin constrains a later one. `ndecls`/`sdecls` are the two `VarDecl` nodes'
-/// declarator children (`index.children(var_decl_node)`).
+/// declarator children (`index.children_of(var_decl_node)`).
 pub fn pinned_declarator_matches_in_order(
     needle: &Index,
     ndecls: &[NodeId],

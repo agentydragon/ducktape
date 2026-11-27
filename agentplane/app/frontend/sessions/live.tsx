@@ -11,12 +11,10 @@ import { backoff, type StreamConnection } from "../transport/stream_reader";
 import { useStreamStatus } from "../transport/stream_status";
 import { followWatch } from "../transport/watch_stream";
 import { WatchThreadMetadataResponseSchema } from "../../app_service_pb";
-import {
-  WatchSessionSummariesResponseSchema,
-  type SessionSummary,
-} from "../../../history_service/api/history/history_service_pb";
+import { WatchSessionSummariesResponseSchema } from "../../../history_service/api/history/history_service_pb";
 
 import { type ThreadView, listThreadMetadata, selectThreadWindow, type ThreadListing } from "./client";
+import { THREAD_SUMMARY_FIELDS, type ThreadSummary } from "./summary_fields";
 
 /** The Thread window. Sandboxes come from the EnvironmentService inventory watch (`SandboxesLiveProvider`), their one source. */
 export type ThreadsSnapshot = {
@@ -110,7 +108,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
     let disconnectedSince: number | null = null;
     let metadata: Awaited<ReturnType<typeof listThreadMetadata>> | null = null;
     const sessions = new Map<string, Session>();
-    const summaries = new Map<string, SessionSummary>();
+    const summaries = new Map<string, ThreadSummary>();
     const lifetime = new AbortController();
     let metadataRunning = false;
     let metadataDirty = false;
@@ -191,6 +189,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
           summaryConnections.push({ phase: "connecting", since: Date.now() });
           const query = new URLSearchParams();
           group.forEach((id) => query.append("selected.session_ids", id));
+          query.set("selected.field_mask", THREAD_SUMMARY_FIELDS.join(","));
           stopSummaries.push(
             followWatch(`/upstream/history/v1/session-summaries:watch?${query}`, {
               onOpen: () => {

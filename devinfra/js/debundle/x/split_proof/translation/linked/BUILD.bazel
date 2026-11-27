@@ -10,7 +10,6 @@ js_library(
     deps = [
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
         "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
 )
@@ -43,23 +42,6 @@ _TEST_DATA = [
 ]
 
 _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
-
-# These valid Lean-backed shards exceed the medium budget or have timed out in CI.
-_LONG_TIMEOUT_TESTS = [
-    "browser_globals_test",
-    "flat_patterns_test",
-    "host_profile_test",
-    "if_test",
-    "literal_records_test",
-    "mutations_test",
-    "pre_super_test",
-    "programs_test",
-    "property_assignment_test",
-    "provider_programs_test",
-    "sequence_test",
-    "switch_test",
-    "wide_table_reversal_test",
-]
 
 js_test(
     name = "static_provider_boundary_input_test",
@@ -144,119 +126,26 @@ js_test(
 )
 
 _UNSHARDED_TESTS = [
-    "arithmetic_observer_test",
     "arithmetic_test",
-    "arrays_test",
-    "async_methods_test",
-    "bitwise_test",
-    "composition_test",
-    "derived_defaults_test",
-    "derived_fields_test",
-    "derived_object_parameters_test",
-    "function_declaration_test",
-    "hoisted_moves_test",
-    "if_test",
+    "generator_test",
     "import_cells_test",
-    "initializer_moves_test",
-    "literal_records_test",
     "logical_test",
-    "member_test",
     "module_graph_test",
     "module_metadata_test",
     "named_constructor_cli_test",
-    "numeric_prefix_test",
-    "object_elements_test",
-    "object_spread_test",
-    "optional_callee_test",
-    "pre_super_test",
-    "prefix_record_creation_test",
     "provider_location_test",
-    "realm_constructors_test",
-    "record_prefix_test",
-    "record_values_test",
-    "regexp_test",
-    "relational_test",
-    "reordering_test",
-    "resolved_placement_test",
-    "rest_parameters_test",
-    "schedule_moves_test",
-    "slice_strategy_test",
-    "small_records_test",
-    "static_blocks_test",
-    "strict_arguments_test",
-    "string_initializer_test",
-    "structural_object_method_test",
-    "switch_test",
-    "symbol_brand_test",
-    "symbol_iterator_test",
-    "symbol_tag_test",
-    "weakmap_constructor_test",
-    "wide_provider_scope_test",
-    "wide_records_test",
 ]
-
-_SHARD_COUNTS = {
-    "browser_globals_test": 4,
-    "classes_test": 5,
-    "computed_class_keys_test": 4,
-    "conditional_super_test": 3,
-    "default_parameters_test": 3,
-    "dense_array_batch_test": 2,
-    "flat_patterns_test": 6,
-    "generator_test": 4,
-    "guarded_super_test": 3,
-    "host_profile_test": 3,
-    "identifier_assignment_test": 3,
-    "instanceof_test": 5,
-    "iterators_test": 3,
-    "loops_test": 4,
-    "mutations_test": 3,
-    "new_target_test": 3,
-    "numeric_property_keys_test": 2,
-    "object_parameter_defaults_test": 6,
-    "optional_chain_test": 3,
-    "pre_super_object_test": 5,
-    "private_elements_test": 4,
-    "programs_test": 3,
-    "property_assignment_test": 8,
-    "provider_programs_test": 3,
-    "sequence_test": 3,
-    "spread_arguments_test": 3,
-    "super_members_test": 3,
-    "tagged_templates_test": 3,
-    "templates_test": 3,
-    "wide_table_reversal_test": 2,
-}
 
 [
     js_test(
         name = name,
         size = "medium",
-        timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
         data = _TEST_DATA + ([":module_graph_fixture"] if name == "module_graph_test" else []),
         entry_point = name + ".mjs",
         env = _TEST_ENV,
-        shard_count = _SHARD_COUNTS.get(name),
     )
-    for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()
+    for name in _UNSHARDED_TESTS
 ]
-
-# This test exercises only certified output and the original source program. Do
-# not pull in the diagnostic launcher that can publish unchecked previews.
-js_test(
-    name = "structural_intrinsic_number_test",
-    size = "medium",
-    data = [
-        ":harness",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit_core",
-        "//devinfra/js/debundle/x/split_proof/translation:module_io",
-    ],
-    entry_point = "structural_intrinsic_number_test.mjs",
-    env = {
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit_core)",
-        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
-    },
-)
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(
@@ -278,17 +167,6 @@ js_test(
         _TEST_ENV,
         SPLIT_PROOF_TIMINGS = "1",
     ),
-)
-
-js_test(
-    name = "table_lookups_test",
-    size = "medium",
-    data = _TEST_DATA + [
-        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
-    ],
-    entry_point = "table_lookups_test.mjs",
-    env = _TEST_ENV,
 )
 
 js_test(

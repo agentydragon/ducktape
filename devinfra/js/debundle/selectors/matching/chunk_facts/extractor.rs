@@ -25,6 +25,35 @@ impl Extractor {
         id
     }
 
+    /// Attach one child per item to an existing node, numbered by source
+    /// position. Elided array and pattern elements get their own node so the
+    /// numbering stays faithful to the source (`[a, , b]` keeps three slots).
+    fn append_indexed_children<T>(
+        &mut self,
+        parent: NodeId,
+        base: u32,
+        items: &[T],
+        mut child_node: impl FnMut(&mut Self, &T) -> Result<NodeId, Unsupported>,
+    ) -> Result<(), Unsupported> {
+        for (index, item) in items.iter().enumerate() {
+            let child = child_node(self, item)?;
+            self.facts.child.push((parent, base + index as u32, child));
+        }
+        Ok(())
+    }
+
+    /// A node whose entire content is one item per child slot, in source order.
+    fn node_with_indexed_children<T>(
+        &mut self,
+        kind: NodeKind,
+        items: &[T],
+        child_node: impl FnMut(&mut Self, &T) -> Result<NodeId, Unsupported>,
+    ) -> Result<NodeId, Unsupported> {
+        let id = self.node(kind);
+        self.append_indexed_children(id, 0, items, child_node)?;
+        Ok(id)
+    }
+
     pub(super) fn node(&mut self, kind: NodeKind) -> NodeId {
         let id = self.next;
         self.next += 1;
@@ -307,10 +336,7 @@ impl Extractor {
         self.facts
             .operator
             .push((id, js_ast::var_decl_kind_str(var.kind).to_string()));
-        for (index, declarator) in declarators.iter().enumerate() {
-            let d = self.var_declarator(declarator)?;
-            self.facts.child.push((id, index as u32, d));
-        }
+        self.append_indexed_children(id, 0, declarators, Self::var_declarator)?;
         Ok(id)
     }
 
@@ -331,10 +357,7 @@ impl Extractor {
             }
             .to_string(),
         ));
-        for (index, declarator) in using.decls.iter().enumerate() {
-            let d = self.var_declarator(declarator)?;
-            self.facts.child.push((id, index as u32, d));
-        }
+        self.append_indexed_children(id, 0, &using.decls, Self::var_declarator)?;
         Ok(id)
     }
 
@@ -380,10 +403,7 @@ impl Extractor {
             (true, true) => NodeKind::AsyncGeneratorFunction,
         };
         let id = self.node(kind);
-        for (index, param) in function.params.iter().enumerate() {
-            let pat = self.pat(&param.pat)?;
-            self.facts.child.push((id, index as u32, pat));
-        }
+        self.append_indexed_children(id, 0, &function.params, |this, param| this.pat(&param.pat))?;
         if let Some(body) = &function.body {
             let block = self.function_body(body)?;
             self.facts
@@ -394,21 +414,11 @@ impl Extractor {
     }
 
     fn block(&mut self, block: &BlockStmt) -> Result<NodeId, Unsupported> {
-        let id = self.node(NodeKind::Block);
-        for (index, stmt) in block.stmts.iter().enumerate() {
-            let stmt = self.stmt(stmt)?;
-            self.facts.child.push((id, index as u32, stmt));
-        }
-        Ok(id)
+        self.node_with_indexed_children(NodeKind::Block, &block.stmts, Self::stmt)
     }
 
     fn function_body(&mut self, body: &FunctionBody) -> Result<NodeId, Unsupported> {
-        let id = self.node(NodeKind::Block);
-        for (index, stmt) in body.stmts.iter().enumerate() {
-            let stmt = self.stmt(stmt)?;
-            self.facts.child.push((id, index as u32, stmt));
-        }
-        Ok(id)
+        self.node_with_indexed_children(NodeKind::Block, &body.stmts, Self::stmt)
     }
 
     fn class_node(&mut self, class: &Class) -> Result<NodeId, Unsupported> {
@@ -420,10 +430,7 @@ impl Extractor {
             let super_node = self.expr(super_class)?;
             self.facts.super_class.push((id, super_node));
         }
-        for (index, member) in class.body.iter().enumerate() {
-            let member = self.class_member(member)?;
-            self.facts.child.push((id, index as u32, member));
-        }
+        self.append_indexed_children(id, 0, &class.body, Self::class_member)?;
         Ok(id)
     }
 
@@ -596,29 +603,14 @@ impl Extractor {
     }
 
     fn array_pat(&mut self, array: &ArrayPat) -> Result<NodeId, Unsupported> {
-        let id = self.node(NodeKind::ArrayPat);
-        for (index, elem) in array.elems.iter().enumerate() {
-            match elem {
-                Some(elem) => {
-                    let elem = self.pat(elem)?;
-                    self.facts.child.push((id, index as u32, elem));
-                }
-                None => {
-                    let elision = self.node(NodeKind::Elision);
-                    self.facts.child.push((id, index as u32, elision));
-                }
-            }
-        }
-        Ok(id)
+        self.node_with_indexed_children(NodeKind::ArrayPat, &array.elems, |this, elem| match elem {
+            Some(pat) => this.pat(pat),
+            None => Ok(this.node(NodeKind::Elision)),
+        })
     }
 
     fn object_pat(&mut self, object: &ObjectPat) -> Result<NodeId, Unsupported> {
-        let id = self.node(NodeKind::ObjectPat);
-        for (index, prop) in object.props.iter().enumerate() {
-            let prop = self.object_pat_prop(prop)?;
-            self.facts.child.push((id, index as u32, prop));
-        }
-        Ok(id)
+        self.node_with_indexed_children(NodeKind::ObjectPat, &object.props, Self::object_pat_prop)
     }
 
     fn object_pat_prop(&mut self, prop: &ObjectPatProp) -> Result<NodeId, Unsupported> {
@@ -707,29 +699,17 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Seq(seq) => {
-                let id = self.node(NodeKind::Seq);
-                for (index, item) in seq.exprs.iter().enumerate() {
-                    let item = self.expr(item)?;
-                    self.facts.child.push((id, index as u32, item));
-                }
-                Ok(id)
+                self.node_with_indexed_children(NodeKind::Seq, &seq.exprs, |this, item| {
+                    this.expr(item)
+                })
             }
             Expr::Array(array) => {
-                let id = self.node(NodeKind::Array);
-                for (index, elem) in array.elems.iter().enumerate() {
+                self.node_with_indexed_children(NodeKind::Array, &array.elems, |this, elem| {
                     match elem {
-                        Some(elem) => {
-                            let value = self.expr_or_spread(elem)?;
-                            self.facts.child.push((id, index as u32, value));
-                        }
-                        // Elision keeps positions faithful (`[a, , b]`).
-                        None => {
-                            let elision = self.node(NodeKind::Elision);
-                            self.facts.child.push((id, index as u32, elision));
-                        }
+                        Some(elem) => this.expr_or_spread(elem),
+                        None => Ok(this.node(NodeKind::Elision)),
                     }
-                }
-                Ok(id)
+                })
             }
             Expr::Fn(fn_expr) => {
                 let id = self.node(NodeKind::FnExpr);
@@ -743,12 +723,7 @@ impl Extractor {
                 Ok(id)
             }
             Expr::Object(object) => {
-                let id = self.node(NodeKind::Object);
-                for (index, prop) in object.props.iter().enumerate() {
-                    let prop = self.object_prop(prop)?;
-                    self.facts.child.push((id, index as u32, prop));
-                }
-                Ok(id)
+                self.node_with_indexed_children(NodeKind::Object, &object.props, Self::object_prop)
             }
             Expr::Assign(assign) => {
                 let id = self.node(NodeKind::Assign);
@@ -792,10 +767,7 @@ impl Extractor {
                 } else {
                     NodeKind::Arrow
                 });
-                for (index, param) in arrow.params.iter().enumerate() {
-                    let param = self.pat(param)?;
-                    self.facts.child.push((id, index as u32, param));
-                }
+                self.append_indexed_children(id, 0, &arrow.params, Self::pat)?;
                 let body = match &*arrow.body {
                     ArrowFunctionBody::FunctionBody(block) => self.function_body(block)?,
                     ArrowFunctionBody::Expr(expr) => self.expr(expr)?,
@@ -975,11 +947,7 @@ impl Extractor {
         base: u32,
         args: &[ExprOrSpread],
     ) -> Result<(), Unsupported> {
-        for (index, arg) in args.iter().enumerate() {
-            let child = self.expr_or_spread(arg)?;
-            self.facts.child.push((parent, base + index as u32, child));
-        }
-        Ok(())
+        self.append_indexed_children(parent, base, args, Self::expr_or_spread)
     }
 
     fn expr_or_spread(&mut self, arg: &ExprOrSpread) -> Result<NodeId, Unsupported> {

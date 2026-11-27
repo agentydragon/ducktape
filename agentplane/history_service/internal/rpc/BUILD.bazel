@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "follow.go",
         "service.go",
+        "summary_fields.go",
         "watch.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/internal/rpc",
@@ -19,11 +20,28 @@ go_library(
         "//agentplane/identity/auth",
         "//agentplane/postgres/wakeups",
         "@com_github_google_uuid//:uuid",
+        "@com_github_mennanov_fmutils//:fmutils",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
+    ],
+)
+
+go_test(
+    name = "summary_fields_test",
+    srcs = ["summary_fields_test.go"],
+    embed = [":rpc"],
+    deps = [
+        "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -66,5 +84,6 @@ go_test(
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
     ],
 )

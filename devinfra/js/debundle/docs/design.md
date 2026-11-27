@@ -1812,7 +1812,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   ordering hazards, and a cycle through two async modules has
   semantics this design has not analyzed. **Enforced**: the TLA
   scan runs inside fact analysis (`analyze_chunk` /
-  `facts::analyze_chunk_structural` records the first module-top
+  `facts::analyze::analyze_chunk_structural` records the first module-top
   `AwaitExpr`, excluding lazy positions like
   function/arrow/method/getter/setter bodies and instance class
   fields), and `chunk_analysis::compute_chunk_facts` `bail!`s
@@ -1907,8 +1907,8 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   [purity_soundness.md § Declared purity](purity_soundness.md#declared-purity--spec-trust-contracts).
   The validator does not re-verify the body; an incorrect annotation
   produces a buggy debundle, so soundness shifts to the spec author.
-  Under `initializer_purity`, direct eager reads and callback-body read
-  dependencies remain in the dependency graph.
+  Under `initializer_purity`, direct eager reads and unresolved
+  callback-body reads remain graph dependencies.
 
   `chunk_export_purity.<chunk>.pure_exports` is the cross-module form
   of the same contract, addressed to the **defining** chunk rather than
@@ -3423,7 +3423,7 @@ adapter's only answer. The application adapter accepts only a root expression
 statement (`roots/operands.rs` admits `binding = value`). The binding must be
 an unimported, non-`const` binding that is initialized at the prefix (or a
 `var`), that no closure body reads or writes anywhere (including after an
-`await`, which `CallableFacts::{reads,rebinds}` stop recording), and that is
+`await`, which `Callable::{reads,rebinds}` stop recording), and that is
 not exported. Its
 fragment covers the global, heap and host domains and leaves lexical coverage
 unknown, so it seals the statement but never a lexical binding-effect receipt.

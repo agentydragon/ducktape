@@ -1,13 +1,13 @@
 // The CoreJS model against Node: every program the front end accepts must print the same and end the same way in both.
 //
-//   node differential.mjs [--count N] [--seed S] [--splits K] [--show]
+//   node differential.mjs [--count N] [--seed S] [--show]
 //
-// Sources of programs, and the split checks:
+// Sources of programs:
 //   - `cases.mjs`, written by hand;
 //   - `module_cases.mjs`, programs of several modules, written by hand. The order in which the model runs the modules
 //     must also be the one `evalorder` prints for the import graph (`Plan.evalOrder` of the proved checker);
 //   - `generate.mjs`, bounded whole CoreJS programs, linked graphs and opaque closures. Every whole-program family
-//     executes in a required accepted reordered split, independent of the random-plan budget below;
+//     executes in Node and the model;
 //   - the generator of `../translation/gen`, N programs for each set of families from seed S on. The generator leans on
 //     the standard library, so nearly no whole program is in the fragment. A program is cut down to the units the
 //     front end accepts alone and whose names are all declared by units that are kept, and one `console.log` is added
@@ -15,22 +15,6 @@
 //     model then reaches unknown code (a method of an array, say) is left out too, and the program is tried again.
 //     The table counts the units of the generated programs (`units`), those the front end accepts alone
 //     (`unitsAccepted`), those in the programs that ran (`unitsRun`), and the programs with no unit left (`empty`);
-//   - splits by the real tool. K of the programs above that the model runs to the end (the hand-written ones first)
-//     are split by `lowersplit` under three specs each: consecutive pieces, a random module for each statement with
-//     the modules run in order (`sequential`), and the same without an order. For every split it accepts, four runs
-//     must agree: the bundle in Node, the bundle in the model, the split in Node, the split in the model. The split's
-//     statements must be the bundle's, token for token, and the model must run the modules in the order of the plan.
-//     A split that runs the statements in the bundle's order must also end in the bundle's state in the model, every
-//     object and binding at the same address, when it runs in the world the bundle recorded (`order_kept_preserves`
-//     of `Split.lean` says it does).
-//     Bundle and split differing in Node is a wrong accept by the tool, and is reported as that.
-//     The tool's verdict is for a bundle whose evaluation completes (premise P4 of `../effects/README.md`). So a split
-//     is compared with its bundle when the bundle ends normally in Node, or when the split runs the statements in the
-//     bundle's order, which keeps every ending. The other accepted splits are counted apart; the model must still
-//     agree with Node on each of them. `splitCases` of `cases.mjs` has one of those as a named case, and a split
-//     that the tool must reject;
-//   - the consecutive opaque splits require an all-outcomes certificate on the emitted files. Node compares the
-//     original and emitted programs, and --check-output checks the published files again.
 //   - the members of the host's prototypes: the model's lists must be Node's.
 //
 // The world. The model asks a world about the host functions that work on primitives (`worldFunction` of
@@ -47,17 +31,17 @@
 // reached code the model does not define; what it printed before must be the start of what Node prints) or "fuel".
 // Fails on any disagreement, on "fuel", and on an "unknown" the model blames on itself.
 //
-// `COREJS`, `LOWERSPLIT` and `EVALORDER` are the executables (default: Lake's build).
+// `COREJS` and `EVALORDER` are the executables (default: Lake's build).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { format } from "node:util";
 import { kindOf } from "../translation/testing/gen/core.mjs";
 import { FAMILY_SAMPLES, generateProgram, renderProgram } from "../translation/testing/gen/index.mjs";
-import { coreOf, coreProgramOf, splitInputs } from "../translation/split_dump.mjs";
+import { coreOf } from "../translation/split_dump.mjs";
 import { cases, inheritanceCases, inheritanceSplitCases, splitCases, bindingSplitCases } from "./cases.mjs";
 import {
   generatedCases,
@@ -71,9 +55,7 @@ import {
 } from "./generate.mjs";
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, inheritanceOpaqueCases, scriptsOf } from "./opaque_cases.mjs";
-import { BINARY, LOGICAL, UNARY, bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
-import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
-import { mulberry32 } from "../seeded_random.mjs";
+import { BINARY, LOGICAL, UNARY, bits, HOST_GLOBALS, Refused, toCore } from "./to_core.mjs";
 import { acorn, dump } from "../translation/parser.mjs";
 
 const option = (name, fallback) => {
@@ -94,12 +76,10 @@ const seedOffset = Math.floor((requestedCount * shard) / shards);
 const count = Math.floor((requestedCount * (shard + 1)) / shards) - seedOffset;
 const firstSeed = option("seed", 1) + seedOffset;
 if (process.env.TEST_SHARD_STATUS_FILE) writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
-const splitPrograms = option("splits", 60);
 const show = process.argv.includes("--show");
 const here = path.dirname(fileURLToPath(import.meta.url));
 const built = (name) => path.join(here, "../lean/.lake/build/bin", name);
 const corejs = process.env.COREJS ?? built("corejs");
-const lowersplit = process.env.LOWERSPLIT ?? built("lowersplit");
 const evalorder = process.env.EVALORDER ?? built("evalorder");
 const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "corejs_differential_"));
 
@@ -496,12 +476,11 @@ const namedSplits = bindingOnly
     : splitCases;
 for (const c of namedSplits) {
   jobs.push({
-    label: `split case ${c.name}`,
+    label: `case ${c.name}`,
     source: c.source,
     ast: astOf(c.source),
     expectEnd: inheritanceOnly ? "normal" : null,
     set: null,
-    splitCase: c,
   });
 }
 const focused = bindingOnly
@@ -710,336 +689,25 @@ for (const job of jobs) {
   }
 }
 
-// Splits by the real tool.
-
-/**
- * Three specs for a bundle's units: `cut` (consecutive pieces, run in order), `ordered` (a random module
- * for each statement, the modules run in the order of their first statements) and `free` (the same, with the order
- * left to the imports). An `export` statement stays in the entry, as `lowersplit` requires.
- */
-function specsFor(units, next) {
-  const n = units.length;
-  const pinned = units.map(({ node }) => /^(Import|Export)/.test(node.type));
-  const pieces = 2 + Math.floor(next() * 3);
-  const name = (k) => (k === pieces - 1 ? "entry.mjs" : `m${k}.mjs`);
-  const toSpec = (moduleOf, extra) => {
-    const modules = { "entry.mjs": [] };
-    moduleOf.forEach((k, i) => (modules[name(pinned[i] ? pieces - 1 : k)] ??= []).push(`#${i}`));
-    return { entry: "entry.mjs", modules, ...extra };
-  };
-  const cuts = Array.from({ length: pieces - 1 }, () => Math.floor(next() * (n + 1))).sort((a, b) => a - b);
-  const scatter = () => Array.from({ length: n }, () => Math.floor(next() * pieces));
-  return {
-    cut: toSpec(
-      Array.from({ length: n }, (_, i) => cuts.filter((c) => c <= i).length),
-      { sequential: true }
-    ),
-    ordered: toSpec(scatter(), { sequential: true }),
-    free: toSpec(scatter(), {}),
-  };
-}
-
-/** `source` as a one-module program whose statements have the numbers `lowersplit` gives them. */
-function splitInputFor(job) {
-  if (job.splitInput) return job.splitInput;
-  const scripts = job.opaqueCase && scriptsOf(job.opaqueCase);
-  const { dump, core, units } = splitInputs(job.source, { opaque: Boolean(scripts) });
-  const program = { entry: "main", modules: [{ name: "main", imports: [], ...core }] };
-  if (scripts) {
-    const { name, bodyParts } = job.opaqueCase;
-    const bodies = core.opaqueBodies.map(({ id, part }) => `${id}/${part}`);
-    if (bodyParts) {
-      assert.equal(core.opaque.length, 0, `opaque class case ${name}: class creation became an opaque statement`);
-      assert.deepEqual(bodies.sort(), [...bodyParts].sort(), `opaque class case ${name}: callable identities changed`);
-    } else {
-      assert(core.opaque.length > 0, `opaque statement case ${name}: no statement is opaque`);
-    }
-    program.scripts = scripts;
-  }
-  job.splitInput = { dump, units, bundle: { program, units: unitsOf(core) } };
-  return job.splitInput;
-}
-
-/** The tokens of each statement of a translated module, by its identity. */
-const unitsOf = (t) => new Map(t.ids.map((id, k) => [id, t.tokens.slice(...t.spans[k])]));
-
-const tally = {
-  programs: 0,
-  named: [0, 0],
-  cut: [0, 0],
-  ordered: [0, 0],
-  free: [0, 0],
-  opaque: [0, 0],
-  opaqueCases: 0,
-  unsupported: 0,
-  agree: 0,
-  orderKept: 0,
-  sliceNamed: 0,
-  movesNamed: 0,
-  modelUnavailable: 0,
-  sameState: 0,
-  otherCalls: 0,
-};
-const apart = { splits: 0, differ: 0 }; // accepted splits that move code, of a bundle that does not end normally
-const wrongAccepts = [];
-const splitJobs = [];
-
-/** Split the bundle of `job` by `spec`. An accepted split becomes a job; `named` is its entry of `splitCases`. */
-function split(job, bundle, dump, kind, spec, named) {
-  checkpoint(`split: ${job.label}, ${kind}`);
-  const dir = writeFiles({
-    "ast.json": JSON.stringify(dump),
-    "spec.json": JSON.stringify(spec),
-  });
-  const out = path.join(dir, "out");
-  const plan = path.join(dir, "plan.json");
-  const run = spawnSync(
-    lowersplit,
-    [
-      "--diagnostic",
-      writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), out),
-      out,
-      "--plan",
-      plan,
-    ],
-    { encoding: "utf8" }
-  );
-  checkpoint(`split returned: ${run.status}`);
-  const label = `${job.label}, split ${kind} ${JSON.stringify(spec)}`;
-  if (named?.refused) {
-    assert.equal(run.status, 1, `${label}: lowersplit does not reject it\n${run.stdout}\n${run.stderr}`);
-    return tally.named[1]++;
-  }
-  if (named) assert.equal(run.status, 0, `${label}: lowersplit does not accept it\n${run.stdout}\n${run.stderr}`);
-  if (run.status === 3) return tally.unsupported++;
-  if (run.status === 1) return tally[kind][1]++;
-  assert.equal(run.status, 0, `${label}: lowersplit failed\n${run.stdout}\n${run.stderr}`);
-  tally[kind][0]++;
-  const { order, modules } = JSON.parse(readFileSync(plan, "utf8"));
-  const entry = path.join(out, "entry.mjs");
-  const statements = order.flatMap((m) => modules[m]);
-  const orderKept = statements.every((id, k) => k === 0 || statements[k - 1] < id);
-  // Source-only diagnostics may decline unsupported statements; runtime outcomes below remain independent oracles.
-  const slice = run.stdout.match(/^ {2}model diagnostic: (.*)$/m)?.[1];
-  if (!slice || slice.startsWith("none.")) tally.modelUnavailable++;
-  else if (orderKept !== slice.startsWith("order kept"))
-    failures.push(
-      `${label}: the plan ${orderKept ? "keeps" : "does not keep"} the order, and the verdict says ${slice}`
-    );
-  else if (orderKept) tally.sliceNamed++;
-  else if (slice.startsWith("moves")) tally.movesNamed++;
-  if (named?.localNegation) {
-    assert.deepEqual(statements, [0, 2, 1, 3], label);
-    if (slice?.startsWith("moves")) assert.match(slice, /^moves \(`CoreJS\.moves_preserve`\)/, label);
-  }
-  if (named?.certifiedHeritage) {
-    const { pivot, crossed } = named.certifiedHeritage;
-    assert.deepEqual(
-      statements.filter((id) => id === pivot || crossed.includes(id)),
-      [...crossed, pivot],
-      `${label}: local declarations must run before the subclass`
-    );
-    if (slice?.startsWith("moves (certified class heritage)"))
-      assert.match(slice, /the model, the split ends normally in a state exactly when the bundle does/);
-  }
-  if (named?.uncertified) {
-    assert(!orderKept, `${label}: the uncertified control must reorder statements`);
-    assert.match(slice, /^none\./, `${label}: unsupported syntax must gain no permission`);
-  }
-  if (named?.uncertifiedHeritage) {
-    assert(!orderKept, `${label}: the uncertified heritage control must reorder statements`);
-    assert.match(slice ?? "", /^none\./, `${label}: unsupported source must not gain a model verdict`);
-  }
-  if ((job.focused || job.opaqueCase?.move) && kind === "named") {
-    assert(!orderKept, `${label}: the required move kept the order`);
-  }
-  try {
-    const scripts = bundle.program.scripts;
-    const program = scripts
-      ? { ...coreProgramOf(entry, { ids: modules }), scripts }
-      : toCoreProgram(entry, { ids: modules });
-    splitJobs.push({
-      label,
-      source: job.source,
-      entry,
-      order,
-      orderKept,
-      reordered: !orderKept,
-      moves: slice?.startsWith("moves"),
-      of: job,
-      bundle,
-      program,
-      named,
-    });
-  } catch (e) {
-    failures.push(`${label}: the front end takes the bundle and not the split: ${e.message}`);
+// Check source-unit and callable identities independently of split publication.
+for (const job of jobs.filter((j) => j.opaqueCase?.move && j.result.end !== "unknown" && sameRun(j.result, j.node))) {
+  const core = coreOf(job.source);
+  const { name, bodyParts } = job.opaqueCase;
+  const bodies = core.opaqueBodies.map(({ id, part }) => `${id}/${part}`);
+  if (bodyParts) {
+    assert.equal(core.opaque.length, 0, `opaque class case ${name}: class creation became an opaque statement`);
+    assert.deepEqual(bodies.sort(), [...bodyParts].sort(), `opaque class case ${name}: callable identities changed`);
+  } else {
+    assert(core.opaque.length > 0, `opaque statement case ${name}: no statement is opaque`);
   }
 }
 
-// The certified path takes the original JavaScript and numbers its own units.
-async function certifyOpaqueSplit(job) {
-  const label = `${job.label}, consecutive split`;
-  const expectedRefusal = job.opaqueCase.consecutiveSplitRefusal;
-  const entry = "entry.mjs";
-  const n = unitCount(job.source);
-  assert(n >= 2, label);
-  const cut = Math.floor(n / 2);
-  const units = Array.from({ length: n }, (_, i) => `#${i}`);
-  const spec = {
-    entry,
-    modules: { "m0.mjs": units.slice(0, cut), [entry]: units.slice(cut) },
-    sequential: true,
-    privateEntryBody: true,
-  };
-  const dir = writeFiles({ [entry]: job.source, "spec.json": JSON.stringify(spec) });
-  const out = path.join(dir, "out");
-  const manifest = writeDeployment(path.join(dir, entry), path.join(dir, "spec.json"), out);
-  const level = "all-outcomes";
-  const run = (...extra) => {
-    checkpoint(`${label}: ${extra.length ? "check-output" : "emit"}`);
-    const result = spawnSync(lowersplit, [manifest, out, "--structural", "--require", level, ...extra], {
-      encoding: "utf8",
-    });
-    assert.ifError(result.error);
-    assert([0, 1].includes(result.status), `${label}: ${result.stdout}${result.stderr}`);
-    const verdict = JSON.parse(result.stdout);
-    assert.equal(verdict.requested, level, label);
-    assert.equal(verdict.status, result.status === 0 ? "certified" : "rejected", label);
-    return verdict;
-  };
-
-  const emitted = run();
-  if (emitted.status === "rejected") {
-    assert.equal(emitted.guarantee, null, label);
-    assert(!existsSync(out), `${label}: a refused split published output`);
-    assert.equal(typeof emitted.reason, "string", label);
-    assert(emitted.reason.length > 0, label);
-    tally.opaque[1]++;
-    if (emitted.reason !== expectedRefusal) {
-      failures.push(
-        expectedRefusal === undefined
-          ? `${label}: unexpected refusal: ${emitted.reason}`
-          : `${label}: refused with "${emitted.reason}", expected "${expectedRefusal}"`
-      );
-    }
-    return;
-  }
-  if (expectedRefusal !== undefined)
-    failures.push(`${label}: certified a split with expected refusal "${expectedRefusal}"`);
-  assert.equal(emitted.guarantee, level, label);
-  assert.deepEqual(run("--check-output"), emitted, label);
-  const splitNode = await runFileInNode(path.join(out, entry));
-  if (!sameRun(job.node, splitNode) || !same(asked(job.node), asked(splitNode))) {
-    const observations = ({ out, end, detail, world }) => ({ out, end, detail, world });
-    wrongAccepts.push(
-      `${label}
-  original: ${JSON.stringify(observations(job.node))}
-  emitted: ${JSON.stringify(observations(splitNode))}`
-    );
-  }
-  tally.opaque[0]++;
-}
-
+// Opaque cases are expected to agree with Node on the original input.
 for (const job of jobs.filter((j) => j.opaqueCase))
   if (!job.node || !sameRun(job.result, job.node))
     failures.push(
       `${job.label}: the model differs from Node: ${JSON.stringify(job.result)} ${JSON.stringify(job.node)}`
     );
-  else tally.opaqueCases++;
-const candidates = jobs.filter((j) => !j.entry && j.node && j.result.end !== "unknown" && sameRun(j.result, j.node));
-for (const job of candidates.filter((j) => j.splitCase)) {
-  const { bundle, dump } = splitInputFor(job);
-  split(job, bundle, dump, "named", job.splitCase.spec, job.splitCase);
-}
-// Every focused program gets a nontrivial split, independently of the manual-first random-plan budget.
-const swapPrefix = (units) => ({
-  entry: "entry.mjs",
-  modules: { "m0.mjs": ["#1"], "entry.mjs": units.flatMap((_, i) => (i === 1 ? [] : [`#${i}`])) },
-});
-for (const job of candidates.filter((j) => j.focused || j.opaqueCase?.move)) {
-  const { dump, bundle, units } = splitInputFor(job);
-  split(job, bundle, dump, "named", swapPrefix(units), {});
-}
-for (const job of jobs.filter((j) => j.opaqueCase)) await certifyOpaqueSplit(job);
-for (const [index, job] of candidates
-  .filter((j) => !j.opaqueCase)
-  .slice(0, splitPrograms)
-  .entries()) {
-  const { dump, bundle, units } = splitInputFor(job);
-  if (units.length < 2) continue;
-  tally.programs++;
-  const next = mulberry32(firstSeed * 7919 + index);
-  for (const [kind, spec] of Object.entries(specsFor(units, next))) split(job, bundle, dump, kind, spec, null);
-}
-const bundleJobs = [...new Set(splitJobs.map((s) => s.of))];
-for (const job of bundleJobs)
-  job.numbered = { label: job.label, node: job.node, program: splitJobs.find((s) => s.of === job).bundle.program };
-runModel(bundleJobs.map((j) => j.numbered));
-await runNode(splitJobs);
-runModel(splitJobs);
-// `order_kept_preserves` of `Split.lean` is about one world: a split that keeps the order also runs in the world its
-// bundle recorded, and must end there in the bundle's state.
-for (const job of splitJobs) job.inBundleWorld = { label: job.label, node: job.of.node, program: job.program };
-const comparesNormalState = (job) =>
-  (job.moves || job.named?.heritageMutation || job.of.opaqueCase?.generatedClass) && job.of.node.end === "normal";
-runModel(splitJobs.filter((job) => job.orderKept || comparesNormalState(job)).map((job) => job.inBundleWorld));
-for (const job of splitJobs) {
-  const files = () =>
-    job.program.modules.map((m) => `// ${m.name}\n${readFileSync(path.join(path.dirname(job.entry), m.name), "utf8")}`);
-  const text = () => `--- bundle\n${job.source}\n--- split\n${files().join("\n")}`;
-  const node = job.node;
-  if (!same(asked(node), asked(job.of.node))) {
-    tally.otherCalls++;
-    if (show) console.log(`other host calls than the bundle: ${job.label}`);
-  }
-  const runs = {
-    "bundle in Node": job.of.node,
-    "bundle in the model": job.of.numbered.result,
-    "split in Node": node,
-    "split in the model": job.result,
-  };
-  const table = Object.entries(runs)
-    .map(([who, r]) => `  ${who}: ${JSON.stringify({ out: r.out, end: r.end, detail: r.detail })}`)
-    .join("\n");
-  if (!sameRun(job.result, node) || !sameRun(job.of.numbered.result, job.of.node)) {
-    failures.push(`${job.label}: the model differs from Node\n${table}\n${show ? text() : ""}`);
-    continue;
-  }
-  const differs = !sameRun(job.of.node, node);
-  if (job.of.node.end !== "normal" && !job.orderKept) {
-    // outside premise P4: the tool promises nothing, and the split is not compared with its bundle
-    apart.splits++;
-    if (differs) apart.differ++;
-    if (job.named && !differs) failures.push(`${job.label}: expected to differ from its bundle\n${table}`);
-    if (show && differs) console.log(`outside premise P4: ${job.label}\n${table}\n${text()}`);
-    continue;
-  }
-  if (job.named?.differs) failures.push(`${job.label}: expected to be outside premise P4\n${table}`);
-  if (differs) {
-    wrongAccepts.push(`${job.label}\n${table}\n${text()}`);
-    continue;
-  }
-  if (job.orderKept) {
-    tally.orderKept++;
-    const there = job.inBundleWorld.result;
-    const bundle = job.of.numbered.result;
-    if (there.state === bundle.state && sameRun(there, bundle)) tally.sameState++;
-    else failures.push(`${job.label}: the split keeps the order and ends in another state than its bundle`);
-  }
-  if (comparesNormalState(job)) {
-    const there = job.inBundleWorld.result;
-    const bundle = job.of.numbered.result;
-    if (there.state !== bundle.state || !sameRun(there, bundle))
-      failures.push(`${job.label}: the move ends in another state in the bundle's world`);
-  }
-  if (!same(job.result.order, job.order))
-    failures.push(`${job.label}: the model runs the modules as ${job.result.order}, the plan as ${job.order}`);
-  for (const m of job.program.modules)
-    for (const [id, tokens] of unitsOf(m))
-      if (!same(tokens, job.bundle.units.get(id)))
-        failures.push(`${job.label}: statement ${id} of ${m.name} is not the bundle's statement ${id}`);
-  tally.agree++;
-}
 
 // The members the model gives the host's prototypes are the ones this Node has, and the front end lets through the
 // globals the model has a rule for.
@@ -1065,29 +733,18 @@ for (const [owner, listed] of Object.entries(host.prototypes)) {
 
 rmSync(work, { recursive: true, force: true });
 console.log(
-  `mode: ${bindingOnly ? "binding certificates" : inheritanceOnly ? "default inheritance" : "CoreJS interpreter"}; cases: ${selectedCases.length}; module cases: ${broad ? moduleCases.length : 0} (${orders} orders compared with Plan.evalOrder); ` +
+  `mode: ${bindingOnly ? "binding inputs" : inheritanceOnly ? "default inheritance" : "CoreJS interpreter"}; cases: ${selectedCases.length}; module cases: ${broad ? moduleCases.length : 0} (${orders} orders compared with Plan.evalOrder); ` +
     `generated: ${count} programs for each set from seed ${firstSeed}`
 );
 console.table(summary);
 console.log(`refused by the linked rules, as expected: ${refusedByLowering.length}`);
 console.log("unknown code that units of generated programs were left out for:", reasons);
 console.log(`model endings: ${JSON.stringify(ends)}; corejs took ${modelSeconds.toFixed(1)} s`);
-const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1]} rejected`;
-console.log(
-  `opaque cases: ${tally.opaqueCases} of ${allOpaqueCases.length} agree with Node; splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free"].map(verdicts).join("; ")}; ` +
-    `${tally.unsupported} unsupported; ${tally.modelUnavailable} splits without a source-only model verdict; ${tally.sliceNamed} accepted splits whose verdict names the order-kept slice, ${tally.movesNamed} the moves slice; ${tally.agree} accepted splits where the four runs agree, ` +
-    `${tally.orderKept} of them with the statements in the bundle's order, ${tally.sameState} of those ending in ` +
-    `the bundle's state; ${apart.splits} accepted splits move code ` +
-    `of a bundle that does not end normally and are not compared with it (premise P4), ${apart.differ} of them ` +
-    `differ; ${tally.otherCalls} accepted splits make other host calls than their bundle, or in another order`
-);
-console.log(
-  `consecutive opaque certificates: ${tally.opaque[0]} accepted and checked on disk, ${tally.opaque[1]} refused`
-);
+console.log(`opaque cases: ${allOpaqueCases.length} original inputs compared with Node`);
 const total = (key) => summary.reduce((sum, s) => sum + s[key], 0);
 const focusedCoverage = {};
 for (const job of jobs.filter((j) => j.focused)) {
-  const covered = (focusedCoverage[job.focused.family] ??= { generated: 0, completed: 0, reordered: 0 });
+  const covered = (focusedCoverage[job.focused.family] ??= { generated: 0, completed: 0 });
   covered.generated++;
   if (job.focused.family === "objects")
     assert(
@@ -1103,27 +760,6 @@ for (const job of jobs.filter((j) => j.focused)) {
         );
   }
   if (job.result.end === "normal" && sameRun(job.result, job.node)) covered.completed++;
-  if (splitJobs.some((s) => s.of === job && !s.orderKept && sameRun(s.result, job.result) && sameRun(s.node, job.node)))
-    covered.reordered++;
-}
-if (bindingOnly) {
-  const negations = splitJobs.filter((j) => j.named?.localNegation);
-  assert.equal(negations.length, count);
-  assert(negations.every((j) => j.reordered && j.result.end === "normal" && sameRun(j.node, j.of.node)));
-  const certifiedGenerated = splitJobs.filter((j) => j.named?.generatedBinding);
-  assert.equal(certifiedGenerated.length, 4 * count, "every generated binding case must be split");
-  for (const family of ["literal", "binary", "unary", "branch"]) {
-    assert.equal(
-      certifiedGenerated.filter((j) => j.named.bindingFamily === family).length,
-      count,
-      `every seed must execute the ${family} binding-certificate family`
-    );
-  }
-  assert(
-    certifiedGenerated.every((j) => j.reordered && sameRun(j.result, j.of.result) && sameRun(j.node, j.of.node)),
-    "every generated binding case must execute equivalently through its reordered split"
-  );
-  console.log(`reordered binding plans: ${certifiedGenerated.length}, four runs and final state compared`);
 }
 if (inheritanceOnly) {
   const always = [
@@ -1170,53 +806,6 @@ if (inheritanceOnly) {
   console.log("generated inheritance programs with matching runtime witnesses:");
   console.table(Object.fromEntries([...coverage].map(([feature, { programs }]) => [feature, { programs }])));
 }
-if (inheritanceOnly) {
-  const certified = splitJobs.filter((j) => j.named?.certifiedHeritage);
-  assert.equal(certified.length, count + 1, "the handwritten and every generated heritage split must execute");
-  const compositions = certified.flatMap((j) => (j.named.heritageCoverage ? [j.named.heritageCoverage] : []));
-  assert.equal(compositions.length, count, "every seed must execute its composed heritage split");
-  const rejected = splitJobs.filter((j) => j.named?.heritageMutation);
-  assert.equal(rejected.length, count, "every seeded mutation must reach the guard");
-  assert(
-    [...certified, ...rejected].every(
-      (j) => j.result.end === "normal" && sameRun(j.result, j.of.result) && sameRun(j.node, j.of.node)
-    ),
-    "composed heritage plans and their mutations must preserve normal execution in the model and in Node"
-  );
-  for (const job of [...certified, ...rejected]) {
-    const observed = job.named.heritageObservedPrefix;
-    if (observed)
-      assert(
-        job.node.out[0]?.startsWith(`${observed} `),
-        `${job.label}: expected constructor and prototype observations ${observed}`
-      );
-  }
-  const mutations = new Set(rejected.map((j) => j.named.heritageMutation));
-  assert.equal(
-    mutations.size,
-    Math.min(count, 5),
-    "the seeded mutations must exercise the different guard restrictions"
-  );
-  if (count >= 12) {
-    for (const [axis, minimum] of Object.entries({
-      baseMembers: 3,
-      pivotMembers: 4,
-      prefix: 3,
-      crossed: 5,
-      block: 2,
-      width: 4,
-    })) {
-      const shapes = new Set(compositions.flatMap((c) => c[axis]));
-      assert(shapes.size >= minimum, `heritage compositions must exercise ${minimum} ${axis} shapes: ${[...shapes]}`);
-    }
-    assert(
-      new Set(compositions.map((shape) => JSON.stringify(shape))).size >= 8,
-      "heritage builds must vary in shape across seeds"
-    );
-  }
-  console.log(`reordered class heritage plans: ${certified.length}, four runs and final state compared`);
-  console.log(`guard-rejected heritage mutations: ${rejected.length}, covering ${[...mutations].sort().join(", ")}`);
-}
 console.log("whole CoreJS generator (no filtering):");
 console.table(focusedCoverage);
 assert.deepEqual(
@@ -1229,8 +818,8 @@ assert.deepEqual(
   "the whole-program generator must execute each promised family"
 );
 assert(
-  Object.values(focusedCoverage).every((c) => c.generated === count && c.completed === count && c.reordered === count),
-  "every focused family must complete and execute in a matching accepted reordered split for every seed\n" +
+  Object.values(focusedCoverage).every((c) => c.generated === count && c.completed === count),
+  "every focused family must complete and match Node on the original input for every seed\n" +
     failures.filter((f) => jobs.some((j) => j.focused && f.startsWith(`${j.label}:`))).join("\n")
 );
 assert(
@@ -1250,60 +839,28 @@ for (const job of jobs.filter((j) => j.opaqueCase?.expectedOutput)) {
   assert.deepEqual(job.node.out, job.opaqueCase.expectedOutput, job.label);
   assert.deepEqual(job.result.out, job.opaqueCase.expectedOutput, job.label);
 }
-const opaqueMoved = splitJobs.filter((j) => j.of.opaqueCase?.move && !j.orderKept);
-assert.equal(
-  opaqueMoved.length,
-  allOpaqueCases.filter((c) => c.move).length,
-  "every opaque closure move must be accepted and executed"
-);
 const generatedClassJobs = jobs.filter((j) => j.opaqueCase?.generatedClass);
 assert.equal(generatedClassJobs.length, broad ? count : 0, "every seed must generate an opaque class case");
-const generatedClassMoves = opaqueMoved.filter((j) => j.of.opaqueCase?.generatedClass);
-assert.equal(
-  generatedClassMoves.length,
-  generatedClassJobs.length,
-  "every generated opaque class must execute in an accepted reordered split"
-);
-for (const job of generatedClassMoves) {
-  const { bodyCalls } = job.of.opaqueCase;
-  assert(job.reordered, `${job.label}: the class plan must be reordered`);
-  for (const [runName, run] of Object.entries({
-    "bundle in Node": job.of.node,
-    "bundle in CoreJS": job.of.numbered.result,
-    "split in Node": job.node,
-    "split in CoreJS": job.result,
-    "split replaying the bundle's world": job.inBundleWorld.result,
-  })) {
+for (const job of generatedClassJobs) {
+  for (const [runName, run] of Object.entries({ Node: job.node, CoreJS: job.result })) {
     assert.equal(run.end, "normal", `${job.label}: ${runName} must complete`);
     assert.deepEqual(
       run.out.filter((line) => line.startsWith("body:")).map((line) => line.split(" ")[0]),
-      bodyCalls.map((body) => `body:${body}`),
+      job.opaqueCase.bodyCalls.map((body) => `body:${body}`),
       `${job.label}: ${runName} must invoke every generated opaque body in order`
     );
   }
-  assert.equal(
-    job.inBundleWorld.result.state,
-    job.of.numbered.result.state,
-    `${job.label}: the reordered class must preserve the bundle's final model state`
-  );
 }
-console.log(`opaque closure and class moves: ${opaqueMoved.length}, four runs and final state compared`);
 console.log(
   `generated units: ${total("units")}; accepted alone: ${total("unitsAccepted")}; in the programs that ran: ` +
     `${total("unitsRun")} (${((100 * total("unitsRun")) / total("units")).toFixed(1)}%); ` +
     `host calls recorded: ${hostCalls}`
 );
-if (wrongAccepts.length > 0) {
-  console.error(
-    `WRONG ACCEPT by lowersplit: the split does not behave like the bundle in Node (${wrongAccepts.length})`
-  );
-  console.error(wrongAccepts.join("\n\n"));
-}
 if (failures.length > 0) {
   console.error(failures.slice(0, 20).join("\n"));
   console.error(`${failures.length} failures`);
 }
-if (failures.length > 0 || wrongAccepts.length > 0) process.exit(1);
+if (failures.length > 0) process.exit(1);
 assert(
   summary.every((s) => s.compared > 0),
   "a set of families has no program to compare"

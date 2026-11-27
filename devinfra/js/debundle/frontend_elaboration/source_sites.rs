@@ -2,7 +2,7 @@
 //! source declarations their selectors name.
 
 use super::{FrontendChunk, ResolvedMemberSite};
-use analysis::facts::StructuralChunkSourceFacts;
+use analysis::facts::statement_facts::StructuralChunkSourceFacts;
 use analysis_projection::{
     self, AnalysisNativeOperationInput, AnalysisSourceSites, ProjectedChunkOptions,
 };
@@ -76,9 +76,7 @@ pub(super) fn resolve_analysis_source_sites(
 
         let prefix = format!("chunk_analysis_options.{chunk_name}");
         let chunk = artifact
-            .chunks
-            .iter()
-            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .chunk_named(chunk_name)
             .with_context(|| format!("{prefix} names no loaded provider chunk"))?;
         if !provider_closure.contains(&chunk.chunk_id) {
             if !options.analysis.value_inputs.is_empty() {

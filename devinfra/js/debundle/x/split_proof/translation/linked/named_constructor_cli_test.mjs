@@ -48,6 +48,39 @@ assert.match(readFileSync(path.join(negationOut, "worker.mjs"), "utf8"), /const 
 assert.equal((await import(pathToFileURL(path.join(negationOut, "entry.mjs")))).result, false);
 assert.equal(split({ source, spec, out: negationOut, require: "all-outcomes", checkOutput: true }).status, "certified");
 
+// Logical initializers use the same authored #0/#1 placement and exact reread.
+writeFileSync(spec, JSON.stringify(placement));
+for (const [label, originalSource, expected] of [
+  ["logical-and", "const seed = true; export const result = seed && 7;\n", 7],
+  ["logical-or", "const seed = 0; export const result = seed || 7;\n", 7],
+  ["logical-nullish", "const seed = null; export const result = seed ?? 7;\n", 7],
+  ["logical-mixed", "const seed = 0; export const result = (seed ?? 1) || 7;\n", 7],
+  ["logical-and-skipped", "const seed = false; export const result = seed && 7;\n", false],
+  ["logical-or-skipped", "const seed = true; export const result = seed || 7;\n", true],
+  ["logical-nullish-skipped", "const seed = 0; export const result = seed ?? 7;\n", 0],
+  ["logical-skipped-read", "const seed = 7; export const result = false && seed;\n", false],
+]) {
+  writeFileSync(source, originalSource);
+  const logicalOut = path.join(root, label);
+  const logical = split({ source, spec, out: logicalOut, require: "all-outcomes" });
+  assert.equal(logical.status, "certified", logical.log);
+  assert.equal(logical.scope, "named-declarations", logical.log);
+  assert.equal(logical.verdict.strategy, "compiled-constructor", logical.log);
+  assert.equal((await import(pathToFileURL(path.join(logicalOut, "entry.mjs")))).result, expected);
+  const checked = split({ source, spec, out: logicalOut, require: "all-outcomes", checkOutput: true });
+  assert.equal(checked.status, "certified", checked.log);
+  const entryFile = path.join(logicalOut, "entry.mjs");
+  const original = readFileSync(entryFile, "utf8");
+  if (label === "logical-skipped-read") assert.match(original, /import\s*\{\s*seed\s*\}/);
+  const altered =
+    label === "logical-skipped-read" ? original.replace(/\bseed(?=\s*;)/, "8") : original.replace(/7(?=\s*;)/, "8");
+  assert.notEqual(altered, original);
+  writeFileSync(entryFile, altered);
+  const tampered = split({ source, spec, out: logicalOut, require: "all-outcomes", checkOutput: true });
+  assert.equal(tampered.status, "refused", tampered.log);
+  assert.equal(readFileSync(entryFile, "utf8"), altered);
+}
+
 // Earlier-binding binary expressions in initialized lexical declarations use the compiled proof.
 writeFileSync(source, "let seed = 7; let ready = seed + 2; export let result = ready;\n");
 const arithmeticLetPlacement = {
@@ -93,6 +126,19 @@ assert.equal(split({ source, spec, out: letOut, require: "all-outcomes", checkOu
 assert.equal(readFileSync(letEntry, "utf8"), letChanged);
 writeFileSync(letEntry, letOriginal);
 
+// An uninitialized lexical declaration keeps its original live cell.
+writeFileSync(source, "let seed; export let result = seed;\n");
+const uninitializedOut = path.join(root, "uninitialized-let-out");
+const uninitialized = split({ source, spec, out: uninitializedOut, require: "all-outcomes" });
+assert.equal(uninitialized.status, "certified", uninitialized.log);
+assert.equal(uninitialized.scope, "named-declarations");
+assert.equal(uninitialized.verdict.strategy, "compiled-constructor");
+assert.equal((await import(pathToFileURL(path.join(uninitializedOut, "entry.mjs")))).result, undefined);
+assert.equal(
+  split({ source, spec, out: uninitializedOut, require: "all-outcomes", checkOutput: true }).status,
+  "certified"
+);
+
 // Exercise tampering against the same source and placement that produced `out`.
 writeFileSync(source, "const seed = 7; export const result = seed;\n");
 assert.equal(run({ checkOutput: true }).status, "certified");
@@ -126,12 +172,20 @@ for (const [label, originalSource] of [
     const target = path.join(root, `${label}-${guarantee}`);
     const fresh = split({ source, spec, out: target, require: guarantee });
     assert.equal(fresh.status, "refused", fresh.log);
+    if (label === "omitted-debugger") {
+      assert.equal(fresh.scope, "named-declarations", fresh.log);
+      assert.match(fresh.reason, /source provenance: unsupported omitted source node 2/);
+    }
     assert(!existsSync(target));
     mkdirSync(target);
     const sentinel = path.join(target, "sentinel.txt");
     writeFileSync(sentinel, "preserve existing bytes\n");
     const existing = split({ source, spec, out: target, require: guarantee, allowExistingOut: true });
     assert.equal(existing.status, "refused", existing.log);
+    if (label === "omitted-debugger") {
+      assert.equal(existing.scope, "named-declarations", existing.log);
+      assert.match(existing.reason, /source provenance: unsupported omitted source node 2/);
+    }
     assert.equal(readFileSync(sentinel, "utf8"), "preserve existing bytes\n");
   }
 }
@@ -153,10 +207,19 @@ const tdz = split({ source, spec, out: tdzOut, require: "all-outcomes" });
 assert.equal(tdz.status, "refused", tdz.log);
 assert(!existsSync(tdzOut));
 
-// Unsupported initializers must not publish anything on this path.
-writeFileSync(source, "const seed = Math.random(); export const result = seed;\n");
+// These placements used to publish via the linked evaluator. A supported
+// placement shape alone cannot justify moving the declaration.
 writeFileSync(spec, JSON.stringify(placement));
-const refusedOut = path.join(root, "refused");
-const refused = split({ source, spec, out: refusedOut, require: "all-outcomes" });
-assert.equal(refused.status, "refused", refused.log);
-assert(!existsSync(refusedOut));
+for (const declaration of [
+  "const seed = Math.random();",
+  "class seed { static value = 1; }",
+  "async function seed() { return 1; }",
+  "function* seed() { yield 1; }",
+]) {
+  writeFileSync(source, declaration + "\nexport const result = seed;\n");
+  const refusedOut = path.join(root, "refused");
+  const refused = split({ source, spec, out: refusedOut });
+  assert.equal(refused.status, "refused", refused.log);
+  assert.equal(refused.reasonCode, "no_constructed_rule", refused.log);
+  assert(!existsSync(refusedOut));
+}

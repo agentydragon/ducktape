@@ -27,7 +27,8 @@ pub mod runtime_resources;
 mod source_program;
 pub use emission_files::EmissionFiles;
 pub use source_program::{
-    SourceProgram, chunk_runtime_entry, normalized_chunk_ids, prune_artifact_to_chunk_ids,
+    SourceProgram, chunk_runtime_entry, chunk_unassigned_mode,
+    ensure_commuting_statements_materialize, normalized_chunk_ids, prune_artifact_to_chunk_ids,
     selected_static_import_closure,
 };
 
@@ -289,6 +290,16 @@ impl ChunkBundle {
 
     pub fn find_chunk(&self, chunk_id: ChunkId) -> Option<&ChunkArtifact> {
         self.chunks.iter().find(|chunk| chunk.chunk_id == chunk_id)
+    }
+
+    /// The loaded chunk whose chunk-table entry carries this name. The table
+    /// already indexes names to IDs, so this is the lookup behind
+    /// `chunks.iter().find(|c| chunk_table.name(c.chunk_id) == name)`, which
+    /// every provider-input path repeated while naming its own failure.
+    pub fn chunk_named(&self, name: &str) -> Option<&ChunkArtifact> {
+        self.chunk_table
+            .get(name)
+            .and_then(|id| self.find_chunk(id))
     }
 
     pub fn chunk(&self, chunk_id: ChunkId) -> Result<&ChunkArtifact> {

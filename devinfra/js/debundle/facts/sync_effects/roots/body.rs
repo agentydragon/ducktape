@@ -7,7 +7,9 @@
 use super::super::interpreter::{Executor, LocalActivation, Outcome};
 use super::operands::RootOperands;
 use analysis::facts::binding_effect_coverage::RootInitializerIdentity;
-use analysis::facts::{OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptRewind};
+use analysis::facts::initialization_effects::{
+    OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptRewind,
+};
 use analysis_vocabulary::execution_evidence::{AssumedEffectReason, ExecutionOperation};
 use execution_index::{Call, CallKind};
 use kernel::frame::SelectedValue;

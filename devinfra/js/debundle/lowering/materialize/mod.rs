@@ -25,13 +25,14 @@ use crate::{
     AtomicGroupOwnerCompletionReport, ChunkModulesCounts, ChunkModulesReport, ExportReentryReport,
     GateRejectionPolicy, GraphReportSelection, ReportEmission, RequestedLogicalModule,
 };
-use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
+use analysis::facts::analyze::ExportReentryPolicy;
+use analysis::facts::statement_facts::{ChunkFactAnalysis, StructuralChunkSourceFacts};
 use analysis::{EntryDestination, ImportedSourceTarget, PlannedModule, top_level_id};
 use analysis_projection::AnalysisProjection;
 use anyhow::{Context, Result, ensure};
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
-use artifact::{ArtifactIndexes, ChunkBundle, JsFile};
+use artifact::{ArtifactIndexes, ChunkBundle, JsFile, chunk_unassigned_mode};
 use assignment::{
     FinalizedLogicalAssignment, GraphConstructionContext, SelectedAssignmentBuildInput,
     finalize_selected_assignment,
@@ -180,17 +181,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         list_template_identifiers,
         ..
     } = context;
-    // The spec validator (`validate_transform_spec`) enforces that
-    // every materialised chunk has an `unassigned_mode` entry, so
-    // this lookup must not miss. Missing here is a bug in the
-    // validator, not a recoverable spec error.
-    let chunk_unassigned_mode = spec
-        .unassigned_mode
-        .get(chunk_id)
-        .cloned()
-        .with_context(|| {
-            format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
-        })?;
+    let chunk_unassigned_mode = chunk_unassigned_mode(spec.unassigned_mode, chunk_id)?;
     let FrontendChunk {
         chunk_id: frontend_chunk_id,
         chunk_id_interned,

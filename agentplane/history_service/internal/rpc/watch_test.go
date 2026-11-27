@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 type watching struct {
@@ -180,7 +181,7 @@ func TestSummaryWatchesReconnectOnLeaseExpiryOrDrain(t *testing.T) {
 					server := newServer(t, end.lease)
 					request := &historypb.WatchSessionSummariesRequest{}
 					if mode == "selected" {
-						request.Selected = &historypb.SelectedSessionSummaries{}
+						request.Selected = &historypb.SelectedSessionSummaries{FieldMask: everySummaryField()}
 					}
 					watch := server.watch(t, request)
 					if mode == "selected" {
@@ -204,7 +205,7 @@ func TestSelectedSummariesSnapshotAndUpdates(t *testing.T) {
 	server := newServer(t, time.Hour)
 	sessionID, _ := server.record(t)
 	missing := uuid.New()
-	stream, err := server.client.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{sessionID.String(), missing.String()}}})
+	stream, err := server.client.WatchSessionSummaries(callContext(t), selectedWatch(everySummaryField(), sessionID.String(), missing.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +234,7 @@ func TestSelectedSummariesRespectDelegatedReadScope(t *testing.T) {
 	server, connect := newServiceAccessServer(t, time.Minute, callDeadline, nil, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}, newLiveIdentities(owner, other))
 	ownID := server.recordAs(t, owner)
 	otherID := server.recordAs(t, other)
-	stream, err := connect(t, peertls.ActionsURI).WatchSessionSummaries(serviceDelegatedIdentity(t, owner), &historypb.WatchSessionSummariesRequest{Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{ownID.String(), otherID.String()}}})
+	stream, err := connect(t, peertls.ActionsURI).WatchSessionSummaries(serviceDelegatedIdentity(t, owner), selectedWatch(everySummaryField(), ownID.String(), otherID.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,13 +250,83 @@ func TestSelectedSummariesRespectDelegatedReadScope(t *testing.T) {
 func TestSelectedSummariesRejectRecordedAfter(t *testing.T) {
 	server := newServer(t, time.Hour)
 	stream, err := server.client.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{
-		RecordedAfter: proto.Uint64(0), Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{uuid.NewString()}},
+		RecordedAfter: proto.Uint64(0), Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{uuid.NewString()}, FieldMask: everySummaryField()},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = stream.Recv()
 	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("got %v, want InvalidArgument", err)
+	}
+}
+
+func selectedWatch(fields *fieldmaskpb.FieldMask, sessionIDs ...string) *historypb.WatchSessionSummariesRequest {
+	return &historypb.WatchSessionSummariesRequest{Selected: &historypb.SelectedSessionSummaries{SessionIds: sessionIDs, FieldMask: fields}}
+}
+
+// everySummaryField is a field set naming every SessionSummary field, for a watch that wants whole summaries.
+func everySummaryField() *fieldmaskpb.FieldMask {
+	fields := (&historypb.SessionSummary{}).ProtoReflect().Descriptor().Fields()
+	paths := make([]string, 0, fields.Len())
+	for i := range fields.Len() {
+		paths = append(paths, string(fields.Get(i).Name()))
+	}
+	return &fieldmaskpb.FieldMask{Paths: paths}
+}
+
+func TestSelectedSummariesWithAFieldSetCarryOnlyThoseFields(t *testing.T) {
+	server := newServer(t, time.Hour)
+	sessionID, _ := server.record(t)
+	appendFollowEntries(t, server, sessionID, testEntry(1))
+	full := server.watch(t, selectedWatch(everySummaryField(), sessionID.String())).receive().GetSnapshot().GetSummaries()
+	narrow := server.watch(t, selectedWatch(&fieldmaskpb.FieldMask{Paths: []string{"committed_cursor"}}, sessionID.String())).receive().GetSnapshot().GetSummaries()
+	if len(full) != 1 || full[0].GetCommittedCursor() == 0 {
+		t.Fatalf("the unreduced snapshot must have a cursor to reduce to: %v", full)
+	}
+	want := &historypb.SessionSummary{SessionId: sessionID.String(), CommittedCursor: full[0].GetCommittedCursor()}
+	if len(narrow) != 1 || !proto.Equal(narrow[0], want) {
+		t.Fatalf("got %v, want %v", narrow, want)
+	}
+}
+
+func TestSelectedSummariesWithAFieldSetSendNothingForChangesOutsideIt(t *testing.T) {
+	server := newServer(t, time.Hour)
+	changing, _ := server.record(t)
+	later := uuid.New()
+	ids := []string{changing.String(), later.String()}
+	everything := server.watch(t, selectedWatch(everySummaryField(), ids...))
+	// No fold runs in this server, so appending moves the committed cursor but never the folded one.
+	foldOnly := server.watch(t, selectedWatch(&fieldmaskpb.FieldMask{Paths: []string{"folded_through"}}, ids...))
+	everything.receive()
+	foldOnly.receive()
+
+	appendFollowEntries(t, server, changing, testEntry(1))
+	server.notifySummaries(t)
+	if got := everything.receive().GetSummary(); got.GetSessionId() != changing.String() || got.GetCommittedCursor() == 0 {
+		t.Fatalf("the unreduced watch must see the append: %v", got)
+	}
+	// The next frame the reduced watch sends is for a Session that appears, not for the append before it.
+	if _, err := server.history.BindWriter(t.Context(), later, testWriter, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := foldOnly.receive().GetSummary(); got.GetSessionId() != later.String() {
+		t.Fatalf("a change outside the field set sent %v", got)
+	}
+}
+
+func TestSelectedSummariesRefuseAFieldSetOfUnknownPaths(t *testing.T) {
+	server := newServer(t, time.Hour)
+	stream := server.watch(t, selectedWatch(&fieldmaskpb.FieldMask{Paths: []string{"no_such_field"}}, uuid.NewString()))
+	if _, err := stream.stream.Recv(); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("got %v, want InvalidArgument", err)
+	}
+}
+
+func TestSelectedSummariesRefuseAnEmptyFieldSet(t *testing.T) {
+	server := newServer(t, time.Hour)
+	stream := server.watch(t, selectedWatch(nil, uuid.NewString()))
+	if _, err := stream.stream.Recv(); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("got %v, want InvalidArgument", err)
 	}
 }

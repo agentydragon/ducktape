@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
-import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
 import { TurnStatus } from "../../../proto/event_pb";
 import { HarnessState, SetupState } from "../../../proto/session_pb";
 import { observedHostedSession, threadView, type ObservedHostedSessionInit } from "./testing/state";
@@ -42,7 +41,6 @@ describe("Dispatcher activity owns current Thread status", () => {
     value.summary.attached!.activeTurnId = "old-turn";
     value.summary.attached!.harnessState = HarnessState.STOPPED;
     value.summary.attached!.setupState = SetupState.RUNNING;
-    value.summary.feedStatus = FeedStatus.FAILED;
     expect(threadStatusFromSnapshot(value, true).kind).toBe(kind);
   });
 

@@ -14,7 +14,8 @@ use swc_ecma_ast::Module;
 use swc_ecma_ast::ModuleItem;
 use swc_ecma_ast::Stmt;
 
-use analysis::facts::{StructuralChunkAnalysis, analyze_chunk_structural};
+use analysis::facts::analyze::analyze_chunk_structural;
+use analysis::facts::statement_facts::StructuralChunkAnalysis;
 use analysis_domain::allocation_roots::tracked_allocation_roots;
 use analysis_domain::dynamic_scope::DynamicScopeFact;
 use analysis_domain::item_views::{compute_shadowed_globals, top_level_item_views};

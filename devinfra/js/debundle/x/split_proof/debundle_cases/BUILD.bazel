@@ -28,10 +28,10 @@ js_binary(
 )
 
 js_test(
-    name = "pinned_certificates_test",
+    name = "ordinary_certification_test",
     size = "large",
-    args = ["--check-certificates"],
-    data = _RUNNER_DATA + ["results/certificates.jsonl"],
+    args = ["--certify"],
+    data = _RUNNER_DATA,
     entry_point = "run_cases.mjs",
     env = _RUNNER_ENV,
     shard_count = 6,
@@ -77,14 +77,24 @@ js_test(
 js_test(
     name = "provider_runtime_test",
     size = "medium",
-    data = [":debundle_cases"],
+    data = [
+        "//devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/main.js",
+        "//devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/provider_module.js",
+    ],
     entry_point = "provider_runtime_test.mjs",
-    env = {"CASE_RUNNER": "$(rootpath :debundle_cases)"},
+    env = {
+        "MAIN_JS": "$(rootpath //devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/main.js)",
+        "PROVIDER_MODULE": "$(rootpath //devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/provider_module.js)",
+    },
+    no_copy_to_bin = [
+        "//devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/main.js",
+        "//devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/provider_module.js",
+    ],
 )
 
 js_test(
     name = "placement_routing_test",
-    data = [":debundle_cases"],
+    data = ["//devinfra/js/debundle:debundle_resolve_placement"],
     entry_point = "placement_routing_test.mjs",
-    env = {"CASE_RUNNER": "$(rootpath :debundle_cases)"},
+    env = {"DEBUNDLE_RESOLVER": "$(rootpath //devinfra/js/debundle:debundle_resolve_placement)"},
 )

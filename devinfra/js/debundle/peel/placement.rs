@@ -89,10 +89,7 @@ pub(super) struct Scope {
     target: Owner,
 }
 
-pub(super) fn search(
-    problem: &AssignmentProblem<'_>,
-    options: &SearchOptions,
-) -> Result<SearchReport> {
+pub fn search(problem: &AssignmentProblem<'_>, options: &SearchOptions) -> Result<SearchReport> {
     let scope = prepare_scope(problem, options)?;
     let initial = initial_partition(problem, &scope);
     let module_ids: BTreeMap<_, _> = initial

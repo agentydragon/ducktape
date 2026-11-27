@@ -1,5 +1,7 @@
 # TODO
 
+- **Deferred async functions and methods.** Revisit hoisting, captured bindings, calls and promise outcomes after the basic CoreJS splitter handles useful synchronous regions. Stack and callable-source inspection need their own later contract; see the [construction roadmap](CONSTRUCTION_ROADMAP.md#first-milestone-useful-corejs-without-inspection).
+
 - **Production resolver-to-Lean handoff.** The [historical editor replay](integration/excalidraw/README.md#browser-deployment-replay) used Rust's resolved placement, as does the [single-input corpus adapter](PLAN.md#1-use-rust-selector-resolution-in-the-corpus-adapter). Inventory which Rust checks are useful extraction diagnostics and which Lean establishes for the emitted graph. Keep the Rust verifier until the [production acceptance contract](PLAN.md#acceptance-contract) is met.
 
 - **Lean formatter and optional linter.** Evaluate [`lean-fmt`](https://github.com/jcreinhold/lean-fmt), pinned to the project's Lean toolchain (`v4.35.0` has a matching release). As of 2026-11-21, nixpkgs code search finds no package and our pinned nixpkgs lacks `pkgs/by-name/le/lean-fmt/package.nix`; package it through the shared Nix tool environment if still absent. Check idempotence and compile the formatted corpus before adding pre-commit hooks; land the reformat separately from proof changes. Assess lint rules individually. Keep compilation and axiom audits in Bazel/CI. Existing hooks already check trailing whitespace and final newlines.
@@ -26,6 +28,8 @@
 - **test262 module tests** as an oracle for `Plan.visit`. Top-level `await` and async module graphs are not modeled.
 - **Debundle case coverage.** [Adapter and checker work](PLAN.md#more-of-debundles-cases-through-the-lean-checker) and [saved corpus results](debundle_cases/results/summary.md).
 - **Translation validation.** [Translation plan](translation/PLAN.md).
+
+- **Generator construction.** The current constructor does not promise generator or async-generator suspension and iteration. Define the desired supported cases and their behavior before adding construction rules; keep reached generator behavior unknown or refused.
 
 ## Lean build and runtime wiring
 

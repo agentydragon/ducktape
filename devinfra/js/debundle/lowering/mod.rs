@@ -12,11 +12,10 @@ use analysis::reports::author_inputs::AuthorInputLocations;
 use analysis_projection::AnalysisSpec;
 use purity::RedundantPurityHint;
 
-use artifact::paths::normalize_module_path;
 use artifact::reports::{ChunkDecompositionOutput, SelectedModuleLowering};
 use artifact::{
-    ArtifactIndexes, ChunkBundle, export_policies, normalized_chunk_ids,
-    prune_artifact_to_chunk_ids,
+    ArtifactIndexes, ChunkBundle, ensure_commuting_statements_materialize, export_policies,
+    normalized_chunk_ids, prune_artifact_to_chunk_ids,
 };
 use gate::{
     CandidatePreflight, CandidateRelocationAssessmentReport, ChunkGateRejection,
@@ -886,31 +885,16 @@ pub fn materialize_logical_modules(
     )
 }
 
-/// A chunk's `commuting_statements` are resolved only when its dependency
-/// graph is built, so an entry for a chunk this run does not materialize
-/// would never be checked.
-fn ensure_commuting_statements_materialize(
-    chunk_analysis_options: &BTreeMap<String, DependencyGraphOptions>,
-    seen: &BTreeSet<&str>,
-) -> Result<()> {
-    for (chunk, chunk_options) in chunk_analysis_options {
-        ensure!(
-            chunk_options.commuting_statements.is_empty()
-                || seen.contains(normalize_module_path(chunk)?.as_str()),
-            "chunk_analysis_options.{chunk}.commuting_statements names a chunk this run does not materialize"
-        );
-    }
-    Ok(())
-}
-
 /// Pairs each claimed chunk with its loaded analysis facts, if analysis was loaded.
 fn attach_loaded_facts<'a>(
     claimed: Vec<materialize::LogicalChunkPlan<'a>>,
-    mut loaded_chunks: Option<&mut BTreeMap<String, analysis::facts::ChunkFactAnalysis>>,
+    mut loaded_chunks: Option<
+        &mut BTreeMap<String, analysis::facts::statement_facts::ChunkFactAnalysis>,
+    >,
 ) -> Result<
     Vec<(
         materialize::LogicalChunkPlan<'a>,
-        Option<analysis::facts::ChunkFactAnalysis>,
+        Option<analysis::facts::statement_facts::ChunkFactAnalysis>,
     )>,
 > {
     claimed

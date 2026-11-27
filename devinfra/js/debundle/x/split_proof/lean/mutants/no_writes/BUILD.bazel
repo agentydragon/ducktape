@@ -32,8 +32,10 @@ lean_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
+        "//devinfra/js/debundle/x/split_proof/lean:cli",
+        "//devinfra/js/debundle/x/split_proof/lean:correct",
         "//devinfra/js/debundle/x/split_proof/lean:effects",
-        "//devinfra/js/debundle/x/split_proof/lean:planner",
+        "//devinfra/js/debundle/x/split_proof/lean:translate_input",
     ],
 )
 
