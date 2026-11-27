@@ -678,8 +678,10 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 
 func main() {
 	servicemain.Main(servicemain.Service[config]{
-		Name: "Action Service", TraceName: "action-service",
+		Name:       "Action Service",
+		TraceName:  "action-service",
 		Migrations: servicemain.Migrations{DatabaseURLEnv: databaseURLSecretEnv, Up: migrations.Up},
-		Load:       loadConfig, Run: run,
+		Load:       loadConfig,
+		Run:        run,
 	})
 }

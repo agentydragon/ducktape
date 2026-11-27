@@ -300,8 +300,10 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 
 func main() {
 	servicemain.Main(servicemain.Service[config]{
-		Name: "Notification Service", TraceName: "notification-service",
+		Name:       "Notification Service",
+		TraceName:  "notification-service",
 		Migrations: servicemain.Migrations{DatabaseURLEnv: migrationOnlyDatabaseURLEnv, Up: migrations.Up},
-		Load:       loadConfig, Run: run,
+		Load:       loadConfig,
+		Run:        run,
 	})
 }

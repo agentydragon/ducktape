@@ -206,8 +206,10 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 
 func main() {
 	servicemain.Main(servicemain.Service[config]{
-		Name: "MCP edge", TraceName: "mcp-edge",
+		Name:       "MCP edge",
+		TraceName:  "mcp-edge",
 		Migrations: servicemain.Migrations{DatabaseURLEnv: databaseURLEnv, Up: migrations.Up},
-		Load:       loadConfig, Run: run,
+		Load:       loadConfig,
+		Run:        run,
 	})
 }
