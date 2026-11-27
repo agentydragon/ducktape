@@ -50,8 +50,7 @@ pub(super) fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>)
         }
         ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
             value
-                .result_alternatives()
-                .expect("alternative expression")
+                .branching_alternatives()
                 .iter()
                 .any(|value| exposes_global_receiver(value, names))
         }
@@ -254,8 +253,7 @@ pub(super) fn stored_global_alias(
         GlobalMutationPath::Unrelated => match value {
             ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
                 value
-                    .result_alternatives()
-                    .expect("alternative expression")
+                    .branching_alternatives()
                     .iter()
                     .any(|value| stored_global_alias(value, names, bindings, include_prototypes))
             }

@@ -721,8 +721,7 @@ fn requested_logical_module_reports(requests: &[LogicalRequest]) -> Vec<Requeste
     requests
         .iter()
         .map(|request| RequestedLogicalModule {
-            target_path: spec::ModulePath::parse(&request.target_path, "")
-                .expect("request target_path is a canonical module path"),
+            target_path: spec::ModulePath::from_pipeline_target(&request.target_path),
             residual: request.residual,
         })
         .collect()

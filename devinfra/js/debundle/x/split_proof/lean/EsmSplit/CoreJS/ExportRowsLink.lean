@@ -46,6 +46,44 @@ theorem selected_row {B : EsmSplit.Bundle} {owner : EsmSplit.Module}
   simp only [UnitMatches, found] at matched
   exact ⟨owned, matched⟩
 
+/-- An actual source alias retains its public spelling and points to the
+original declaration's live address in the constructed owner. This applies
+to any row in a source list, independent of its position or other rows. -/
+theorem row_alias_live_cell {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {s s' : State W} {frames : List (Nat × List (Name × Addr))}
+    (allocated : declareTops body s = .ok frames s')
+    {source : Module} (sourceBody : source.body = body) {rows : List EsmSplit.LocalExportUnit}
+    (sourceRows : SourceRows source rows) (sourceDeclared : LocalsDeclared source B)
+    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods)
+    {row : EsmSplit.LocalExportUnit} (rowIn : row ∈ rows) (owned : row.ordinal ∈ owner.stmts)
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
+    {publicName localName : Name} (pair : (publicName, localName) ∈ row.names) :
+    ∃ cells declarationOwner id a b,
+      (splitProgramIndexed body B P).imported frames (moduleOfIndexed body B P owner).imports = .ok cells ∧
+      S.claimants B row.ordinal = [owner.name] ∧
+      declarationOwner ∈ P.mods ∧ id ∈ declarationOwner.stmts ∧
+      S.claimants B id = [declarationOwner.name] ∧ localName ∈ (B.stmt id).defs ∧
+      (publicName, localName) ∈ (moduleOfIndexed body B P owner).exports ∧
+      (source.scope frames).lookup localName = some a ∧
+      ((moduleOfIndexed body B P owner).scope frames ++ cells).lookup localName = some a ∧
+      s'.cellAt a = some b := by
+  have member : (publicName, localName) ∈ rows.flatMap (·.names) :=
+    List.mem_flatMap.mpr ⟨row, rowIn, pair⟩
+  obtain ⟨id, within, declared⟩ := row_locals_declared sourceRows sourceDeclared member
+  have projection := IndexedConstructorCells.projection body B P
+  obtain ⟨cells, imported, agree⟩ := IndexedPlanCells.module_scope_cells valid projection footprints complete
+    (declareTops_names body allocated) sourceBody ownerIn
+  obtain ⟨declarationOwner, declarationOwnerIn, a, declOwned, claimant, publicAlias, original, target⟩ :=
+    InteriorPlanExports.row_pair_scope_cell valid projection footprints complete (declareTops_names body allocated)
+      sourceBody ownerIn agree owned rowFootprint pair within declared
+  obtain ⟨b, present⟩ := IndexedAllocatedCells.scope_cell_present allocated original
+  have rowWithin := valid.2.2.1.2.2.2.2.2.1 owner ownerIn row.ordinal owned
+  have rowClaimant := (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal (List.mem_range.2 rowWithin)).1 owned
+  exact ⟨cells, declarationOwner, id, a, b, imported, rowClaimant, declarationOwnerIn, declOwned, claimant,
+    declared, publicAlias, original, target, present⟩
+
 /-- Every public local has the original allocated cell in the actual entry
 scope, with each metadata row retaining its authored owner. All table equality
 comes from the planner's row fold and exact source coverage. -/
@@ -79,19 +117,11 @@ theorem rows_scope_cells {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : 
     obtain ⟨row, rowIn, pairIn⟩ := List.mem_flatMap.1 inRows
     obtain ⟨owned, rowFootprint⟩ := selected_row unitMatches orderedRows rowIn
     obtain ⟨id, within, declared⟩ := sourceDefs pair inRows
-    obtain ⟨declarationOwner, declarationOwnerIn, declOwned⟩ := InteriorPlanExports.declaration_owner valid within
-    have binding := InteriorExportNames.row_pair_binding valid ownerIn declarationOwnerIn owned rowFootprint
-      declOwned pairIn declared
-    have bound : (∃ j ∈ owner.stmts, pair.2 ∈ (B.stmt j).defs) ∨ pair.2 ∈ owner.imports.flatMap (·.2) := by
-      rcases binding.2.2.2 with hlocal | ⟨edge, edgeIn, inEdge, _⟩
-      · exact Or.inl hlocal
-      · exact Or.inr (List.mem_flatMap.2 ⟨edge, edgeIn, inEdge⟩)
-    obtain ⟨stmt, inSource⟩ := complete id within pair.2 declared
-    have sourceUnit : (id, stmt) ∈ source.body := by rw [sourceBody]; exact lookup_mem inSource
-    obtain ⟨a, original, _⟩ := IndexedExportCells.source_and_module_cell footprints
-      (declareTops_names body allocated) valid.1 sourceBody inSource sourceUnit declared
+    obtain ⟨_, _, a, _, _, _, original, target⟩ := InteriorPlanExports.row_pair_scope_cell
+      valid projection footprints complete (declareTops_names body allocated) sourceBody
+      ownerIn agree owned rowFootprint pairIn within declared
     obtain ⟨b, present⟩ := IndexedAllocatedCells.scope_cell_present allocated original
-    exact ⟨a, b, original, (agree pair.2 bound).trans original, present⟩
+    exact ⟨a, b, original, target, present⟩
 
 /-- The actual source and indexed plan scopes resolve the same complete,
 ordered public-name/address table. The hypotheses inspect the source rows and
@@ -182,6 +212,7 @@ theorem rows_resolved_from_mkPlan {body : List (Nat × Stmt)} {B : EsmSplit.Bund
 
 #print axioms rowAt_some
 #print axioms selected_row
+#print axioms row_alias_live_cell
 #print axioms rows_scope_cells
 #print axioms rows_resolved_from_plan
 #print axioms rows_resolved_from_mkPlan

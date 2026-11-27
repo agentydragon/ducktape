@@ -211,12 +211,9 @@ pub(crate) fn native_call_purity(
     (global, member): (&str, Option<&str>),
     invocation: Invocation,
     operands: &[NativeOperand<'_>],
-    shadowed: &BTreeSet<&'static str>,
-    local_shadowed: &BTreeSet<String>,
-    declared_pure: &BTreeSet<String>,
-    graph: &ChunkCodeGraph,
+    scope: &PurityScope<'_>,
 ) -> Option<Effects> {
-    if shadowed.contains(global) || local_shadowed.contains(global) {
+    if scope.shadowed.contains(global) || scope.local_shadowed.contains(global) {
         return None;
     }
     let row = builtins::lookup(global, member, invocation)?;
@@ -238,19 +235,17 @@ pub(crate) fn native_call_purity(
             let spread = operand.spread.map_or_else(Effects::none, |span| {
                 Effects::of(Effect::Coerce(CoerceSite::ArraySpread), span)
             });
-            spread.then(classify_expr_purity(
-                operand.expr,
-                shadowed,
-                local_shadowed,
-                declared_pure,
-                graph,
-            ))
+            spread.then(classify_expr_purity(operand.expr, scope))
         };
         let purity = match requirement {
             Operand::Any => evaluation(),
             Operand::Primitive => {
                 let purity = evaluation();
-                if is_result_primitive(operand.expr, &graph.primitive_bindings, local_shadowed) {
+                if is_result_primitive(
+                    operand.expr,
+                    &scope.graph.primitive_bindings,
+                    scope.local_shadowed,
+                ) {
                     purity
                 } else {
                     purity.then(Effects::coerce(
@@ -260,8 +255,8 @@ pub(crate) fn native_call_purity(
                         coerce_operands(
                             &[operand.expr],
                             CoerceCheck::Within(TO_STRING_SILENT),
-                            graph,
-                            local_shadowed,
+                            scope.graph,
+                            scope.local_shadowed,
                         ),
                     ))
                 }
@@ -281,15 +276,13 @@ pub(crate) fn native_call_purity(
                         coerce_operands(
                             &[operand.expr],
                             CoerceCheck::Within(TO_NUMBER_SILENT),
-                            graph,
-                            local_shadowed,
+                            scope.graph,
+                            scope.local_shadowed,
                         ),
                     ))
                 }
             }
-            Operand::PlainData => {
-                plain_data_operand(operand.expr, shadowed, local_shadowed, declared_pure, graph)?
-            }
+            Operand::PlainData => plain_data_operand(operand.expr, scope)?,
             Operand::Object => {
                 if !matches!(operand.expr.unwrap_parens(), Expr::Object(_)) {
                     return None;
@@ -300,15 +293,7 @@ pub(crate) fn native_call_purity(
                 let Expr::Array(array) = operand.expr.unwrap_parens() else {
                     return None;
                 };
-                let purity = fresh_array_elements(
-                    array,
-                    elements,
-                    &spelling,
-                    shadowed,
-                    local_shadowed,
-                    declared_pure,
-                    graph,
-                )?;
+                let purity = fresh_array_elements(array, elements, &spelling, scope)?;
                 if let Some((projection, dependencies)) = operand.native_iterable {
                     if !projection.matches_operand(operand.expr) {
                         return None;
@@ -327,20 +312,14 @@ pub(crate) fn native_call_purity(
 /// The evaluation purity of an operand proved plain data: a fresh object
 /// literal with only data properties, an array literal, an admitted
 /// `PlainData` binding, or the namespace facade's fresh result.
-fn plain_data_operand(
-    expr: &Expr,
-    shadowed: &BTreeSet<&'static str>,
-    local_shadowed: &BTreeSet<String>,
-    declared_pure: &BTreeSet<String>,
-    graph: &ChunkCodeGraph,
-) -> Option<Effects> {
+fn plain_data_operand(expr: &Expr, scope: &PurityScope<'_>) -> Option<Effects> {
     match expr.unwrap_parens() {
         // A local binding of the same name is a different value.
-        Expr::Ident(ident) => (graph.is_plain_data(ident.sym.as_ref())
-            && !local_shadowed.contains(ident.sym.as_ref()))
+        Expr::Ident(ident) => (scope.graph.is_plain_data(ident.sym.as_ref())
+            && !scope.local_shadowed.contains(ident.sym.as_ref()))
         .then(|| {
             let purity = Effects::none();
-            match graph.plain_data_dependencies(ident.sym.as_ref()) {
+            match scope.graph.plain_data_dependencies(ident.sym.as_ref()) {
                 Some(dependencies) => purity.with_dependencies(dependencies),
                 None => purity,
             }
@@ -349,27 +328,14 @@ fn plain_data_operand(
             .props
             .iter()
             .all(is_plain_data_prop)
-            .then(|| classify_expr_purity(expr, shadowed, local_shadowed, declared_pure, graph)),
-        expr @ Expr::Array(_) => Some(classify_expr_purity(
-            expr,
-            shadowed,
-            local_shadowed,
-            declared_pure,
-            graph,
-        )),
+            .then(|| classify_expr_purity(expr, scope)),
+        expr @ Expr::Array(_) => Some(classify_expr_purity(expr, scope)),
         Expr::Call(call) => {
             let Callee::Expr(callee) = &call.callee else {
                 return None;
             };
-            is_pure_object_define_property_on_fresh_namespace(
-                callee,
-                &call.args,
-                shadowed,
-                local_shadowed,
-                declared_pure,
-                graph,
-            )
-            .then(|| all_args_pure(&call.args, shadowed, local_shadowed, declared_pure, graph))
+            is_pure_object_define_property_on_fresh_namespace(callee, &call.args, scope)
+                .then(|| all_args_pure(&call.args, scope))
         }
         _ => None,
     }
@@ -381,10 +347,7 @@ fn fresh_array_elements(
     array: &ArrayLit,
     elements: Elements,
     spelling: &str,
-    shadowed: &BTreeSet<&'static str>,
-    local_shadowed: &BTreeSet<String>,
-    declared_pure: &BTreeSet<String>,
-    graph: &ChunkCodeGraph,
+    scope: &PurityScope<'_>,
 ) -> Option<Effects> {
     array
         .elems
@@ -392,15 +355,7 @@ fn fresh_array_elements(
         .map(|element| {
             // A hole is `undefined`, which an entry read rejects.
             let element = element.as_ref()?;
-            iterable_element(
-                element,
-                elements,
-                spelling,
-                shadowed,
-                local_shadowed,
-                declared_pure,
-                graph,
-            )
+            iterable_element(element, elements, spelling, scope)
         })
         .try_fold(Effects::none(), |verdict, purity| {
             Some(verdict.then(purity?))
@@ -413,32 +368,16 @@ pub(crate) fn iterable_element(
     element: &ExprOrSpread,
     elements: Elements,
     spelling: &str,
-    shadowed: &BTreeSet<&'static str>,
-    local_shadowed: &BTreeSet<String>,
-    declared_pure: &BTreeSet<String>,
-    graph: &ChunkCodeGraph,
+    scope: &PurityScope<'_>,
 ) -> Option<Effects> {
     if let Some(spread) = element.spread {
         return Some(
-            classify_fresh_array_spread_source(
-                &element.expr,
-                Some((elements, spelling)),
-                shadowed,
-                local_shadowed,
-                declared_pure,
-                graph,
-            )
-            .unwrap_or_else(|| Effects::of(Effect::Coerce(CoerceSite::ArraySpread), spread)),
+            classify_fresh_array_spread_source(&element.expr, Some((elements, spelling)), scope)
+                .unwrap_or_else(|| Effects::of(Effect::Coerce(CoerceSite::ArraySpread), spread)),
         );
     }
     let Elements::Entries { keyed } = elements else {
-        return Some(classify_expr_purity(
-            &element.expr,
-            shadowed,
-            local_shadowed,
-            declared_pure,
-            graph,
-        ));
+        return Some(classify_expr_purity(&element.expr, scope));
     };
     let Expr::Array(entry) = element.expr.unwrap_parens() else {
         return None;
@@ -450,16 +389,14 @@ pub(crate) fn iterable_element(
         return None;
     }
     let mut purity =
-        classify_expr_purity(&key.expr, shadowed, local_shadowed, declared_pure, graph).then(
-            classify_expr_purity(&value.expr, shadowed, local_shadowed, declared_pure, graph),
-        );
+        classify_expr_purity(&key.expr, scope).then(classify_expr_purity(&value.expr, scope));
     if keyed
         && !is_safe_property_key(
             &key.expr,
-            shadowed,
-            local_shadowed,
-            &graph.primitive_bindings,
-            &graph.symbol_const_bindings,
+            scope.shadowed,
+            scope.local_shadowed,
+            &scope.graph.primitive_bindings,
+            &scope.graph.symbol_const_bindings,
         )
     {
         purity = purity.then(Effects::coerce(
@@ -469,8 +406,8 @@ pub(crate) fn iterable_element(
             coerce_operands(
                 &[&key.expr],
                 CoerceCheck::Within(PrimKinds::ANY),
-                graph,
-                local_shadowed,
+                scope.graph,
+                scope.local_shadowed,
             ),
         ));
     }

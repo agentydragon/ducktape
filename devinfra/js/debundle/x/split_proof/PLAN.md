@@ -357,7 +357,7 @@ The moves slice packages a `MoveScheduleEvidence` theorem. `linkedLayoutBundle` 
 **How.**
 
 1. Bridge the slices to decoded programs. Either state the slice theorems for named modules with exports, or prove that the module name and exports of a single module do not change a run. Then check that the decoded source is the single program of `ss` and the decoded emitted files are `splitProgram ss B P`, with `ss` from the linked lowering.
-2. Add the remaining slice checks to the certified checker as strategies, ahead of the per-split linked proof. The structural checker already proves `all-outcomes` when the reparsed output links to the original initial state and ordered units.
+2. Add the remaining slice checks to the certified checker as strategies. Unsupported requests must refuse before publishing output; the structural checker already proves `all-outcomes` when the reparsed output links to the original initial state and ordered units.
 3. Move the remaining split checks of the Node comparison suites and the other diagnostic tests to the certified path. A refused plan is counted as a refusal; its program still runs unsplit through the model.
 4. Move `--lean` example generation to its own generator and the integration scripts to the certified command.
 5. Delete `--diagnostic`.

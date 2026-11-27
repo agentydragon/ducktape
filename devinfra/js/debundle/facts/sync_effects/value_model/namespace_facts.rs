@@ -46,7 +46,7 @@ impl LocalClassProvenance {
             }
             ValueExpr::Binding(source) => self.edges.push((target.clone(), source.clone())),
             ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
-                for alternative in value.result_alternatives().expect("alternative expression") {
+                for alternative in value.branching_alternatives() {
                     self.collect(target, alternative, facts, seeds);
                 }
             }

@@ -84,13 +84,25 @@ assert.match(readFileSync(path.join(letOut, "worker.mjs"), "utf8"), /\blet seed 
 assert.match(readFileSync(path.join(letOut, "entry.mjs"), "utf8"), /\blet result = seed;/);
 assert.equal((await import(pathToFileURL(path.join(letOut, "entry.mjs")))).result, 7);
 assert.equal(split({ source, spec, out: letOut, require: "all-outcomes", checkOutput: true }).status, "certified");
+const letEntry = path.join(letOut, "entry.mjs");
+const letOriginal = readFileSync(letEntry, "utf8");
+const letChanged = letOriginal.replace(/result = seed/, "result = 7");
+assert.notEqual(letChanged, letOriginal);
+writeFileSync(letEntry, letChanged);
+assert.equal(split({ source, spec, out: letOut, require: "all-outcomes", checkOutput: true }).status, "refused");
+assert.equal(readFileSync(letEntry, "utf8"), letChanged);
+writeFileSync(letEntry, letOriginal);
 
+// Exercise tampering against the same source and placement that produced `out`.
+writeFileSync(source, "const seed = 7; export const result = seed;\n");
+assert.equal(run({ checkOutput: true }).status, "certified");
 const entry = path.join(out, "entry.mjs");
 const original = readFileSync(entry, "utf8");
 const changed = original.replace(/result = seed/, "result = 7");
 assert.notEqual(changed, original);
 writeFileSync(entry, changed);
 assert.equal(run({ checkOutput: true }).status, "refused");
+assert.equal(readFileSync(entry, "utf8"), changed);
 writeFileSync(entry, original);
 
 // A duplicated source selector must not change an existing output tree.
