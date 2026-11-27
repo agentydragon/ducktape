@@ -25,6 +25,20 @@ use crate::{Mode, TraceCategory, Unsupported};
 /// the only [`Unsupported`] sources (a misplaced run-hole keyword, a malformed
 /// predicate) are whole-needle properties already rejected up front, so a
 /// sub-node descent of a probed needle never newly errors.
+/// A child-count mismatch is a shape failure with one wording: how many children
+/// the selector pinned and how many the candidate offers.
+fn fail_child_count(
+    bindings: &mut Bindings,
+    nid: NodeId,
+    sid: NodeId,
+    expected: usize,
+    found: usize,
+) {
+    bindings.fail(nid, sid, TraceCategory::Shape, || {
+        format!("expected {expected} children, found {found}")
+    });
+}
+
 pub fn nodes_match(
     needle: &Index,
     nid: NodeId,
@@ -462,9 +476,7 @@ fn match_named_expression(
 ) -> Result<bool, Unsupported> {
     let (nkids, skids) = (needle.children_of(nid), subject.children_of(sid));
     if nkids.len() != skids.len() {
-        bindings.fail(nid, sid, TraceCategory::Shape, || {
-            format!("expected {} children, found {}", nkids.len(), skids.len())
-        });
+        fail_child_count(bindings, nid, sid, nkids.len(), skids.len());
         return Ok(false);
     }
     let (Some((&nbody, nname)), Some((&sbody, sname))) = (nkids.split_last(), skids.split_last())
@@ -528,9 +540,7 @@ fn match_children(
         return match_list_with_holes(needle, nlist, subject, slist, nkind, mode, bindings);
     }
     if nlist.len() != slist.len() {
-        bindings.fail(nid, sid, TraceCategory::Shape, || {
-            format!("expected {} children, found {}", nlist.len(), slist.len())
-        });
+        fail_child_count(bindings, nid, sid, nlist.len(), slist.len());
         return Ok(false);
     }
     for (nc, sc) in nlist.iter().zip(slist) {
