@@ -24,9 +24,7 @@ impl<Binding: Ord> ReadOnlyCallback<Binding> {
 fn operand(expr: &Expr) -> Option<Option<Id>> {
     match expr.unwrap_parens() {
         Expr::Ident(id) => Some(Some(id.to_id())),
-        Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_)) => {
-            Some(None)
-        }
+        literal if js_ast::is_primitive_literal(literal) => Some(None),
         _ => None,
     }
 }

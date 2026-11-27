@@ -23,7 +23,7 @@ pub(super) fn is_shareable_intrinsic_alias_var(var: &VarDecl) -> bool {
 }
 
 pub(super) fn is_shareable_literal_var(var: &VarDecl) -> bool {
-    shareable_uniform_declaration(var, is_primitive_literal_expr)
+    shareable_uniform_declaration(var, is_shareable_literal_expr)
 }
 
 pub(super) fn is_shareable_function_var(var: &VarDecl) -> bool {
@@ -37,19 +37,11 @@ pub(super) fn is_empty_object_var(var: &VarDecl) -> bool {
     )
 }
 
-pub(super) fn is_primitive_literal_expr(expr: &Expr) -> bool {
-    match expr {
-        Expr::Paren(paren) => is_primitive_literal_expr(&paren.expr),
-        Expr::Lit(
-            Lit::Str(_)
-            | Lit::Num(_)
-            | Lit::Bool(_)
-            | Lit::Null(_)
-            | Lit::BigInt(_)
-            | Lit::Regex(_),
-        ) => true,
-        _ => false,
-    }
+/// A literal a wrapper may share verbatim: the primitive literals `js_ast`
+/// recognises, plus `RegExp`, under any amount of parenthesization.
+pub(super) fn is_shareable_literal_expr(expr: &Expr) -> bool {
+    let literal = expr.unwrap_parens();
+    matches!(literal, Expr::Lit(Lit::Regex(_))) || js_ast::is_primitive_literal(literal)
 }
 
 fn is_shareable_intrinsic_alias_expr(expr: &Expr) -> bool {
