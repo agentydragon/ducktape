@@ -90,10 +90,7 @@ fn fold_string(expr: &Expr) -> Option<String> {
             Some(fold_string(&bin.left)? + &fold_string(&bin.right)?)
         }
         Expr::Call(call) => {
-            let Callee::Expr(callee) = &call.callee else {
-                return None;
-            };
-            let Expr::Member(member) = callee.unwrap_parens() else {
+            let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
                 return None;
             };
             if !member_is_named(member, "replace") {

@@ -23,10 +23,7 @@ impl FreshRecordDestructuringContext<'_> {
                 if self.dynamic_scope.present {
                     return false;
                 }
-                let Callee::Expr(callee) = &call.callee else {
-                    return false;
-                };
-                let Expr::Ident(ident) = callee.unwrap_parens() else {
+                let Some(Expr::Ident(ident)) = js_ast::callee_expr(call) else {
                     return false;
                 };
                 if self.rebindings.contains(&ident.to_id()) {
