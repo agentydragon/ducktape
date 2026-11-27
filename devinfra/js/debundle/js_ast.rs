@@ -11,11 +11,11 @@ use swc_common::{
     Spanned, SyntaxContext,
 };
 use swc_ecma_ast::{
-    ArrayLit, ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr,
-    ExprOrSpread, Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase,
-    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module, ModuleDecl,
-    ModuleExportName, ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl, VarDeclKind,
-    VarDeclarator,
+    ArrayLit, CallExpr, Callee, ComputedPropName, Decl, EsReserved, ExportNamedSpecifier,
+    ExportSpecifier, Expr, ExprOrSpread, Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier,
+    ImportPhase, ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module,
+    ModuleDecl, ModuleExportName, ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl,
+    VarDeclKind, VarDeclarator,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -760,6 +760,15 @@ pub fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
     match item_decl(item) {
         Some(Decl::Var(var)) => Some(var),
         _ => None,
+    }
+}
+
+/// The expression a call evaluates its callee to, with grouping parentheses
+/// removed. `super` and `import` callees carry no expression to read.
+pub fn callee_expr(call: &CallExpr) -> Option<&Expr> {
+    match &call.callee {
+        Callee::Expr(callee) => Some(callee.unwrap_parens()),
+        Callee::Super(_) | Callee::Import(_) => None,
     }
 }
 

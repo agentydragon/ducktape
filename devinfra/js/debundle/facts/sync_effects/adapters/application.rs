@@ -205,11 +205,9 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         self.fallback(
             frame,
             Values::new(),
-            ExecutionPrecisionLossReason::UnsupportedOperation {
-                operation: ExecutionOperation::OpaqueExecution,
-                ordered_field_read_refusal: None,
-                ordered_call_admission_refusal: None,
-            },
+            ExecutionPrecisionLossReason::unsupported_operation(
+                ExecutionOperation::OpaqueExecution,
+            ),
             span,
         );
     }
@@ -356,11 +354,9 @@ impl LocalExecutionContext<'_, '_, '_> {
             self.fallback(
                 frame,
                 reached,
-                ExecutionPrecisionLossReason::UnsupportedOperation {
-                    operation: ExecutionOperation::OpaqueExecution,
-                    ordered_field_read_refusal: None,
-                    ordered_call_admission_refusal: None,
-                },
+                ExecutionPrecisionLossReason::unsupported_operation(
+                    ExecutionOperation::OpaqueExecution,
+                ),
                 span,
             );
             return Err(RemainderDisposition::AlreadySummarized);
@@ -672,11 +668,9 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
             self.fallback(
                 frame,
                 reached,
-                ExecutionPrecisionLossReason::UnsupportedOperation {
-                    operation: ExecutionOperation::OpaqueExecution,
-                    ordered_field_read_refusal: None,
-                    ordered_call_admission_refusal: None,
-                },
+                ExecutionPrecisionLossReason::unsupported_operation(
+                    ExecutionOperation::OpaqueExecution,
+                ),
                 span,
             );
             return Err(RemainderDisposition::AlreadySummarized);
@@ -1274,11 +1268,9 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 self.fallback(
                     frame,
                     reached,
-                    ExecutionPrecisionLossReason::UnsupportedOperation {
-                        operation: ExecutionOperation::PropertyWrite,
-                        ordered_field_read_refusal: None,
-                        ordered_call_admission_refusal: None,
-                    },
+                    ExecutionPrecisionLossReason::unsupported_operation(
+                        ExecutionOperation::PropertyWrite,
+                    ),
                     span,
                 );
                 Disposition::Summarized
@@ -1287,11 +1279,9 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 self.fallback(
                     frame,
                     values.clone(),
-                    ExecutionPrecisionLossReason::UnsupportedOperation {
-                        operation: ExecutionOperation::OpaqueExecution,
-                        ordered_field_read_refusal: None,
-                        ordered_call_admission_refusal: None,
-                    },
+                    ExecutionPrecisionLossReason::unsupported_operation(
+                        ExecutionOperation::OpaqueExecution,
+                    ),
                     span,
                 );
                 Disposition::Summarized
@@ -1300,11 +1290,9 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 self.fallback(
                     frame,
                     operands.clone(),
-                    ExecutionPrecisionLossReason::UnsupportedOperation {
-                        operation: ExecutionOperation::ImplicitCoercion,
-                        ordered_field_read_refusal: None,
-                        ordered_call_admission_refusal: None,
-                    },
+                    ExecutionPrecisionLossReason::unsupported_operation(
+                        ExecutionOperation::ImplicitCoercion,
+                    ),
                     span,
                 );
                 Disposition::Summarized
@@ -1315,11 +1303,9 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 self.fallback(
                     frame,
                     operand.clone(),
-                    ExecutionPrecisionLossReason::UnsupportedOperation {
-                        operation: ExecutionOperation::ArraySpread,
-                        ordered_field_read_refusal: None,
-                        ordered_call_admission_refusal: None,
-                    },
+                    ExecutionPrecisionLossReason::unsupported_operation(
+                        ExecutionOperation::ArraySpread,
+                    ),
                     span,
                 );
                 Disposition::Summarized

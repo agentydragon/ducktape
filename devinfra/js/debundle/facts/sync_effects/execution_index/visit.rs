@@ -543,19 +543,14 @@ impl Visit for ExecutionIndex {
             match property {
                 PropOrSpread::Spread(spread) => {
                     spread.expr.visit_with(self);
-                    self.record_call(Call {
-                        kind: CallKind::ObjectSpread,
-                        callee: ValueExpr::Unknown,
-                        args: vec![ValueExpr::from_expr(&spread.expr)],
-                        span: spread.expr.span(),
-                        caller: self.current,
-                        owner: self.owner,
-                        plain_object_sources: false,
-                        no_sync_arguments: false,
-                        no_reentry_candidate: false,
-                        no_reentry_record_candidate: false,
-                        has_spread: false,
-                    });
+                    self.record_call(Call::without_argument_facts(
+                        CallKind::ObjectSpread,
+                        ValueExpr::Unknown,
+                        vec![ValueExpr::from_expr(&spread.expr)],
+                        spread.expr.span(),
+                        self.current,
+                        self.owner,
+                    ));
                 }
                 PropOrSpread::Prop(property)
                     if let Prop::KeyValue(pair) = property.as_ref()
@@ -603,19 +598,14 @@ impl Visit for ExecutionIndex {
         for element in array.elems.iter().flatten() {
             element.expr.visit_with(self);
             if let Some(span) = element.spread {
-                self.record_call(Call {
-                    kind: CallKind::ArraySpread,
-                    callee: ValueExpr::Unknown,
-                    args: vec![ValueExpr::from_expr(&element.expr)],
+                self.record_call(Call::without_argument_facts(
+                    CallKind::ArraySpread,
+                    ValueExpr::Unknown,
+                    vec![ValueExpr::from_expr(&element.expr)],
                     span,
-                    caller: self.current,
-                    owner: self.owner,
-                    plain_object_sources: false,
-                    no_sync_arguments: false,
-                    no_reentry_candidate: false,
-                    no_reentry_record_candidate: false,
-                    has_spread: false,
-                });
+                    self.current,
+                    self.owner,
+                ));
             }
         }
         self.literal_depth -= 1;
@@ -777,26 +767,21 @@ impl Visit for ExecutionIndex {
             );
         }
         if matches!(expression.op, BinaryOp::In | BinaryOp::InstanceOf) {
-            self.record_call(Call {
-                kind: if expression.op == BinaryOp::In {
+            self.record_call(Call::without_argument_facts(
+                if expression.op == BinaryOp::In {
                     CallKind::InProtocol
                 } else {
                     CallKind::InstanceOfProtocol
                 },
-                callee: ValueExpr::Unknown,
-                args: vec![
+                ValueExpr::Unknown,
+                vec![
                     ValueExpr::from_expr(&expression.right),
                     ValueExpr::from_expr(&expression.left),
                 ],
-                span: expression.span,
-                caller: self.current,
-                owner: self.owner,
-                plain_object_sources: false,
-                no_sync_arguments: false,
-                no_reentry_candidate: false,
-                no_reentry_record_candidate: false,
-                has_spread: false,
-            });
+                expression.span,
+                self.current,
+                self.owner,
+            ));
         }
     }
 
@@ -2519,23 +2504,14 @@ impl Visit for ExecutionIndex {
             // protocols and invoke its arguments. Keep that conservative call
             // even though value/short-circuit inference stays opaque. Do not
             // admit the assertions indexed only for ordinary CallExpr syntax.
-            self.record_call(Call {
-                callee: ValueExpr::from_expr(&call.callee),
-                args: call
-                    .args
-                    .iter()
-                    .map(|arg| ValueExpr::from_expr(&arg.expr))
-                    .collect(),
-                kind: CallKind::Call,
-                span: call.span,
-                has_spread: call.args.iter().any(|arg| arg.spread.is_some()),
-                no_reentry_candidate: false,
-                no_reentry_record_candidate: false,
-                no_sync_arguments: false,
-                caller: self.current,
-                owner: self.owner,
-                plain_object_sources: false,
-            });
+            self.record_call(Call::from_source_arguments(
+                CallKind::Call,
+                &call.callee,
+                &call.args,
+                call.span,
+                self.current,
+                self.owner,
+            ));
             if call.args.iter().any(|arg| arg.spread.is_some()) {
                 // Argument positions and the returned value are unmodeled for
                 // spread calls. Preserve the callee and argument capabilities
@@ -2602,30 +2578,14 @@ impl Visit for ExecutionIndex {
         {
             self.mark_opaque();
         }
-        self.record_call(Call {
-            callee: ValueExpr::from_expr(&new_expr.callee),
-            args: new_expr
-                .args
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .map(|arg| ValueExpr::from_expr(&arg.expr))
-                .collect(),
-            kind: CallKind::New,
-            span: new_expr.span,
-            has_spread: new_expr
-                .args
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .any(|arg| arg.spread.is_some()),
-            no_sync_arguments: false,
-            no_reentry_candidate: false,
-            no_reentry_record_candidate: false,
-            caller: self.current,
-            owner: self.owner,
-            plain_object_sources: false,
-        });
+        self.record_call(Call::from_source_arguments(
+            CallKind::New,
+            &new_expr.callee,
+            new_expr.args.as_deref().unwrap_or_default(),
+            new_expr.span,
+            self.current,
+            self.owner,
+        ));
     }
 
     fn visit_await_expr(&mut self, await_expr: &AwaitExpr) {
