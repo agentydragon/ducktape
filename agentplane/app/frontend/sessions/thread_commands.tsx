@@ -11,7 +11,12 @@ import { useThreadSync } from "./thread_sync";
 import { normalizeDeliveryState } from "./client";
 import { deliveryOperationLabel } from "./delivery_labels";
 import { DispatchReceiptProgress, useDispatchOriginals } from "./delivery_notice";
-import { isDeliveryIssue, noticeKey } from "./command_notice_attention";
+import {
+  executionNotice,
+  isDeliveryIssue,
+  noticeKey,
+  type useNoticeAcknowledgements,
+} from "./command_notice_attention";
 import type { ThreadDeliveryState } from "./thread_delivery";
 import {
   ThreadCommandOutcome,
@@ -118,6 +123,38 @@ function CommandOutcome({
   );
 }
 
+export function executionFailureProgress(
+  row: ThreadEntity,
+  attention: ReturnType<typeof useNoticeAcknowledgements>
+): JSX.Element | undefined {
+  if (!isCommandEntity(row)) return;
+  const notice = executionNotice(row);
+  if (!notice) return;
+  const { acknowledged, saving } = attention.state(notice);
+  return (
+    <>
+      <CommandProgress
+        stage="failed"
+        subject={subject(row.entity.value.operation)}
+        reason={row.entity.value.outcomeReason}
+        acknowledged={acknowledged}
+      />
+      {!acknowledged && (
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          loading={saving}
+          disabled={attention.pending !== null && !saving}
+          onClick={() => attention.acknowledge(notice)}
+          aria-label={`Dismiss execution failure for command ${row.entityId}`}
+        >
+          Dismiss
+        </Button>
+      )}
+    </>
+  );
+}
+
 export function LocalControlCommands({
   commands,
   entities,
@@ -153,26 +190,29 @@ export function LocalControlCommands({
 export function PendingInputMessages({
   commands,
   entities,
+  localSendRows,
   inputEchoes,
   onInputEchoLoaded,
   errors,
   store,
   deliver,
   localNotice,
+  executionProgress,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
+  localSendRows: ThreadEntity[];
   inputEchoes?: ReadonlyMap<string, string>;
   onInputEchoLoaded?: (commandId: string) => void;
   errors: ReadonlyMap<string, CommandIssue>;
   store: LocalCommands;
   deliver: (value: LocalCommand) => Promise<void>;
   localNotice: LocalNotice;
+  executionProgress: ReadonlyMap<string, JSX.Element>;
 }): JSX.Element | null {
   const inputCommands = commands.filter((value) => value.command.operation.case === "submitInput");
-  const rows = useThreadSync().useCommandRows(inputCommands.map((value) => value.command.commandId));
-  const byId = new Map(rows.map((row) => [row.entityId, row]));
-  useEffect(() => store.observeCommandIds(new Set(rows.map((row) => row.entityId))), [rows, store]);
+  const byId = new Map(localSendRows.map((row) => [row.entityId, row]));
+  useEffect(() => store.observeCommandIds(new Set(localSendRows.map((row) => row.entityId))), [localSendRows, store]);
   const localCommandIds = new Set(inputCommands.map((value) => value.command.commandId));
   const confirmedCommandIds = new Set(
     entities
@@ -242,7 +282,7 @@ export function PendingInputMessages({
             progress={
               effected ? undefined : (
                 <>
-                  {notice?.progress ?? (
+                  {executionProgress.get(id) ?? notice?.progress ?? (
                     <CommandOutcome
                       stage={stage}
                       subject="input"
@@ -280,11 +320,13 @@ export function PendingInputMessages({
             onFallbackLoaded={onInputEchoLoaded ? () => onInputEchoLoaded(row.entityId) : undefined}
             phase={failed ? "failed" : noop ? "noop" : "confirmed"}
             progress={
-              <CommandOutcome
-                stage={failed ? "failed" : noop ? "noop" : "effected"}
-                subject="input"
-                reason={command.outcomeReason}
-              />
+              executionProgress.get(row.entityId) ?? (
+                <CommandOutcome
+                  stage={failed ? "failed" : noop ? "noop" : "effected"}
+                  subject="input"
+                  reason={command.outcomeReason}
+                />
+              )
             }
           />
         );

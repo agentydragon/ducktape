@@ -23,8 +23,9 @@ type NoticeScope struct {
 }
 
 type NoticeRevision struct {
-	CommandID string
-	Version   int64
+	CommandID     string
+	Version       int64
+	OutcomeCursor int64
 }
 
 type NoticeAcknowledgement struct {
@@ -34,6 +35,13 @@ type NoticeAcknowledgement struct {
 }
 
 func (s *Store) AcknowledgeNotice(ctx context.Context, scope NoticeScope, notice NoticeRevision) error {
+	if notice.OutcomeCursor > 0 {
+		_, err := s.db.ExecContext(ctx, `INSERT INTO execution_failure_acknowledgement
+			(thread_id,operator_issuer,operator_subject,command_id,outcome_cursor) VALUES ($1,$2,$3,$4,$5)
+			ON CONFLICT DO NOTHING`,
+			scope.ThreadID, scope.Issuer, scope.Subject, notice.CommandID, notice.OutcomeCursor)
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO command_notice_acknowledgement
 		(thread_id,operator_issuer,operator_subject,command_id,receipt_version) VALUES ($1,$2,$3,$4,$5)
 		ON CONFLICT (thread_id,operator_issuer,operator_subject,command_id,receipt_version) DO NOTHING`,
@@ -47,12 +55,18 @@ func (s *Store) FindNoticeAcknowledgements(ctx context.Context, scope NoticeScop
 	}
 	commands := make([]string, len(notices))
 	versions := make([]int64, len(notices))
+	outcomes := make([]int64, len(notices))
 	for i, n := range notices {
-		commands[i], versions[i] = n.CommandID, n.Version
+		commands[i], versions[i], outcomes[i] = n.CommandID, n.Version, n.OutcomeCursor
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT acknowledgement_id,command_id,receipt_version,acknowledged_at
+	rows, err := s.db.QueryContext(ctx, `SELECT acknowledgement_id,command_id,receipt_version,0::bigint,acknowledged_at
 		FROM command_notice_acknowledgement WHERE thread_id=$1 AND operator_issuer=$2 AND operator_subject=$3 AND (command_id,receipt_version) IN
-		(SELECT * FROM unnest($4::text[], $5::bigint[]))`, scope.ThreadID, scope.Issuer, scope.Subject, pq.Array(commands), pq.Array(versions))
+		(SELECT * FROM unnest($4::text[], $5::bigint[]))
+		UNION ALL
+		SELECT 0::bigint,command_id,0::bigint,outcome_cursor,acknowledged_at
+		FROM execution_failure_acknowledgement WHERE thread_id=$1 AND operator_issuer=$2 AND operator_subject=$3 AND (command_id,outcome_cursor) IN
+		(SELECT * FROM unnest($4::text[], $6::bigint[]))`,
+		scope.ThreadID, scope.Issuer, scope.Subject, pq.Array(commands), pq.Array(versions), pq.Array(outcomes))
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +79,7 @@ func (s *Store) ListNoticeAcknowledgements(ctx context.Context, scope NoticeScop
 	if limit < 1 || limit > MaxNoticePage {
 		return nil, fmt.Errorf("expected a page of 1 to %d notices", MaxNoticePage)
 	}
-	query := `SELECT acknowledgement_id,command_id,receipt_version,acknowledged_at
+	query := `SELECT acknowledgement_id,command_id,receipt_version,0::bigint,acknowledged_at
 		FROM command_notice_acknowledgement WHERE thread_id=$1 AND operator_issuer=$2 AND operator_subject=$3`
 	// Include the cursor record so we can verify its ownership in the same snapshot.
 	// The token itself contains only its immutable row ID.
@@ -100,7 +114,7 @@ func scanNoticeAcknowledgements(rows *sql.Rows) ([]NoticeAcknowledgement, error)
 	var records []NoticeAcknowledgement
 	for rows.Next() {
 		var record NoticeAcknowledgement
-		if err := rows.Scan(&record.ID, &record.CommandID, &record.Version, &record.AcknowledgedAt); err != nil {
+		if err := rows.Scan(&record.ID, &record.CommandID, &record.Version, &record.OutcomeCursor, &record.AcknowledgedAt); err != nil {
 			return nil, err
 		}
 		records = append(records, record)

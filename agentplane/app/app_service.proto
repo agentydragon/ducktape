@@ -58,7 +58,7 @@ service AppService {
     option (google.api.http) = {post: "/v1/threads/{thread_id}/unarchive" body: "*"};
   }
 
-  // Per-operator attention for an exact Dispatcher receipt revision.
+  // Per-operator attention for an exact Dispatcher receipt or History execution failure.
   rpc AcknowledgeCommandNotice(AcknowledgeCommandNoticeRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {post: "/v1/threads/{thread_id}/notice-acknowledgements" body: "*"};
   }
@@ -66,6 +66,7 @@ service AppService {
   rpc BatchGetCommandNoticeAcknowledgements(BatchGetCommandNoticeAcknowledgementsRequest) returns (CommandNoticeAcknowledgements) {
     option (google.api.http) = {post: "/v1/threads/{thread_id}/notice-acknowledgements:batchGet" body: "*"};
   }
+  // Paginated acknowledgements of Dispatcher receipts for Delivery history.
   rpc ListCommandNoticeAcknowledgements(ListCommandNoticeAcknowledgementsRequest) returns (CommandNoticeAcknowledgements) {
     option (google.api.http) = {get: "/v1/threads/{thread_id}/notice-acknowledgements"};
   }
@@ -201,7 +202,9 @@ message ThreadMetadataTarget {
 // Receipt versions are assigned by Dispatcher to live updates and deletion receipts.
 message CommandNoticeRevision {
   string command_id = 1;
+  // Exactly one of receipt_version and outcome_cursor must be positive.
   int64 receipt_version = 2;
+  int64 outcome_cursor = 3;
 }
 
 message CommandNoticeAcknowledgement {

@@ -17,7 +17,11 @@ import { listModels } from "../app_config/client";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../observability/langfuse_search";
 import { traceSearchUrl } from "../observability/trace_search";
 import { useThreadSync, type ThreadWindow } from "./thread_sync";
-import { ThreadFeedStatus, type ThreadEntity } from "../../../history_service/api/history/history_service_pb";
+import {
+  ThreadCommandOutcome,
+  ThreadFeedStatus,
+  type ThreadEntity,
+} from "../../../history_service/api/history/history_service_pb";
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
@@ -28,6 +32,7 @@ import {
   PendingInputMessages,
   LocalControlCommands,
   OutstandingDispatchCommands,
+  executionFailureProgress,
   inlineDispatches,
   receiptProgress,
   selectedHistoryCommands,
@@ -36,7 +41,12 @@ import {
 import { useThreadCommands } from "./command_delivery";
 import { sameCommand } from "./local_commands";
 import { useDispatchOriginals } from "./delivery_notice";
-import { isDeliveryIssue, matchingLocalIssue } from "./command_notice_attention";
+import {
+  executionNotice,
+  isDeliveryIssue,
+  matchingLocalIssue,
+  useNoticeAcknowledgements,
+} from "./command_notice_attention";
 import type { ThreadDeliveryState } from "./thread_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -364,14 +374,38 @@ function ConversationBody({
       progress: receiptProgress(delivery, item),
     };
   };
-  const projectedProgress = new Map(
+  const localSendRows = useThreadSync().useCommandRows(
+    localCommands
+      .filter(({ command }) => command.operation.case === "submitInput")
+      .map(({ command }) => command.commandId)
+  );
+  const projectedCommands = new Map(
+    [...localSendRows, ...entities].filter((row) => row.entity.case === "command").map((row) => [row.entityId, row])
+  );
+  const executionFailures = Array.from(projectedCommands.values()).flatMap((row) => executionNotice(row) ?? []);
+  const executionAttention = useNoticeAcknowledgements(threadId, executionFailures);
+  const projectedProgress = new Map<string, JSX.Element | null>(
     inline
-      .filter((item) => isDeliveryIssue(item.state))
+      .filter((item) => {
+        const entity = projectedCommands.get(item.commandId)?.entity;
+        return (
+          entity?.case === "command" &&
+          entity.value.outcome === ThreadCommandOutcome.PENDING &&
+          isDeliveryIssue(item.state)
+        );
+      })
       .map(
         (item) =>
           [item.commandId, deliveryAttention.acknowledged(item) ? null : receiptProgress(delivery, item)] as const
       )
   );
+  const executionProgress = new Map(
+    Array.from(projectedCommands.values()).flatMap((row) => {
+      const progress = executionFailureProgress(row, executionAttention);
+      return progress ? [[row.entityId, progress] as const] : [];
+    })
+  );
+  for (const [id, progress] of executionProgress) projectedProgress.set(id, progress);
   const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
   for (const local of localCommands) {
     if (local.command.operation.case === "submitInput") {
@@ -383,12 +417,14 @@ function ConversationBody({
       <PendingInputMessages
         commands={localCommands}
         entities={entities}
+        localSendRows={localSendRows}
         inputEchoes={inputEchoes}
         onInputEchoLoaded={onInputEchoLoaded}
         errors={commands.errors}
         store={commands.store}
         deliver={commands.deliver}
         localNotice={localNotice}
+        executionProgress={executionProgress}
       />
       {localCommands.length > 0 && (
         <LocalControlCommands
@@ -465,6 +501,11 @@ function ConversationBody({
         {commands.submissionError && (
           <Text role="alert" c="red">
             {commands.submissionError}
+          </Text>
+        )}
+        {executionAttention.error && (
+          <Text role="alert" size="sm" c="red">
+            {executionAttention.error}
           </Text>
         )}
         <ThreadComposer

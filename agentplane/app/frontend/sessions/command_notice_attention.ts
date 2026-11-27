@@ -9,11 +9,25 @@ import {
 import { displayableError } from "../transport/client";
 import { acknowledgeCommandNotice, getCommandNoticeAcknowledgements } from "./command_notice_client";
 import type { LocalCommand } from "./local_commands";
+import { ThreadCommandOutcome, type ThreadEntity } from "../../../history_service/api/history/history_service_pb";
 
 type Receipt = { commandId: string; receiptVersion?: bigint };
 
 export function noticeKey(receipt: Receipt): string {
   return JSON.stringify([receipt.commandId, receipt.receiptVersion?.toString()]);
+}
+
+function revisionKey(notice: CommandNoticeRevision): string {
+  return notice.outcomeCursor > 0n
+    ? JSON.stringify([notice.commandId, "execution", notice.outcomeCursor.toString()])
+    : noticeKey(notice);
+}
+
+export function executionNotice(row: ThreadEntity): CommandNoticeRevision | undefined {
+  if (row.entity.case !== "command" || row.entity.value.outcome !== ThreadCommandOutcome.FAILED) return;
+  const cursor = row.entity.value.outcomeCursor;
+  if (cursor === undefined || cursor <= 0n) return;
+  return create(CommandNoticeRevisionSchema, { commandId: row.entityId, outcomeCursor: cursor });
 }
 
 export function isDeliveryIssue(state: DeliveryState): boolean {
@@ -64,11 +78,38 @@ export function useCommandNoticeAttention(
   archiveIssues: readonly DispatchWorksetItem[],
   selectedError: string | null
 ): NoticeAttention {
-  const eligible = new Set(
-    [...(stale ? NO_ISSUES : issues), ...archiveIssues]
-      .filter((item) => isDeliveryIssue(item.state) && (item.receiptVersion ?? 0n) > 0n)
-      .map(noticeKey)
-  );
+  const eligible = [...(stale ? NO_ISSUES : issues), ...archiveIssues]
+    .filter((item) => isDeliveryIssue(item.state) && (item.receiptVersion ?? 0n) > 0n)
+    .map(({ commandId, receiptVersion }) => create(CommandNoticeRevisionSchema, { commandId, receiptVersion }));
+  const acknowledgements = useNoticeAcknowledgements(sessionId, eligible, "Could not acknowledge the delivery issue.");
+  return {
+    issues,
+    acknowledged: (item) => acknowledgements.acknowledgedKey(noticeKey(item)),
+    canAcknowledge: (item) => isDeliveryIssue(item.state) && acknowledgements.eligibleKey(noticeKey(item)),
+    acknowledge: ({ commandId, receiptVersion }) =>
+      acknowledgements.acknowledge(create(CommandNoticeRevisionSchema, { commandId, receiptVersion })),
+    historyRevision: acknowledgements.historyRevision,
+    pending: acknowledgements.pending,
+    error: acknowledgements.error ?? selectedError,
+  };
+}
+
+export interface NoticeAcknowledgements {
+  acknowledgedKey: (key: string) => boolean;
+  eligibleKey: (key: string) => boolean;
+  state: (notice: CommandNoticeRevision) => { acknowledged: boolean; saving: boolean };
+  historyRevision: number;
+  pending: string | null;
+  error: string | null;
+  acknowledge: (notice: CommandNoticeRevision) => void;
+}
+
+export function useNoticeAcknowledgements(
+  sessionId: string,
+  notices: readonly CommandNoticeRevision[],
+  writeFailure = "Could not dismiss the execution failure."
+): NoticeAcknowledgements {
+  const eligible = new Set(notices.map(revisionKey));
   // Workset checkpoints and a mounted archive page can describe the same revision.
   const revisions = JSON.stringify([...eligible].sort());
   const [acknowledged, setAcknowledged] = useState<ReadonlySet<string>>(() => new Set());
@@ -85,8 +126,13 @@ export function useCommandNoticeAttention(
       return;
     }
     const notices = [...keys].map((key) => {
-      const [commandId, version] = JSON.parse(key) as [string, string];
-      return create(CommandNoticeRevisionSchema, { commandId, receiptVersion: BigInt(version) });
+      const [commandId, versionOrSource, outcomeCursor] = JSON.parse(key) as [string, string, string?];
+      return create(
+        CommandNoticeRevisionSchema,
+        outcomeCursor === undefined
+          ? { commandId, receiptVersion: BigInt(versionOrSource) }
+          : { commandId, outcomeCursor: BigInt(outcomeCursor) }
+      );
     });
     let request: AbortController | undefined;
     const refresh = () => {
@@ -101,7 +147,7 @@ export function useCommandNoticeAttention(
             // mutation can return a page that does not yet include it.
             const matches = new Set([...keys].filter((key) => previous.has(key)));
             for (const { notice } of acknowledgements) {
-              if (notice && keys.has(noticeKey(notice))) matches.add(noticeKey(notice));
+              if (notice && keys.has(revisionKey(notice))) matches.add(revisionKey(notice));
             }
             return matches;
           });
@@ -124,37 +170,28 @@ export function useCommandNoticeAttention(
   }, [sessionId, revisions]);
 
   return {
-    issues,
-    acknowledged: (item) => acknowledged.has(noticeKey(item)),
-    canAcknowledge: (item) => isDeliveryIssue(item.state) && eligible.has(noticeKey(item)),
+    acknowledgedKey: (key: string) => acknowledged.has(key),
+    eligibleKey: (key: string) => eligible.has(key),
+    state: (notice: CommandNoticeRevision) => {
+      const key = revisionKey(notice);
+      return { acknowledged: acknowledged.has(key), saving: pending === key };
+    },
     historyRevision,
     pending,
-    error: writeError ?? lookupError ?? selectedError,
-    acknowledge: (item) => {
-      const receiptVersion = item.receiptVersion;
-      const key = noticeKey(item);
-      if (
-        !isDeliveryIssue(item.state) ||
-        !eligible.has(key) ||
-        receiptVersion === undefined ||
-        acknowledged.has(key) ||
-        writing.current
-      )
-        return;
+    error: writeError ?? lookupError,
+    acknowledge: (notice: CommandNoticeRevision) => {
+      const key = revisionKey(notice);
+      if (!eligible.has(key) || acknowledged.has(key) || writing.current) return;
       writing.current = true;
       setPending(key);
       setWriteError(null);
-      const notice: CommandNoticeRevision = create(CommandNoticeRevisionSchema, {
-        commandId: item.commandId,
-        receiptVersion,
-      });
       acknowledgeCommandNotice(sessionId, notice)
         .then(() => {
           setAcknowledged((previous) => new Set([...previous, key]));
           setHistoryRevision((revision) => revision + 1);
         })
         .catch((error: unknown) => {
-          setWriteError(`Could not acknowledge the delivery issue. ${displayableError(error)}`);
+          setWriteError(`${writeFailure} ${displayableError(error)}`);
         })
         .finally(() => {
           writing.current = false;

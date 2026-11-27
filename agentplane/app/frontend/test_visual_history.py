@@ -539,6 +539,10 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     bubble_selector = ".transcript-user-bubble"
     pending_box = await input_row.locator(bubble_selector).bounding_box()
     assert pending_box
+    await _expect_dismiss_below_status(
+        failed_input.get_by_role("alert"),
+        failed_input.get_by_role("button", name="Dismiss execution failure", exact=False),
+    )
     for row in (failed_input, applied_input):
         box = await row.locator(bubble_selector).bounding_box()
         assert box
@@ -581,6 +585,13 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await view.capture(name="effort_detail")
     await effort_details.click()
     await expect(page.get_by_role("dialog", name="Delivery details")).to_have_count(0)
+    dismiss = effort_row.get_by_role("button", name="Dismiss execution failure", exact=False)
+    await _expect_dismiss_below_status(effort_failure, dismiss)
+    await dismiss.click()
+    await expect(effort_failure).to_have_count(0)
+    await expect(effort_row.get_by_text("Set reasoning effort to high")).to_be_visible()
+    await page.mouse.move(0, 0)
+    await view.capture(name="execution_failure_dismissed", target=effort_row)
     input_hit = applied_input.locator(".agentplane-command-progress-hit")
     await expect(applied_input.locator(".agentplane-command-light")).to_have_count(0)
     await expect(input_hit).to_have_css("opacity", "0")
@@ -710,25 +721,32 @@ async def _expect_command_lights(row: Locator, states: list[str]) -> None:
         await expect(lights.nth(index)).to_have_attribute("data-state", state)
 
 
+async def _expect_dismiss_below_status(progress: Locator, dismiss: Locator) -> None:
+    status_box = await progress.bounding_box()
+    dismiss_box = await dismiss.bounding_box()
+    assert status_box
+    assert dismiss_box
+    assert dismiss_box["y"] >= status_box["y"] + status_box["height"]
+    assert dismiss_box["x"] + dismiss_box["width"] == pytest.approx(status_box["x"] + status_box["width"], abs=1)
+
+
 async def _expect_delivery_gutter(row: Locator) -> None:
     bubble = row.locator(".transcript-user-bubble")
     aside = row.locator(".transcript-user-message-aside")
     progress = aside.locator(".agentplane-command-progress-inline")
+    dismiss = aside.get_by_role("button", name="Dismiss delivery issue", exact=False)
     bubble_box = await bubble.bounding_box()
     aside_box = await aside.bounding_box()
     assert bubble_box
     assert aside_box
     assert aside_box["y"] < bubble_box["y"] + bubble_box["height"]
-    for element in (
-        progress,
-        progress.locator(".agentplane-command-lights"),
-        aside.get_by_role("button", name="Dismiss delivery issue", exact=False),
-    ):
+    for element in (progress, progress.locator(".agentplane-command-lights"), dismiss):
         await expect(element).to_be_visible()
         box = await element.bounding_box()
         assert box
         assert box["width"] > 0
         assert box["x"] + box["width"] <= bubble_box["x"]
+    await _expect_dismiss_below_status(progress, dismiss)
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
