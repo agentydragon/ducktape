@@ -72,7 +72,8 @@ The open Thread watches the Dispatcher's bounded Session workset. The conversati
 delivering, failed, and unknown commands using ordinary input bubbles and control cards. The browser
 can load originals for visible receipts even before History is available. Loaded History owns
 finished commands. A pending History command shows its unresolved delivery status on the same
-row. The message gutter holds the progress dots, short state, and dismissal. The dots follow
+row. The message gutter holds the progress dots, short state, and dismissal without changing the
+bubble's maximum width. The dots follow
 submission, Dispatcher delivery, runner admission, and the observed effect. Red identifies a
 confirmed error at its boundary. A recorded delivery-attempt error can be red while the outcome
 remains unknown. Unknown outcomes without such an error leave the first unverified stage dashed.

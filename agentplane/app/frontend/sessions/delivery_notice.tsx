@@ -136,7 +136,7 @@ export function DispatchReceiptProgress({
       ? unknownDeliveryStage(item.reason, item.journalAdmitted)
       : (receiptStage[item.state] ?? "unknown");
   return (
-    <Group gap={4} wrap="nowrap" className="agentplane-command-delivery">
+    <Group gap={4} justify="flex-end" className="agentplane-command-delivery">
       <CommandProgress
         stage={stage}
         subject={subject}
