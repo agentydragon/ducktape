@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import opentofu
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.nix_cache import ci_token
 
@@ -35,7 +36,7 @@ def chart(app: App) -> Chart:
                 ),
                 (),
             ),
-            ("forgejo-images-secrets", "forgejo-images", ("forgejo-images-creds",), ()),
+            ("forgejo-images-secrets", "forgejo-images", (SECRET_NAME,), ()),
             (
                 "attic-ci-token",
                 ci_token.WRITER.namespace,

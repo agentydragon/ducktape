@@ -36,6 +36,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.forgejo_registry import pull_credentials
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
@@ -687,7 +688,7 @@ def namespace_chart(app: App) -> Chart:
         chart,
         "default-service-account",
         metadata=k8s.ObjectMeta(name="default", namespace=namespace.name),
-        image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
+        image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
     )
     return chart
 

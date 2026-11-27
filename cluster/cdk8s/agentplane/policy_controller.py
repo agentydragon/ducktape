@@ -34,6 +34,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
@@ -80,7 +81,7 @@ class PolicyController(Construct):
         accounts_namespace: str,
         workload_namespaces: Set[str],
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
-        registry_secret_name: str | None = "forgejo-images-creds",
+        registry_secret_name: str | None = SECRET_NAME,
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:

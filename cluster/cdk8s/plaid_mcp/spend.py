@@ -11,6 +11,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium, external_creds, namespaces
 from cluster.cdk8s.container_resources import container_resources
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.plaid_mcp.secret_copy import copy_secret
@@ -114,7 +115,7 @@ def _deployment(chart: Chart) -> None:
                 spec=k8s.PodSpec(
                     service_account_name=_NAME,
                     automount_service_account_token=False,
-                    image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=_POLICY.name))],
                     containers=[
                         k8s.Container(

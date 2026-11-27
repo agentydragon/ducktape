@@ -1656,6 +1656,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:probes",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
