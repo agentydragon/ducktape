@@ -742,3 +742,26 @@ func TestRepackResumesAtFirstLegacyBlock(t *testing.T) {
 		t.Fatalf("repeat touched an already migrated journal: %+v %v", result, err)
 	}
 }
+
+func TestSingleSessionRepackBacksOffAndResumes(t *testing.T) {
+	store, _ := newTestStoreWithDSN(t)
+	store.eventBlockProfile = eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 32, Level: 3}
+	session := openSessionForStore(t, store, "")
+	appendAPBTestJournalThrough(t, store, session.ID, 32)
+	want := eventFrames(t, store, session.ID, 1, 32)
+	// Sequence increments survive rollback. Force exactly one busy transaction.
+	migrationExec(t, store.DB(), `CREATE SEQUENCE busy_attempt`)
+	migrationExec(t, store.DB(), `CREATE FUNCTION busy_once() RETURNS trigger LANGUAGE plpgsql AS $$
+ BEGIN IF nextval('busy_attempt')=1 THEN RAISE EXCEPTION USING ERRCODE='55P03', MESSAGE='fixture lock timeout'; END IF; RETURN OLD; END $$`)
+	migrationExec(t, store.DB(), `CREATE TRIGGER busy_once BEFORE DELETE ON sampler_event FOR EACH ROW EXECUTE FUNCTION busy_once()`)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	result, err := store.CompactJournalWithOptions(ctx, session.ID, true, JournalCompactionOptions{WaitForIdle: true})
+	if err != nil || !result.Completed || result.OpeningCursor != 32 {
+		t.Fatalf("retry result=%+v error=%v", result, err)
+	}
+	if calls := postgres.Count(t, store.DB(), `SELECT last_value FROM busy_attempt`); calls <= 1 {
+		t.Fatalf("expected a retry, got %d trigger calls", calls)
+	}
+	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 32), want)
+}
