@@ -3374,7 +3374,7 @@ per-prefix facts live in one `IterativeInference` context
   nothing at a source prefix refines them.
 - `PreparedPurity(n)` retains the current classifier exactly, including enum
   initialization recognition, prefix-resolved coercions and whole-chunk heap
-  facts. Five current-owner preparatory proofs consume this fact.
+  facts. Three current-owner preparatory proofs consume this fact.
 - `CompletedPurity(n)` is published after final assignment/export evaluation,
   exact certificate/dependency minting and callee heap aggregation. Existing
   certificates discharge only their matching call effect; every residual
