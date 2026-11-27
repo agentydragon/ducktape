@@ -17,6 +17,14 @@ pub(super) struct Extractor {
 }
 
 impl Extractor {
+    /// Slot 0 carries the member's key and slot 1 its single lowered value.
+    /// Returning the node id keeps the caller's result one line.
+    fn record_key_then_value(&mut self, id: NodeId, key: NodeId, value: NodeId) -> NodeId {
+        self.facts.child.push((id, 0, key));
+        self.facts.child.push((id, 1, value));
+        id
+    }
+
     pub(super) fn node(&mut self, kind: NodeKind) -> NodeId {
         let id = self.next;
         self.next += 1;
@@ -446,10 +454,8 @@ impl Extractor {
             ClassMember::Method(method) => {
                 let id = self.class_method_node(method.is_static, method.kind);
                 let key = self.prop_key(&method.key)?;
-                self.facts.child.push((id, 0, key));
                 let function = self.function(&method.function)?;
-                self.facts.child.push((id, 1, function));
-                Ok(id)
+                Ok(self.record_key_then_value(id, key, function))
             }
             ClassMember::Constructor(constructor) => {
                 let id = self.node(NodeKind::Constructor);
@@ -500,10 +506,8 @@ impl Extractor {
             ClassMember::PrivateMethod(method) => {
                 let id = self.class_method_node(method.is_static, method.kind);
                 let key = self.private_name_key(&method.key);
-                self.facts.child.push((id, 0, key));
                 let function = self.function(&method.function)?;
-                self.facts.child.push((id, 1, function));
-                Ok(id)
+                Ok(self.record_key_then_value(id, key, function))
             }
             ClassMember::PrivateProp(prop) => {
                 if !prop.decorators.is_empty() {
@@ -622,10 +626,8 @@ impl Extractor {
             ObjectPatProp::KeyValue(key_value) => {
                 let id = self.node(NodeKind::PatKeyValue);
                 let key = self.prop_key(&key_value.key)?;
-                self.facts.child.push((id, 0, key));
                 let value = self.pat(&key_value.value)?;
-                self.facts.child.push((id, 1, value));
-                Ok(id)
+                Ok(self.record_key_then_value(id, key, value))
             }
             ObjectPatProp::Assign(assign) => {
                 let id = self.node(NodeKind::PatAssign);
@@ -911,18 +913,14 @@ impl Extractor {
                 Prop::KeyValue(key_value) => {
                     let id = self.node(NodeKind::KeyValue);
                     let key = self.prop_key(&key_value.key)?;
-                    self.facts.child.push((id, 0, key));
                     let value = self.expr(&key_value.value)?;
-                    self.facts.child.push((id, 1, value));
-                    Ok(id)
+                    Ok(self.record_key_then_value(id, key, value))
                 }
                 Prop::Method(method) => {
                     let id = self.node(NodeKind::ObjectMethod);
                     let key = self.prop_key(&method.key)?;
-                    self.facts.child.push((id, 0, key));
                     let function = self.function(&method.function)?;
-                    self.facts.child.push((id, 1, function));
-                    Ok(id)
+                    Ok(self.record_key_then_value(id, key, function))
                 }
                 Prop::Getter(getter) => {
                     let id = self.node(NodeKind::Getter);
