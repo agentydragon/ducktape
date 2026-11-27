@@ -107,6 +107,46 @@ changing active views are not a completed cohort.
 An old head's execution can still serve a newer head through shared work; verify
 remaining consumers before recommending cancellation as a capacity improvement.
 
+## Measure runner reuse
+
+Recycled runners (`test.recycle-runner`) are paused Docker containers on the KVM workers. Reuse
+skips setup the next action would repeat, so its hit rate decides how much a cold-path speedup is
+worth. Two sources, tested 2026-11-27:
+
+**Per-test ground truth.** Each recycled K3s/VM suite writes `test.outputs/recycled-runner.json`.
+`previous_action: null` means a fresh runner; any other value means reuse. List the target's
+invocations, then fetch each receipt:
+
+```bash
+bbapi target history --label //agentplane/system_tests/suites:test_vm \
+  --since 2026-11-27 --repo https://github.com/agentydragon/ducktape --json > hist.json
+bbapi artifact download "$INV" "suites:test_vm/test.outputs/recycled-runner.json" -o "$INV.json"
+jq '{action: .action_instance, warm: (.previous_action != null), discarded: .discard_requested,
+     gb: .memory_after_reclaim.current/1e9}' "$INV.json"
+```
+
+**Gotcha:** history lists cached verdicts too, and their receipts repeat the original run's
+(identical durations are a hint). De-duplicate by `action_instance` before counting; ten history
+rows were one physical run on 2026-11-27. Exclude manual `bbr` runs, and count failed runs
+separately: a failure discards its runner, so the next run on that worker is cold by design.
+
+**Pool-wide trend (Mimir).** KVM workers export, per pod, with no recycling-key label:
+`buildbuddy_remote_execution_recycle_runner_requests{status="hit"|"miss"}`,
+`…_runner_pool_evictions`, `…_runner_pool_memory_usage_bytes`, `…_runner_pool_count` and
+`…_runner_pool_failed_recycle_attempts`. They mix every recycled suite on the pool; use them for
+trends and to explain misses (evictions under the paused-runner cap), the receipts for per-test rates.
+The executor pool dashboard has a Runner reuse row. A worker with no hits has no `status="hit"`
+series, so a hit-rate expression needs `or vector(0)`:
+
+```promql
+100 * (sum(increase(buildbuddy_remote_execution_recycle_runner_requests{namespace="buildbuddy-executor",status="hit"}[1h])) or vector(0))
+  / sum(increase(buildbuddy_remote_execution_recycle_runner_requests{namespace="buildbuddy-executor"}[1h]))
+```
+
+BuildBuddy admits tasks without counting paused runners and evicts them only when adding another to
+the pool (count or total-memory cap). Its paused-memory charge (`usage − stats.cache`) counts page
+cache on cgroup v2, which has no `cache` field (#20575).
+
 ## Measure and show the queue contribution
 
 Keep each producer's clock semantics and sampling resolution. GitHub creation to
