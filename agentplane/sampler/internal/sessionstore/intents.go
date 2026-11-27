@@ -114,7 +114,14 @@ func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 	if err := s.updateConversation(ctx, tx, conversation); err != nil {
 		return err
 	}
-	return s.recordEvidence(ctx, tx, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
+	sources, err := s.recordEvidenceWithSources(ctx, tx, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
+	if err != nil {
+		return err
+	}
+	if request.Kind == PendingIntentSampling {
+		return persistSamplingDispatch(ctx, tx, id, session.ActiveTurn, sources)
+	}
+	return nil
 }
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
@@ -186,7 +193,13 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 			conversation.ContextTokens = contextTokens
 		}
 		conversation.Pending = nil
-		return s.updateConversation(ctx, tx, conversation)
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
+			return err
+		}
+		if intent.Kind == IntentSampling {
+			return deleteSamplingRecoveryProjection(ctx, tx, intentID)
+		}
+		return nil
 	})
 }
 
@@ -244,7 +257,13 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			if err := s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
 				return err
 			}
-			return s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure)
+			if err := s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure); err != nil {
+				return err
+			}
+			if intent.Kind == IntentSampling && (conversation.Pending == nil || conversation.Pending.ID != intentID) {
+				return deleteSamplingRecoveryProjection(ctx, tx, intentID)
+			}
+			return nil
 		}
 		outputs, err := settlePendingCalls(conversation, func(call protocol.ToolInvocation) string { return "Not dispatched because the turn failed." })
 		if err != nil {
@@ -272,7 +291,13 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if err := s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
 			return err
 		}
-		return s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure)
+		if err := s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure); err != nil {
+			return err
+		}
+		if intent.Kind == IntentSampling {
+			return deleteSamplingRecoveryProjection(ctx, tx, intentID)
+		}
+		return nil
 	})
 }
 

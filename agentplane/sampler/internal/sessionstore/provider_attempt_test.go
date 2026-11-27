@@ -353,7 +353,7 @@ func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(
 		t.Fatal(err)
 	}
 
-	removeServiceOwnerMigration(t, store.DB())
+	removePostV17SamplerMigrations(t, store.DB())
 	// Recreate the committed v15 baseline shape and reapply all later migrations to the live row.
 	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_retry_due_idx`)
 	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_predecessor_idx`)
@@ -633,6 +633,11 @@ func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *tes
 	}); err != nil {
 		t.Fatal(err)
 	}
+	for _, table := range []string{"sampler_intent_source", "sampler_intent_started_item"} {
+		if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM `+table+` WHERE intent_id=$1`, intentID); got != 0 {
+			t.Fatalf("settled predecessor retained %s rows: %d", table, got)
+		}
+	}
 	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late frame")}, false); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("late provider evidence after abandon: %v", err)
 	}
@@ -689,6 +694,15 @@ func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *tes
 	}
 	if newID == intentID || !bytes.Equal(originalWire, retryWire) {
 		t.Fatalf("retry id reused=%v wire exact=%v", newID == intentID, bytes.Equal(originalWire, retryWire))
+	}
+	var retryTurn sql.NullString
+	var retryDispatch sql.NullInt64
+	if err := reopened.DB().QueryRowContext(t.Context(), `SELECT dispatch_turn_id,dispatch_sequence FROM sampler_intent WHERE id=$1`, newID).
+		Scan(&retryTurn, &retryDispatch); err != nil {
+		t.Fatal(err)
+	}
+	if !retryTurn.Valid || !retryDispatch.Valid {
+		t.Fatalf("retry attempt has no independent dispatch projection: turn=%v sequence=%v", retryTurn, retryDispatch)
 	}
 	current, err := reopened.CurrentProviderAttempt(t.Context(), owner, session.ID)
 	if err != nil || current == nil || current.IntentID != newID || current.StepID != intentID || current.PreviousID != intentID ||

@@ -71,7 +71,7 @@ func TestMigrationDeletesRetainedPreIdentitySamplerSessions(t *testing.T) {
 	setConfiguration(missingIdentity, true, false)
 	setConfiguration(retiredPrincipal, false, true)
 
-	removeServiceOwnerMigration(t, store.DB())
+	removePostV17SamplerMigrations(t, store.DB())
 	migrationExec(t, store.DB(), "DELETE FROM central_sampler_goose_version WHERE version_id=17 AND is_applied")
 	if err := migrations.Up(t.Context(), store.DB()); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestSamplerBaselineAdoptsCompletedRewriteWithoutTouchingData(t *testing.T) 
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	migrationExec(t, store.DB(), `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,'fixture-history',73)`, session.ID)
-	removeServiceOwnerMigration(t, store.DB())
+	removePostV17SamplerMigrations(t, store.DB())
 	// Model a database that has the completed v14 rewrite and the v15 schema, but
 	// lost the v15 Goose marker before v16 existed. Re-run both adoption and the
 	// new provider-attempt migration from that state.
@@ -189,10 +189,11 @@ func TestSamplerBaselineConcurrentFreshCreation(t *testing.T) {
 	}
 }
 
-func removeServiceOwnerMigration(t *testing.T, db *sql.DB) {
+func removePostV17SamplerMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
-	// Fixtures replay from before version 18. Undo any later schema changes as
-	// well so Goose sees a contiguous predecessor history.
+	// Fixtures replay from before version 18. Undo later schema changes as well
+	// so Goose sees a contiguous predecessor history.
+	removeSamplingRecoveryProjection(t, db)
 	migrationExec(t, db, `ALTER TABLE sampler_command
 		DROP CONSTRAINT sampler_command_admission_metadata_check,
 		DROP COLUMN admission_origin_source_id,
@@ -208,4 +209,14 @@ func removeServiceOwnerMigration(t *testing.T, db *sql.DB) {
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP CONSTRAINT sampler_session_owner_kind`)
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP COLUMN service_spiffe_id`)
 	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id>=18`)
+}
+
+func removeSamplingRecoveryProjection(t *testing.T, db *sql.DB) {
+	t.Helper()
+	migrationExec(t, db, `DROP TRIGGER sampler_event_invalidates_sampling_recovery_projection ON sampler_event`)
+	migrationExec(t, db, `DROP FUNCTION sampler_invalidate_sampling_recovery_projection()`)
+	migrationExec(t, db, `DROP TABLE sampler_intent_started_item, sampler_intent_source`)
+	migrationExec(t, db, `ALTER TABLE sampler_intent
+		DROP CONSTRAINT sampler_intent_dispatch_projection_check,
+		DROP COLUMN dispatch_turn_id, DROP COLUMN dispatch_sequence`)
 }

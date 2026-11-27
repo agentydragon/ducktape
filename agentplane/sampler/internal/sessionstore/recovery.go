@@ -344,6 +344,9 @@ func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 			return err
 		}
 	}
+	if kind == IntentSampling {
+		return deleteSamplingRecoveryProjection(ctx, tx, intentID)
+	}
 	return nil
 }
 
