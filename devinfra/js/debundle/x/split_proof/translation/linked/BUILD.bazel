@@ -15,6 +15,16 @@ js_library(
 )
 
 js_test(
+    name = "hoisted_helper_link_test",
+    data = [
+        "//devinfra/js/debundle/x/split_proof:hoisted_helper_link_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "hoisted_helper_link_test.mjs",
+    env = {"HOISTED_HELPER_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:hoisted_helper_link_test_runner)"},
+)
+
+js_test(
     name = "input_test",
     data = [
         "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
