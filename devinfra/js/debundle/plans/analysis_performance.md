@@ -7,11 +7,7 @@ on `IterativeInference` does not establish that its work is incremental.
 
 ## Ownership
 
-<../TODO.md#remaining-dispatch-order> owns priority and dispatch. This file owns
-open analysis cost and pass-standardization tasks and their completion evidence;
-<analysis_consolidation.md> owns the algorithm and stage dependencies;
-<abstract_interpreter.md> owns operation/capability migrations; and
-<convergence_landing.md> owns gate-migration obligations. Task IDs below are
+Ownership and dispatch: <../TODO.md#active-work-queue>. Task IDs below are
 stable references, not a second ordered queue. Remove closed tasks after their
 remaining limitations have explicit owners; keep measurements in `perf/` or the
 existing performance report, not in a completion log here.
@@ -119,7 +115,7 @@ in the existing performance report, then remove this task.
 ### PF4 — Matched impact profile for compiled capability containment
 
 The structural containment implementation and its causal CLI/work-count
-coverage are delivered with this change. They establish the indexed traversal
+coverage landed in #17107. They establish the indexed traversal
 and semantic bounds, not an end-to-end speedup. The remaining work is a matched
 before/after profile of the same Excalidraw and Tana source/spec/package inputs,
 recording whether each workload reaches this pass and reporting CPU, wall time
@@ -302,7 +298,7 @@ Tana savings; this is a source-audit finding, not a measured dominant hotspot.
 
 ### PF11 — Receiver-flow aggregate replay and fallback restart
 
-Receiver flow in `facts/sync_effects/execution_index/mod.rs` has separate binding,
+Receiver flow in `facts/sync_effects/execution_index/receiver_flow.rs` has separate binding,
 assignment, return-site and callable keys, but reconstructs full assignment/return
 aggregates on wakes. For unresolved
 capture-connected callable summaries, `close_receiver_flow` rebuilds and reruns
