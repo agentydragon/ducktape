@@ -3,6 +3,7 @@ import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.LiteralReorderConstruct
 import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.ResolvedPlacement
 import EsmSplit.CoreJS.OrderedConstSyntax
@@ -59,7 +60,7 @@ private def stageConstructed (program : CoreJS.Program) (src : BundleInput)
       | .ok _ => .ok ()
       | .error reason => .error { reason }
 
-private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
+private def tryInlineDeclarations (chunk : DeploymentChunk) (src : BundleInput)
     (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.LinkedInput.IndexedSource)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
@@ -97,15 +98,22 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   unless decide ((selected.map Prod.fst).Perm (original.body.map Prod.fst)) do
     return some (← emitRefusal options.request.label { reason := "selectors do not cover every original unit" }
       "named-declarations")
-  let .ok constructed := CoreJS.IndexedInlineConstructor.construct decoded (CoreJS.CheckedSplit.summarize source) spec |
-    return none
+  let (program, scope) ←
+    match CoreJS.IndexedInlineConstructor.construct decoded (CoreJS.CheckedSplit.summarize source) spec with
+    | .ok constructed => pure (constructed.program, "named-declarations")
+    | .error _ =>
+      -- The ordered rule cannot justify an inversion. Use the same decoded
+      -- source and unmodified request for the proved literal swap rule.
+      match CoreJS.LiteralReorderConstruct.construct source spec with
+      | .ok constructed => pure (constructed.program, "literal-reorder")
+      | .error _ => return none
   try
-    let checked ← stageConstructed constructed.program src out work options timings
+    let checked ← stageConstructed program src out work options timings
     match checked with
-    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "named-declarations"
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) scope
         [("strategy", toJson "compiled-constructor")])
-    | .error refusal => return some (← emitRefusal options.request.label refusal "named-declarations")
-  catch e => return some (← emitVerdict options.request.label (.error e.toString) "named-declarations")
+    | .error refusal => return some (← emitRefusal options.request.label refusal scope)
+  catch e => return some (← emitVerdict options.request.label (.error e.toString) scope)
 
 /-- Source and original metadata for the indexed local-export constructor. -/
 private structure LocalExportSource where
@@ -184,7 +192,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         if let some verdict ← rejectDuplicateTerminalSelectors chunk classified options then return verdict
         let indexed := CoreJS.LinkedInput.checkIndexedSource classified
         if let some verdict ← tryLocalExports chunk src classified indexed out work options timings then return verdict
-        if let some verdict ← tryNamedDeclarations chunk src classified indexed out work options timings then return verdict
+        if let some verdict ← tryInlineDeclarations chunk src classified indexed out work options timings then return verdict
   noConstructor options.request.label s!"no constructor accepts the requested placement of {chunk.path}"
 
 def certified (args : List String) : IO UInt32 := do

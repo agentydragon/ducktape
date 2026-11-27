@@ -1676,6 +1676,7 @@ lean_library(
         ":corejs_resolved_placement",
         ":corejs_terminal_source",
         ":estree_emit",
+        ":literal_reorder_construct",
         ":lowersplit_input",
         ":ordered_const_syntax",
         ":terminal_export_placement",
