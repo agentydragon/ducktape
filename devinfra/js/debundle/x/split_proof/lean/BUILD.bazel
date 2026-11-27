@@ -566,8 +566,11 @@ lean_proof_test(
         "CoreJS.SparseProjectedOrder.split_indexed_find",
         "CoreJS.SparseProjectedOrder.split_indexed_loaded_flat",
         "CoreJS.SparseProjectedOrder.split_indexed_loaded_ids",
+        "CoreJS.SparseProjectedOrder.split_indexed_loaded_perm",
         "CoreJS.SparseProjectedOrder.split_indexed_regions_eq_source",
+        "CoreJS.SparseProjectedOrder.split_indexed_regions_of_perm",
         "CoreJS.SparseProjectedOrder.split_indexed_tops_eq_source",
+        "CoreJS.SparseProjectedOrder.split_indexed_tops_of_perm",
     ],
     deps = [":corejs_sparse_projected_order"],
 )
@@ -2398,6 +2401,9 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.LiteralSwapCheck"],
     required_theorems = [
+        "CoreJS.LiteralSwapCheck.SourceSchedule.linked",
+        "CoreJS.LiteralSwapCheck.SourceSchedule.perm",
+        "CoreJS.LiteralSwapCheck.checkSourceSchedule",
         "CoreJS.LiteralSwapCheck.refuses_read",
         "CoreJS.LiteralSwapCheck.refuses_throw",
         "CoreJS.LiteralSwapCheck.sequence_sound",
@@ -2711,6 +2717,26 @@ lean_proof_test(
         "CoreJS.IndexedConstLink.source_allocation",
     ],
     deps = [":corejs_indexed_const_link"],
+)
+
+lean_library(
+    name = "corejs_indexed_reorder",
+    srcs = ["EsmSplit/CoreJS/IndexedReorder.lean"],
+    deps = [
+        ":corejs_indexed_const_link",
+        ":literal_swap_check",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_reorder_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedReorder"],
+    required_theorems = [
+        "CoreJS.IndexedReorder.run_of_schedule",
+        "CoreJS.IndexedReorder.same_inline_exports",
+    ],
+    deps = [":corejs_indexed_reorder"],
 )
 
 lean_library(
