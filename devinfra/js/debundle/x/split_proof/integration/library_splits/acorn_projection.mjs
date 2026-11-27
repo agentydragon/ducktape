@@ -39,7 +39,7 @@ for (const { init } of declarations.slice(2)) {
 const tmp = process.env.TEST_TMPDIR;
 const artifacts = process.env.TEST_UNDECLARED_OUTPUTS_DIR;
 const results = [];
-async function trial(name, ordinals, sourceSuffix, placement, observe) {
+async function trial(name, ordinals, sourceSuffix, placement, observe, checkTamper) {
   const text = ordinals.map((i) => declarations[i].text).join("\n") + "\n" + sourceSuffix + "\n";
   const input = path.join(artifacts, name + ".mjs");
   const spec = path.join(artifacts, name + ".json");
@@ -54,6 +54,7 @@ async function trial(name, ordinals, sourceSuffix, placement, observe) {
     assert.equal(result.verdict.strategy, "compiled-constructor", result.log);
     assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
     assert.deepEqual(observe(await import(pathToFileURL(path.join(out, placement.entry)).href)), original);
+    checkTamper?.(request);
   } else {
     assert.equal(result.reasonCode, "no_constructed_rule", result.log);
   }
@@ -103,8 +104,43 @@ function observeArrays({ tables }) {
   return [left, right].map((array) => ({ length: array.length, sha256: digest(JSON.stringify(array)) }));
 }
 const arrays = "export const tables = [" + first.name + ", " + second.name + "];";
-await trial("array-vars-kept", [0, 1], arrays, kept, observeArrays);
-await trial("array-vars-advance-second", [0, 1], arrays, advance, observeArrays);
+const keptArrays = await trial("array-vars-kept", [0, 1], arrays, kept, observeArrays, (request) => {
+  const provider = path.join(request.out, "m0.mjs");
+  const text = readFileSync(provider, "utf8");
+  const statement = acorn.parse(text, { ecmaVersion: "latest", sourceType: "module" }).body[0];
+  assert.equal(statement.type, "VariableDeclaration");
+  assert.equal(statement.kind, "var");
+  const [binding] = statement.declarations;
+  assert.equal(binding.id.name, first.name);
+  assert.equal(binding.init.type, "ArrayExpression");
+  const [element] = binding.init.elements;
+  writeFileSync(provider, text.slice(0, element.start) + String(element.value + 1) + text.slice(element.end));
+  const changed = split({ ...request, checkOutput: true });
+  assert.equal(changed.status, "refused", changed.log);
+  writeFileSync(provider, text);
+});
+if (process.env.EXPECT_ARRAY_VARS) assert.equal(keptArrays, process.env.EXPECT_ARRAY_VARS);
+assert.equal(await trial("array-vars-advance-second", [0, 1], arrays, advance, observeArrays), "refused");
+
+if (keptArrays === "certified") {
+  // A var's hoisted cell is undefined during its own initializer. The entry
+  // must receive the array installed into that cell, not allocate another one.
+  const input = path.join(tmp, "hoisted-array.mjs");
+  const spec = path.join(tmp, "hoisted-array.json");
+  const out = path.join(tmp, "hoisted-array");
+  writeFileSync(input, "var table = [table]; export const observed = table;\n");
+  writeFileSync(spec, JSON.stringify({ ...kept, modules: { "m0.mjs": ["#0"], "m1.mjs": ["#1"] } }));
+  const request = { source: input, spec, out, require: "all-outcomes" };
+  const result = split(request);
+  assert.equal(result.status, "certified", result.log);
+  assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
+  const original = (await import(pathToFileURL(input))).observed;
+  const actual = (await import(pathToFileURL(path.join(out, "m1.mjs")))).observed;
+  assert.deepEqual(original, [undefined]);
+  assert.deepEqual(actual, original);
+  assert.notEqual(actual, original);
+  assert.equal(actual, (await import(pathToFileURL(path.join(out, "m0.mjs")))).table);
+}
 
 // Reversing an eager read of a hoisted var changes the value despite normal
 // completion in both orders. Check the unsafe request as well as the Node oracle.

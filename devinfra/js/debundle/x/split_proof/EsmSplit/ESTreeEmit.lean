@@ -109,10 +109,13 @@ private def coreIdentifier (name : String) : Except String Json := do
   unless printableBinding name do throw s!"unsupported CoreJS binding name `{name}`"
   return identifier name
 
-/-- Translate only the primitive initializer fragment handled by the direct
+/-- Translate the initializer fragment handled by the direct
 constructor route. Unsupported CoreJS syntax fails closed. -/
 private def coreExpr (shadowed : Bool) (expr : CoreJS.Expr) (operand := false) : Except String Json :=
   match expr with
+  | .arr elems => do
+    let elements ← elems.attach.mapM fun ⟨elem, _⟩ => coreExpr shadowed elem
+    return node "ArrayExpression" [("elements", toJson elements)]
   | .undef => do
     if shadowed then throw "undefined initializer is shadowed in the output module"
     return identifier "undefined"

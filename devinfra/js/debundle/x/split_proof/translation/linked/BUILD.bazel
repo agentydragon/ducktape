@@ -54,6 +54,13 @@ _TEST_DATA = [
 _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"}
 
 js_test(
+    name = "ranked_allocation_test",
+    data = _TEST_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:split"],
+    entry_point = "ranked_allocation_test.mjs",
+    env = _TEST_ENV,
+)
+
+js_test(
     name = "static_provider_boundary_input_test",
     data = glob(["fixtures/static_provider_boundary/**/*.mjs"]) + [
         "//devinfra/js/debundle/x/split_proof:provider_input_boundary_test_runner",
