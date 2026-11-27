@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -275,7 +276,7 @@ func TestAGroupWatchSendsItsSnapshotInKeyOrderAndBoundedChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 	var keys []string
-	for i := range snapshotChunk + 1 {
+	for i := range streaming.SnapshotChunk + 1 {
 		key := fmt.Sprintf("test-group-%03d", i)
 		keys = append(keys, key)
 		settings[key] = map[string]any{"title": "t", "description": "d", "executor": map[string]any{"kind": "mcp", "description": "e"}}
@@ -293,7 +294,7 @@ func TestAGroupWatchSendsItsSnapshotInKeyOrderAndBoundedChunks(t *testing.T) {
 			got = append(got, group.GetKey())
 		}
 	}
-	if len(chunks) != 2 || len(chunks[0]) != snapshotChunk || !slices.Equal(got, keys) {
+	if len(chunks) != 2 || len(chunks[0]) != streaming.SnapshotChunk || !slices.Equal(got, keys) {
 		t.Errorf("%d chunks of %v, want %d MCP groups in key order in 2", len(chunks), got, len(keys))
 	}
 

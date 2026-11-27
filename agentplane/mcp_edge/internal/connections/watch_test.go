@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -91,14 +92,14 @@ func TestAWatchSendsEveryConnectionInBoundedChunksThenEachChange(t *testing.T) {
 	s := serve(t)
 	start := now().Add(-time.Hour)
 	var want []string
-	for i := range snapshotChunk + 1 {
+	for i := range streaming.SnapshotChunk + 1 {
 		want = append(want, s.connect(t, fmt.Sprintf("test-connection-%d", i), start.Add(time.Duration(i)*time.Second),
 			&callerIdentity, storedGrant{identity: &callerIdentity, status: grantActive}).String())
 	}
 	stream := s.watch(t, testOperator)
 	var got []string
 	for _, chunk := range snapshot(t, stream) {
-		if len(chunk) > snapshotChunk {
+		if len(chunk) > streaming.SnapshotChunk {
 			t.Errorf("a chunk of %d Connections", len(chunk))
 		}
 		for _, c := range chunk {

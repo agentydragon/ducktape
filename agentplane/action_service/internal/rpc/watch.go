@@ -1,10 +1,8 @@
 package rpc
 
 import (
-	"bytes"
-	"cmp"
 	"context"
-	"errors"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -15,18 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
-)
-
-const (
-	// snapshotChunk bounds the requests in one snapshot frame.
-	snapshotChunk = 64
-	// recheckInterval is how often a watch with nothing to send checks its bearer again.
-	recheckInterval = 5 * time.Second
-	// watchWriteTimeout bounds waiting for a watch Send to clear transport backpressure.
-	watchWriteTimeout = 5 * time.Second
 )
 
 // satisfies reads a watch's `until`: whether a receipt in a state ends the watch.
@@ -61,10 +48,10 @@ func (s *Service) follow() (follower, func(), error) {
 
 // changed blocks until a change may have changed what the watch shows: a wakeup, or due. The wakeup that follows a
 // reconnection of the LISTEN connection is one, so a commit made while it was down is read late but not missed.
-// Between changes it checks the bearer again every recheckInterval. It fails once the bearer is no longer accepted,
-// the service drains (grpcgate.ErrDraining), or the call ends.
+// Between changes it checks the bearer again every streaming.RecheckInterval. It fails once the bearer is no longer
+// accepted, the service drains (grpcgate.ErrDraining), or the call ends.
 func (f follower) changed(ctx context.Context) error {
-	recheck := time.NewTicker(recheckInterval)
+	recheck := time.NewTicker(streaming.RecheckInterval)
 	defer recheck.Stop()
 	for {
 		select {
@@ -84,40 +71,17 @@ func (f follower) changed(ctx context.Context) error {
 	}
 }
 
+// watchTimeoutMessage is the DEADLINE_EXCEEDED message of a watch write that outlasts streaming.WriteTimeout.
+const watchTimeoutMessage = "action watch write deadline expired"
+
 // send checks the bearer again, then sends the frame.
 func send[Frame any](ctx, writeCtx context.Context, gate *grpcgate.Gate, stream grpc.ServerStreamingServer[Frame], frame *Frame) error {
-	if err := gate.Recheck(ctx); err != nil {
-		return err
-	}
-	err := streaming.SendWithin(writeCtx, watchWriteTimeout, stream.Send, frame)
-	switch {
-	case errors.Is(err, streaming.ErrSendTimeout):
-		return status.Error(codes.DeadlineExceeded, "action watch write deadline expired")
-	case errors.Is(err, context.Canceled) && ctx.Err() != nil:
-		return status.FromContextError(ctx.Err()).Err()
-	case errors.Is(err, context.Canceled) && gate.DrainingContext().Err() != nil:
-		return grpcgate.ErrDraining
-	case errors.Is(err, context.Canceled):
-		return status.FromContextError(context.Canceled).Err()
-	case errors.Is(err, context.DeadlineExceeded):
-		return status.FromContextError(context.DeadlineExceeded).Err()
-	default:
-		return err
-	}
-}
-
-func watchWriteContext(ctx context.Context, gate *grpcgate.Gate) (context.Context, func()) {
-	writeCtx, cancel := context.WithCancel(ctx)
-	stop := context.AfterFunc(gate.DrainingContext(), cancel)
-	return writeCtx, func() {
-		stop()
-		cancel()
-	}
+	return streaming.SendWatchFrame(ctx, writeCtx, gate, stream.Send, frame, watchTimeoutMessage, grpcgate.ErrDraining)
 }
 
 func (s *Service) WatchActionRequest(request *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
 	ctx := stream.Context()
-	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	writeCtx, stopWrites := streaming.WatchWriteContext(ctx, s.gate)
 	defer stopWrites()
 	id, err := parseRequestID(request.GetRequestId())
 	if err != nil {
@@ -164,136 +128,73 @@ func (s *Service) WatchActionRequests(request *action_servicepb.WatchActionReque
 	if err != nil {
 		return err
 	}
-	f, unsubscribe, err := s.follow()
+	changes, unsubscribe, err := s.updates.SubscribeChanges(store.UpdatesChannel)
 	if err != nil {
 		return err
 	}
 	defer unsubscribe()
-	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
-	defer stopWrites()
-	w := setWatch{service: s, ctx: ctx, writeCtx: writeCtx, stream: stream, principal: grpcgate.Admitted(ctx).Principal, states: states}
-	if err := w.snapshot(); err != nil {
-		return err
-	}
-	for {
-		if err := f.changed(ctx); err != nil {
-			if errors.Is(err, grpcgate.ErrDraining) {
-				// A planned renewal: the client connects again, to a replica that is not going away.
-				return w.sendReconnect(&action_servicepb.WatchActionRequestsResponse{
-					Frame: &action_servicepb.WatchActionRequestsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
-				})
+	principal := grpcgate.Admitted(ctx).Principal
+	watch := streaming.VersionedSetWatch[store.ActionRequest, action_servicepb.WatchActionRequestsResponse]{
+		Gate:           s.gate,
+		Updates:        changes.Wakeups,
+		Send:           stream.Send,
+		TimeoutMessage: watchTimeoutMessage,
+		Draining:       grpcgate.ErrDraining,
+		List: func(ctx context.Context, after *store.ActionRequest, limit int) ([]store.ActionRequest, error) {
+			page := store.ListFilter{States: states, Limit: &limit}
+			if after != nil {
+				page.AfterID = &after.ID
 			}
-			return err
-		}
-		if err := w.upsertChanges(); err != nil {
-			return err
-		}
-	}
-}
-
-// setWatch is one WatchActionRequests stream.
-type setWatch struct {
-	service   *Service
-	ctx       context.Context
-	writeCtx  context.Context
-	stream    grpc.ServerStreamingServer[action_servicepb.WatchActionRequestsResponse]
-	principal store.ReadPrincipal
-	// states is the filter; empty selects every state.
-	states []action_servicepb.ActionState
-	// shown is the version the client holds of each request in the filtered set.
-	shown map[uuid.UUID]int64
-}
-
-func (w *setWatch) send(frame *action_servicepb.WatchActionRequestsResponse) error {
-	return send(w.ctx, w.writeCtx, w.service.gate, w.stream, frame)
-}
-
-func (w *setWatch) sendReconnect(frame *action_servicepb.WatchActionRequestsResponse) error {
-	return send(w.ctx, w.ctx, w.service.gate, w.stream, frame)
-}
-
-func (w *setWatch) selects(state action_servicepb.ActionState) bool {
-	return len(w.states) == 0 || slices.Contains(w.states, state)
-}
-
-// snapshot sends the filtered set as snapshot frames of at most snapshotChunk requests, then snapshot_complete.
-func (w *setWatch) snapshot() error {
-	w.shown = map[uuid.UUID]int64{}
-	chunk := snapshotChunk
-	page := store.ListFilter{States: w.states, Limit: &chunk}
-	for {
-		requests, err := w.service.store.List(w.ctx, w.principal, page)
-		if err != nil {
-			return err
-		}
-		if len(requests) > 0 {
+			return s.store.List(ctx, principal, page)
+		},
+		Versions: func(ctx context.Context) (map[uuid.UUID]int64, error) {
+			return s.store.Versions(ctx, principal, states)
+		},
+		// Every commit that changes a request's version notifies its ID.
+		Changed: func() ([]uuid.UUID, bool) {
+			keys, known := changes.Take()
+			ids := make([]uuid.UUID, 0, len(keys))
+			for _, key := range keys {
+				id, err := uuid.Parse(key)
+				if err != nil {
+					slog.ErrorContext(ctx, "action update names no request; reading every version", "key", key, "error", err)
+					return nil, false
+				}
+				ids = append(ids, id)
+			}
+			return ids, known
+		},
+		Find: func(ctx context.Context, ids []uuid.UUID) ([]store.ActionRequest, error) {
+			return s.store.Find(ctx, principal, ids)
+		},
+		Key: func(request store.ActionRequest) streaming.Versioned {
+			return streaming.Versioned{ID: request.ID, Version: request.Version, UpdatedAt: request.UpdatedAt}
+		},
+		Selects: func(request store.ActionRequest) bool {
+			return len(states) == 0 || slices.Contains(states, request.State)
+		},
+		Snapshot: func(requests []store.ActionRequest) (*action_servicepb.WatchActionRequestsResponse, error) {
 			views, err := requestViews(requests)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			if err := w.send(&action_servicepb.WatchActionRequestsResponse{Frame: &action_servicepb.WatchActionRequestsResponse_Snapshot{
+			return &action_servicepb.WatchActionRequestsResponse{Frame: &action_servicepb.WatchActionRequestsResponse_Snapshot{
 				Snapshot: &action_servicepb.ActionRequestChunk{ActionRequests: views},
-			}}); err != nil {
-				return err
+			}}, nil
+		},
+		SnapshotComplete: &action_servicepb.WatchActionRequestsResponse{
+			Frame: &action_servicepb.WatchActionRequestsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}},
+		},
+		Upsert: func(request store.ActionRequest) (*action_servicepb.WatchActionRequestsResponse, error) {
+			view, err := requestView(request)
+			if err != nil {
+				return nil, err
 			}
-			for _, request := range requests {
-				w.shown[request.ID] = request.Version
-			}
-		}
-		if len(requests) < chunk {
-			break
-		}
-		page.AfterID = &requests[len(requests)-1].ID
+			return &action_servicepb.WatchActionRequestsResponse{Frame: &action_servicepb.WatchActionRequestsResponse_Upsert{Upsert: view}}, nil
+		},
+		ReconnectRequired: &action_servicepb.WatchActionRequestsResponse{
+			Frame: &action_servicepb.WatchActionRequestsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
+		},
 	}
-	return w.send(&action_servicepb.WatchActionRequestsResponse{
-		Frame: &action_servicepb.WatchActionRequestsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}},
-	})
-}
-
-// upsertChanges sends an upsert of each request whose version is not the one the client holds: a request that
-// entered the filtered set or changed in it, and one that left it, which the client drops. Only those are read.
-func (w *setWatch) upsertChanges() error {
-	versions, err := w.service.store.Versions(w.ctx, w.principal, w.states)
-	if err != nil {
-		return err
-	}
-	var changed []uuid.UUID
-	for id, version := range versions {
-		if w.shown[id] != version {
-			changed = append(changed, id)
-		}
-	}
-	for id := range w.shown {
-		if _, still := versions[id]; !still {
-			changed = append(changed, id)
-		}
-	}
-	if len(changed) == 0 {
-		return nil
-	}
-	requests, err := w.service.store.Find(w.ctx, w.principal, changed)
-	if err != nil {
-		return err
-	}
-	slices.SortFunc(requests, func(a, b store.ActionRequest) int {
-		return cmp.Or(a.UpdatedAt.Compare(b.UpdatedAt), bytes.Compare(a.ID[:], b.ID[:]))
-	})
-	for _, request := range requests {
-		view, err := requestView(request)
-		if err != nil {
-			return err
-		}
-		if err := w.send(&action_servicepb.WatchActionRequestsResponse{
-			Frame: &action_servicepb.WatchActionRequestsResponse_Upsert{Upsert: view},
-		}); err != nil {
-			return err
-		}
-		// The request is read after its version, so it may have left the set since.
-		if w.selects(request.State) {
-			w.shown[request.ID] = request.Version
-		} else {
-			delete(w.shown, request.ID)
-		}
-	}
-	return nil
+	return watch.Run(ctx)
 }

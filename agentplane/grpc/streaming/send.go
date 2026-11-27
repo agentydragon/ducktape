@@ -1,4 +1,4 @@
-// Package streaming provides bounded sends and receives for long-lived gRPC streams.
+// Package streaming provides bounded sends and receives for long-lived gRPC streams, and the watch loop built on them.
 package streaming
 
 import (
@@ -64,7 +64,10 @@ func SendWithin[Frame any](ctx context.Context, timeout time.Duration, send func
 // SendWithinStatus is SendWithin with its failures as gRPC statuses: ErrSendTimeout becomes DEADLINE_EXCEEDED with
 // timeoutMessage, and a canceled or expired context its context status. Other errors are returned unchanged.
 func SendWithinStatus[Frame any](ctx context.Context, timeout time.Duration, send func(*Frame) error, frame *Frame, timeoutMessage string) error {
-	err := SendWithin(ctx, timeout, send, frame)
+	return sendStatus(SendWithin(ctx, timeout, send, frame), timeoutMessage)
+}
+
+func sendStatus(err error, timeoutMessage string) error {
 	switch {
 	case errors.Is(err, ErrSendTimeout):
 		return status.Error(codes.DeadlineExceeded, timeoutMessage)

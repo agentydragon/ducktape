@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -126,7 +127,7 @@ func (s *PushService) DeletePushSubscription(ctx context.Context, request *web_p
 // subscription, sends nothing.
 func (s *PushService) WatchPushSubscriptions(_ *web_push_servicepb.WatchPushSubscriptionsRequest, stream grpc.ServerStreamingServer[web_push_servicepb.WatchPushSubscriptionsResponse]) error {
 	ctx := stream.Context()
-	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	writeCtx, stopWrites := streaming.WatchWriteContext(ctx, s.gate)
 	defer stopWrites()
 	operator := pushOperator(ctx)
 	updates, unsubscribe, err := s.updates.Subscribe(push.UpdatesChannel)
@@ -145,7 +146,7 @@ func (s *PushService) WatchPushSubscriptions(_ *web_push_servicepb.WatchPushSubs
 	}
 	// shown is each subscription as the client holds it, by endpoint.
 	shown := make(map[string]*web_push_servicepb.PushSubscription, len(subscriptions))
-	for chunk := range slices.Chunk(subscriptions, snapshotChunk) {
+	for chunk := range slices.Chunk(subscriptions, streaming.SnapshotChunk) {
 		views := make([]*web_push_servicepb.PushSubscription, len(chunk))
 		for i, subscription := range chunk {
 			views[i] = subscriptionView(subscription)

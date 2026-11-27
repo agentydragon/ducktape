@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -36,7 +37,7 @@ func (s *OperatorService) DisconnectMcpServer(ctx context.Context, request *oper
 // a linked token reaches its expiry, which changes its status with no commit.
 func (s *OperatorService) WatchMcpServers(_ *operator_action_servicepb.WatchMcpServersRequest, stream grpc.ServerStreamingServer[operator_action_servicepb.WatchMcpServersResponse]) error {
 	ctx := stream.Context()
-	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	writeCtx, stopWrites := streaming.WatchWriteContext(ctx, s.gate)
 	defer stopWrites()
 	// The linkages are read after the subscription, so a commit in between is not missed.
 	updates, unsubscribe, err := s.updates.Subscribe(linkage.UpdatesChannel)
@@ -82,10 +83,10 @@ func (s *OperatorService) WatchMcpServers(_ *operator_action_servicepb.WatchMcpS
 	}
 }
 
-// sendLinkageSnapshot sends the linkages as snapshot frames of at most snapshotChunk linkages, then
+// sendLinkageSnapshot sends the linkages as snapshot frames of at most streaming.SnapshotChunk linkages, then
 // snapshot_complete.
 func (s *OperatorService) sendLinkageSnapshot(ctx, writeCtx context.Context, stream grpc.ServerStreamingServer[operator_action_servicepb.WatchMcpServersResponse], linkages []*operator_action_servicepb.McpServerLinkage) error {
-	for chunk := range slices.Chunk(linkages, snapshotChunk) {
+	for chunk := range slices.Chunk(linkages, streaming.SnapshotChunk) {
 		if err := send(ctx, writeCtx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
 			Frame: &operator_action_servicepb.WatchMcpServersResponse_Snapshot{Snapshot: &operator_action_servicepb.McpServerLinkageChunk{Linkages: chunk}},
 		}); err != nil {

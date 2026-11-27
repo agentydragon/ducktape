@@ -7,9 +7,11 @@ go_library(
     srcs = [
         "receive.go",
         "send.go",
+        "watch.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/grpc/streaming",
     deps = [
+        "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
@@ -20,11 +22,13 @@ go_test(
     srcs = [
         "receive_test.go",
         "send_test.go",
+        "watch_test.go",
     ],
     embed = [":streaming"],
     race = "on",
     deps = [
         "//agentplane/testing/grpcserver",
+        "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",

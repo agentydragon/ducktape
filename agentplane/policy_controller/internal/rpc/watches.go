@@ -283,7 +283,7 @@ func send[T any](ctx context.Context, stream grpc.ServerStreamingServer[T], fram
 	if err := auth.RevalidateStream(ctx); err != nil {
 		return err
 	}
-	if err := streaming.SendWithin(ctx, writeTimeout, stream.Send, frame); err != nil {
+	if err := streaming.SendWithin(ctx, streaming.WriteTimeout, stream.Send, frame); err != nil {
 		if errors.Is(err, streaming.ErrSendTimeout) {
 			return status.Error(codes.DeadlineExceeded, "policy watch write deadline exceeded")
 		}
@@ -303,7 +303,7 @@ func follow[T policyResource, F any](ctx context.Context, changes watch.Interfac
 	}
 	slices.Sort(keys)
 	for len(keys) > 0 {
-		n := min(len(keys), snapshotChunk)
+		n := min(len(keys), streaming.SnapshotChunk)
 		items := make([]T, 0, n)
 		for _, key := range keys[:n] {
 			items = append(items, current[key])
@@ -316,7 +316,7 @@ func follow[T policyResource, F any](ctx context.Context, changes watch.Interfac
 	if err := emit(frames.complete()); err != nil {
 		return err
 	}
-	ticker := time.NewTicker(recheckInterval)
+	ticker := time.NewTicker(streaming.RecheckInterval)
 	defer ticker.Stop()
 	for {
 		var event watch.Event

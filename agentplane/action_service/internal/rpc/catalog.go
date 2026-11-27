@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -126,7 +127,7 @@ func (s *Service) GetAction(_ context.Context, request *action_servicepb.GetActi
 // not see, such as a workload's view of McpHealth.detail, sends nothing.
 func (s *Service) WatchActionGroups(_ *action_servicepb.WatchActionGroupsRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionGroupsResponse]) error {
 	ctx := stream.Context()
-	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	writeCtx, stopWrites := streaming.WatchWriteContext(ctx, s.gate)
 	defer stopWrites()
 	healthDetail := showsHealthDetail(ctx)
 	// shown is each group as the client holds it; nil until the snapshot is sent.
@@ -173,9 +174,10 @@ func (s *Service) WatchActionGroups(_ *action_servicepb.WatchActionGroupsRequest
 	}
 }
 
-// sendGroupSnapshot sends the groups as snapshot frames of at most snapshotChunk groups, then snapshot_complete.
+// sendGroupSnapshot sends the groups as snapshot frames of at most streaming.SnapshotChunk groups, then
+// snapshot_complete.
 func (s *Service) sendGroupSnapshot(ctx, writeCtx context.Context, stream grpc.ServerStreamingServer[action_servicepb.WatchActionGroupsResponse], groups []*action_servicepb.ActionGroup) error {
-	for chunk := range slices.Chunk(groups, snapshotChunk) {
+	for chunk := range slices.Chunk(groups, streaming.SnapshotChunk) {
 		if err := send(ctx, writeCtx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
 			Frame: &action_servicepb.WatchActionGroupsResponse_Snapshot{Snapshot: &action_servicepb.ActionGroupChunk{ActionGroups: chunk}},
 		}); err != nil {

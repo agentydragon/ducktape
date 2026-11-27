@@ -104,7 +104,7 @@ func (s *Service) cleanupCreatedBinding(ctx context.Context, binding *policyapi.
 		return
 	}
 	uid, resourceVersion := binding.UID, binding.ResourceVersion
-	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeTimeout)
+	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	if err := s.objects.Delete(cleanupContext, binding, client.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}); err != nil && !apierrors.IsNotFound(err) {
 		slog.ErrorContext(ctx, "PolicyService stale PolicyBinding cleanup failed", "binding", binding.Name, "error", err)
