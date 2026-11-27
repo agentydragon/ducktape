@@ -59,19 +59,25 @@ At every quota and evaluator bound, the drain lemma preserves the outcome,
 complete state (including writes before a rejection or refusal), and any
 remaining ordered queue.
 
-The staged-link test now derives both premises for one concrete placement
-in the probe world at fuel 96. The production printer stages the authored
-two-file plan; its readback verifies the unit syntax, original ordinals,
-imports, and live export cells. The test decodes those reread files, checks
-exact immediate state equality, and builds position-by-position queue
-correspondence before using the drain lemma. The check also works when the
-module throws with both jobs pending. Swapping the calls keeps the exact
-immediate state and public cell addresses, but fails queue correspondence
-and changes `A7B7` to `B7A7`. Moving only the captured `trace` binding
-would make the original assignment target an import. The bridge refuses
-that placement rather than reuse its original writable lowering.
+The staged-link test passes the reread programs to
+`checkStagedImmediate`. The checker verifies the shared link state, the
+public export addresses, and the ordered unit IDs, statements, and
+free-name binding addresses. It uses `link_from_probe` to transport only
+the links to every world. The preservation proof then works at arbitrary
+fuel using the shared scope equations for ordinary statements, the direct
+callee and arguments, and the destination binding. Checked original
+declaration IDs give both sides exactly the same cut table.
 
-The staging callback always refuses publication. This witness does not
-derive immediate state and queue correspondence for every world, fuel, or
-placement, and the production proof still runs the ordinary evaluator.
-Those obligations remain before this placement can be certified.
+This gives exact immediate outcomes and pending queues for the preserving
+placement, including the variant that throws with both jobs pending.
+Every chosen explicit drain therefore also agrees. Swapping the calls
+fails the ordered linked-unit check despite the equal immediate state
+observed in the probe; the resumed trace changes from `A7B7` to `B7A7`.
+Moving only the captured `trace` binding is refused because the original
+assignment would target an import.
+
+The staging callback always refuses publication. This checker proves an
+all-world, all-fuel claim about the explicit primitive-await semantics and
+the actual reread files. The production split proof still uses ordinary
+`runProgram`, which does not execute these reached awaits. It must use
+the same supported semantics before this placement can be certified.

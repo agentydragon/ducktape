@@ -2,9 +2,8 @@ import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.LinkedPrimitiveAwait
 import EsmSplit.CoreJS.PrimitiveAwait
-import EsmSplit.CoreJS.PrimitiveAwaitCorrespondence
+import EsmSplit.CoreJS.LinkedPrimitiveAwaitProof
 import EsmSplit.CoreJS.StateMatch
-import EsmSplit.CoreJS.SyntaxMatch
 import EsmSplit.ESTreeEmit
 import EsmSplit.ESTreeUnits
 import EsmSplit.LowerSplit.Input
@@ -27,24 +26,6 @@ private def placement (swap abrupt : Bool) : EsmSplit.Plan :=
 private def importedCapturePlacement : EsmSplit.Plan :=
   ⟨"entry.mjs", [⟨"entry.mjs", List.range' 1 9, [("worker.mjs", ["trace"])], []⟩,
     ⟨"worker.mjs", [0], [], [("trace", "trace")]⟩]⟩
-
-/-- Produce the same pointwise premise the drain theorem consumes. The
-scheduler already projects each environment to the code's used addresses. -/
-private def matchJob (a b : Job) : Option (PLift (Job.Corresponds a b)) := do
-  let ⟨promise⟩ ← SyntaxMatch.scalarEq a.promise b.promise
-  let ⟨region⟩ ← SyntaxMatch.scalarEq a.region b.region
-  let ⟨body⟩ ← SyntaxMatch.listEq SyntaxMatch.stmtEq a.body b.body
-  let ⟨env⟩ ← SyntaxMatch.scalarEq a.env b.env
-  return ⟨⟨promise, region, body, ⟨congrArg Env.this env, congrArg Env.home env,
-    fun _ _ => by rw [env]⟩⟩⟩
-
-private def matchQueue : (a b : List Job) → Option (PLift (QueueCorresponds a b))
-  | [], [] => some ⟨.nil⟩
-  | a :: as, b :: bs => do
-    let ⟨head⟩ ← matchJob a b
-    let ⟨tail⟩ ← matchQueue as bs
-    return ⟨.cons head tail⟩
-  | _, _ => none
 
 private def exports (p : Program) : Except String EntryExports.Bindings := do
   let .ok linked _ := link p (initialState World.probe p.regions) | throw "link failed"
@@ -84,21 +65,18 @@ private def replay (source files : Json) (plan : EsmSplit.Plan) (swap abrupt : B
   unless ea.Perm eb do throw "exported names resolve to different addresses"
   let ta ← immediate a abrupt
   let tb ← immediate b abrupt
-  let some ⟨stateEq⟩ := StateMatch.probe ta.state tb.state |
+  let some _ := StateMatch.probe ta.state tb.state |
     throw "immediate states differ"
   let .str "" ← value ta ea "inTurn" | throw "the caller saw a continuation"
   for name in ["first", "second"] do
     let .pending ← settled ta ea name | throw "the immediate result has a settled Promise"
-  if swap then
-    unless (matchQueue ta.jobs tb.jobs).isNone do throw "swapped queue was treated as corresponding"
-  else
-    let some ⟨jobs⟩ := matchQueue ta.jobs tb.jobs | throw "preserving queues do not correspond"
-    let correspondence : ∀ quota, (drain 96 quota ta).Corresponds (drain 96 quota tb) := fun quota =>
-      drain_corresponds 96 quota ⟨stateEq, jobs⟩
-    -- Check the readback premise with executable equality and instantiate the
-    -- generic theorem for both draining just the head and draining the queue.
-    let _ := correspondence 1
-    let _ := correspondence 2
+  match LinkedPrimitiveAwait.checkStagedImmediate source files plan with
+  | .error "different ordered linked units or bindings" =>
+    unless swap do throw "preserving placement lost its ordered schedule"
+  | .error reason => throw reason
+  | .ok proof =>
+    if swap then throw "swapped call sites passed the all-fuel check"
+    let _ := proof.down.drains
   let finalA ← drainAll ta
   let finalB ← drainAll tb
   unless swap || (StateMatch.probe finalA.state finalB.state).isSome do

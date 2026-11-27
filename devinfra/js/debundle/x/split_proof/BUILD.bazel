@@ -4063,6 +4063,7 @@ lean_library(
         ":corejs_linked_input",
         ":corejs_primitive_await",
         ":corejs_scope",
+        ":corejs_split",
         ":estree_units",
         ":plan",
     ],
@@ -4072,7 +4073,10 @@ lean_proof_test(
     name = "corejs_linked_primitive_await_axioms_test",
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.LinkedPrimitiveAwait"],
-    required_theorems = ["CoreJS.LinkedPrimitiveAwait.noCuts_agree"],
+    required_theorems = [
+        "CoreJS.LinkedPrimitiveAwait.noCuts_agree",
+        "CoreJS.LinkedPrimitiveAwait.runImmediate_same",
+    ],
     deps = [":corejs_linked_primitive_await"],
 )
 
@@ -4107,14 +4111,36 @@ test_runner(
         ":corejs_entry_exports",
         ":corejs_eval",
         ":corejs_linked_primitive_await",
+        ":corejs_linked_primitive_await_proof",
         ":corejs_primitive_await",
-        ":corejs_primitive_await_correspondence",
         ":corejs_state_match",
-        ":corejs_syntax_match",
         ":estree_emit",
         ":estree_units",
         ":lowersplit_input",
         ":plan",
         ":split_files",
     ],
+)
+
+lean_library(
+    name = "corejs_linked_primitive_await_proof",
+    srcs = ["EsmSplit/CoreJS/LinkedPrimitiveAwaitProof.lean"],
+    deps = [
+        ":corejs_link_world",
+        ":corejs_linked_primitive_await",
+        ":corejs_primitive_await",
+        ":corejs_scope",
+        ":corejs_split",
+        ":corejs_state_match",
+        ":corejs_syntax_match",
+        ":plan",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_linked_primitive_await_proof_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedPrimitiveAwaitProof"],
+    required_theorems = ["CoreJS.LinkedPrimitiveAwait.StagedImmediate.drains"],
+    deps = [":corejs_linked_primitive_await_proof"],
 )
