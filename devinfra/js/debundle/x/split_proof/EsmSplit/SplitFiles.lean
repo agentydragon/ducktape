@@ -32,8 +32,9 @@ def javascript (flags : Array String) (paths : Array System.FilePath) : IO Unit 
   let proc ← match frontend with
     | some exe => IO.Process.output { cmd := exe, args }
     | none => do
+      -- Lake builds the executable at <project>/.lake/build/bin/<name>.
       let mut root ← IO.appPath
-      for _ in [:5] do root := root.parent.getD "."
+      for _ in [:4] do root := root.parent.getD "."
       IO.Process.output { cmd := "node", args := #[toString (root / "translation" / "module_io.mjs")] ++ args }
   unless proc.exitCode == 0 do throw (IO.userError s!"JavaScript frontend failed: {proc.stderr.trimAscii}")
 
