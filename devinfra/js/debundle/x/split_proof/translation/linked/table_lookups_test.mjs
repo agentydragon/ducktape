@@ -112,7 +112,6 @@ async function expectExports(file, expected) {
   const { sourceFile, specFile } = test.files;
   const { verdict, log } = lower(sourceFile, specFile, out);
   assertCertified(verdict, log);
-  assert.equal(verdict.strategy, "compiled-replay-premised", log);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
   assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, verdict);
   await expectExports(sourceFile, test.expected());

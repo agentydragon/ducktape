@@ -55,7 +55,6 @@ const emit = runCase("certified emission and runtime");
 if (emit) {
   const { verdict, log } = lower(sourceFile, specFile, out);
   assertCertified(verdict, log);
-  assert.equal(verdict.strategy, "compiled-replay-premised", log);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 
   const expectedRows = Array.from({ length: rowCount }, (_, index) => [
@@ -76,7 +75,6 @@ if (runCase("exact disk verification")) {
   if (!emit) forcePreview(files, out);
   const { verdict, log } = lower(sourceFile, specFile, out, ["--check-output"]);
   assertCertified(verdict, log);
-  assert.equal(verdict.strategy, "compiled-replay-premised", log);
 }
 
 // The operand of void must still be evaluated. In source order this read hits

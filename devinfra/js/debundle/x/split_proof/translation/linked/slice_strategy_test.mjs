@@ -53,30 +53,6 @@ for (const request of [[], allOutcomes]) {
   assert.match(changed.verdict.reason, /entry\.mjs differs from its generated ESTree/, changed.log);
 }
 
-const omitted = runSplit("omitted-export-unit", {
-  source: "const result = [].length; export { result };",
-  provider: "",
-  spec: { entry, modules: { [entry]: ["#0", "#1"] } },
-});
-assertCertified(omitted.verdict, omitted.log);
-assert.equal(omitted.verdict.guarantee, "normal-completion", omitted.log);
-assert.equal(omitted.verdict.scope, "linked-programs", omitted.log);
-assert.deepEqual(
-  lower(omitted.files.sourceFile, omitted.files.specFile, omitted.out, ["--check-output"]).verdict,
-  omitted.verdict
-);
-const omittedOut = path.join(omitted.dir, "all-outcomes");
-assertRejected(
-  { out: omittedOut, ...lower(omitted.files.sourceFile, omitted.files.specFile, omittedOut, allOutcomes) },
-  /proves only normal-completion/
-);
-const omittedDisk = lower(omitted.files.sourceFile, omitted.files.specFile, omitted.out, [
-  ...allOutcomes,
-  "--check-output",
-]);
-assert.equal(omittedDisk.verdict.status, "rejected", omittedDisk.log);
-assert.match(omittedDisk.verdict.reason, /proves only normal-completion/, omittedDisk.log);
-
 const moves = runSplit("slice-moves", {
   source: "export const left = []; const right = [];",
   provider: "",
@@ -121,18 +97,14 @@ const heritage = runSplit("slice-heritage", {
 checkSlice(heritage, "linked-slice-heritage", "normal-completion");
 assert.deepEqual(observe(path.join(heritage.out, entry), "result"), { result: 8 });
 
-const providerFallback = runSplit("slice-provider-fallback", {
+const providerSource = prepare(path.join(root, "provider-source"), {
   source: `import { imported } from "./provider.mjs";
     const result = imported + 1;
     export { result };`,
   provider: "export const imported = 41;",
   spec: { entry, modules: { [entry]: ["#0", "#1", "#2"] } },
 });
-assertCertified(providerFallback.verdict, providerFallback.log);
-assert.equal(providerFallback.verdict.scope, "linked-programs", providerFallback.log);
-assert.equal(providerFallback.verdict.guarantee, "normal-completion", providerFallback.log);
-assert.deepEqual(observe(providerFallback.files.sourceFile, "result"), { result: 42 });
-assert.deepEqual(observe(path.join(providerFallback.out, entry), "result"), { result: 42 });
+assert.deepEqual(observe(providerSource.sourceFile, "result"), { result: 42 });
 
 const profile = path.join(root, "browser.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
@@ -149,40 +121,9 @@ assertRejected(
   { out: profiledOut, ...lower(profiled.sourceFile, profiled.specFile, profiledOut) },
   /unsupported computed class key/
 );
-const normal = lower(profiled.sourceFile, profiled.specFile, profiledOut, host);
-assertCertified(normal.verdict, normal.log);
-assert.equal(normal.verdict.scope, "linked-programs", normal.log);
-assert.equal(normal.verdict.guarantee, "normal-completion", normal.log);
-assert.deepEqual(normal.verdict.assumptions, [
-  "Symbol.iterator returns the well-known iterator symbol without observable effects throughout initialization",
-]);
 assert.deepEqual(observe(profiled.sourceFile, "result"), { result: 42 });
-assert.deepEqual(observe(path.join(profiledOut, entry), "result"), { result: 42 });
-assert.deepEqual(
-  lower(profiled.sourceFile, profiled.specFile, profiledOut, [...host, "--check-output"]).verdict,
-  normal.verdict
-);
-const profiledAll = path.join(profiledDir, "all-outcomes");
-assertRejected(
-  { out: profiledAll, ...lower(profiled.sourceFile, profiled.specFile, profiledAll, [...host, ...allOutcomes]) },
-  /proves only normal-completion/
-);
-const profiledDisk = lower(profiled.sourceFile, profiled.specFile, profiledOut, [
-  ...host,
-  ...allOutcomes,
-  "--check-output",
-]);
-assert.equal(profiledDisk.verdict.status, "rejected", profiledDisk.log);
-assert.match(profiledDisk.verdict.reason, /proves only normal-completion/, profiledDisk.log);
-
-const profiledWorker = path.join(profiledOut, "worker.mjs");
-const workerText = readFileSync(profiledWorker, "utf8");
-const changedWorker = workerText.replace(/\[\s*Symbol\.iterator\s*\]/, '["Symbol.iterator"]');
-assert.notEqual(changedWorker, workerText);
-writeFileSync(profiledWorker, changedWorker);
 for (const request of [[], allOutcomes]) {
-  const tampered = lower(profiled.sourceFile, profiled.specFile, profiledOut, [...host, ...request, "--check-output"]);
-  assert.equal(tampered.verdict.status, "rejected", tampered.log);
-  assert.match(tampered.verdict.reason, /worker\.mjs differs from its generated ESTree/, tampered.log);
-  assert(existsSync(profiledWorker));
+  const unsupported = lower(profiled.sourceFile, profiled.specFile, profiledOut, [...host, ...request]);
+  assert.equal(unsupported.verdict.reason_code, "slice_profile", unsupported.log);
+  assert(!existsSync(profiledOut));
 }

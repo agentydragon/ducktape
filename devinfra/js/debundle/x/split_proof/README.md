@@ -46,7 +46,7 @@ For browser module scripts, the `browser-page` contract also permits `.js` outpu
 
 For a module loaded as a browser page entry, you can pass `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and on `--check-output`. Under this profile, ambient `window`, `globalThis`, and `self` may return the same opaque page object, and their `typeof` may return `"object"`. The browser fallback `typeof global` may return `"undefined"`; a page with a Node-style shim can violate that premise. Each selected observation must preserve host state throughout initialization. A direct read of ambient `global` remains opaque and stops the proof if reached. Lexical and imported names use their actual bindings.
 
-The [browser globals catalog](lean/EsmSplit/CoreJS/BrowserGlobals.lean) covers ECMAScript and browser APIs, including DOM bindings, timers, networking, storage, and static method references such as `Object.defineProperty` and `Date.now`. A reached lookup can assume a specific `typeof` or stable reference. For example, a reference to `FileReader` requires it to exist on that page. Reading `window.Error` and reading the bare `Error` binding can return the same opaque reference under separate premises. The checker records observations from both initializers and the generated Lean theorem checks them in every world satisfying the listed premises. A deferred or untaken lookup adds no premise. A reference to a method supplies no result for a call. Volatile page values, including scroll coordinates, and operations such as reading Error stacks or writing to the DOM stay opaque.
+The [browser globals catalog](lean/EsmSplit/CoreJS/BrowserGlobals.lean) covers ECMAScript and browser APIs, including DOM bindings, timers, networking, storage, and static method references such as `Object.defineProperty` and `Date.now`. A reached lookup can assume a specific `typeof` or stable reference. For example, a reference to `FileReader` requires it to exist on that page. Reading `window.Error` and reading the bare `Error` binding can return the same opaque reference under separate premises. The checker records observations from both initializers and reports the premises used by its compiled checks. A deferred or untaken lookup adds no premise. A reference to a method supplies no result for a call. Volatile page values, including scroll coordinates, and operations such as reading Error stacks or writing to the DOM stay opaque.
 
 CoreJS allocates a fresh object for each regular-expression literal. It preserves the pattern, flags, and `lastIndex` descriptor. The shared prototype implements `source`, the individual flag getters, and `flags`, including reads of overridden flag properties. Calls to the intrinsic matching methods currently produce an unknown result.
 
@@ -161,7 +161,6 @@ The verdict's `scope` identifies which theorem the run established. Each theorem
 - [Closed declarations](lean/EsmSplit/CoreJS/Declaration/Artifacts.lean): `prepare?` checks the plan, footprints and order. Its `certify` function is a proven checker that runs as compiled code. It decodes the output modules, checks the entry's public surface, and proves the reported level for those modules. Kept order gives equal results and states for every world and fuel, including throws. Checked moves give the same successful states in both directions.
 - [Structural order and moves](lean/EsmSplit/CoreJS/StructuralCertificate.lean): `certifyStructuralASTs` is a proven checker that runs as compiled code. It checks both linked schedules. Its result proves that each entry exports the same live cells and that either graph reaches a successful final state exactly when the other does, under the opaque-world and deployment interpretation above.
 - [Compiled slices](lean/EsmSplit/LowerSplit/SliceCertificate.lean): the checker uses the empty lowering profile and proves the reported guarantee for the exact decoded CoreJS pair. It checks the requested placement and that each entry export resolves to the same live cell. Kept order gives equal results and states for every CoreJS world and fuel. Checked moves give the same successful states in both directions. Deployments that require a host profile or have source ordinals omitted from the decoded program can use the other linked checks.
-- [Linked execution](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean): each run writes a Lean proof about the two lowered programs, and the kernel checks it in a separate Lean process. `certifyASTs` then runs as compiled code and checks that the supplied ASTs lower to those programs. Both initialize normally in the same state for every world satisfying the reported host premises and export the same live cells.
 
 [Publication](lean/EsmSplit/SplitFiles.lean) prints to staging, reparses the files, and checks their module set, syntax, and callable spelling. It requires copied providers to match the source text. The certificate consumes the annotated ASTs from those disk reads. `--check-output` repeats the same checks on an existing directory, including for regrouped declarations with the same ordered units. The theorems relate CoreJS programs. Their application to the files relies on the parser and scope annotator, the lowering and CoreJS model, and Lean's compiler and file IO.
 
@@ -172,9 +171,7 @@ The test-only `checked_artifact_test` exercises the constructor from a JavaScrip
 For a module that calls functions or imports named bindings from relative JavaScript files, use
 the manifest command with the same original source path. The splitter parses
 reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
-Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world satisfying the reported host premises.
-
-For large certificates, the checker can elaborate AST correspondence in a separate Lean process. That check imports the execution theorem compiled for the current certificate and audits the result. For large linked programs that need neither host premises nor file-local write-batch rules, the checker also proves the source run first and records its complete final state. The candidate must reach that same state. If a checkpoint stage fails, the checker retries with the ordinary execution proof.
+The compiled checkers lower the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. If the available compiled rules decline, the command rejects the request without publishing JavaScript. It does not generate or compile a per-input Lean proof.
 
 The linked checker can retain an ordinary function whose body fails lowering. It checks the callable's source spelling, original unit and lexical position, and captured bindings in both trees. The interpreter allocates the closure and its properties as usual. Calling or constructing it then yields an unknown result with the body’s lowering error. Retention requires that the callable can be represented without a module URL, method home object, or direct `eval`.
 
@@ -293,7 +290,7 @@ object handles, and the probe's unit world state. Floating-point values are comp
 by their IEEE bit patterns. If these probe states differ, `Ends.unique` proves that
 the programs cannot finish with one shared state in every world, so the checker
 refuses before generating the all-world proof. Matching probe states are only a
-necessary check; Lean still proves the guarantee for every modeled world.
+necessary check; a compiled rule must still establish the guarantee for every modeled world.
 
 When both linked graphs run their units in the same order, Lean can reuse the
 source’s normal execution. It checks the state after hoisting and compares each
@@ -303,8 +300,8 @@ The entry’s public names must resolve to the same cells in both graphs. A mism
 The checker starts at 16 fuel and retries at 32 and 64 on fuel exhaustion. For a
 top-level record initializer it can make one more attempt with 64 plus the largest
 property count, capped at 2048. Exhausting the budget, unsupported syntax or an
-all-world proof that fails to reduce yields a rejection. A successful comparison
-reports `"scope":"linked-programs"`.
+compiled check that declines yields a rejection. A successful comparison
+reports its scope in the verdict.
 [AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
 
 ### Read a linked refusal
@@ -313,7 +310,7 @@ Linked refusals from AST lowering and the concrete probe include a `reason_code`
 
 ### Measure certification
 
-Set `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. Stdout carries the certification verdict. One Lean process reports a combined execution and AST correspondence time. Staged proofs report the subprocesses individually, including any attempted checkpoint before a fallback.
+Set `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. Stdout carries the certification verdict. The timings identify the compiled checks attempted by the splitter.
 
 For public comparisons, use the wide-table reversal and the 48-reader linked module graph:
 

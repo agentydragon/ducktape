@@ -68,61 +68,12 @@ for (const [operator, shortCircuit, evaluateRight] of cases) {
         forcePreview(files, candidate);
       } else {
         assert.equal(verdict.status, "certified", log);
-        assert.equal(verdict.strategy, "compiled-replay-premised", log);
         assert.deepEqual(observe(files.sourceFile, "result"), { result: wrap(left) });
       }
       assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
       assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), {
         result: wrap(readsLate ? "ready" : left),
       });
-    }
-  }
-}
-
-// An independent move takes the slice first. In the replay control the
-// reached RHS has an untaken read of the moved binding, so the slice's static
-// move proof cannot justify the same inversion.
-for (const [operator, left, right] of [
-  ["&&", true, "and"],
-  ["||", "", "or"],
-  ["??", null, "nullish"],
-]) {
-  for (const replay of [false, true]) {
-    const kind = replay ? "selected-right-replay" : "selected-right";
-    const dir = path.join(root, `${kind}-${operator}`);
-    const operand = replay
-      ? {
-          type: "LogicalExpression",
-          operator: operator === "??" ? "??" : "||",
-          left: literal(right),
-          right: id("late"),
-        }
-      : literal(right);
-    const files = prepare(dir, {
-      source: program([
-        variable("const", "value", { type: "LogicalExpression", operator, left: literal(left), right: operand }),
-        variable("const", "late", literal("ready")),
-        {
-          type: "ExportNamedDeclaration",
-          declaration: variable("const", "result", id("value")),
-          specifiers: [],
-          source: null,
-        },
-      ]),
-      provider: "",
-      spec: {
-        entry: "entry.mjs",
-        modules: { "use.mjs": ["#0"], "late.mjs": ["#1"], "entry.mjs": ["#2"] },
-        order: ["late.mjs", "use.mjs"],
-        sequential: true,
-      },
-    });
-    const out = path.join(dir, "out");
-    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-    assert.equal(verdict.status, "certified", log);
-    assert.equal(verdict.strategy, replay ? "compiled-replay-premised" : "compiled-slice", log);
-    for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
-      assert.deepEqual(Object.entries(await import(pathToFileURL(file).href)), [["result", right]]);
     }
   }
 }
