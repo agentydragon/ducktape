@@ -97,9 +97,9 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Session Dispatcher: %w", err)
 	}
-	environmentPeer := config.EnvironmentServicePeer()
+	environmentPeer := config.EnvironmentService
 	environmentTimeout := time.Duration(environmentPeer.RequestTimeoutSeconds * float64(time.Second))
-	environmentConn, err := bearer.Dial(environmentPeer.Target, environmentPeer.TokenFile, environmentTimeout, environmentPeer.TLS)
+	environmentConn, err := bearer.Dial(environmentPeer.Target, "", environmentTimeout, environmentPeer.TLS)
 	if err != nil {
 		return fmt.Errorf("configure Environment Service client: %w", err)
 	}

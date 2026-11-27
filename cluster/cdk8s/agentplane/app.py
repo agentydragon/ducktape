@@ -24,14 +24,15 @@ from cdk8s_plus_34 import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
-from agentplane.app.settings import EnvironmentServicePeer, Settings
+from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, SANDBOX_CONTROLLER_URI
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI
 from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     database,
     egress,
+    environment_service,
     history_service,
     notifications,
     policy_controller,
@@ -87,7 +88,6 @@ class App(Construct):
         *,
         electric: ServiceRef | None,
         database_url: EnvValue,
-        environment_service_endpoint: ServiceRef | None = None,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
@@ -100,7 +100,6 @@ class App(Construct):
         self.props = env.app
         self.electric = electric
         self.database_url = database_url
-        self.environment_service_endpoint = environment_service_endpoint
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.memory_request = memory_request
@@ -109,12 +108,6 @@ class App(Construct):
         self.oidc = oidc_secret(env.namespace)
 
         settings = self.props.config.model_copy()
-        if environment_service_endpoint is not None:
-            settings.environment_service = EnvironmentServicePeer(
-                target=environment_service_endpoint.authority,
-                request_timeout_s=settings.session_dispatcher_request_timeout_s,
-                tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
-            )
         # These operator-token facades are optional in the settings model, so the workload mounts
         # decide them here rather than in each environment's authored config.
         settings.actions_tls = workload_tls.service_client_tls(ACTIONS_URI, client_uri=APP_URI)
@@ -255,11 +248,7 @@ class App(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
                 runner_gateway.sessions_service(namespace).egress(),
-                *(
-                    [self.environment_service_endpoint.egress()]
-                    if self.environment_service_endpoint is not None
-                    else []
-                ),
+                environment_service.environments_service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 policy_controller.tls_service(namespace).egress(),

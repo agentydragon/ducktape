@@ -56,6 +56,15 @@ policy_service_tls:
   client_uri: spiffe://agentplane/app
 history_service_target: history:9090
 history_service_token_file: /run/history/token
+environment_service:
+  target: sandbox-controller.agentplane.svc:8082
+  request_timeout_s: 12
+  tls:
+    ca_file: /run/agentplane/workload-trust/ca.pem
+    server_uri: spiffe://agentplane/sandbox-controller
+    cert_file: /run/agentplane/app/tls.crt
+    key_file: /run/agentplane/app/tls.key
+    client_uri: spiffe://agentplane/app
 notifications_url: http://notifications:9090
 notifications_token_file: /run/notifications/token
 runner_gateway_token_file: /run/runner/token
@@ -87,10 +96,13 @@ func validTestConfig() Config {
 		SandboxPresets: map[string]SandboxPreset{
 			"work": {Title: "Work", Template: "linux", ThreadPreset: "default", InboxTags: []string{"team"}},
 		},
-		SandboxNamespace:                    "sandboxes",
-		RunnerGatewayTarget:                 "runner-gateway:9090",
-		SessionDispatcherTarget:             "session-dispatcher:9090",
-		HistoryServiceTarget:                "history:9090",
+		SandboxNamespace:        "sandboxes",
+		RunnerGatewayTarget:     "runner-gateway:9090",
+		SessionDispatcherTarget: "session-dispatcher:9090",
+		HistoryServiceTarget:    "history:9090",
+		EnvironmentService: &EnvironmentServicePeer{
+			Target: "sandbox-controller:8082", RequestTimeoutSeconds: 20, TLS: appSVIDTLS(peertls.SandboxControllerURI),
+		},
 		PolicyServiceTarget:                 "policy-controller:8083",
 		PolicyServiceTLS:                    &peertls.ClientTLS{CAFile: "/run/trust/ca.pem", ServerURI: peertls.PolicyControllerURI},
 		PolicyServiceTokenFile:              "/var/run/policy/token",
@@ -227,33 +239,24 @@ func TestAppSVIDSettingsRequireExactCallerIdentityAndPeer(t *testing.T) {
 	}
 }
 
-func TestEnvironmentServicePeerDefaultsToTheSessionDispatcher(t *testing.T) {
-	config := validTestConfig()
-	peer := config.EnvironmentServicePeer()
-	if peer.Target != config.SessionDispatcherTarget || peer.TokenFile != config.SessionDispatcherTokenFile ||
-		peer.RequestTimeoutSeconds != config.SessionDispatcherRequestTimeoutSecs || peer.TLS != config.SessionDispatcherTLS {
-		t.Fatalf("omitted EnvironmentService peer = %+v, want the Session Dispatcher settings", peer)
+func TestLoadConfigRequiresEnvironmentServicePeer(t *testing.T) {
+	start := strings.Index(validSettingsYAML, "environment_service:\n")
+	end := strings.Index(validSettingsYAML, "notifications_url:")
+	writeConfig(t, validSettingsYAML[:start]+validSettingsYAML[end:])
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "environment_service is required") {
+		t.Fatalf("missing environment_service error = %v", err)
 	}
 }
 
 func TestLoadEnvironmentServicePeerUsesControllerTargetAndSVID(t *testing.T) {
-	writeConfig(t, validSettingsYAML+`environment_service:
-  target: sandbox-controller.agentplane.svc:8082
-  request_timeout_s: 12
-  tls:
-    ca_file: /run/agentplane/workload-trust/ca.pem
-    server_uri: spiffe://agentplane/sandbox-controller
-    cert_file: /run/agentplane/app/tls.crt
-    key_file: /run/agentplane/app/tls.key
-    client_uri: spiffe://agentplane/app
-`)
+	writeConfig(t, validSettingsYAML)
 	config, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	peer := config.EnvironmentServicePeer()
+	peer := config.EnvironmentService
 	if peer.Target != "sandbox-controller.agentplane.svc:8082" || peer.RequestTimeoutSeconds != 12 ||
-		peer.TLS == nil || peer.TLS.ServerURI != peertls.SandboxControllerURI || peer.TLS.ClientURI != peertls.AppURI || peer.TokenFile != "" {
+		peer.TLS == nil || peer.TLS.ServerURI != peertls.SandboxControllerURI || peer.TLS.ClientURI != peertls.AppURI {
 		t.Fatalf("EnvironmentService peer = %+v", peer)
 	}
 	if config.SessionDispatcherTarget != "session-dispatcher:9090" || config.RunnerGatewayTarget != "runner-gateway:9090" {
