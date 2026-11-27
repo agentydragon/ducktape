@@ -37,17 +37,17 @@ pub fn free_identifiers<'a>(template: impl IntoIterator<Item = &'a Index>) -> BT
         for node in 0..index.node_count() as chunk_facts::NodeId {
             // A function/class declaration's name is child 0; an expression's is
             // child 0 only when named (`[name?, function-or-class]`).
-            let named = match index.node_kind(node) {
+            let named = match index.kind_of(node) {
                 NodeKind::FnDecl | NodeKind::ClassDecl => true,
-                NodeKind::FnExpr | NodeKind::ClassExpr => index.children(node).len() == 2,
+                NodeKind::FnExpr | NodeKind::ClassExpr => index.children_of(node).len() == 2,
                 _ => false,
             };
             if named {
-                declared_names.insert(index.children(node)[0]);
+                declared_names.insert(index.children_of(node)[0]);
             }
         }
         for node in 0..index.node_count() as chunk_facts::NodeId {
-            let Some(name) = index.ident(node) else {
+            let Some(name) = index.ident_of(node) else {
                 continue;
             };
             if consumed.contains(&node)
@@ -58,7 +58,7 @@ pub fn free_identifiers<'a>(template: impl IntoIterator<Item = &'a Index>) -> BT
             }
             let is_declaration = declared_names.contains(&node)
                 || matches!(
-                    index.node_kind(node),
+                    index.kind_of(node),
                     NodeKind::BindingIdent | NodeKind::ImportSpecifier | NodeKind::PatAssign
                 );
             if is_declaration {

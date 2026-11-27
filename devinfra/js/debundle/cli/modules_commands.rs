@@ -432,7 +432,7 @@ fn construct_one_graph(
             .map(|path| -> Result<Vec<String>> { Ok(serde_json::from_slice(&fs::read(path)?)?) })
             .transpose()?,
     };
-    let search = peel::search::search(&problem, &options)?;
+    let search = peel::placement::search(&problem, &options)?;
     let input = (search.status == peel::search::SearchStatus::Found).then_some(input);
     Ok(ConstructedProposal {
         chunk_id,
