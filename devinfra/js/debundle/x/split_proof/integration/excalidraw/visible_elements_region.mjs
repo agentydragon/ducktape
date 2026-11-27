@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { acorn, eslintScope } from "../../translation/parser.mjs";
 import { parseModule, topLevelStatements } from "../../translation/scope_metadata.mjs";
@@ -173,6 +173,7 @@ const visibleElementsActual = Lm(visibleElementsInputs);
 console.log(JSON.stringify({
   ids:visibleElementsActual.map(e=>e.id),
   sameObjects:visibleElementsActual.every(e=>visibleElementsInputs.includes(e)),
+  freshArray:visibleElementsActual !== visibleElementsInputs,
   linear:ye(visibleElementsInputs[3]),
   smallFreedraw:Vc(visibleElementsInputs[5])
 }));
@@ -180,7 +181,11 @@ console.log(JSON.stringify({
 function observe(file) {
   const observed = path.join(path.dirname(file), "observe.mjs");
   writeFileSync(observed, readFileSync(file, "utf8") + "\n" + observer);
-  return JSON.parse(execFileSync(process.execPath, [observed], { encoding: "utf8" }));
+  try {
+    return JSON.parse(execFileSync(process.execPath, [observed], { encoding: "utf8" }));
+  } finally {
+    rmSync(observed);
+  }
 }
 function layout(name, importSt) {
   const dir = path.join(artifacts, name);
@@ -194,7 +199,13 @@ function layout(name, importSt) {
   );
   return main;
 }
-const expected = { ids: ["box", "line", "freedraw"], sameObjects: true, linear: true, smallFreedraw: true };
+const expected = {
+  ids: ["box", "line", "freedraw"],
+  sameObjects: true,
+  freshArray: true,
+  linear: true,
+  smallFreedraw: true,
+};
 assert.deepEqual(observe(flat), expected);
 const handWired = observe(layout("reference-layout", "st"));
 assert.deepEqual(handWired, expected);
@@ -253,6 +264,75 @@ if (region.status === "certified") {
   assert.equal(region.reasonCode, "no_constructed_rule", region.log);
   assert.deepEqual(region.files, []);
 }
+// The test-only staging runner uses the real printer, ESTree reread, and
+// CoreJS equality gate. Its output is an artifact, not a CLI publication.
+function model(source, authoredSpec, out, checkOnly = false) {
+  return JSON.parse(
+    execFileSync(process.env.VISIBLE_ELEMENTS_MODEL, {
+      input: JSON.stringify({ source, spec: authoredSpec, out, checkOnly }) + "\n",
+      encoding: "utf8",
+    })
+  );
+}
+const staged = path.join(artifacts, "checked-initialization");
+const initialized = model(flat, spec, staged);
+assert(initialized.report, JSON.stringify(initialized));
+assert.deepEqual(model(flat, spec, staged, true), initialized);
+assert.equal(initialized.report.filter, "host function Array.prototype.filter is called");
+assert.equal(initialized.report.ownFilter, "false");
+assert.equal(initialized.report.early, "undefined");
+assert.equal(initialized.report.late, "object");
+assert.deepEqual(observe(path.join(staged, entry)), expected);
+
+const edited = path.join(artifacts, "edited-initialization");
+cpSync(staged, edited, { recursive: true });
+const editedEntry = path.join(edited, entry);
+const beforeEdit = readFileSync(editedEntry, "utf8");
+const typeImports = parse(beforeEdit).ast.body.find(({ type }) => type === "ImportDeclaration").specifiers;
+const privateRead = typeImports.find(({ local }) => local.name === "st");
+const linearType = typeImports.find(({ local }) => local.name === "gs");
+const tampered =
+  beforeEdit.slice(0, privateRead.start) + linearType.imported.name + " as st" + beforeEdit.slice(privateRead.end);
+writeFileSync(editedEntry, tampered);
+const wrongReread = model(flat, spec, edited, true);
+assert.match(wrongReread.refusal, /differs from its generated ESTree/);
+assert.equal(readFileSync(editedEntry, "utf8"), tampered);
+assert.deepEqual(observe(editedEntry), wrong);
+assert.deepEqual(model(flat, spec, staged, true).report, initialized.report);
+
+const earlySource = path.join(artifacts, "early-read.mjs");
+const readEarly = "var seen = typeof st;\n";
+writeFileSync(earlySource, readEarly + flatCode);
+const earlySpec = {
+  ...spec,
+  modules: {
+    [helper]: ["#1", "#2", "#3", "#4"],
+    [entry]: ["#0", "#5", "#6", "#7"],
+  },
+};
+const earlyFlat = path.join(artifacts, "observe-early-flat.mjs");
+const earlyOwner = path.join(staged, "observe-early-past-assignment.mjs");
+writeFileSync(earlyFlat, readEarly + flatCode + "\nconsole.log(seen);\n");
+writeFileSync(earlyOwner, beforeEdit + "\n" + readEarly + "console.log(seen);\n");
+const print = (file) => execFileSync(process.execPath, [file], { encoding: "utf8" }).trim();
+assert.equal(print(earlyFlat), "undefined");
+assert.equal(print(earlyOwner), "function");
+rmSync(earlyOwner);
+const earlyGate = model(earlySource, earlySpec, staged);
+assert.match(
+  earlyGate.refusal,
+  /authored (source-unit plan is invalid|plan does not enumerate every original source ordinal in order)/
+);
+const earlyCli = split({
+  ...request,
+  source: earlySource,
+  spec: specFile("early-read", earlySpec),
+  out: staged,
+  allowExistingOut: true,
+});
+assert.equal(earlyCli.reasonCode, "no_constructed_rule", earlyCli.log);
+assert.deepEqual(model(flat, spec, staged, true).report, initialized.report);
+
 const report = {
   originalHash,
   full: { pair, verdict: full.verdict, first: fullSource.error, scrollClosureCount: wholeScroll.length },
@@ -266,6 +346,8 @@ const report = {
     decoded: decoded.output,
     indexed: indexed.error ?? indexed.output,
     node: { expected, handWired, wrong },
+    initializationOnly: initialized.report,
+    negative: { wrongReread, earlyGate, earlyCli: earlyCli.verdict },
   },
 };
 console.log(JSON.stringify(report));

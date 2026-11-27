@@ -221,6 +221,7 @@ js_test(
         "//devinfra/js/debundle/excalidraw:bundle",
         "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
         "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:visible_elements_model_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
@@ -234,6 +235,8 @@ js_test(
         EXCALIDRAW_OUTPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
         LINKED_INPUT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
         MODULE_IO = "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+        SPLIT_PROOF_MODULE_IO = "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+        VISIBLE_ELEMENTS_MODEL = "$(rootpath //devinfra/js/debundle/x/split_proof:visible_elements_model_test_runner)",
     ),
     tags = ["manual"],
 )

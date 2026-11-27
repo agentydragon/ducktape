@@ -52,3 +52,38 @@ bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:visible_ele
 
 The artifacts include both authored requests, the projection, the diagnostic
 plan, the Node layouts, and separate full-chunk and region results.
+
+## Checked initialization and the first call boundary
+
+The test runner checks the actual sequential plan with the sparse source
+schedule and placement checks. Lean's ordered-initialization proof checks
+both linker results, every statement and its captured cells, and the live
+export cells. `var` allocates a mutable `undefined` cell during linking.
+Executing the original initializer allocates the closure in the row's
+region and assigns it to that cell. The proof retains the complete resulting
+state at the same fuel, so each allocated function keeps its identity.
+The runner uses the production printer and staged ESTree/CoreJS comparison
+for this proof, then independently rereads the test artifacts. The public
+aliases resolve to `hc → (3,0)`, `kc → (4,0)`, and `zj → (5,0)` in both
+layouts.
+
+On the staged files Node again returns a fresh array containing the
+same element objects. Rewiring the private predicate is rejected on disk
+and reproduces the extra short free-draw element in Node. An eager
+`typeof st` before the original initializer returns `"undefined"` in the
+flat source but `"function"` if the typechecks owner runs first. The authored
+plan check and the ordinary CLI reject that request; the previous output is
+unchanged.
+
+At fuel 128 the actual `Vc` call for the short free-draw element completes
+with `true` in both CoreJS programs. The actual `Lm` call on a modeled array
+reaches `unknown: host function Array.prototype.filter is called`. The
+method dispatch has not run the filter callback or allocated any returned
+array. With an ordinary receiver that supplies its own `filter`, dispatch
+calls that property; defining an own non-index property on an array is
+separately unsupported by the current model. No intrinsic assumption or
+call certificate follows from the equal initialization states. Ordinary
+`lowersplit` still refuses the original region without publishing.
+
+[The staged replay and axiom audit](https://app.buildbuddy.io/invocation/39c7a34d-d0f1-4f22-86f8-2fc0c7a3f785)
+exercise the model and Node on this fixed projection.
