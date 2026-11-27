@@ -15,6 +15,7 @@ go_library(
         "schema/0023_event_blocks_v2.sql",
         "schema/0024_command_admission_metadata.sql",
         "schema/0025_sampling_recovery_projection.sql",
+        "schema/0026_block_metadata.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/migrations",
     visibility = [

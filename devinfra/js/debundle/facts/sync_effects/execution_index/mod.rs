@@ -1,13 +1,18 @@
 //! AST collection for synchronous execution: callables, roots, writes, and source order.
 
+mod assignments;
 pub mod bundle_globals;
 pub mod callable_capabilities;
 mod callback_arguments;
+mod calls;
 mod class_value_facts;
+mod collection_seed;
+mod declarators;
 mod deferred_global_publication;
 mod foreign_call;
 mod fresh_values;
 mod global_receiver;
+mod import_specifiers;
 mod input_validation;
 pub mod intrinsic_roots;
 pub mod local_constructors;
@@ -17,13 +22,16 @@ pub mod native_operation;
 mod native_point_effects;
 mod native_write_census;
 pub mod noninvoking_initialization;
+mod object_literals;
 pub mod patterns;
 mod property_keys;
 mod prototype_properties;
 mod provider;
+mod queries;
 mod receiver_flow;
 mod recording;
 mod strict_provider;
+mod top_level_scan;
 mod visit;
 
 use native_write_census::{
@@ -43,14 +51,13 @@ use property_keys::{
 use crate::namespace_wrapper::NamespaceWrapperCandidate;
 use crate::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
-use analysis::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
-use analysis::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
+use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use analysis::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness,
 };
 use analysis_domain::builtins::{self, IntrinsicOp, Invocation, Row};
 use analysis_domain::integrity::{IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites};
-use analysis_domain::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
+use analysis_domain::item_views::{TopLevelItemView, var_decl_of_item};
 use analysis_vocabulary::inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
     InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
@@ -87,7 +94,6 @@ use purity::{
     StableArraySpreadShapes,
 };
 use source_identity::SourceUnitOrdinal;
-use spec::ReentryFreeOperation;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::sync::Arc;
@@ -1591,166 +1597,6 @@ impl ExecutionIndex {
         index
     }
 
-    /// The index before any item is visited: per-owner tables sized to `body`
-    /// and the author inputs the visitor consults.
-    fn collection_seed(
-        body: &[TopLevelItemView<'_>],
-        hints: &AnalysisInputs,
-        plain_array_bindings: &BTreeSet<String>,
-        construction_proof: &LocalClassConstructionShapes,
-    ) -> Self {
-        let host_operations = &hints.assumptions.reentry_free_operations;
-        let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
-            || !hints.assumptions.non_reentrant_global_membership.is_empty();
-        // A standard host defines `global` only as Node's global object.
-        let node_global = hints.assumptions.predefined_globals != spec::PredefinedGlobals::Unknown
-            && unshadowed_global_names(body, &["global"]).contains("global");
-        Self {
-            source_chunk_id: hints.current_chunk_id.clone(),
-            global_guards_requested,
-            local_class_construction_shapes: construction_proof.clone(),
-            top_calls: vec![Vec::new(); body.len()],
-            original_statement_spans: body
-                .iter()
-                .map(|item| match item {
-                    TopLevelItemView::Borrowed(item) => item.span(),
-                    TopLevelItemView::Owned { provenance, .. } => provenance.parent_item.span(),
-                })
-                .collect(),
-            owner_callable_prefix_effects: vec![None; body.len()],
-            top_property_writes: vec![Vec::new(); body.len()],
-            top_dynamic_property_receivers: vec![Vec::new(); body.len()],
-            top_destructuring_member_receivers: vec![Vec::new(); body.len()],
-            top_assignments: vec![Vec::new(); body.len()],
-            ordered_initializers: BTreeMap::new(),
-            initialization_source_identities: BTreeMap::new(),
-            initialization_coverage_refusals: vec![None; body.len()],
-            top_definite_initializers: vec![BTreeSet::new(); body.len()],
-            top_member_value_writes: vec![Vec::new(); body.len()],
-            top_callback_result_writes: vec![Vec::new(); body.len()],
-            top_exported_values: vec![Vec::new(); body.len()],
-            top_metadata_decorations: body
-                .iter()
-                .map(|item| {
-                    metadata_decorate_call(item.as_module_item(), &hints.assumptions.known_effects)
-                })
-                .collect(),
-            deferred_global_candidates: vec![None; body.len()],
-            discarded_sync_iifes: if !global_guards_requested {
-                Vec::new()
-            } else {
-                vec![None; body.len()]
-            },
-            deferred_global_requested: !hints.assumptions.deferred_global_publications.is_empty(),
-            global_object_names: unshadowed_global_object_aliases(body),
-            census_globals: GlobalNames {
-                aliases: unshadowed_global_object_aliases(body)
-                    .into_iter()
-                    .chain(node_global.then_some("global"))
-                    .collect(),
-                node_global,
-                predefined: hints.assumptions.predefined_globals,
-                bundle: BundleGlobals::default(),
-            },
-            plain_array_bindings: plain_array_bindings.clone(),
-            no_sync_callback_members: hints.assumptions.no_sync_callback_members.clone(),
-            retained_record_factories: hints.assumptions.retained_record_factories.clone(),
-            no_reentry_statement_calls: hints.assumptions.no_reentry_statement_calls.clone(),
-            host_promise_resolve: host_operations.contains(&ReentryFreeOperation::PromiseResolve),
-            native_integrity_value_input_refs: hints
-                .native_integrity
-                .as_ref()
-                .map(|integrity| integrity.consumed_value_inputs.clone())
-                .unwrap_or_default(),
-            native_integrity_host_behavior: hints
-                .native_integrity
-                .as_ref()
-                .map(|integrity| integrity.consumed_host_behavior.clone())
-                .unwrap_or_default(),
-            ..Self::default()
-        }
-    }
-
-    /// Seeds namespace-privacy roots, class and `const` bindings from every
-    /// item before any item is visited. Returns the last source position.
-    fn seed_top_level_declarations(
-        &mut self,
-        body: &[TopLevelItemView<'_>],
-        hints: &AnalysisInputs,
-    ) -> u32 {
-        let mut max_source_position = 0u32;
-        for item in body {
-            max_source_position = max_source_position.max(item.as_module_item().span().hi.0);
-            // Seed all candidate roots before visiting any item, including imports
-            // textually after a use. Other imported aliases remain an author audit.
-            if (!hints.assumptions.namespace_independent_members.is_empty()
-                || !hints.assumptions.no_reentry_members.is_empty()
-                || !hints.assumptions.no_reentry_record_members.is_empty())
-                && let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item()
-            {
-                for specifier in &import.specifiers {
-                    let local = specifier.local();
-                    let name = local.sym.as_ref();
-                    if hints
-                        .assumptions
-                        .callback_factory_members
-                        .contains_key(name)
-                        || hints
-                            .assumptions
-                            .retained_callback_factory_members
-                            .contains_key(name)
-                        || hints.assumptions.no_reentry_members.contains_key(name)
-                        || hints
-                            .assumptions
-                            .no_reentry_record_members
-                            .contains_key(name)
-                        || hints
-                            .assumptions
-                            .namespace_independent_members
-                            .contains_key(name)
-                    {
-                        self.namespace_privacy.members.insert(
-                            local.to_id(),
-                            hints
-                                .assumptions
-                                .namespace_independent_members
-                                .get(name)
-                                .cloned()
-                                .unwrap_or_default(),
-                        );
-                        self.namespace_privacy.import_sites.insert(local.span.lo.0);
-                    }
-                }
-            }
-            let declaration = match item.as_module_item() {
-                ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration))) => Some(declaration),
-                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
-                    if let Decl::Class(declaration) = &export.decl {
-                        Some(declaration)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            };
-            if let Some(declaration) = declaration {
-                let id = declaration.ident.to_id();
-                self.class_bindings
-                    .insert(declaration.class.span.lo.0, id.clone());
-                self.class_ids.insert(id);
-            }
-            if let Some(declaration) = var_decl_of_item(item.as_module_item())
-                && declaration.kind == VarDeclKind::Const
-            {
-                for declarator in &declaration.decls {
-                    self.top_const_bindings
-                        .extend(binding_targets::binding_names(&declarator.name));
-                }
-            }
-        }
-        max_source_position
-    }
-
     /// Visits every item in source order. Returns each item's fresh-value step.
     fn visit_top_level_items(
         &mut self,
@@ -1919,167 +1765,6 @@ impl ExecutionIndex {
         }
     }
 
-    /// Records each imported binding of `import` with the summaries and author
-    /// contracts that name it.
-    fn record_import_specifiers(&mut self, import: &ImportDecl, hints: &AnalysisInputs) {
-        let host_operations = &hints.assumptions.reentry_free_operations;
-        let host_async_local_storage = host_operations
-            .contains(&ReentryFreeOperation::AsyncLocalStorageConstruct)
-            && !import.type_only
-            && matches!(&import.phase, ImportPhase::Evaluation)
-            && import.with.is_none()
-            && matches!(
-                import.src.value.as_str(),
-                Some("async_hooks" | "node:async_hooks")
-            );
-        for specifier in &import.specifiers {
-            let local = specifier.local();
-            self.imported_bindings.insert(local.to_id());
-            if host_async_local_storage
-                && let ImportSpecifier::Named(named) = specifier
-                && !named.is_type_only
-                && binding_targets::imported_export_name(named) == "AsyncLocalStorage"
-            {
-                self.host_async_local_storage_imports.insert(local.to_id());
-            }
-            if let Some(record) = hints
-                .imported_callables
-                .get(local.sym.as_ref())
-                .and_then(|summary| summary.returned_record.as_ref())
-            {
-                self.returned_record_summaries
-                    .insert(local.to_id(), record.clone());
-            }
-            if let Some(wrapper) = hints
-                .imported_callables
-                .get(local.sym.as_ref())
-                .and_then(|summary| summary.namespace_wrapper.as_ref())
-            {
-                self.namespace_wrapper_summaries
-                    .insert(local.to_id(), wrapper.clone());
-            }
-            // A narrower summary or an author contract keeps its own
-            // consumer and use reports; the derived summary fills in
-            // only where nothing else describes the call.
-            if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
-                && let Some(call) = summary.foreign_call.as_ref()
-                && summary.returned_record.is_none()
-                && summary.namespace_wrapper.is_none()
-                && summary.descriptor_copy_factory.is_none()
-                && !hints
-                    .assumptions
-                    .names_imported_callable(local.sym.as_ref())
-            {
-                if summary.supports_callback_factory() {
-                    // An author-asserted factory keeps its contract's
-                    // consumers alone.
-                    if summary.callback_factory_evidence().iter().all(|evidence| {
-                        matches!(
-                            evidence,
-                            analysis_vocabulary::inputs::CallbackFactoryEvidence::InferredImmutableWrapper { .. }
-                        )
-                    }) {
-                        self
-                            .callback_factory_call_summaries
-                            .insert(local.to_id(), call.clone());
-                    }
-                } else {
-                    self.foreign_call_imports
-                        .insert(local.to_id(), call.clone());
-                }
-            }
-            if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
-                && summary.supports_callback_factory()
-            {
-                self.callback_factory_imports.insert(local.to_id());
-                self.callback_factory_summaries
-                    .insert(local.to_id(), summary.clone());
-            }
-            if let Some(summary) = hints
-                .imported_callables
-                .get(local.sym.as_ref())
-                .and_then(|summary| summary.descriptor_copy_factory.as_ref())
-            {
-                self.descriptor_copy_factories
-                    .insert(local.to_id(), summary.clone());
-            }
-            if hints
-                .assumptions
-                .inline_callback_factories
-                .contains(local.sym.as_ref())
-            {
-                self.inline_callback_factory_imports.insert(local.to_id());
-            }
-            if hints
-                .assumptions
-                .no_reentry_exports
-                .contains(local.sym.as_ref())
-            {
-                self.no_reentry_exports.insert(local.to_id());
-            }
-            if let Some(signatures) = hints
-                .assumptions
-                .no_reentry_callback_exports
-                .get(local.sym.as_ref())
-            {
-                self.no_reentry_callback_imports
-                    .insert(local.to_id(), signatures.clone());
-            }
-            if let Some(signatures) = hints
-                .assumptions
-                .retained_callback_factories
-                .get(local.sym.as_ref())
-            {
-                self.retained_callback_factory_imports
-                    .insert(local.to_id(), signatures.clone());
-            }
-            if let Some(signatures) = hints
-                .assumptions
-                .retained_callback_constructors
-                .get(local.sym.as_ref())
-            {
-                self.retained_callback_constructor_imports
-                    .insert(local.to_id(), signatures.clone());
-            }
-            if let Some(members) = hints
-                .assumptions
-                .retained_callback_factory_members
-                .get(local.sym.as_ref())
-            {
-                self.retained_callback_factory_members
-                    .insert(local.to_id(), members.clone());
-                self.audited_factory_members
-                    .entry(local.to_id())
-                    .or_default()
-                    .extend(members.keys().cloned());
-            }
-            if let Some(members) = hints
-                .assumptions
-                .callback_factory_members
-                .get(local.sym.as_ref())
-            {
-                self.callback_factory_members
-                    .insert(local.to_id(), members.clone());
-                self.audited_factory_members
-                    .entry(local.to_id())
-                    .or_default()
-                    .extend(members.iter().cloned());
-            }
-            if let Some(members) = hints.assumptions.no_reentry_members.get(local.sym.as_ref()) {
-                self.no_reentry_members
-                    .insert(local.to_id(), members.clone());
-            }
-            if let Some(members) = hints
-                .assumptions
-                .no_reentry_record_members
-                .get(local.sym.as_ref())
-            {
-                self.no_reentry_record_members
-                    .insert(local.to_id(), members.clone());
-            }
-        }
-    }
-
     fn finish_collection(&mut self, hints: &AnalysisInputs) {
         let primitive_const_candidates = std::mem::take(&mut self.direct_primitive_const_bindings);
         self.direct_primitive_const_bindings = primitive_const_candidates
@@ -2127,206 +1812,6 @@ impl ExecutionIndex {
             .filter(|(_, accessors)| accessors.iter().any(|accessor| self.reads_this(*accessor)))
             .map(|(class, _)| *class)
             .collect();
-    }
-
-    /// Whether `callable`, or an arrow or other callable nested in it, reads
-    /// `this`. An unindexed or opaque callable may.
-    pub fn reads_this(&self, callable: u32) -> bool {
-        let Some(span) = self.callable_spans.get(&callable) else {
-            return true;
-        };
-        self.callables.get(&callable).is_none_or(|body| body.opaque)
-            || self
-                .callable_spans
-                .range(span.lo.0..span.hi.0)
-                .any(|(nested, _)| {
-                    self.callables
-                        .get(nested)
-                        .is_some_and(|nested| nested.implicit_capture)
-                })
-    }
-
-    /// The bindings referenced in `[lo, hi)`.
-    pub fn references_within(&self, lo: u32, hi: u32) -> impl Iterator<Item = &Id> {
-        let start = self
-            .ident_references
-            .partition_point(|(position, _)| *position < lo);
-        self.ident_references[start..]
-            .iter()
-            .take_while(move |(position, _)| *position < hi)
-            .map(|(_, id)| id)
-    }
-
-    /// A source binding used exactly once, at this member read. A second use
-    /// could alias, delete, redefine or publish the instance before the read.
-    pub fn sole_binding_reference_at(&self, binding: &Id, span: Span) -> bool {
-        self.dynamic_scope_owners.is_empty()
-            && !self.reassigned_bindings.contains(binding)
-            && !self.binding_target_writes.contains(binding)
-            && !self.exported_bindings.contains(binding)
-            && !self.imported_bindings.contains(binding)
-            && self
-                .binding_declaration_writes
-                .get(binding)
-                .is_some_and(|writes| matches!(writes.as_slice(), [write] if write.direct_top_level && write.simple_identifier))
-            && self.binding_use_bounds.get(binding).is_some_and(|(first, last)| {
-                first == last && span.lo.0 <= *first && *first < span.hi.0
-            })
-    }
-
-    /// This member operation belongs to a direct module-level initializer,
-    /// whose expression is evaluated at most once. A lexical use inside a
-    /// callable can execute again after its first result exposes the instance.
-    pub fn single_eager_initializer_read(&self, call: &Call) -> bool {
-        call.caller.is_none()
-            && self.top_calls[call.owner.0].iter().any(|indexed| {
-                indexed.kind == CallKind::LocalMemberRead
-                    && indexed.span == call.span
-                    && indexed.caller.is_none()
-            })
-            && self
-                .binding_declaration_writes
-                .values()
-                .flatten()
-                .any(|write| {
-                    write.owner == call.owner
-                        && write.direct_top_level
-                        && write
-                            .initializer_span
-                            .is_some_and(|span| span.contains(call.span))
-                })
-    }
-
-    pub fn unconditionally_evaluated_member_read(&self, call: &Call) -> bool {
-        !self
-            .conditional_top_member_reads
-            .contains(&CallSite::from(call.span))
-    }
-
-    pub fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
-        self.original_statement_spans[owner.0]
-    }
-
-    pub fn locate_native_integrity_witnesses(
-        &mut self,
-        mut locate: impl FnMut(Span) -> Option<analysis_vocabulary::execution_evidence::SourceLocation>,
-    ) {
-        if self
-            .native_integrity_witnesses
-            .iter()
-            .any(|witness| witness.chunk_id.is_empty())
-        {
-            for witness in Arc::make_mut(&mut self.native_integrity_witnesses) {
-                if witness.chunk_id.is_empty() {
-                    witness.source_location = locate(witness.span);
-                }
-            }
-        }
-        for mutation in Arc::make_mut(&mut self.native_prototype_mutations) {
-            if mutation.chunk_id.is_empty() {
-                mutation.source_location = locate(mutation.span);
-            }
-        }
-    }
-
-    fn collect_uninitialized_lexical_bindings(&mut self, item: &ModuleItem) {
-        let Some(declaration) = var_decl_of_item(item) else {
-            return;
-        };
-        if declaration.kind == VarDeclKind::Const
-            && matches!(declaration.decls.as_slice(), [declarator]
-                if matches!(declarator.init.as_deref().map(Expr::unwrap_parens), Some(Expr::Call(call))
-                    if matches!(&call.callee, Callee::Expr(callee)
-                        if matches!(callee.unwrap_parens(), Expr::Member(member)
-                            if matches!(member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
-                                && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym == "freeze")))))
-        {
-            self.const_call_owners.insert(self.owner);
-        }
-        if declaration.kind == VarDeclKind::Var {
-            for declarator in &declaration.decls {
-                if declarator.init.is_some()
-                    && let Pat::Ident(binding) = &declarator.name
-                {
-                    self.top_definite_initializers[self.owner.0].insert(binding.id.to_id());
-                }
-            }
-            return;
-        }
-        for declarator in &declaration.decls {
-            if let Pat::Ident(binding) = &declarator.name {
-                let id = binding.id.to_id();
-                self.top_definite_initializers[self.owner.0].insert(id.clone());
-                if declarator.init.is_none() {
-                    self.top_assignments[self.owner.0].push((id, ValueExpr::Undefined));
-                }
-            }
-        }
-    }
-
-    fn invalidate_property_key_pattern(&mut self, pattern: &Pat) {
-        let mut bindings = Vec::new();
-        collect_pattern_assignments(pattern, &ValueExpr::Unknown, &mut bindings);
-        for (binding, _) in bindings {
-            self.property_key_assignments
-                .entry(binding)
-                .or_default()
-                .push(PropertyKeyExpr::Unknown);
-        }
-    }
-
-    fn collect_export_roots(&mut self, item: &ModuleItem) {
-        match item {
-            ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => {
-                self.hoisted_function_owners.insert(self.owner);
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
-                self.exported_declaration_owners.insert(self.owner);
-                for id in collect_declared_names(item) {
-                    self.exported_names.insert(id.0.to_string(), id.clone());
-                    self.exported_bindings.insert(id);
-                }
-                if matches!(export.decl, Decl::Fn(_)) {
-                    self.hoisted_function_owners.insert(self.owner);
-                }
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => {
-                self.exported_declaration_owners.insert(self.owner);
-                self.default_export_owners.insert(self.owner);
-                if let DefaultDecl::Fn(function) = &export.decl {
-                    self.hoisted_function_owners.insert(self.owner);
-                    self.exported_hoisted_functions
-                        .insert(function.function.span.lo.0);
-                }
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export)) => {
-                self.exported_declaration_owners.insert(self.owner);
-                self.default_export_owners.insert(self.owner);
-                self.top_exported_values[self.owner.0].push(ValueExpr::from_expr(&export.expr));
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) if export.src.is_none() => {
-                for specifier in &export.specifiers {
-                    if let ExportSpecifier::Named(named) = specifier
-                        && let ModuleExportName::Ident(local) = &named.orig
-                    {
-                        let exported = binding_targets::public_export_name(named);
-                        self.exported_names.insert(exported, local.to_id());
-                        self.exported_bindings.insert(local.to_id());
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn visit_may_skip<N: VisitWith<Self>>(&mut self, node: &N) {
-        let before = self.past_await;
-        self.may_skip_await_depth += 1;
-        self.conditional_depth += 1;
-        node.visit_children_with(self);
-        self.conditional_depth -= 1;
-        self.may_skip_await_depth -= 1;
-        self.past_await = before;
     }
 }
 

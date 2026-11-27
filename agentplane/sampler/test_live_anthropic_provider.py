@@ -44,6 +44,9 @@ from agentplane.sampler.testing_store import IntentSnapshot, Store
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.sqlalchemy_engines import postgres_async_engine
 
+# gazelle:include_dep //agentplane/sampler:testing_fixtures
+pytest_plugins = ("agentplane.sampler.testing_fixtures",)
+
 TURN_TIMEOUT_SECONDS = 150
 # Bound the live test's wait independently of the sampler's provider phase budgets.
 FOLLOW_SECONDS = TURN_TIMEOUT_SECONDS + 30

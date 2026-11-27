@@ -232,8 +232,9 @@ Set the repack flags `--event-block-target-bytes`, `--event-block-target-entries
 `codec` setting accepts zstd.
 
 A maintenance page seals its final partial block. Preview and apply compare the complete output
-(including ordinary rows) with the original stored payloads. If the page would grow, the repacker
-keeps its original rows and reports any retained gzip blocks in `retained_legacy_blocks`.
+(including ordinary rows) with the original stored payloads. If a page without legacy blocks would grow, the
+repacker keeps its original rows. Pages containing legacy gzip blocks migrate even when the
+replacement takes more bytes; replay verification is the correctness check.
 Compare `output_bytes` with `stored_bytes`; `packed_bytes` counts block payloads only.
 The size comparison covers a completed page: an interrupted multi-transaction page can still have
 temporary standalone suffix rows until replay resumes.

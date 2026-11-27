@@ -262,8 +262,8 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		}
 	}
 
-	// The lifecycle manager authorizes the wake for the row's retained effective caller: its
-	// ServiceAccount, or the Identity it acted as. Rows without one cannot wake.
+	// The lifecycle manager authorizes the wake for the row's retained effective caller: the
+	// Identity it acted as, or the service actor. Rows without one cannot wake.
 	caller := store.WakeCaller(work.attribution)
 	if caller == nil {
 		assessment := assessmentFor(sandbox, work.wakeAssessment,

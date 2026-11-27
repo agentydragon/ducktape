@@ -43,8 +43,7 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 		t.Helper()
 		id := uuid.NewString()
 		spec := &sessionpb.SessionSpec{}
-		testPlacement(spec, sandbox.Name, sandbox.UID)
-		_, err := queueStore.CreateSessionWithPlacementForCaller(t.Context(), id, sandbox.Name, sandbox.UID, spec, nil, nil, store.SessionExecution{Identity: identity}, store.ServiceCaller{SPIFFEID: peertls.AppURI})
+		_, err := createSessionForCaller(queueStore, t.Context(), id, sandbox.Name, sandbox.UID, spec, nil, identity, store.ServiceCaller{SPIFFEID: peertls.AppURI})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -55,8 +54,8 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attribution, ok := row.Attribution.(*store.ServiceAttribution); !ok || attribution.ActorSPIFFEID != peertls.AppURI || row.Creator != nil {
-		t.Fatalf("service creator acquired account proof: %#v", row)
+	if attribution, ok := row.Attribution.(*store.ServiceAttribution); !ok || attribution.ActorSPIFFEID != peertls.AppURI || attribution.Identity != nil {
+		t.Fatalf("service creator attribution: %#v", row.Attribution)
 	}
 	rule, err := auth.Services([]string{peertls.AppURI})
 	if err != nil {
@@ -141,4 +140,58 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	if _, err := actions.GetSession(ambiguous, &dispatcherpb.GetSessionRequest{SessionId: owned}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("bearer fallback: %v", err)
 	}
+}
+
+// Sessions and Dispatches written before service and Identity attribution carry only the retired
+// ServiceAccount columns. They read as unattributed rather than failing every read that meets them.
+func TestLegacyAccountAttributedRowsStayReadable(t *testing.T) {
+	ctx := admitted(t)
+	queueStore := testStore(t, 3)
+	const sessionID, commandID, sandboxName = "test-legacy-session", "test-legacy-command", "test-legacy-sandbox"
+	if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandboxName, sandboxUID, input(commandID, "test legacy input")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queueStore.DB.ExecContext(ctx, `UPDATE session SET service_attribution=NULL,
+		creator_account_namespace='test-legacy-namespace',creator_account_name='test-legacy-creator',
+		creator_account_uid='00000000-0000-4000-8000-00000000c001' WHERE session_id=$1`, sessionID); err != nil {
+		t.Fatal("seed legacy Session attribution:", err)
+	}
+	if _, err := queueStore.DB.ExecContext(ctx, `UPDATE dispatch SET service_attribution=NULL,
+		actor_account_namespace='test-legacy-namespace',actor_account_name='test-legacy-actor',
+		actor_account_uid='00000000-0000-4000-8000-00000000c002',
+		effective_caller_account_namespace='test-legacy-namespace',effective_caller_account_name='test-legacy-caller',
+		effective_caller_account_uid='00000000-0000-4000-8000-00000000c003' WHERE command_id=$1`, commandID); err != nil {
+		t.Fatal("seed legacy Dispatch attribution:", err)
+	}
+	if row, err := queueStore.GetSession(ctx, sessionID); err != nil || row.Attribution != nil {
+		t.Fatalf("store read legacy Session: %+v %v", row, err)
+	}
+	if row, err := queueStore.GetDispatch(ctx, commandID); err != nil || row.Attribution != nil {
+		t.Fatalf("store read legacy Dispatch: %+v %v", row, err)
+	}
+
+	service := &Service{Store: queueStore, DispatcherServices: sets.New(peertls.AppURI)}
+	if got, err := service.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID}); err != nil || got.GetSession().GetSessionId() != sessionID {
+		t.Fatalf("GetSession: %v, %v", got, err)
+	}
+	if got, err := service.ListSessions(ctx, &dispatcherpb.ListSessionsRequest{}); err != nil || len(got.GetSessions()) != 1 || got.GetSessions()[0].GetSessionId() != sessionID {
+		t.Fatalf("ListSessions: %v, %v", got, err)
+	}
+	if got, err := service.GetDispatch(ctx, &dispatcherpb.GetDispatchRequest{CommandId: commandID}); err != nil || got.GetDispatch().GetCommandId() != commandID {
+		t.Fatalf("GetDispatch: %v, %v", got, err)
+	}
+	if got, err := service.ListDispatches(ctx, &dispatcherpb.ListDispatchesRequest{Filter: testSessionDispatchFilter(sessionID)}); err != nil || len(got.GetDispatches()) != 1 || got.GetDispatches()[0].GetCommandId() != commandID {
+		t.Fatalf("ListDispatches: %v, %v", got, err)
+	}
+	if got, err := service.ListSessionDispatches(ctx, &dispatcherpb.ListSessionDispatchesRequest{SessionId: sessionID}); err != nil || len(got.GetDispatches()) != 1 || got.GetDispatches()[0].GetCommandId() != commandID {
+		t.Fatalf("ListSessionDispatches: %v, %v", got, err)
+	}
+	watch := startVersionWatch(t, ctx, queueStore, testWatchHub(t, queueStore), testSessionDispatchFilter(sessionID), "")
+	if got := watch.next(t).GetDispatch(); got.GetCommandId() != commandID {
+		t.Fatalf("WatchDispatches snapshot = %v, want %s", got, commandID)
+	}
+	if watch.next(t).GetCaughtUp() == nil {
+		t.Fatal("WatchDispatches did not finish its snapshot")
+	}
+	watch.stop(t)
 }
