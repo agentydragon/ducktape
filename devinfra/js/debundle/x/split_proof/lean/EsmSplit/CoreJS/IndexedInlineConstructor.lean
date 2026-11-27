@@ -64,6 +64,16 @@ def construct (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundle) (S : E
     splitProgramIndexed decoded.source.body B P, rfl, placed, ownerProof,
     IndexedInlinePlan.sameExports checked, IndexedInlinePlan.allOutcomes checked⟩
 
+/-- For an original dense body, the indexed constructor yields exactly the
+existing dense CoreJS program when supplied the same source-derived bundle. -/
+theorem dense_program {decoded : LinkedInput.IndexedSource} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    (built : Construction decoded B S) {statements : List Stmt}
+    (dense : decoded.source.body = (List.range statements.length).zip statements) :
+    built.program = splitProgram statements B (EsmSplit.mkPlan B S) := by
+  rw [built.constructed, built.checked.schedule.planEq, dense]
+  exact ExportRows.indexed_program_dense statements B (EsmSplit.mkPlan B S)
+
+#print axioms dense_program
 #print axioms construct
 
 end CoreJS.IndexedInlineConstructor

@@ -2942,7 +2942,10 @@ lean_proof_test(
     name = "corejs_indexed_inline_constructor_axioms_test",
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.IndexedInlineConstructor"],
-    required_theorems = ["CoreJS.IndexedInlineConstructor.construct"],
+    required_theorems = [
+        "CoreJS.IndexedInlineConstructor.construct",
+        "CoreJS.IndexedInlineConstructor.dense_program",
+    ],
     deps = [":corejs_indexed_inline_constructor"],
 )
 
