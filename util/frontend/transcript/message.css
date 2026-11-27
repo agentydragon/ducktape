@@ -23,8 +23,3 @@
   text-align: left;
   overflow-wrap: anywhere;
 }
-
-/* Keep room for the action button in the gutter before an input message. */
-.transcript-user-bubble[data-has-action="true"] {
-  max-width: min(34rem, calc(100% - 6rem));
-}
