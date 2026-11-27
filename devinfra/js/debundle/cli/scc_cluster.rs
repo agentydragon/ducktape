@@ -227,9 +227,7 @@ fn render_scc_text(report: &SccReport, out: &mut String) {
 }
 
 pub fn run_cluster(args: ClusterArgs, output: &mut dyn std::io::Write) -> Result<()> {
-    if args.limit == Some(0) {
-        anyhow::bail!("--limit must be greater than zero; use --all for exhaustive results");
-    }
+    crate::ensure_explicit_limit(args.limit, args.all)?;
     let limit = if args.all {
         0
     } else {
