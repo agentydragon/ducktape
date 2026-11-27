@@ -75,7 +75,8 @@ fn typed_assignment_projection_separates_imports_constraints_and_rebinds() {
         ],
     ))
     .unwrap()
-    .shared_graph();
+    .graph()
+    .clone();
     let assignment = ModuleAssignment::from_assignments(
         vec![
             ModuleId(1),
@@ -342,7 +343,8 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
         ));
         let graph = graph::DependencyGraphInput::from_report(singleton_graph(nodes, edges))
             .unwrap()
-            .shared_graph();
+            .graph()
+            .clone();
         let assignments = (0..names.len())
             .map(|i| ModuleId((i * 3 + seed) % 5))
             .collect();
@@ -774,7 +776,8 @@ fn pass_two_is_skipped_while_pass_one_has_a_cycle() {
     let verdict_of = |edges: Vec<_>| {
         let graph = graph::DependencyGraphInput::from_report(singleton_graph(nodes(4), edges))
             .unwrap()
-            .shared_graph();
+            .graph()
+            .clone();
         let assignment = ModuleAssignment::from_assignments(
             (0..4).map(ModuleId).collect(),
             analysis::EntryDestination::from_module_id(ModuleId(0)),
@@ -1752,7 +1755,8 @@ fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
     ];
     let graph = graph::DependencyGraphInput::from_report(singleton_graph(nodes, edges))
         .unwrap()
-        .shared_graph();
+        .graph()
+        .clone();
     let assignment = ModuleAssignment::from_assignments(
         (0..7).map(ModuleId).collect(),
         analysis::EntryDestination::from_module_id(ModuleId(0)),
