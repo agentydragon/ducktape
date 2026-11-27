@@ -50,13 +50,9 @@ pub(super) fn validate_analysis_source_sites(
     let provenance =
         graph_provenance.context("analysis source sites require parser-input provenance")?;
     for chunk_name in site_chunks {
-        let chunk = artifact
-            .chunks
-            .iter()
-            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
-            .with_context(|| {
-                format!("analysis source sites name no loaded provider chunk {chunk_name}")
-            })?;
+        let chunk = artifact.chunk_named(chunk_name).with_context(|| {
+            format!("analysis source sites name no loaded provider chunk {chunk_name}")
+        })?;
         ensure!(
             chunk_allowed(chunk.chunk_id, chunk_filter),
             "analysis source-site provider {chunk_name} is outside the analyzed import closure"

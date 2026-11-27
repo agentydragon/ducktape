@@ -266,22 +266,20 @@ fn run_bindings_rename_cmd(
             args.dry_run,
             args.no_verify,
         )?;
-        return match OutputFormat::resolve(args.format) {
-            OutputFormat::Text => {
-                command_output::write_line(
-                    output,
-                    format_args!(
-                        "{}: {} rename(s); {} file(s) written",
-                        out.outcome.action,
-                        out.renames_applied,
-                        out.outcome.files_written.len()
-                    ),
-                )?;
-                Ok(())
-            }
-            format => command_output::write_report(&out, format, output, |_, _| Ok(()))
-                .map_err(Into::into),
-        };
+        return command_output::write_report(
+            &out,
+            OutputFormat::resolve(args.format),
+            output,
+            infallible(|_, text| {
+                text.push_str(&format!(
+                    "{}: {} rename(s); {} file(s) written",
+                    out.outcome.action,
+                    out.renames_applied,
+                    out.outcome.files_written.len()
+                ))
+            }),
+        )
+        .map_err(Into::into);
     }
     let out = rename_binding(
         &args.modules_root,
@@ -290,8 +288,11 @@ fn run_bindings_rename_cmd(
         args.dry_run,
         args.no_verify,
     )?;
-    match OutputFormat::resolve(args.format) {
-        OutputFormat::Text => {
+    command_output::write_report(
+        &out,
+        OutputFormat::resolve(args.format),
+        output,
+        infallible(|_, text| {
             let file = out
                 .outcome
                 .files_written
@@ -303,16 +304,12 @@ fn run_bindings_rename_cmd(
                 .as_deref()
                 .map(str::to_string)
                 .unwrap_or_else(|| out.identity.to_string());
-            command_output::write_line(
-                output,
-                format_args!(
-                    "{}: {} -> {}{file}",
-                    out.outcome.action, previous_name, out.new_readable,
-                ),
-            )?;
-        }
-        format => command_output::write_report(&out, format, output, |_, _| Ok(()))?,
-    }
+            text.push_str(&format!(
+                "{}: {} -> {}{file}",
+                out.outcome.action, previous_name, out.new_readable,
+            ));
+        }),
+    )?;
     Ok(())
 }
 
@@ -412,23 +409,20 @@ fn print_edit_outcome(
     format: OutputFormat,
 ) -> Result<()> {
     outcome.warn_if_unassessed_write(stderr)?;
-    match format {
-        OutputFormat::Text => {
-            command_output::write_line(
-                output,
-                format_args!(
-                    "{}: {count} {noun}(s); {} file(s) written, {} file(s) deleted",
-                    outcome.action,
-                    outcome.files_written.len(),
-                    outcome.files_deleted.len()
-                ),
-            )?;
-            Ok(())
-        }
-        format => {
-            command_output::write_report(report, format, output, |_, _| Ok(())).map_err(Into::into)
-        }
-    }
+    command_output::write_report(
+        report,
+        format,
+        output,
+        infallible(|_, text| {
+            text.push_str(&format!(
+                "{}: {count} {noun}(s); {} file(s) written, {} file(s) deleted",
+                outcome.action,
+                outcome.files_written.len(),
+                outcome.files_deleted.len()
+            ))
+        }),
+    )
+    .map_err(Into::into)
 }
 
 pub(super) fn run(

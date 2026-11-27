@@ -19,41 +19,8 @@ The `bb` CLI is open source at <https://github.com/buildbuddy-io/buildbuddy>. Re
 - **Hook daemon stderr log** (unhandled exceptions / tracebacks — check this first for SessionStart crashes): `~/.claude/session-env/<session_id>/hook-daemon/daemon.err.log`
 - **Hook daemon startup failure marker** (written when the dispatcher couldn't reach the daemon at all): `~/.claude/session-env/<session_id>/hook-daemon/startup_failure.json`
 - **Supervisor logs**: `~/.claude/session-env/<session_id>/supervisor/supervisord.log` (supervisor daemon, used for container runtime)
-- **Platform detection**: Claude Code web runs on Firecracker microVMs (ext4 root, real Linux kernel). The session start hook detects the platform at runtime via `platform_detect.py`. See <web_env/docs/container_spec.md> for specs and IO benchmarks.
+- **Platform detection**: Claude Code web runs on Firecracker microVMs (ext4 root, real Linux kernel). The session start hook detects the platform at runtime via `platform_detect.py`.
 - **Supervisor uses TCP**: `127.0.0.1:19001` instead of Unix socket (historical: 9p hard link issues on gVisor, kept for compatibility).
-
-## Container Lifecycle — Reverse-Engineered Source
-
-Anthropic's `environment-manager` binary (Go, garble-obfuscated) is partially
-reverse-engineered under <web_env/re/environment_manager/>. **The RE is
-incomplete and may be wrong in places — treat it as a starting point, not
-ground truth.** When running inside a Claude Code web session you can pull
-the live binary from the container and cross-check it against the committed
-RE (or update the RE if it's drifted). Read this before speculating about
-when/how session-start-adjacent things fire. Specifically:
-
-- **Which hook points fire on which session modes** (`new` / `resume` /
-  `resume-cached` / `setup-only`): see
-  <web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
-  `Initialize()`. Steps 1–2 (install languages, clone sources) are gated on
-  `isNewOrSetup`. Step 3 (init script / `web_setup.sh`) is gated on
-  `isNewOrSetup` — **both `resume` and `resume-cached` skip the init script**.
-  **`resume-cached` exits early** (after FJqRbR1MIeE + ProcessSources, VMA
-  `0x1fbb074`) and does NOT run Steps 4–6. Steps 4–6 (`claude --init-only`
-  which fires SessionStart hooks, skill bootstrap, hook bootstrap) run for
-  `new` and `resume` modes only. `setup-only` runs the init script and exits
-  partway through the subsequent steps.
-- **`process_api` (PID 1) lifecycle**, WebSocket ports, orphan monitor, OOM killers:
-  <web_env/re/process_api/README.md>.
-- **CLI flags and env vars** that tune the above:
-  <web_env/re/SETUP_FLAGS_INVENTORY.md>.
-
-If something in the lifecycle is unclear, grep
-`devinfra/claude/web_env/re/environment_manager/src/` for the function name
-or error string before opening an issue — there's likely already a decompiled
-source file with line-annotated binary offsets. If the RE looks wrong or
-stale, pull the live binary from the web container and verify against it
-before assuming the RE is authoritative.
 
 ## Debugging Commands
 

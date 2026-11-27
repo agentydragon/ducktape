@@ -195,6 +195,25 @@ impl AssignmentInputs {
         }
         Ok(source_unit_ids.into_iter().collect())
     }
+
+    /// Report-facing form of [`Self::source_unit_report_ids_for_bindings`].
+    /// A module report is emitted from bindings already checked against this
+    /// chunk's catalogue, so a scope error here is not a recoverable input
+    /// problem: the report was built from bindings outside the analysis chunk.
+    pub fn report_source_unit_ids_for_bindings<'a>(
+        &self,
+        ids: impl IntoIterator<Item = &'a BindingId>,
+    ) -> Vec<String> {
+        self.source_unit_report_ids_for_bindings(ids)
+            .expect("module report bindings belong to the analysis chunk")
+    }
+
+    /// Report-facing form of [`Self::source_unit_ids_for_binding`], under the
+    /// same guarantee.
+    pub fn report_source_unit_ids_for_binding(&self, id: &BindingId) -> &[SourceUnitId] {
+        self.source_unit_ids_for_binding(id)
+            .expect("module report bindings belong to the analysis chunk")
+    }
 }
 
 /// Reverse-index `dependency_graph.nodes[].declared` so graph and planner reports

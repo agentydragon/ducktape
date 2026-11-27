@@ -46,6 +46,13 @@ pub enum MutationAction {
     Rejected,
 }
 
+impl MutationAction {
+    /// The action of an edit with changes to write: `--dry-run` only previews them.
+    pub fn for_write(dry_run: bool) -> Self {
+        if dry_run { Self::DryRun } else { Self::Applied }
+    }
+}
+
 /// How a mutating verb's edit was validated, reported in the outcome
 /// so machine readers can tell a gate-checked apply from a
 /// `--no-verify` one.

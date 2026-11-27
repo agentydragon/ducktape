@@ -58,6 +58,7 @@ py_library(
     data = [
         "001_ci_feedback.sql",
         "002_ci_feedback_optimization.sql",
+        "003_ci_feedback_absent_gates.sql",
         "collector.toml",
         "github_policy.vrl",
         "grants.sql",
@@ -138,6 +139,7 @@ py_test(
     data = [
         "001_ci_feedback.sql",
         "002_ci_feedback_optimization.sql",
+        "003_ci_feedback_absent_gates.sql",
         "collector.toml",
         "github_api_server.py",
         "github_policy.vrl",

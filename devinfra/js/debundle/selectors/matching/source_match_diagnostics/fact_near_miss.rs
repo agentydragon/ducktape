@@ -419,8 +419,8 @@ pub(crate) fn fact_first_mismatch_reason(
     {
         return Ok(None);
     }
-    let nkind = needle_index.node_kind(nroot);
-    let ckind = candidate_index.node_kind(croot);
+    let nkind = needle_index.kind_of(nroot);
+    let ckind = candidate_index.kind_of(croot);
     let reason = match (
         module_decl_kind(nkind).is_some(),
         module_decl_kind(ckind).is_some(),
@@ -504,14 +504,14 @@ fn first_item_divergence(
     croot: NodeId,
     mode: Mode,
 ) -> Result<MismatchReason> {
-    let nkind = needle_index.node_kind(nroot);
-    let ckind = candidate_index.node_kind(croot);
+    let nkind = needle_index.kind_of(nroot);
+    let ckind = candidate_index.kind_of(croot);
     let declarations = if nkind == NodeKind::ExportDecl && ckind == NodeKind::ExportDecl {
         Some((
             export_decl_inner(needle),
-            needle_index.children(nroot)[0],
+            needle_index.children_of(nroot)[0],
             export_decl_inner(candidate),
-            candidate_index.children(croot)[0],
+            candidate_index.children_of(croot)[0],
         ))
     } else if declaration_kind(nkind).is_some() && declaration_kind(ckind).is_some() {
         Some((
@@ -561,16 +561,16 @@ fn first_decl_divergence(
     croot: NodeId,
     mode: Mode,
 ) -> Result<MismatchReason> {
-    let nkind = needle_index.node_kind(nroot);
-    let ckind = candidate_index.node_kind(croot);
+    let nkind = needle_index.kind_of(nroot);
+    let ckind = candidate_index.kind_of(croot);
     let (Some(nlabel), Some(clabel)) = (declaration_kind(nkind), declaration_kind(ckind)) else {
         panic!("fact near-miss: non-declaration kinds {nkind:?}/{ckind:?}");
     };
     let alpha = mode == Mode::AlphaAll;
     Ok(match (nkind, ckind) {
         (NodeKind::ClassDecl, NodeKind::ClassDecl) | (NodeKind::FnDecl, NodeKind::FnDecl) => {
-            let nname = needle_index.ident(needle_index.children(nroot)[0]);
-            let cname = candidate_index.ident(candidate_index.children(croot)[0]);
+            let nname = needle_index.ident_of(needle_index.children_of(nroot)[0]);
+            let cname = candidate_index.ident_of(candidate_index.children_of(croot)[0]);
             if !alpha && nname != cname {
                 MismatchReason::DeclarationName {
                     kind: nlabel,
@@ -580,9 +580,9 @@ fn first_decl_divergence(
             } else if nkind == NodeKind::ClassDecl {
                 first_class_divergence(
                     needle_index,
-                    needle_index.children(nroot)[1],
+                    needle_index.children_of(nroot)[1],
                     candidate_index,
-                    candidate_index.children(croot)[1],
+                    candidate_index.children_of(croot)[1],
                     mode,
                 )?
             } else {
@@ -618,8 +618,8 @@ fn first_var_decl_divergence(
     croot: NodeId,
     mode: Mode,
 ) -> Result<MismatchReason> {
-    let nkeyword = needle_index.operator(nroot);
-    let ckeyword = candidate_index.operator(croot);
+    let nkeyword = needle_index.operator_of(nroot);
+    let ckeyword = candidate_index.operator_of(croot);
     if nkeyword != ckeyword {
         return Ok(MismatchReason::VariableKind {
             selector: nkeyword.map(str::to_owned),
@@ -640,8 +640,8 @@ fn first_var_decl_divergence(
     if aligns {
         return Ok(MismatchReason::VariableShape);
     }
-    let ndecls = needle_index.children(nroot);
-    let cdecls = candidate_index.children(croot);
+    let ndecls = needle_index.children_of(nroot);
+    let cdecls = candidate_index.children_of(croot);
     let reason = if ndecls
         .iter()
         .any(|&d| selector_match::is_declarator_run_hole(needle_index, d))
@@ -786,8 +786,8 @@ fn first_class_divergence(
     cclass: NodeId,
     mode: Mode,
 ) -> Result<MismatchReason> {
-    let nmembers = needle_index.children(nclass);
-    let cmembers = candidate_index.children(cclass);
+    let nmembers = needle_index.children_of(nclass);
+    let cmembers = candidate_index.children_of(cclass);
     let free = free_identifiers([needle_index]);
     let mut candidate_start = 0;
     for &nmember in nmembers {
@@ -836,11 +836,11 @@ fn first_class_divergence(
 /// `prop_name`, labeled `<computed>`). Private and auto-accessor members are not
 /// projected by the extractor, so they never reach the near-miss path.
 fn fact_class_member_key(index: &Index, member: NodeId) -> Option<ClassMemberKey> {
-    match index.node_kind(member) {
+    match index.kind_of(member) {
         NodeKind::Constructor => Some(ClassMemberKey::Constructor),
         NodeKind::StaticBlock => Some(ClassMemberKey::StaticBlock),
         NodeKind::Method | NodeKind::ClassProp => {
-            let &key = index.children(member).first()?;
+            let &key = index.children_of(member).first()?;
             fact_prop_name_key(index, key)
         }
         _ => None,
@@ -851,8 +851,8 @@ fn fact_class_member_key(index: &Index, member: NodeId) -> Option<ClassMemberKey
 /// (ident/string/number) name as a `prop_name` fact; a `ComputedKey` node carries
 /// none and labels `<computed>`.
 fn fact_prop_name_key(index: &Index, key: NodeId) -> Option<ClassMemberKey> {
-    match index.node_kind(key) {
-        NodeKind::PropName => index.prop_name(key).map(|name| ClassMemberKey::Named {
+    match index.kind_of(key) {
+        NodeKind::PropName => index.prop_name_of(key).map(|name| ClassMemberKey::Named {
             name: name.to_owned(),
         }),
         NodeKind::ComputedKey => Some(ClassMemberKey::Computed),

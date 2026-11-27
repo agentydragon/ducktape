@@ -16,7 +16,7 @@
 //!
 //! - **A1**: a direct `eval` in a lazy body is refused only once the
 //!   assignment splits, reorders or renames the chunk
-//!   ([`enforce_split_admission`]); an indirect
+//!   ([`check_transformed_chunk_admission`]); an indirect
 //!   `(0, eval)(...)` only at module top level: in a lazy body it runs in
 //!   global scope, where module bindings are invisible. Aliased eval
 //!   (`const e = eval; e(...)`) is unchecked.
@@ -132,8 +132,9 @@ pub(super) fn enforce_chunk_admission(
 /// The admission violations that are benign only while the emitted tree is
 /// the source unchanged: a lazy direct `eval` reads and writes bindings by
 /// name, so it breaks once the chunk is split across modules, reordered or
-/// renamed. Refuses them when `transformed`, unless overridden.
-pub(super) fn enforce_split_admission(
+/// renamed. Run once the chunk's assignment is known; refuses them when
+/// `transformed` (the emitted tree differs from the source), unless overridden.
+pub fn check_transformed_chunk_admission(
     chunk_id: &str,
     module: &Module,
     overrides: AdmissionOverrides,

@@ -9,9 +9,6 @@ detects which platform we're running on so session setup can adapt:
   Skyframe analysis (~8Gi).
 - **gVisor** (legacy): 9p root, no overlay support, tmpfs required for
   fast I/O. Smaller JVM heap due to tmpfs eating RAM.
-
-See devinfra/claude/web_env/docs/container_spec.md for the current
-environment specification and IO benchmarks.
 """
 
 import enum
@@ -27,7 +24,7 @@ import psutil
 
 logger = logging.getLogger(__name__)
 
-# Known platform indicators (see container_spec.md for details).
+# Known platform indicators.
 _GVISOR_HOSTNAME = "runsc"
 _FIRECRACKER_INIT_FLAG = "--firecracker-init"
 
@@ -75,7 +72,7 @@ class PlatformInfo:
           Seq read:  241 MB/s (ext4) vs 2.4 GB/s (tmpfs)
           4K write:  92 MB/s (ext4) vs 1.3 GB/s (tmpfs)
         On Firecracker with ext4, disk I/O is adequate and tmpfs would
-        waste RAM. See container_spec.md for full benchmarks.
+        waste RAM.
         """
         return not self.root_supports_overlay
 
@@ -152,8 +149,7 @@ def detect() -> PlatformInfo:
             "Unexpected platform state: hostname=%r root_fstype=%r init_cmdline=%r. "
             "Neither Firecracker nor gVisor indicators matched. "
             "Platform-specific optimizations (tmpfs, overlay, JVM heap) will use "
-            "conservative defaults. Please notify the user about this unexpected state. "
-            "See devinfra/claude/web_env/docs/container_spec.md for expected indicators.",
+            "conservative defaults. Please notify the user about this unexpected state.",
             hostname,
             root_fstype,
             init_cmdline[:200],

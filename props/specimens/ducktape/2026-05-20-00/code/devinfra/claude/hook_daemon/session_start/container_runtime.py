@@ -129,7 +129,7 @@ async def _start_service(
 def _configure_docker(paths: SessionPaths, tmpfs_mounted: bool, root_supports_overlay: bool) -> _RuntimeSpec:
     """Write daemon.json and return the runtime spec for Docker.
 
-    Storage driver selection (see container_spec.md for platform details):
+    Storage driver selection:
     - Firecracker (ext4 root): overlay works natively on disk, no tmpfs needed
     - gVisor (9p root): overlay requires tmpfs; falls back to vfs without it
     """

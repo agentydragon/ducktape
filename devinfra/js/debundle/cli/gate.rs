@@ -416,9 +416,7 @@ fn run_diagnose(
 ) -> Result<()> {
     let graph = DependencyGraphInput::read(&args.graph)?;
     let limit = args.limit.unwrap_or(5);
-    if limit == 0 && !args.all {
-        anyhow::bail!("--limit must be greater than zero; use --all for exhaustive output");
-    }
+    crate::ensure_explicit_limit(args.limit, args.all)?;
     let (returned, total_count, has_supported_witness) = diagnose_binding(
         &graph,
         &args,
