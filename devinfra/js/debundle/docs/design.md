@@ -1031,12 +1031,14 @@ returned. Graph-only inventory cannot be presented as an executable plan.
 
 ### Quotient updates
 
-An ownership batch can add and remove quotient edges simultaneously. Indexed
-projection visits the union of incident source edges once under the final map,
-maintains parallel counts and emits final pair zero crossings. Structural SCC
-maintenance can restrict affected graph work, but does not decide the existence
-of a valid import order. Local/touching diagnostics cannot certify a complete
-assignment: changed topology can invalidate finish constraints elsewhere.
+The gate reprojects the complete assignment; there is no incremental quotient
+index (the test-only `RealizabilityIndex` was removed). A future one must
+handle batches that add and remove quotient edges simultaneously: visit the
+union of incident source edges once under the final map, keep parallel counts
+and emit final pair zero crossings. Structural SCC maintenance can restrict
+affected graph work, but does not decide the existence of a valid import order.
+Local/touching diagnostics cannot certify a complete assignment: changed
+topology can invalidate finish constraints elsewhere.
 Do not project or certify the full source graph separately for each inventory
 seed. The shared full verifier certifies the one selected result.
 

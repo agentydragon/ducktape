@@ -31,8 +31,7 @@ pub enum EndpointView {
 ///   call returns; the manufactured `R -> target-module` constraint
 ///   is redundant with the already-recorded `R -> callee-module`
 ///   edge.
-/// - [`EndpointView::Gate`] — used by `check_realizability`,
-///   `IncrementalQuotient::{add,remove}_current_edge`, and
+/// - [`EndpointView::Gate`] — used by the realizability gate and
 ///   `chunk_constraining_module_edges`. Drops same-module edges but
 ///   KEEPS cross-module `PromotedAtInit` edges. The emitter's
 ///   `collect_phantom_side_effect_providers` adds phantom

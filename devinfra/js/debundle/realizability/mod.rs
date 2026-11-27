@@ -6,15 +6,10 @@
 //! integrity and selector realization remain separate obligations at the shared
 //! assignment/writer boundary.
 //!
-//! The former general scheduler and mutable hypothetical-move index are compiled
-//! only for bounded test oracles. They cannot be used by an ordinary build, and
-//! their schedule-existence work has no polynomial complexity guarantee.
+//! The general schedule derivation (`schedule_from_canonical`) is compiled only
+//! for bounded test oracles; it has no polynomial complexity guarantee.
 
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-#[cfg(test)]
-use std::sync::OnceLock;
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
@@ -26,18 +21,10 @@ use graph::report::SccCore;
 use graph::{
     ChunkConstrainingEdgeSet, DependencyEdgeId, DependencyGraph, chunk_constraining_module_edges,
 };
-#[cfg(test)]
-use source_identity::SourceUnitId;
 
-#[cfg(test)]
-pub mod condensation_order;
-#[cfg(test)]
-mod condensation_order_proptest;
 mod effect_translation_validation;
 #[cfg(test)]
 mod esm_simulator;
-#[cfg(test)]
-mod incremental_quotient;
 mod translation_validation;
 
 pub use effect_translation_validation::{
@@ -55,10 +42,6 @@ use esm_schedule::EsmImportOrder;
 use esm_schedule::{EsmImportSchedule, ImportScheduleError};
 #[cfg(test)]
 use esm_simulator::EsmEvaluationSimulator;
-#[cfg(test)]
-use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
-#[cfg(test)]
-pub use incremental_quotient::{LadderDecision, ModuleAssignmentBatch, ModuleAssignmentDelta};
 pub(crate) use translation_validation::CandidateEmittedOrder;
 pub use translation_validation::{
     TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
@@ -142,63 +125,10 @@ impl RealizabilityVerdict {
     }
 }
 
-/// Final adjacency changes after one simultaneous batch. Evidence and parallel
-/// counts do not invalidate ordering certificates unless a pair crosses zero.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-#[cfg(test)]
-pub struct QuotientTopologyDelta {
-    pub imports: BTreeMap<(ModuleId, ModuleId), bool>,
-    pub constraining: BTreeMap<(ModuleId, ModuleId), bool>,
-}
-
-#[cfg(test)]
-impl QuotientTopologyDelta {
-    /// Accumulate final changes until a consumer needs its maintained view.
-    /// Inverse zero crossings cancel, including speculative rollback.
-    pub fn compose(&mut self, next: &Self) {
-        compose_topology(&mut self.imports, &next.imports);
-        compose_topology(&mut self.constraining, &next.constraining);
-    }
-}
-
-#[cfg(test)]
-fn compose_topology(
-    pending: &mut BTreeMap<(ModuleId, ModuleId), bool>,
-    delta: &BTreeMap<(ModuleId, ModuleId), bool>,
-) {
-    for (&pair, &present) in delta {
-        if let Some(previous) = pending.remove(&pair) {
-            assert_ne!(previous, present, "successive zero crossings alternate");
-        } else {
-            pending.insert(pair, present);
-        }
-    }
-}
-
-/// Current nontrivial C components and topology work performed to refresh them.
-#[derive(Debug, Default)]
-#[cfg(test)]
-pub struct ConstrainingComponents {
-    pub components: Vec<BTreeSet<ModuleId>>,
-    pub rows_visited: usize,
-    pub edges_visited: usize,
-}
-
-/// Allocation-free access to the canonical Gate constraints maintained by an
-/// assignment index. Diagnostic evidence is materialized only when requested.
-#[cfg(test)]
-pub struct QuotientConstraints<'a> {
-    pub imports: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    pub import_predecessors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    pub constraining_pairs: &'a BTreeSet<(ModuleId, ModuleId)>,
-    pub constraining_successors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    pub constraining_predecessors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-}
-
 /// Entry imports every emitted module and evaluates last. A constraining edge
 /// into entry is therefore a TDZ/order violation even if the source I-graph has
 /// no return edge. Diagnose that two-node runtime cycle directly, without
-/// inflating the maintained I-condensation with universal entry fan-out.
+/// adding universal entry fan-out to the I-graph.
 fn reject_entry_dependency(
     verdict: &mut RealizabilityVerdict,
     from: ModuleId,
@@ -222,10 +152,8 @@ fn reject_entry_dependency(
     });
 }
 
-/// Pure-function form. Builds the canonical constraining edge set,
-/// runs Tarjan, surfaces multi-module SCCs and cross-rebinds. The
-/// correctness reference for the `RealizabilityIndex`'s incremental
-/// backing.
+/// Pure-function form for tests: projects the assignment and checks it under
+/// the derived import schedule.
 #[cfg(test)]
 pub fn check_realizability(
     dependency_graph: &DependencyGraph,
@@ -373,9 +301,8 @@ fn canonical_assignment_constraints(
     (canonical, cross_rebinds)
 }
 
-/// Run the complete gate over the canonical module projection. The pure
-/// dependency graph path and the incremental hypothetical-move path both use this
-/// body, so they cannot drift on remote SCCs or ESM evaluation order.
+/// Run the complete gate over the canonical module projection under the
+/// derived import schedule.
 #[cfg(test)]
 fn verdict_from_canonical(
     canonical: ChunkConstrainingEdgeSet,
@@ -585,341 +512,6 @@ fn constraining_cycles(canonical: &ChunkConstrainingEdgeSet) -> Vec<SccDiagnosis
         diagnosis.core.constraining_dependency_edges.sort_unstable();
     }
     diagnoses
-}
-
-/// Touching-filtered form of [`check_realizability`]: the same pure
-/// from-scratch verdict, restricted to diagnoses involving `module`.
-///
-/// This is the gate ladder's **reference predicate**
-/// for a speculative merge: a post-merge module `M` is acceptable iff
-/// `check_realizability_touching(dependency_graph, post_assignment, M)`
-/// `.is_realizable()`. Pre-existing violations not touching `M` are
-/// intentionally ignored, matching
-/// [`RealizabilityIndex::verdict_after_moving_source_units_touching`]'s
-/// semantics on both the hot and diagnostic paths.
-///
-/// Differential-harness / oracle use only — `O(N + M)` per call, far
-/// too slow for the proposer's per-pop gate.
-#[cfg(test)]
-pub fn check_realizability_touching(
-    dependency_graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
-    module: ModuleId,
-) -> RealizabilityVerdict {
-    let full = check_realizability(dependency_graph, assignment);
-    RealizabilityVerdict {
-        unrealizable_sccs: full
-            .unrealizable_sccs
-            .into_iter()
-            .filter(|scc| scc.core.modules.contains(&module))
-            .collect(),
-        cross_rebinds: full
-            .cross_rebinds
-            .into_iter()
-            .filter(|rebind| rebind.from == module || rebind.to == module)
-            .collect(),
-    }
-}
-
-/// Mutable index over a working assignment: the incremental form of the
-/// predicate `check_realizability` computes (docs/design.md
-/// "Realizability primitive").
-///
-/// Each `apply` updates only quotient edge buckets incident to the
-/// moved source units. `verdict()` reads the maintained quotient graph
-/// instead of rebuilding it from source unit edges.
-///
-/// The index does NOT hold a borrow of `DependencyGraph`. `apply` and every
-/// `*_after_moving_source_units*` verdict query take the graph as a
-/// parameter. Passing it per call keeps the caller's ownership flat.
-#[derive(Debug, Clone)]
-#[cfg(test)]
-pub struct RealizabilityIndex {
-    assignment: ModuleAssignment,
-    quotient: IncrementalQuotient,
-}
-
-#[cfg(test)]
-impl RealizabilityIndex {
-    pub fn from_assignment(
-        dependency_graph: &DependencyGraph,
-        assignment: ModuleAssignment,
-    ) -> Self {
-        let quotient = IncrementalQuotient::new(dependency_graph, &assignment);
-        Self {
-            assignment,
-            quotient,
-        }
-    }
-
-    /// Borrow the current working assignment. Callers should treat this
-    /// as read-only — mutation goes through [`Self::apply`] so the
-    /// quotient stays consistent.
-    pub fn assignment(&self) -> &ModuleAssignment {
-        &self.assignment
-    }
-
-    pub fn constraints(&self) -> QuotientConstraints<'_> {
-        QuotientConstraints {
-            imports: self.quotient.base_i_successors(),
-            import_predecessors: self.quotient.i_graph.reverse_adjacency(),
-            constraining_pairs: self.quotient.base_constraining_pairs(),
-            constraining_successors: self.quotient.constraining_graph.adjacency(),
-            constraining_predecessors: self.quotient.constraining_graph.reverse_adjacency(),
-        }
-    }
-
-    /// Register the fixed token arena on first use, then refresh only pending
-    /// final topology changes. Query cost excludes singleton component scans.
-    pub fn constraining_components_with_poll<E>(
-        &self,
-        nodes: &BTreeSet<ModuleId>,
-        poll: impl FnMut() -> Result<(), E>,
-    ) -> Result<ConstrainingComponents, E> {
-        self.quotient.constraining_components_with_poll(nodes, poll)
-    }
-
-    /// Read the canonical Gate C/I projection of the current assignment without
-    /// scheduling it or revisiting source edges. Constructive placement consumes
-    /// these constraints directly; it does not use verdicts as a candidate oracle.
-    pub fn canonical_projection(&self) -> ChunkConstrainingEdgeSet {
-        self.quotient
-            .canonical_with_overlay(&QuotientOverlay::default())
-    }
-
-    /// Canonical cross-owner rebindings, in source-edge order. They are equality
-    /// constraints for placement and are maintained with the same batch updates.
-    pub fn cross_rebinds(&self) -> Vec<CrossRebindEdge> {
-        self.quotient
-            .cross_rebinds_with_overlay(&QuotientOverlay::default())
-    }
-
-    /// Commit `delta` to the working assignment and quotient; it cannot
-    /// be reverted. Hypothetical moves are answered without mutation by
-    /// [`Self::verdict_after_moving_source_units_touching`] and
-    /// [`Self::ladder_decision_after_moving_source_units_touching`].
-    pub fn apply(&mut self, dependency_graph: &DependencyGraph, delta: ModuleAssignmentDelta) {
-        self.apply_batch(dependency_graph, &ModuleAssignmentBatch::from(delta));
-    }
-
-    /// Commit a simultaneous source-unit mapping and update the quotient once
-    /// from the old assignment to the final assignment. Each incident edge is
-    /// removed and re-added at most once, including edges whose two endpoints
-    /// both move.
-    ///
-    /// Every destination must be a canonical `ModuleId` in the fixed module
-    /// universe used to build this index. This method does not allocate or
-    /// renumber destinations; rebuild the index if module identities or the
-    /// entry destination change.
-    pub fn apply_batch(
-        &mut self,
-        dependency_graph: &DependencyGraph,
-        batch: &ModuleAssignmentBatch,
-    ) -> QuotientTopologyDelta {
-        self.quotient
-            .apply_batch(dependency_graph, &mut self.assignment, batch)
-    }
-
-    /// Verdict against the current working assignment. Reads the
-    /// incrementally maintained quotient graph and evidence buckets.
-    pub fn verdict(&self) -> RealizabilityVerdict {
-        self.quotient.verdict()
-    }
-
-    /// Verdict filtered to SCCs and cross-rebinds touching `module`.
-    /// Candidate evaluation uses this for the fresh hypothetical
-    /// destination: unrelated pre-existing bad SCCs are intentionally
-    /// ignored.
-    pub fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
-        self.quotient.verdict_touching(module)
-    }
-
-    /// Full verdict for a hypothetical source unit move. The incident-edge overlay
-    /// changes the canonical module projection without mutating the index;
-    /// the shared gate body then checks every SCC, including SCCs remote from
-    /// the destination whose ESM import order changes after this move.
-    pub fn verdict_after_moving_source_units(
-        &self,
-        dependency_graph: &DependencyGraph,
-        source_units: &[SourceUnitId],
-        to: ModuleId,
-    ) -> RealizabilityVerdict {
-        let batch = ModuleAssignmentBatch::from(ModuleAssignmentDelta::MoveSourceUnits {
-            source_units: source_units.to_vec(),
-            to,
-        });
-        self.verdict_after_batch(dependency_graph, &batch)
-    }
-
-    /// Full canonical verdict for one simultaneous source-unit mapping.
-    /// Unlike the candidate-oriented touching query, this checks every SCC
-    /// and the global ESM import order, including remote TDZs whose order
-    /// changes because of the batch.
-    ///
-    /// Destinations must be canonical `ModuleId`s from the fixed module
-    /// universe used to build this index, and the entry destination stays
-    /// fixed. If module paths are inserted or reordered, rebuild the index
-    /// with the new canonical IDs before querying.
-    pub fn verdict_after_batch(
-        &self,
-        dependency_graph: &DependencyGraph,
-        batch: &ModuleAssignmentBatch,
-    ) -> RealizabilityVerdict {
-        let overlay = self
-            .quotient
-            .overlay_for_batch(dependency_graph, &self.assignment, batch);
-        let verdict = verdict_from_canonical(
-            self.quotient.canonical_with_overlay(&overlay),
-            self.quotient.cross_rebinds_with_overlay(&overlay),
-            self.assignment.entry_destination().module_id(),
-        );
-        if gate_oracle_enabled() {
-            let mut post_assignment = self.assignment.clone();
-            for (&source_unit, &to) in batch.destinations() {
-                post_assignment.set(source_unit, to);
-            }
-            let reference = check_realizability(dependency_graph, &post_assignment);
-            assert_eq!(
-                verdict, reference,
-                "DEBUNDLE_GATE_ORACLE: full overlay verdict diverges from the pure reference"
-            );
-        }
-        verdict
-    }
-
-    /// Verdict for a hypothetical source unit move, filtered to the target
-    /// module, without mutating the working assignment. This is the
-    /// candidate-evaluation fast path: it builds a small quotient
-    /// overlay for the moved source units' incident edges and runs directed
-    /// reachability against the effective graph.
-    pub fn verdict_after_moving_source_units_touching(
-        &self,
-        dependency_graph: &DependencyGraph,
-        source_units: &[SourceUnitId],
-        to: ModuleId,
-    ) -> RealizabilityVerdict {
-        let batch = ModuleAssignmentBatch::from(ModuleAssignmentDelta::MoveSourceUnits {
-            source_units: source_units.to_vec(),
-            to,
-        });
-        self.verdict_after_batch_touching(dependency_graph, &batch, to)
-    }
-
-    fn verdict_after_batch_touching(
-        &self,
-        dependency_graph: &DependencyGraph,
-        batch: &ModuleAssignmentBatch,
-        module: ModuleId,
-    ) -> RealizabilityVerdict {
-        let overlay = self
-            .quotient
-            .overlay_for_batch(dependency_graph, &self.assignment, batch);
-        let verdict = self
-            .quotient
-            .verdict_with_overlay_touching(module, &overlay);
-        if gate_oracle_enabled() {
-            // Oracle mode: the boolean tier ladder must agree with
-            // the evidence-producing verdict on every diagnostic-path
-            // query.
-            let decision = self.quotient.ladder_decide(module, &overlay);
-            assert_eq!(
-                decision.accepts(),
-                verdict.is_realizable(),
-                "DEBUNDLE_GATE_ORACLE: ladder {decision:?} diverges from the overlay \
-                 verdict for {module:?}: {verdict:#?}",
-            );
-        }
-        verdict
-    }
-
-    /// Tier-laddered decision for a hypothetical source unit move, filtered
-    /// to the target module. Exactly equal to
-    /// `verdict_after_moving_source_units_touching(..).is_realizable()` with
-    /// evidence materialization elided: tiers 0–2 are short-circuits
-    /// whose skip conditions are theorems about the predicate, tier 3
-    /// runs the shared simulator path. With `DEBUNDLE_GATE_ORACLE`
-    /// set, every query is additionally cross-checked against the
-    /// pure touching-filtered reference and divergence panics.
-    pub fn ladder_decision_after_moving_source_units_touching(
-        &self,
-        dependency_graph: &DependencyGraph,
-        source_units: &[SourceUnitId],
-        to: ModuleId,
-    ) -> LadderDecision {
-        let batch = ModuleAssignmentBatch::from(ModuleAssignmentDelta::MoveSourceUnits {
-            source_units: source_units.to_vec(),
-            to,
-        });
-        let overlay = self
-            .quotient
-            .overlay_for_batch(dependency_graph, &self.assignment, &batch);
-        let decision = self.quotient.ladder_decide(to, &overlay);
-        if gate_oracle_enabled() {
-            let mut post_assignment = self.assignment.clone();
-            for (&source_unit, &destination) in batch.destinations() {
-                post_assignment.set(source_unit, destination);
-            }
-            let reference = check_realizability_touching(dependency_graph, &post_assignment, to);
-            assert_eq!(
-                decision.accepts(),
-                reference.is_realizable(),
-                "DEBUNDLE_GATE_ORACLE: ladder {decision:?} diverges from the pure \
-                 reference for {to:?}: {reference:#?}",
-            );
-        }
-        decision
-    }
-
-    /// `O(α)` DSU probe against the tier-1 condensation order: are
-    /// `a` and `b` in the same multi-module constraining SCC? Backs
-    /// the greedy's cycle-reduction sort key ("this merge dissolves
-    /// part of an unrealizable SCC") without a cache that can drift.
-    pub fn modules_share_constraining_multi_scc(&self, a: ModuleId, b: ModuleId) -> bool {
-        self.quotient.modules_share_constraining_multi_scc(a, b)
-    }
-}
-
-/// One-time cached `DEBUNDLE_GATE_ORACLE` probe: when set, every
-/// legacy test query cross-checks against the schedule-existence reference and
-/// panics on divergence. This oracle may perform exponential work; it is absent
-/// from production builds.
-#[cfg(test)]
-fn gate_oracle_enabled() -> bool {
-    static ORACLE_ENABLED: OnceLock<bool> = OnceLock::new();
-    *ORACLE_ENABLED.get_or_init(|| std::env::var_os("DEBUNDLE_GATE_ORACLE").is_some())
-}
-
-/// True when `overlay` introduces no changes the ESM evaluation
-/// simulator can observe — i.e. `i_delta` is empty AND no constraining
-/// bucket is added/removed. Cross-rebind edits do not affect the
-/// simulator (rebinds participate in the rebind verdict, not the
-/// I-graph DFS or constraining-edge SCC). Used by
-/// `IncrementalQuotient::build_simulator`'s fast path to reuse the
-/// cached base simulator.
-#[cfg(test)]
-fn overlay_is_simulator_noop(overlay: Option<&QuotientOverlay>) -> bool {
-    let Some(overlay) = overlay else {
-        return true;
-    };
-    overlay.i_delta.is_empty()
-        && overlay.constraining_added.is_empty()
-        && overlay.constraining_removed.is_empty()
-}
-
-/// Edges whose gate-view contribution can change when `source units` move:
-/// those incident to a moved source unit. The gate view reads only the
-/// endpoints' modules and the entry, never a promoted edge's callee.
-#[cfg(test)]
-fn impacted_dependency_edges(
-    dependency_graph: &DependencyGraph,
-    source_units: &[SourceUnitId],
-) -> Vec<DependencyEdgeId> {
-    let mut impacted = BTreeSet::<DependencyEdgeId>::new();
-    for source_unit in source_units {
-        impacted.extend(dependency_graph.out_edges_of(*source_unit).iter().copied());
-        impacted.extend(dependency_graph.in_edges_of(*source_unit).iter().copied());
-    }
-    impacted.into_iter().collect()
 }
 
 #[cfg(test)]

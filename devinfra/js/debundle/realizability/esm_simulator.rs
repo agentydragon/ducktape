@@ -1,4 +1,4 @@
-//! Canonical ESM evaluation for incremental gate queries. Preferred ordering
+//! Exact ESM evaluation over a canonical module graph. Preferred ordering
 //! lives in `esm_import_order`; concrete traversal lives in `esm_schedule`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,11 +8,10 @@ use analysis::ids::ModuleId;
 use esm_schedule::EsmImportOrder;
 use esm_schedule::EsmImportSchedule;
 
-/// Exact evaluation for the canonical graph used by incremental verdicts.
-/// Preserve the preferred policy when valid; otherwise derive a concrete ESM
-/// import schedule. When no schedule exists, retain the preferred traversal to
-/// render a rejection witness. The whole-assignment path and normal emission
-/// use the same constructor and concrete-list verifier.
+/// Exact evaluation for a canonical module graph. Preserve the preferred
+/// policy when valid; otherwise derive a concrete ESM import schedule. When no
+/// schedule exists, retain the preferred traversal to render a rejection
+/// witness. It has no production caller yet.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(super) struct EsmEvaluationSimulator {
     /// Post-order index per module after DFS from entry. Lower
@@ -28,14 +27,7 @@ pub(super) struct EsmEvaluationSimulator {
 }
 
 impl EsmEvaluationSimulator {
-    /// Build from precomputed adjacency. Used by both the gate's
-    /// canonical-edge-set path (`check_realizability` extracts the
-    /// pairs from a [`ChunkConstrainingEdgeSet`]) and the overlay
-    /// path (`IncrementalQuotient::build_simulator_from_scratch`
-    /// materialises pairs from its own `(i_graph,
-    /// constraining_buckets)` shape). The runtime DFS only needs
-    /// the adjacency map; both callers thread their pairs in
-    /// directly.
+    /// Build from the module import graph and its constraining pairs.
     pub(super) fn build(
         i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
         constraining_pairs: &BTreeSet<(ModuleId, ModuleId)>,
