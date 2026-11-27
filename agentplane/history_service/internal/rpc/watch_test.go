@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 type watching struct {
@@ -256,6 +257,58 @@ func TestSelectedSummariesRejectRecordedAfter(t *testing.T) {
 	}
 	_, err = stream.Recv()
 	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("got %v, want InvalidArgument", err)
+	}
+}
+
+func selectedWatch(fields *fieldmaskpb.FieldMask, sessionIDs ...string) *historypb.WatchSessionSummariesRequest {
+	return &historypb.WatchSessionSummariesRequest{Selected: &historypb.SelectedSessionSummaries{SessionIds: sessionIDs, FieldMask: fields}}
+}
+
+func TestSelectedSummariesWithAFieldSetCarryOnlyThoseFields(t *testing.T) {
+	server := newServer(t, time.Hour)
+	sessionID, _ := server.record(t)
+	appendFollowEntries(t, server, sessionID, testEntry(1))
+	full := server.watch(t, selectedWatch(nil, sessionID.String())).receive().GetSnapshot().GetSummaries()
+	narrow := server.watch(t, selectedWatch(&fieldmaskpb.FieldMask{Paths: []string{"committed_cursor"}}, sessionID.String())).receive().GetSnapshot().GetSummaries()
+	if len(full) != 1 || full[0].GetCommittedCursor() == 0 {
+		t.Fatalf("the unreduced snapshot must have a cursor to reduce to: %v", full)
+	}
+	want := &historypb.SessionSummary{SessionId: sessionID.String(), CommittedCursor: full[0].GetCommittedCursor()}
+	if len(narrow) != 1 || !proto.Equal(narrow[0], want) {
+		t.Fatalf("got %v, want %v", narrow, want)
+	}
+}
+
+func TestSelectedSummariesWithAFieldSetSendNothingForChangesOutsideIt(t *testing.T) {
+	server := newServer(t, time.Hour)
+	changing, _ := server.record(t)
+	later := uuid.New()
+	ids := []string{changing.String(), later.String()}
+	everything := server.watch(t, selectedWatch(nil, ids...))
+	// No fold runs in this server, so appending moves the committed cursor but never the folded one.
+	foldOnly := server.watch(t, selectedWatch(&fieldmaskpb.FieldMask{Paths: []string{"folded_through"}}, ids...))
+	everything.receive()
+	foldOnly.receive()
+
+	appendFollowEntries(t, server, changing, testEntry(1))
+	server.notifySummaries(t)
+	if got := everything.receive().GetSummary(); got.GetSessionId() != changing.String() || got.GetCommittedCursor() == 0 {
+		t.Fatalf("the unreduced watch must see the append: %v", got)
+	}
+	// The next frame the reduced watch sends is for a Session that appears, not for the append before it.
+	if _, err := server.history.BindWriter(t.Context(), later, testWriter, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := foldOnly.receive().GetSummary(); got.GetSessionId() != later.String() {
+		t.Fatalf("a change outside the field set sent %v", got)
+	}
+}
+
+func TestSelectedSummariesRefuseAFieldSetOfUnknownPaths(t *testing.T) {
+	server := newServer(t, time.Hour)
+	stream := server.watch(t, selectedWatch(&fieldmaskpb.FieldMask{Paths: []string{"no_such_field"}}, uuid.NewString()))
+	if _, err := stream.stream.Recv(); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("got %v, want InvalidArgument", err)
 	}
 }
