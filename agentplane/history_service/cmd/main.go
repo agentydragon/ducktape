@@ -43,8 +43,6 @@ import (
 )
 
 const (
-	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
-	shutdownGrace = 5 * time.Second
 	// Journal writers heartbeat on an idle call at the rate agentplane/docs/runner_control.md § Event ingress names, so the
 	// ingress serves with the protocol's pacing.
 	ingressIdleAck      = 10 * time.Second
@@ -227,24 +225,17 @@ func serve(ctx context.Context, c config, rpcListener net.Listener, identities a
 			Run(foldContext, seconds(c.FoldIntervalSeconds), changes, healthServer)
 	}()
 
-	failed := make(chan error, 1)
-	go func() { failed <- fmt.Errorf("gRPC listener: %w", server.Serve(rpcListener)) }()
-
-	var result error
-	select {
-	case result = <-failed:
-	case <-ctx.Done():
-		result = ctx.Err()
-	}
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-	// Open watches end with reconnect_required rather than holding the shutdown until their leases.
-	service.Drain()
-	// Let the fold hand back its leases while in-flight RPCs finish draining. Committed ingress history
-	// remains available for the next fold even when it has not yet been projected.
-	stopFold()
-	stopping, release := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
-	defer release()
-	graceful.Stop(stopping, server)
+	result := graceful.Serve(ctx, graceful.Group{
+		GRPC: []graceful.GRPC{{Name: "gRPC", Server: server, Listener: rpcListener}},
+		Drain: func() {
+			healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+			// Open watches end with reconnect_required rather than holding the shutdown until their leases.
+			service.Drain()
+			// Let the fold hand back its leases while in-flight RPCs finish draining. Committed ingress history
+			// remains available for the next fold even when it has not yet been projected.
+			stopFold()
+		},
+	})
 	<-folded
 	return result
 }

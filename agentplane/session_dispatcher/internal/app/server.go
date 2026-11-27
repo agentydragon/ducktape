@@ -24,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/servicemain"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
@@ -31,6 +32,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/migrations"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
+	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -43,6 +45,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func kubernetesConfig(c config) (*rest.Config, error) {
@@ -66,6 +69,7 @@ func reportUnexpected(ctx context.Context, failed chan<- error, role string, err
 }
 
 func run(ctx context.Context, c config) error {
+	ctrllog.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 	if err := migrate.Run(ctx, c.DispatcherDatabaseURL, migrations.Up); err != nil {
 		return err
 	}
@@ -255,53 +259,27 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		}),
 	)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	defer server.Stop()
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(rpcListener)) }()
-
-	// Serving once the gRPC listener accepts calls.
+	// The listener is bound, so calls queue until Serve accepts them.
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	var result error
-	select {
-	case err := <-failed:
-		result = err
-	case <-ctx.Done():
-		result = ctx.Err()
-	}
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-	cancel()
-	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
-	defer release()
-	graceful.Stop(closing, server)
-	return result
+	return graceful.Serve(ctx, graceful.Group{
+		GRPC:     []graceful.GRPC{{Name: "gRPC", Server: server, Listener: rpcListener}},
+		Failures: failed,
+		Drain: func() {
+			healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+			cancel()
+		},
+	})
 }
 
-// Main loads deployment settings, runs migrations and serves until ctx is canceled.
-// Its return value preserves the command's configuration and runtime exit codes.
-func Main(ctx context.Context, args []string) int {
-	if handled, err := migrate.RunOnly(ctx, args, dispatcherDatabaseURLEnv, migrations.Up); handled {
-		if err != nil {
-			slog.Error("Runner Gateway migration failed", "error", err)
-			return 1
-		}
-		return 0
+// Service is the Runner Gateway binary: it loads deployment settings, runs migrations and serves until ctx ends.
+func Service() servicemain.Service[config] {
+	return servicemain.Service[config]{
+		Name:       "Runner Gateway",
+		TraceName:  "runner-gateway",
+		Migrations: servicemain.Migrations{DatabaseURLEnv: dispatcherDatabaseURLEnv, Up: migrations.Up},
+		Load:       loadConfig,
+		Run:        run,
 	}
-	c, err := loadConfig()
-	if err != nil {
-		slog.Error("invalid Runner Gateway configuration", "error", err)
-		return 2
-	}
-	shutdownTracing, err := observability.Init(ctx, "runner-gateway")
-	if err != nil {
-		slog.Error("Runner Gateway tracing setup failed", "error", err)
-		return 1
-	}
-	err = run(ctx, c)
-	shutdownTracing()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("Runner Gateway stopped", "error", err)
-		return 1
-	}
-	return 0
 }
