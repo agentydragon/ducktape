@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, ensure};
 use js_ast::ParsedJsModule;
 use source_identity::ChunkId;
-use spec::DependencyGraphOptions;
+use spec::{DependencyGraphOptions, UnassignedMode};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::paths::normalize_module_path;
@@ -104,6 +104,18 @@ pub fn ensure_commuting_statements_materialize(
         );
     }
     Ok(())
+}
+
+/// The spec validator requires an `unassigned_mode` entry for every chunk this
+/// run materializes, so a miss here is a validator bug rather than a
+/// recoverable spec error. Both front ends look the entry up the same way.
+pub fn chunk_unassigned_mode(
+    unassigned_mode: &BTreeMap<String, UnassignedMode>,
+    chunk_id: &str,
+) -> Result<UnassignedMode> {
+    unassigned_mode.get(chunk_id).cloned().with_context(|| {
+        format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
+    })
 }
 
 /// Resolve a prepared chunk's runtime entry and its retained original AST.
