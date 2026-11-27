@@ -144,24 +144,18 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 
 // Sessions and Dispatches written before service and Identity attribution carry only the retired
 // ServiceAccount columns. They read as unattributed rather than failing every read that meets them.
-func TestLegacyAccountAttributedRowsStayReadable(t *testing.T) {
+func TestUnattributedRowsStayReadable(t *testing.T) {
 	ctx := admitted(t)
 	queueStore := testStore(t, 3)
 	const sessionID, commandID, sandboxName = "test-legacy-session", "test-legacy-command", "test-legacy-sandbox"
 	if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, sandboxName, sandboxUID, input(commandID, "test legacy input")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := queueStore.DB.ExecContext(ctx, `UPDATE session SET service_attribution=NULL,
-		creator_account_namespace='test-legacy-namespace',creator_account_name='test-legacy-creator',
-		creator_account_uid='00000000-0000-4000-8000-00000000c001' WHERE session_id=$1`, sessionID); err != nil {
-		t.Fatal("seed legacy Session attribution:", err)
+	if _, err := queueStore.DB.ExecContext(ctx, `UPDATE session SET service_attribution=NULL WHERE session_id=$1`, sessionID); err != nil {
+		t.Fatal("seed unattributed Session:", err)
 	}
-	if _, err := queueStore.DB.ExecContext(ctx, `UPDATE dispatch SET service_attribution=NULL,
-		actor_account_namespace='test-legacy-namespace',actor_account_name='test-legacy-actor',
-		actor_account_uid='00000000-0000-4000-8000-00000000c002',
-		effective_caller_account_namespace='test-legacy-namespace',effective_caller_account_name='test-legacy-caller',
-		effective_caller_account_uid='00000000-0000-4000-8000-00000000c003' WHERE command_id=$1`, commandID); err != nil {
-		t.Fatal("seed legacy Dispatch attribution:", err)
+	if _, err := queueStore.DB.ExecContext(ctx, `UPDATE dispatch SET service_attribution=NULL WHERE command_id=$1`, commandID); err != nil {
+		t.Fatal("seed unattributed Dispatch:", err)
 	}
 	if row, err := queueStore.GetSession(ctx, sessionID); err != nil || row.Attribution != nil {
 		t.Fatalf("store read legacy Session: %+v %v", row, err)
