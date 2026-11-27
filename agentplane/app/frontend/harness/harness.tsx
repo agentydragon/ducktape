@@ -3008,9 +3008,16 @@ routes.push(
     /^\/upstream\/app\/v1\/system\/status$/,
     () => ({
       components: [
-        { name: "Healthy component", state: "SYSTEM_COMPONENT_STATE_OK", detail: null, checkedAt: ago(4000) },
         {
-          name: "Down component",
+          name: "Sampler",
+          journalStore: "JOURNAL_STORE_SAMPLER",
+          state: "SYSTEM_COMPONENT_STATE_OK",
+          detail: null,
+          checkedAt: ago(4000),
+        },
+        {
+          name: "History Service",
+          journalStore: "JOURNAL_STORE_HISTORY",
           state: "SYSTEM_COMPONENT_STATE_DOWN",
           detail: "UNAVAILABLE: connection refused",
           checkedAt: ago(4000),

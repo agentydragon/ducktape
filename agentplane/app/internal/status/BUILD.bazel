@@ -7,6 +7,7 @@ go_library(
     srcs = ["status.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/status",
     deps = [
+        "//agentplane/app:app_service_go_proto",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//status",
     ],

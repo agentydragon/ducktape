@@ -7,7 +7,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
-import { GetJournalStatsResponseSchema, SystemComponentState, SystemComponentStatusSchema } from "../../app_service_pb";
+import {
+  JournalStore,
+  GetJournalStatsResponseSchema,
+  SystemComponentState,
+  SystemComponentStatusSchema,
+} from "../../app_service_pb";
 import type { CheckedComponentStatus } from "./system_status_client";
 import * as systemStatusClient from "./system_status_client";
 import { SystemStatus } from "./system";
@@ -94,7 +99,10 @@ it("reports a failed read instead of an empty list", async () => {
 });
 
 it("keeps format sizes, unknown metadata, and a missing store distinct", async () => {
-  answer([HEALTHY]);
+  answer([
+    { ...HEALTHY, journalStore: JournalStore.SAMPLER },
+    { ...DOWN, journalStore: JournalStore.HISTORY },
+  ]);
   vi.mocked(systemStatusClient.getJournalStats).mockResolvedValue(
     create(GetJournalStatsResponseSchema, {
       sampler: {
@@ -108,7 +116,11 @@ it("keeps format sizes, unknown metadata, and a missing store distinct", async (
     })
   );
   const view = await render();
-  const apb = rowOf(view, "APB v1");
+  const sampler = rowOf(view, HEALTHY.name).closest("tbody")!;
+  const history = rowOf(view, DOWN.name).closest("tbody")!;
+  expect(history.textContent).toContain("No measurement available");
+  expect(history.textContent).not.toContain("APB v1");
+  const apb = rowOf(sampler.querySelector("table")!, "APB v1");
   expect(apb.textContent).toContain("1.0 KiB");
   expect(apb.textContent).toContain("8.0 KiB");
   expect(rowOf(view, "All formats").textContent).toContain("Unknown");

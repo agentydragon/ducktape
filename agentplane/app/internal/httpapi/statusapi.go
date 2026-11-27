@@ -55,7 +55,7 @@ func (h *SystemStatusHandler) GetSystemStatus(ctx context.Context, _ *apppb.GetS
 			state = apppb.SystemComponentState_SYSTEM_COMPONENT_STATE_OK
 		}
 		response.Components = append(response.Components, &apppb.SystemComponentStatus{
-			Name: component.Name, State: state, Detail: component.Detail,
+			JournalStore: component.JournalStore, Name: component.Name, State: state, Detail: component.Detail,
 			CheckedAt: timestamppb.New(component.CheckedAt),
 		})
 	}

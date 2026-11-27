@@ -11,16 +11,22 @@
     border-spacing: 0;
   }
 
-  .agentplane-system-status-table thead {
+  .agentplane-system-status-table > thead {
     display: none;
   }
 
-  .agentplane-system-status-table tbody {
+  .agentplane-system-status-table > tbody {
     display: grid;
-    gap: var(--mantine-spacing-sm);
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--mantine-spacing-xs);
+    margin-block-end: var(--mantine-spacing-sm);
+    padding: var(--mantine-spacing-sm);
+    border: 1px solid var(--mantine-color-default-border);
+    border-radius: var(--mantine-radius-sm);
+    background: var(--mantine-color-body);
   }
 
-  .agentplane-system-status-table tr {
+  .agentplane-system-status-table > tbody > tr {
     display: grid;
     grid-template-areas:
       "component state"
@@ -29,17 +35,17 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     gap: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-    padding: var(--mantine-spacing-sm);
-    border: 1px solid var(--mantine-color-default-border);
-    border-radius: var(--mantine-radius-sm);
-    background: var(--mantine-color-body);
   }
 
-  .agentplane-system-status-table td {
+  .agentplane-system-status-table > tbody > tr > td {
     display: block;
     min-width: 0;
     padding: 0;
     border: 0;
+  }
+
+  .agentplane-system-status-table > tbody > .agentplane-system-storage-row {
+    display: block;
   }
 
   .agentplane-system-status-component {
