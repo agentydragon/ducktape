@@ -2,7 +2,7 @@ import { appActionRendering } from "../actions/rendering/index";
 import { ActionRenderingContext } from "../actions/rendering/dispatch";
 import type * as ThreadClientModule from "../sessions/client";
 // @vitest-environment happy-dom
-import { toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
   SandboxPhase,
@@ -250,7 +250,7 @@ async function render(
               snapshot: {
                 summaries: listedThreads
                   .filter((row) => ids.includes(row.metadata.threadId))
-                  .map((row) => toJson(SessionSummarySchema, row.summary)),
+                  .map((row) => toJson(SessionSummarySchema, create(SessionSummarySchema, row.summary))),
               },
             });
           }

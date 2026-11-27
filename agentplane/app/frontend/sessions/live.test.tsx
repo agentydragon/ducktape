@@ -77,7 +77,7 @@ async function liveThread(read: (live: ReturnType<typeof useThreadsLive>) => str
     inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "caughtUp", value: {} } }));
     watches.get("/upstream/app/v1/threads:watch")!.onFrame({ changed: {}, updatesConnected: true });
   });
-  const selected = [...watches.entries()].find(([key]) => key.includes("selected.session_ids="))![1];
+  const [selectedPath, selected] = [...watches.entries()].find(([key]) => key.includes("selected.session_ids="))!;
   const sendSummary = (observation: MessageInitShape<typeof WatchSessionSummariesResponseSchema>["observation"]) =>
     act(async () =>
       selected.onFrame(
@@ -85,16 +85,22 @@ async function liveThread(read: (live: ReturnType<typeof useThreadsLive>) => str
       )
     );
   await sendSummary({ case: "snapshot", value: { summaries: [value.summary] } });
-  return { probe: container.querySelector("span")!, inventory, sendSummary, value };
+  return { probe: container.querySelector("span")!, inventory, sendSummary, value, selectedPath };
 }
 
 it("updates watched summaries without fetching metadata again", async () => {
-  const { probe, sendSummary, value } = await liveThread((live) =>
-    String(live.snapshot?.threads[0]?.summary.foldedThrough ?? "missing")
+  const { probe, sendSummary, value } = await liveThread(
+    (live) => live.snapshot?.threads[0]?.summary.projectionEpoch ?? "missing"
   );
-  await sendSummary({ case: "summary", value: { ...value.summary, foldedThrough: 123n } });
-  expect(probe.textContent).toBe("123");
+  await sendSummary({ case: "summary", value: { ...value.summary, projectionEpoch: "epoch-2" } });
+  expect(probe.textContent).toBe("epoch-2");
   expect(listThreadMetadata).toHaveBeenCalledTimes(1);
+});
+
+it("asks History for a field set, not whole summaries", async () => {
+  const { selectedPath } = await liveThread(() => "");
+  const fields = new URL(selectedPath, "https://app.test").searchParams.get("selected.field_mask");
+  expect(fields?.split(",").length).toBeGreaterThan(0);
 });
 
 it("marks Dispatcher activity stale when the inventory watch reconnects", async () => {
