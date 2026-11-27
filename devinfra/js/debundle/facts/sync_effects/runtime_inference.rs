@@ -8,11 +8,10 @@ use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
 use analysis::facts::evaluation_effects::EvaluationEffects;
+use analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason;
+use analysis::facts::purity_classification::{CompletedPurity, PreparedPurity};
+use analysis::facts::statement_facts::LocalRecordFactoryPurityCertificate;
 use analysis::facts::statement_facts::SynchronousCalls;
-use analysis::facts::{
-    CompletedPurity, LocalRecordFactoryPurityCertificate, OwnerInitializationCoverageRefusalReason,
-    PreparedPurity,
-};
 use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::report_schema::{NativeProgramPointKind, NativeProgramPointStep};

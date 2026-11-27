@@ -1,5 +1,6 @@
 //! Flow-derived call targets folded into the syntactic statement facts.
 
+use super::statement_facts::StatementFacts;
 use super::*;
 
 /// Add call targets discovered through parameters, aliases, returns and

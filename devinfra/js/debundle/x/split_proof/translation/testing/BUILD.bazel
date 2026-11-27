@@ -37,16 +37,6 @@ js_library(
 )
 
 js_library(
-    name = "diagnostic_split",
-    srcs = ["diagnostic_split.mjs"],
-    deps = [
-        ":deployment_manifest",
-        ":split",
-        "//devinfra/js/debundle/x/split_proof/translation:parser",
-    ],
-)
-
-js_library(
     name = "lint_sources",
     srcs = glob(["**/*.mjs"]),
 )

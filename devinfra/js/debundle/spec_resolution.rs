@@ -1,6 +1,6 @@
 //! Compile spec claims into request types and resolve those requests against source chunks.
 
-use analysis::facts::StructuralChunkSourceFacts;
+use analysis::facts::statement_facts::StructuralChunkSourceFacts;
 use analysis_vocabulary::inputs::KnownEffect;
 use anyhow::{Result, bail};
 use selector_outcome::{

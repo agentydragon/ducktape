@@ -75,15 +75,6 @@ pub enum ClaimValidationError {
         export_name: String,
         count: usize,
     },
-    /// Historical report variant from when a member could carry its own metadata.
-    #[error(
-        "logical_module {logical_module}: annotations.{export_name}.{field} conflicts with metadata already declared on the member"
-    )]
-    AnnotationConflict {
-        logical_module: String,
-        export_name: String,
-        field: AnnotationField,
-    },
     #[error("{operation} {id} has duplicate source binding claims:{}", DuplicateClaimsDisplay(.claims))]
     DuplicateBindings {
         operation: ClaimOperation,
@@ -118,23 +109,6 @@ pub struct BindingClaimant {
 pub enum ClaimOperation {
     LogicalModule,
     ChunkRenames,
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum AnnotationField {
-    Purity,
-    InitializerPurity,
-    InitializerBindingEffects,
-    InitializerExternalEffects,
-    Effect,
-    PureMembers,
-    NoSyncCallbackMembers,
-    Comment,
-    Note,
 }
 
 /// Report-only representation: foreign diagnostic text is constructed here,

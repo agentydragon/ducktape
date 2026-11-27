@@ -49,7 +49,7 @@ const original = Buffer.from([0, 19, 127, 255]);
 writeFileSync(sentinel, original);
 const denied = run(source, spec, out, ["--require", "normal-completion", "--host-contract", host]);
 assert.equal(denied.verdict.status, "rejected", denied.stdout + denied.stderr);
-assert.equal(denied.verdict.reason_code, "no_compiled_rule", denied.stdout + denied.stderr);
+assert.equal(denied.verdict.reason_code, "no_constructed_rule", denied.stdout + denied.stderr);
 assert.deepEqual(readdirSync(out), ["sentinel.bin"]);
 assert.deepEqual(readFileSync(sentinel), original);
 
@@ -69,10 +69,46 @@ const deniedReadback = run(source, spec, readbackOut, [
   "--check-output",
 ]);
 assert.equal(deniedReadback.verdict.status, "rejected", deniedReadback.stdout + deniedReadback.stderr);
-assert.equal(deniedReadback.verdict.reason_code, "no_compiled_rule", deniedReadback.stdout + deniedReadback.stderr);
+assert.equal(deniedReadback.verdict.reason_code, "no_constructed_rule", deniedReadback.stdout + deniedReadback.stderr);
 assert.deepEqual(readdirSync(readbackOut), readbackFiles);
 assert.deepEqual(
   readbackFiles.map((file) => readFileSync(path.join(readbackOut, file))),
   beforeReadback
 );
 assert(!existsSync(leanMarker), "split or check-output invoked lean from PATH");
+
+// A literal-only nonsequential spec used to publish via closed declarations.
+// Neither a weaker request nor a pre-existing matching tree permits readback.
+writeFileSync(source, "export const value = 1;\n");
+writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"] } }));
+const fresh = path.join(root, "fresh");
+for (const flags of [[], ["--require", "all-outcomes"], ["--structural"]]) {
+  const refused = run(source, spec, fresh, flags);
+  assert.equal(refused.verdict.reason_code, "no_constructed_rule", refused.stdout);
+  assert(!existsSync(fresh));
+}
+mkdirSync(fresh);
+const entryFile = path.join(fresh, "entry.mjs");
+const entryBytes = readFileSync(source);
+writeFileSync(entryFile, entryBytes);
+assert.equal(run(source, spec, fresh, ["--check-output"]).verdict.status, "rejected");
+assert.deepEqual(readFileSync(entryFile), entryBytes);
+
+// Even a diagnostic whose plan passes can only write reports.
+const report = path.join(root, "plan.json");
+const diagnosticOut = path.join(root, "diagnostic-out");
+const manifest = writeDeployment(source, spec, diagnosticOut);
+for (const force of [false, true]) {
+  const diagnostic = spawnSync(
+    process.env.LOWERSPLIT,
+    ["--diagnostic", manifest, diagnosticOut, "--plan", report, ...(force ? ["--force"] : [])],
+    { encoding: "utf8", env }
+  );
+  assert.ifError(diagnostic.error);
+  if (force) assert.notEqual(diagnostic.status, 0);
+  else {
+    assert.equal(diagnostic.status, 0, diagnostic.stdout + diagnostic.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(report)).modules["entry.mjs"], [0]);
+  }
+  assert(!existsSync(diagnosticOut));
+}

@@ -5,7 +5,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::*;
-use analysis::*;
+use analysis::facts::analyze::analyze_chunk_structural;
+use analysis::facts::statement_facts::{StatementFacts, StructuralStatementFacts};
+use analysis::{BindingKind, ModuleRole};
 use analysis_domain::item_views::StatementKind;
 use analysis_model::DepKind;
 use analysis_vocabulary::inputs::AnalysisInputs;

@@ -1,40 +1,34 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { assertRejectedOrOrderKeptSlice, caseShard, structuralFixture, workerSplit } from "./harness.mjs";
+import { runSplit } from "./harness.mjs";
 
-const runCase = caseShard();
-
-for (const [name, definition, called] of [
-  ["declaration", "function* run() { yield 1; }", "run()"],
-  ["expression-default", "const run = function* (value = (() => { throw 1; })()) { yield value; };", "run()"],
-  ["method", "const box = { *run() { yield 1; } };", "box.run()"],
+// The CLI cannot construct these placements, including the move that would
+// change which value a generator sees on its first resume.
+for (const [name, source, worker, entry, expected] of [
+  ["declaration", "function* run() { yield 1; } export const before = run().next().value;", [0], [1], 1],
+  ["method", "const box = { *run() { yield 2; } }; export const before = box.run().next().value;", [0], [1], 2],
+  ["async", "async function* run() { yield 3; } export const before = (await run().next()).value;", [0], [1], 3],
+  [
+    "before-initialization",
+    "function* read() { yield later; } const before = read().next().value; var later = 7; export { before };",
+    [2],
+    [0, 1, 3],
+    undefined,
+  ],
 ]) {
-  if (!runCase(`reached-generator-${name}`)) continue;
-  assertRejectedOrOrderKeptSlice(
-    workerSplit(`reached-generator-${name}`, `${definition} export const result = ${called};`),
-    /generator invocation requires suspension semantics/
-  );
-}
-
-if (runCase("reached-async-generator")) {
-  assertRejectedOrOrderKeptSlice(
-    workerSplit("reached-async-generator", "async function* run() { yield 1; } export const result = run();"),
-    /async generator invocation requires asynchronous suspension semantics/
-  );
-}
-
-if (runCase("retained-generator-observes-initializer")) {
-  const reached = structuralFixture(
-    "retained-generator-observes-initializer",
-    `function* observe() { yield later; }
-   const before = observe().next().value;
-   var later = 7;
-   export { before, later, observe };`,
-    ["#2"],
-    ["#0", "#1", "#3"]
-  );
-  assert.equal((await import(pathToFileURL(reached.sourceFile).href)).before, undefined);
-  const denied = reached.run("linked-structural");
-  assert.equal(denied.status, "rejected", JSON.stringify(denied));
-  assert.match(denied.reason, /already exposes the region of unit 2/);
+  const test = runSplit(name, {
+    source,
+    provider: "",
+    spec: {
+      entry: "entry.mjs",
+      modules: { "worker.mjs": worker.map((n) => "#" + n), "entry.mjs": entry.map((n) => "#" + n) },
+      order: ["worker.mjs"],
+      sequential: true,
+    },
+  });
+  assert.equal((await import(pathToFileURL(test.files.sourceFile))).before, expected);
+  assert.equal(test.verdict.status, "rejected", test.log);
+  assert.equal(test.verdict.reason_code, "no_constructed_rule", test.log);
+  assert(!existsSync(test.out));
 }

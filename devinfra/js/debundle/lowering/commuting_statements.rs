@@ -5,7 +5,7 @@
 
 use std::{borrow::Cow, collections::BTreeMap};
 
-use analysis::facts::StructuralChunkSourceFacts;
+use analysis::facts::statement_facts::StructuralChunkSourceFacts;
 use analysis_vocabulary::inputs::{
     CommutingEndpoint, CommutingStatementsRef, ResolvedCommutingStatements,
 };

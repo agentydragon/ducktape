@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use swc_common::SyntaxContext;
 use swc_ecma_ast::{Id, Module};
 
-use analysis::StatementFacts;
+use analysis::facts::statement_facts::StatementFacts;
 use analysis_vocabulary::inputs::{AnalysisAssumptions, AnalysisInputs, KnownEffect};
 
 /// Construct a test binding ID using the empty syntax context. The shared parser

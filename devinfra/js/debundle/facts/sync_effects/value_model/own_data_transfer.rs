@@ -3,7 +3,7 @@
 use crate::{
     AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values, canonical_array_index,
 };
-use analysis::facts::EffectCell;
+use analysis::facts::statement_facts::EffectCell;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;
 use analysis_vocabulary::value::Value;

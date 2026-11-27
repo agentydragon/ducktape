@@ -35,7 +35,7 @@ use analysis::facts::statement_facts::{
     CallbackFactoryUseFact, HeapContentCells, ReturnedRecordUseFact, StatementFacts,
     SynchronousCalls,
 };
-use analysis::facts::{DataflowOpacityCause, EffectCell};
+use analysis::facts::statement_facts::{DataflowOpacityCause, EffectCell};
 use analysis_domain::builtins::Mutation;
 use analysis_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
@@ -1407,13 +1407,14 @@ pub(super) struct Observations {
     record_factory_prototype_premises: RecordFactoryPrototypePremises,
     /// The typed reason an operation of this owner's execution withheld its
     /// effect receipt. Report-only.
-    owner_coverage_refusal: Option<analysis::facts::OwnerInitializationCoverageRefusalReason>,
+    owner_coverage_refusal:
+        Option<analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason>,
 }
 
 impl Observations {
     pub(super) fn refuse_owner_coverage(
         &mut self,
-        reason: analysis::facts::OwnerInitializationCoverageRefusalReason,
+        reason: analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason,
     ) {
         self.owner_coverage_refusal.get_or_insert(reason);
     }

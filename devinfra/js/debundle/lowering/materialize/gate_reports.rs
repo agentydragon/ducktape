@@ -8,7 +8,7 @@ use crate::{
     BindingSourceUnitAssociation, ExportReentryReport, FinalModuleContent, GateRejectionPolicy,
     GraphReportSelection, ReportEmission,
 };
-use analysis::facts::ChunkFactAnalysis;
+use analysis::facts::statement_facts::ChunkFactAnalysis;
 use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, LoaderKeyUses, PurityHintOwner};
 use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use analysis_model::DepKind;
@@ -90,7 +90,7 @@ pub(super) fn evaluate_and_gate_chunk<'a>(
     context: ChunkContext<'_>,
     ownership_subset: Option<&BTreeSet<SelectedModule>>,
     preflight: gate::CandidatePreflight<'a>,
-    facts: &[analysis::facts::StatementFacts],
+    facts: &[analysis::facts::statement_facts::StatementFacts],
     program_graph: &ProgramGraphOutput<'_>,
     chunk_id_interned: ChunkId,
 ) -> Result<GateOutcome<'a>> {
@@ -299,7 +299,7 @@ struct GraphSummary<'a> {
 fn evaluate_chunk_candidate<'a, 'b>(
     context: ChunkReportContext<'b>,
     preflight: gate::CandidatePreflight<'a>,
-    facts: &[analysis::facts::StatementFacts],
+    facts: &[analysis::facts::statement_facts::StatementFacts],
 ) -> Result<(gate::CandidateEvaluation<'a>, Option<&'b std::path::Path>)> {
     let ChunkReportContext {
         chunk_id,
@@ -356,7 +356,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
 
 pub(super) fn evaluate_with_sinks<'a>(
     preflight: gate::CandidatePreflight<'a>,
-    facts: &[analysis::facts::StatementFacts],
+    facts: &[analysis::facts::statement_facts::StatementFacts],
     mut full_tv: Option<JsonlReport>,
     mut jsonl: Option<JsonlReport>,
 ) -> Result<gate::CandidateEvaluation<'a>> {

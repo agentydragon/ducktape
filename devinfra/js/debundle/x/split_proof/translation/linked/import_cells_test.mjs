@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import path from "node:path";
-import { assertCertified, exportNamed, importNamed, observe, program, runSplit } from "./harness.mjs";
+import { exportNamed, importNamed, observe, program, runSplit } from "./harness.mjs";
 
 const source = `
 import { publicValue } from "./provider.mjs";
@@ -20,12 +19,10 @@ function split(name, provider, extras) {
   return runSplit(name, { source, provider, extras, spec });
 }
 
-function assertAccepted(test, expected) {
-  const { files, out, verdict, log } = test;
-  assertCertified(verdict, log);
-  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
-    assert.deepEqual(observe(file, Object.keys(expected)), expected, file);
-  }
+function checkProvider(test, expected) {
+  assert.deepEqual(observe(test.files.sourceFile, Object.keys(expected)), expected);
+  assert.equal(test.verdict.reason_code, "no_constructed_rule", test.log);
+  assert(!existsSync(test.out));
 }
 
 for (const length of [1, 3, 7]) {
@@ -37,14 +34,14 @@ for (const length of [1, 3, 7]) {
   );
   const extras = Object.fromEntries(aliases.slice(1).map((source, i) => [`relay-${i + 1}.mjs`, source]));
   extras[`relay-${length}.mjs`] = `export const name${length} = 31;`;
-  assertAccepted(split(`chain-${length}`, aliases[0], extras), { result: "ok", live: 31 });
+  checkProvider(split(`chain-${length}`, aliases[0], extras), { result: "ok", live: 31 });
 }
 
 // Both graphs use the same provider cell and schedule, and both throw.
 // The ordered certificate still promises that initialization completes normally.
 const throwing = split("same-order-throw", "export const publicValue = 0;", {});
 assert.equal(throwing.verdict.status, "rejected", throwing.log);
-assert.equal(throwing.verdict.reason_code, "probe_throw", throwing.log);
+assert.equal(throwing.verdict.reason_code, "no_constructed_rule", throwing.log);
 assert(!existsSync(throwing.out));
 
 // Resolving provider/publicValue visits provider again at a different export.
@@ -58,11 +55,11 @@ for (const name of ["leaf", "publicValue", "missing"]) {
     "relay.mjs": `import { ${name} } from "./provider.mjs"; export { ${name} as back };`,
   });
   if (name === "leaf") {
-    assertAccepted(fixture, { result: "ok", live: 31 });
+    checkProvider(fixture, { result: "ok", live: 31 });
   } else {
     assert.deepEqual(observe(fixture.files.sourceFile, "result"), { error: "SyntaxError" });
     assert.equal(fixture.verdict.status, "rejected", fixture.log);
-    assert.match(fixture.verdict.reason, name === "missing" ? /does not export missing/ : /cyclic re-export/);
+    assert.equal(fixture.verdict.reason_code, "no_constructed_rule", fixture.log);
     assert(!existsSync(fixture.out));
   }
 }

@@ -8,9 +8,9 @@ use super::super::runtime_inference::RuntimeQueries;
 use super::assignment::RootAssignment;
 use super::body::expected_root_calls;
 use super::operands::RootOperands;
-use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::binding_effect_coverage::BindingEffectCoverage;
 use analysis::facts::evaluation_effects::EvaluationEffects;
+use analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::statement_facts::SynchronousCalls;
 use analysis_vocabulary::value::{Kind, Value};
 use execution_index::noninvoking_initialization::{
@@ -102,12 +102,13 @@ pub(super) fn finalize(
             // describe arbitrary invocations of the same source functions.
             outcome.effects.local_record_factory_heap_call = Some(proof.call_span);
         }
-        outcome.effects.local_record_factory_purity =
-            Some(analysis::facts::LocalRecordFactoryPurityCertificate {
+        outcome.effects.local_record_factory_purity = Some(
+            analysis::facts::statement_facts::LocalRecordFactoryPurityCertificate {
                 call_span: proof.call_span,
                 checked_owners: proof.checked_owners,
                 dependencies,
-            });
+            },
+        );
         if let [binding] = fact.declared.iter().collect::<Vec<_>>().as_slice() {
             state
                 .world_mut()
@@ -130,7 +131,8 @@ pub(super) fn finalize(
         }
     }
     if outcome.effects.local_record_factory_heap_call.is_some() {
-        outcome.effects.heap_contents = analysis::facts::HeapContentCells::default();
+        outcome.effects.heap_contents =
+            analysis::facts::statement_facts::HeapContentCells::default();
         outcome.effects.non_assumed_heap_accesses = Default::default();
     }
     let proven_reads = if outcome.complete

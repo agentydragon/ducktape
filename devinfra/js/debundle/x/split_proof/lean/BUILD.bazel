@@ -1563,37 +1563,6 @@ lean_proof_test(
     deps = [":sparse_checked_artifact"],
 )
 
-lean_library(
-    name = "terminal_export_artifact",
-    srcs = ["EsmSplit/LowerSplit/TerminalExportArtifact.lean"],
-    deps = [
-        ":corejs_link_world",
-        ":corejs_linked_input",
-        ":corejs_linked_pivot_certificate",
-        ":estree_emit",
-        ":lowersplit_input",
-    ],
-)
-
-lean_proof_test(
-    name = "terminal_export_artifact_axioms_test",
-    allow_empty = True,
-    modules = ["EsmSplit.LowerSplit.TerminalExportArtifact"],
-    required_theorems = [
-        "EsmSplit.LowerSplit.TerminalExportArtifact.prepare",
-        "EsmSplit.LowerSplit.TerminalExportArtifact.verify",
-        "EsmSplit.LowerSplit.TerminalExportArtifact.verify_sound",
-    ],
-    deps = [":terminal_export_artifact"],
-)
-
-test_runner(
-    name = "terminal_export_artifact_test_runner",
-    src = "TerminalExportArtifactMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = [":terminal_export_artifact"],
-)
-
 test_runner(
     name = "checked_artifact_test_runner",
     src = "CheckedSplitArtifactMain.lean",
@@ -1635,7 +1604,6 @@ lean_library(
         ":corejs_from_estree",
         ":corejs_heritage_certificate",
         ":corejs_move",
-        ":estree_emit",
         ":lowersplit_input",
     ],
 )
@@ -1661,22 +1629,17 @@ lean_library(
     srcs = ["EsmSplit/LowerSplit/Certified.lean"],
     deps = [
         ":cli",
-        ":corejs_certificate_support",
         ":corejs_checked_split",
         ":corejs_indexed_checked_split",
         ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
-        ":corejs_joint_static",
-        ":corejs_linked_certificate_probe",
         ":corejs_linked_input",
-        ":corejs_move",
         ":corejs_resolved_placement",
-        ":corejs_structural_certificate",
+        ":corejs_terminal_source",
         ":estree_emit",
         ":lowersplit_input",
-        ":lowersplit_slice_certificate",
         ":ordered_const_syntax",
-        ":read_deployment",
+        ":terminal_export_placement",
     ],
 )
 

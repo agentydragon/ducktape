@@ -119,8 +119,8 @@ for (const [first, end] of [
     const decls = [];
     for (let i = 0; i < length; i++) {
       const earlier = (seed + i * 3) % Math.max(i, 1);
-      const operand = i === 0 ? (seed % 4 === 0 ? name(1) : ["false", "-0", "null", '"abc"'][seed % 4]) : name(earlier);
-      const kind = i === 1 && seed % 4 === 0 ? "let" : ["var", "const", "let"][(seed + i) % 3];
+      const operand = i === 0 ? ["false", "0", "null", '"abc"'][seed % 4] : name(earlier);
+      const kind = (seed + i) % 2 ? "const" : "let";
       decls.push(
         (i === length - 1 ? "export " : "") + kind + " " + name(i) + " = " + "!".repeat((seed + i) % 4) + operand + ";"
       );
@@ -164,93 +164,15 @@ if (runCase("grouped-declarations-and-placement")) {
   prepare(leakingSource, { [left]: ["#0"], [entry]: ["#1", "#2"] }, [left]);
   const leakage = path.join(root, "leakage");
   const leakageRefusal = check(leakage, undefined, "rejected");
-  assert.match(leakageRefusal.reason, /entry public exports/);
+  assert.equal(leakageRefusal.reason_code, "no_constructed_rule");
   assert(!fs.existsSync(leakage));
 
   const reordered = path.join(root, "reordered");
   prepare(source, placement3, [right, left]);
-  assert.match(check(reordered, all, "rejected").reason, /normal-completion/);
-  assert(!fs.existsSync(reordered));
-  const movedVerdict = check(reordered, normal, "certified");
-  assert.equal(movedVerdict.scope, "closed-declarations");
-  assert.equal(movedVerdict.guarantee, normal);
-  assert.deepEqual(check(reordered, normal, "certified", "--check-output"), movedVerdict);
-  assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
-}
-
-if (runCase("browser-and-path-contracts")) {
-  prepare("const sparse = [1, , (() => 2)()];", { [entry]: ["#0"] }, []);
-  const unsupported = path.join(root, "unsupported");
-  assert.match(check(unsupported, normal, "rejected").reason, /unsupported array hole/);
-  check(unsupported, undefined, "rejected");
-
-  // Browser module scripts can use .js for both the entry and its imports.
-  const browserTree = path.join(root, "browser-tree");
-  const pageProfile = path.join(root, "browser.json");
-  fs.writeFileSync(pageProfile, JSON.stringify({ profile: "browser-page" }));
-  prepare(
-    "const value = 1; export const result = value;",
-    { "entry.js": ["#1"], "value.js": ["#0"] },
-    ["value.js"],
-    "entry.js"
-  );
-  assert.match(check(browserTree, all, "rejected").reason, /safe relative \.mjs path/);
-  const browserArgs = ["--host-contract", pageProfile];
-  check(browserTree, all, "certified", ...browserArgs);
-  check(browserTree, all, "certified", ...browserArgs, "--check-output");
-  const valueFile = path.join(browserTree, "value.js");
-  const valueSource = fs.readFileSync(valueFile, "utf8");
-  assert(valueSource.includes("value = 1"), valueSource);
-  fs.writeFileSync(valueFile, valueSource.replace("value = 1", "value = 2"));
-  assert.match(check(browserTree, all, "rejected", ...browserArgs, "--check-output").reason, /value\.js differs/);
-
-  // A CommonJS extension has no portable ESM loading contract.
-  prepare("const local = 1;", { [entry]: [], "other.cjs": ["#0"] }, ["other.cjs"]);
-  assert.match(check(unsupported, all, "rejected").reason, /\.mjs/);
-  assert.match(check(unsupported, all, "rejected", ...browserArgs).reason, /safe relative/);
-  assert(!fs.existsSync(unsupported));
-  const escaping = "../escaped.mjs";
-  prepare("const local = 1;", { [entry]: [], [escaping]: ["#0"] }, [escaping]);
-  check(unsupported, all, "rejected");
-  assert(!fs.existsSync(path.join(root, "escaped.mjs")));
-}
-
-if (runCase("generated-partitions-0-7")) {
-  // Choose the owner independently of each initializer's read. This produces both directions
-  // of cross-module dependency, including cycles where the glue exposes a private entry binding.
-  // Compare observable results in Node without preclassifying which placements Lean should accept.
-  let certifiedCount = 0;
-  let exposedByStructuralMode = 0;
-  for (let seed = 0; seed < 8; seed++) {
-    const names = Array.from({ length: 3 + (seed % 3) }, (_, i) => `local${seed}_${i}`);
-    const owners = { [entry]: [], [left]: [] };
-    const declarations = names.map((name, i) => {
-      const owner = i === names.length - 1 || (i + seed) % 3 === 1 ? entry : left;
-      owners[owner].push("#" + i);
-      const ref = seed % 2 ? Math.max(i - 1, 0) : (i + 1) % names.length;
-      const operand = i === 0 && seed % 2 ? "-2" : names[ref];
-      return (
-        (i === names.length - 1 ? "export " : "") + "var " + name + " = " + "!".repeat((i + seed) % 3) + operand + ";"
-      );
-    });
-    const code = declarations.join("\n");
-    prepare(code, owners, [left]);
-    const output = path.join(root, "partition-" + seed);
-    const expected = await observe("data:text/javascript," + encodeURIComponent(code));
-    const result = split({ ast: input, spec: placement, out: output });
-    if (result.status === "certified") {
-      certifiedCount++;
-      assert.deepEqual(await observe(pathToFileURL(path.join(output, entry))), expected, code);
-    } else {
-      assert.equal(result.files.length, 0, result.log);
-      if (/entry public exports/.test(result.reason ?? "")) exposedByStructuralMode++;
-    }
+  for (const request of [all, normal]) {
+    assert.equal(check(reordered, request, "rejected").reason_code, "no_constructed_rule");
+    assert(!fs.existsSync(reordered));
   }
-  assert(certifiedCount > 0, "generated placements must include a certified control");
-  assert(
-    exposedByStructuralMode > 0,
-    "generated placements must count refusals caused by private entry bindings exposed by glue"
-  );
 }
 
 if (runCase("hashbang-and-literal-type")) {

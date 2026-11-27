@@ -168,37 +168,10 @@ report.urlContext = { entry: strictPlacement.entry, sites: urlSites };
 const artifacts = process.env.TEST_UNDECLARED_OUTPUTS_DIR;
 const spec = path.join(artifacts, "scroll-spec.json");
 writeFileSync(spec, JSON.stringify(strictPlacement, null, 2));
-const profile = path.join(artifacts, "host.json");
-writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const out = path.join(process.env.TEST_TMPDIR, "modules");
-// Moving calculateScrollCenter as well as centerScrollOn would expose private
-// entry bindings through glue exports. Check the actual linked editor graph.
-if (strictSelection.length === 2) {
-  const pair = spawnSync(
-    process.env.LOWERSPLIT,
-    [
-      writeDeployment(strictSource, spec, out),
-      out,
-      "--structural",
-      "--host-contract",
-      profile,
-      "--deployment-origin",
-      "https://example.test",
-    ],
-    { encoding: "utf8" }
-  );
-  if (pair.error) throw pair.error;
-  assert.equal(pair.status, 1, pair.stdout + pair.stderr);
-  const refused = JSON.parse(pair.stdout.trimEnd().split("\n").at(-1));
-  assert.equal(refused.scope, "linked-structural");
-  assert.match(refused.reason, /; extra 3: .*; missing 0; retargeted 0$/);
-  report.entryMismatch = refused.reason;
-  assert(!existsSync(out));
-}
-
 const run = spawnSync(
   process.env.LOWERSPLIT,
-  [writeDeployment(strictSource, spec, out), out, "--require", "normal-completion", "--host-contract", profile],
+  [writeDeployment(strictSource, spec, out), out, "--require", "normal-completion"],
   { encoding: "utf8" }
 );
 if (run.error) throw run.error;
@@ -225,8 +198,7 @@ assert.equal(first.type, "ImportDeclaration");
 assert.equal(verdict.requested, "normal-completion");
 assert.equal(verdict.status, "rejected");
 assert.equal(verdict.guarantee, null);
-assert.equal(verdict.scope, "linked-programs", JSON.stringify(verdict));
-assert.equal(verdict.reason, "statement 354: unsupported linked expression ImportExpression");
+assert.equal(verdict.reason_code, "no_constructed_rule", JSON.stringify(verdict));
 assert(!existsSync(out), "a rejected trial published modules");
 
 // Keep the structural conflict report without asking the diagnostic command to

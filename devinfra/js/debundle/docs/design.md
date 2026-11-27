@@ -1812,7 +1812,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   ordering hazards, and a cycle through two async modules has
   semantics this design has not analyzed. **Enforced**: the TLA
   scan runs inside fact analysis (`analyze_chunk` /
-  `facts::analyze_chunk_structural` records the first module-top
+  `facts::analyze::analyze_chunk_structural` records the first module-top
   `AwaitExpr`, excluding lazy positions like
   function/arrow/method/getter/setter bodies and instance class
   fields), and `chunk_analysis::compute_chunk_facts` `bail!`s

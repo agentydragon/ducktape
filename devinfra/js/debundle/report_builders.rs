@@ -11,8 +11,9 @@ use petgraph::graphmap::DiGraphMap;
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
+use analysis::facts::statement_facts::CallbackFactoryBarrierRejection;
 use analysis::reports::author_inputs::AuthorInputLocations;
-use analysis::{BindingId, CallbackFactoryBarrierRejection, ModuleId, ModuleRole};
+use analysis::{BindingId, ModuleId, ModuleRole};
 use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::report_schema::{CallbackFactoryUseReport, ReturnedRecordUseReport};
 use graph::{
@@ -220,7 +221,7 @@ fn build_source_unit_nodes_and_edges(
                 .callback_factory_barriers
                 .iter()
                 .map(|barrier| {
-                    let witness_report = |witness: &analysis::CallbackFactoryWriteWitness| {
+                    let witness_report = |witness: &analysis::facts::statement_facts::CallbackFactoryWriteWitness| {
                         let witness_source = source_units_by_ordinal
                             .get(&witness.statement_ordinal)
                             .expect("callback factory witness must identify a graph source unit");

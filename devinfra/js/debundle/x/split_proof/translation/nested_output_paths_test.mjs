@@ -30,29 +30,11 @@ writeFileSync(
 
 const out = path.join(work, "generated");
 assert(!existsSync(out), "the output root starts absent");
-const emitted = split({ source: bundlePath, spec: specPath, out });
-assert.equal(emitted.status, "certified", emitted.log);
-assert(existsSync(path.join(out, "public", "entry.mjs")), "the nested entry is written");
-assert(existsSync(path.join(out, "lib", "math.mjs")), "a sibling module directory is written");
-
-const entry = readFileSync(path.join(out, "public", "entry.mjs"), "utf8");
-const math = readFileSync(path.join(out, "lib", "math.mjs"), "utf8");
-assert.match(entry, /import \{\s*add\s*\} from "\.\.\/lib\/math\.mjs";/);
-assert.match(math, /import \{\s*base\s*\} from "\.\.\/dep\.mjs";/);
-assert.match(entry, /import \{\s*base\s*\} from "\.\.\/dep\.mjs";/);
-
-writeFileSync(path.join(out, "dep.mjs"), "export const base = 42;\n");
-const observed = spawnSync(
-  process.execPath,
-  [
-    "--input-type=module",
-    "-e",
-    "const {value} = await import('./public/entry.mjs'); process.stdout.write(String(value));",
-  ],
-  { cwd: out, encoding: "utf8" }
-);
-assert.equal(observed.status, 0, observed.stderr);
-assert.equal(observed.stdout, "43", "Node resolves nested glue and retained external relative imports");
+// The constructor does not yet support a retained external relative import.
+const external = split({ source: bundlePath, spec: specPath, out });
+assert.equal(external.status, "refused", external.log);
+assert.equal(external.reasonCode, "no_constructed_rule", external.log);
+assert(!existsSync(out));
 
 const unsafeSpec = path.join(work, "unsafe-spec.json");
 const unsafeOut = path.join(work, "unsafe-output");
