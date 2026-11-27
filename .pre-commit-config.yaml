@@ -167,7 +167,7 @@ repos:
 
       - id: rustfmt
         name: rustfmt
-        entry: rustfmt
+        entry: devinfra/precommit/with_flake_tool.sh rustfmt rustfmt
         language: system
         types: [rust]
 

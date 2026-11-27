@@ -69,6 +69,8 @@ jobs:
           # devel/main. CI deliberately runs pre-commit against the protected
           # branch's own checkout, where that hook would always fail — skip it here.
           SKIP: no-commit-to-branch
+          # Hosted runners may already have unrelated versions on PATH.
+          DUCKTAPE_PRECOMMIT_USE_FLAKE: "1"
         run: |
           # Avoid injecting global-agent into the Nix-provided Node tools.
           unset NODE_OPTIONS
