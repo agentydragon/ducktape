@@ -18,13 +18,12 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.platform_sessions import remote
+from cluster.cdk8s.platform_sessions.credentials import BEARER_MIRRORS, NAMESPACE, bearer_key
 from cluster.cdk8s.reflector import mirror_annotations
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
 
-NAME = "platform-sessions"
-NAMESPACE = NAME
+NAME = NAMESPACE
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 SERVICE = ServiceRef(
     name=NAME, port=remote.GATEWAY_PORT, pods=Pods(namespace=NAMESPACE, labels=(("app", remote.GATEWAY),))
@@ -44,21 +43,12 @@ def chart(app: App) -> Chart:
     _claim(chart, NAME, NAMESPACE)
     _claim(chart, "openai-platform-session", "openai-platform-session")
     forgejo_images_creds_external_secret(chart, "registry-creds", namespace=NAMESPACE)
-    for name, target in (
-        ("owner", None),
-        ("chatgpt-read", None),
-        ("blueshield-read", None),
-        ("aiquota", "cli-proxy-api"),
-        ("quest-scheduler", "agentplane-staging-egress-credentials"),
-        ("myquest-read", None),
-        ("thrive-scraper", "thrive-scraper"),
-        ("thrive-read", "agentplane-staging-egress-credentials"),
-    ):
+    for name, target in BEARER_MIRRORS.items():
         annotations = None if target is None else mirror_annotations([target])
         mint_bearer_secret(
             chart,
             f"{name}-bearer",
-            target=SecretRef(namespace=NAMESPACE, name=f"platform-sessions-{name}-bearer").key("token"),
+            target=bearer_key(name),
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
             immutable=True,

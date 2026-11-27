@@ -60,6 +60,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.platform_sessions import app as platform_sessions
+from cluster.cdk8s.platform_sessions.credentials import bearer_key
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
@@ -74,7 +75,7 @@ NAMESPACE = cli_proxy_api_app.NAMESPACE  # created by CLIProxyAPI's Kustomizatio
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
 # The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
 _CONFIG_PATH: Path = Settings.model_fields["config_path"].default
-_PLATFORM_SESSIONS_READ_TOKEN = "platform-sessions-aiquota-bearer"
+_PLATFORM_SESSIONS_READ_TOKEN = bearer_key("aiquota", namespace=NAMESPACE)
 # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and performs
 # authenticated usage requests.
 _CONFIG = Config(
@@ -208,16 +209,12 @@ class Aiquota(Construct):
                 env_name(Settings, "cli_proxy_api_key"): cli_proxy_api_app.MANAGEMENT_PASSWORD.env_value(
                     self, "cli-proxy-api-management-ref"
                 ),
-                env_name(Settings, "openai_platform_token"): SecretRef(
-                    namespace=NAMESPACE, name=_PLATFORM_SESSIONS_READ_TOKEN
-                )
-                .key("token")
-                .env_value(self, "openai-platform-token-ref", optional=True),
-                env_name(Settings, "anthropic_platform_token"): SecretRef(
-                    namespace=NAMESPACE, name=_PLATFORM_SESSIONS_READ_TOKEN
-                )
-                .key("token")
-                .env_value(self, "anthropic-platform-token-ref", optional=True),
+                env_name(Settings, "openai_platform_token"): _PLATFORM_SESSIONS_READ_TOKEN.env_value(
+                    self, "openai-platform-token-ref", optional=True
+                ),
+                env_name(Settings, "anthropic_platform_token"): _PLATFORM_SESSIONS_READ_TOKEN.env_value(
+                    self, "anthropic-platform-token-ref", optional=True
+                ),
                 env_name(Settings, "clickhouse_url"): EnvValue.from_value(client.HTTP.url),
                 env_name(Settings, "clickhouse_database"): EnvValue.from_value("aiquota"),
                 env_name(Settings, "clickhouse_username"): _CLICKHOUSE.key("username").env_value(

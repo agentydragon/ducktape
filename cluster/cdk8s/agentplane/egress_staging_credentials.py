@@ -48,6 +48,7 @@ from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.platform_sessions import app as platform_sessions
+from cluster.cdk8s.platform_sessions.credentials import bearer_key
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
@@ -608,6 +609,7 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
 def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
     # ESO mints this read-only bearer in platform-sessions; Reflector copies it into the
     # isolated credentials namespace. No Quest account session reaches the sandbox.
+    token = bearer_key("quest-scheduler")
     _credential(
         scope,
         QUEST_SCHEDULER_READ_POLICY,
@@ -618,7 +620,7 @@ def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
             "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest-scheduler. "
             "The bearer is substituted only for the listed lookup paths."
         ),
-        source=Source.secret_ref(name="platform-sessions-quest-scheduler-bearer", key="token"),
+        source=Source.secret_ref(name=token.secret.name, key=token.key),
         target=_BEARER,
     )
     PolicySet(
@@ -664,13 +666,14 @@ def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
 
 
 def _thrive_read(scope: Construct, *, namespace: str) -> None:
+    token = bearer_key("thrive-read")
     _credential(
         scope,
         THRIVE_READ_POLICY,
         namespace=namespace,
         credential=THRIVE_READ_POLICY,
         description="Read Thrive Market catalog, orders, account, cart, and autoship through Platform Sessions.",
-        source=Source.secret_ref(name="platform-sessions-thrive-read-bearer", key="token"),
+        source=Source.secret_ref(name=token.secret.name, key=token.key),
         target=_BEARER,
     )
     PolicySet(
