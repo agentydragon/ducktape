@@ -745,6 +745,11 @@ debundle_graph_e2e_test(
 
 debundle_graph_e2e_test(
     name = "local_record_factory_contract_test",
+    srcs = glob(
+        ["local_record_factory_contract/*.rs"],
+        exclude = ["local_record_factory_contract/mod.rs"],
+    ),
+    source = "local_record_factory_contract/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle/analysis_vocabulary",
