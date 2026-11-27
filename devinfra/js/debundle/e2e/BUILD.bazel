@@ -551,7 +551,14 @@ debundle_graph_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "soundness_at_init_value_flow_test")
+debundle_e2e_test(
+    name = "soundness_at_init_value_flow_test",
+    srcs = glob(
+        ["soundness_at_init_value_flow/*.rs"],
+        exclude = ["soundness_at_init_value_flow/mod.rs"],
+    ),
+    source = "soundness_at_init_value_flow/mod.rs",
+)
 
 debundle_graph_e2e_test(
     name = "unknown_call_export_reachability_test",
