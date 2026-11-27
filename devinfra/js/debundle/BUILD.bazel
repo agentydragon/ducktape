@@ -557,6 +557,7 @@ rust_library(
     name = "frontend_elaboration",
     srcs = [
         "frontend_elaboration.rs",
+        "frontend_elaboration/binding_contracts.rs",
         "frontend_elaboration/chunk_ast.rs",
         "frontend_elaboration/elaboration.rs",
         "frontend_elaboration/resolved_ownership.rs",
