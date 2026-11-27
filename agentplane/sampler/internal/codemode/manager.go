@@ -19,6 +19,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrHostStopping means no new host session was opened because shutdown has begun.
+var ErrHostStopping = errors.New("code-mode host is shutting down")
+
 // Manager owns one shared code-mode child process and the protocol state for
 // its logical sessions. Session IDs live until this connection fails or the
 // Runtime shuts down; active Session bindings (and their lease owners and
@@ -101,7 +104,7 @@ func (m *Manager) OpenSession(ctx context.Context, conversationID string, journa
 	m.mu.Lock()
 	if m.closed || m.stopping {
 		m.mu.Unlock()
-		return nil, errors.New("code-mode host is shutting down")
+		return nil, ErrHostStopping
 	}
 	sessionID := m.sessionIDs[conversationKey]
 	if sessionID == "" {
@@ -161,7 +164,7 @@ func (m *Manager) ensureHost() (*Process, error) {
 		m.mu.Lock()
 		if m.closed || m.stopping {
 			m.mu.Unlock()
-			return nil, errors.New("code-mode host is shutting down")
+			return nil, ErrHostStopping
 		}
 		if m.host != nil {
 			host := m.host
@@ -192,7 +195,7 @@ func (m *Manager) ensureHost() (*Process, error) {
 			return host, nil
 		}
 		if err == nil {
-			err = errors.New("code-mode host is shutting down")
+			err = ErrHostStopping
 		}
 		m.mu.Unlock()
 		if host != nil {

@@ -529,6 +529,44 @@ func (*drainExecutorServer) TerminateProcess(context.Context, *executorpb.Termin
 	return &executorpb.TerminateProcessResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}}, nil
 }
 
+func TestDrainDuringHostOpenHandsOffActiveCommand(t *testing.T) {
+	f := newDrainFixture(t, 30)
+	entered, proceed := make(chan struct{}), make(chan struct{})
+	open := f.runtime.openCodeSession
+	f.runtime.openCodeSession = func(ctx context.Context, conversationID string, owner sessionstore.Owner, exec *executor.Executor) (*residentsession.CodeMode, error) {
+		close(entered)
+		<-proceed
+		return open(ctx, conversationID, owner, exec)
+	}
+	cancel, done := startRuntimeForTest(t, f.runtime)
+	f.runtime.Wake(f.session.ID)
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("host open not reached")
+	}
+	cancel()
+	select {
+	case <-f.runtime.draining:
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain not started")
+	}
+	f.runtime.codeHost.StopAccepting()
+	close(proceed)
+	waitRuntimeDone(t, done)
+	got, err := f.store.GetSession(t.Context(), f.session.ID, "fixture-account")
+	if err != nil || got.Blocked || got.ActiveCommand == nil || *got.ActiveCommand != "turn" {
+		t.Fatalf("handoff lost active command or blocked session: %+v err=%v", got, err)
+	}
+	owner, err := f.store.Claim(t.Context(), f.session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.NextCommand(t.Context(), owner, f.session.ID); err != nil {
+		t.Fatalf("successor cannot continue: %v", err)
+	}
+}
+
 func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	t.Helper()
 	store, session, seed := runtimetesting.ClaimedSession(t, integrationDatabase)

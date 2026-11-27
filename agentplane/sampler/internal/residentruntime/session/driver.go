@@ -118,6 +118,10 @@ func (r *Driver) Drive(runtimeCtx context.Context, sessionID string) {
 		reason = releaseOwnershipLost
 	case runtimeCtx.Err() != nil:
 		reason = releaseShutdownDeadline
+	case r.isDraining() && errors.Is(executionErr, codemode.ErrHostStopping):
+		// The host refused the new binding before any cell could be dispatched. Leave
+		// the active command for the successor to reconcile under its lease.
+		reason = releaseDrain
 	case errors.As(executionErr, new(*deferredProviderError)):
 		reason = releaseFailed
 		slog.Warn("central sampler retained provider recovery state", "session_id", sessionID, "error", executionErr)
