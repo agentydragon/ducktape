@@ -12,7 +12,9 @@ use selector_codemod::source_unit::{SourceUnitSelectorRequest, SourceUnitSelecto
 use spec::annotations::SourceMatchBinding;
 use spec::{LogicalModule, ModulePath, SourceMatchBindingDetail};
 
-use crate::source_unit_apply::{SelectorOverride, SourceUnitApplyOptions, SourceUnitApplyOutcome};
+use crate::source_unit_apply::{
+    SelectorOverride, SourceUnitApplyOptions, SourceUnitApplyOutcome, ensure_claim_hints_are_spent,
+};
 use outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 pub(super) fn selected_provenance(
@@ -223,15 +225,7 @@ fn prepare_change<'a>(
             bindings.push((runtime, readable, selector));
         }
     }
-    ensure!(
-        readable_names.is_empty(),
-        "readable_names must name only newly claimed bindings"
-    );
-    selector_overrides.retain(|_, selectors| !selectors.is_empty());
-    ensure!(
-        selector_overrides.is_empty(),
-        "selector_overrides must name newly claimed bindings by selected source-unit ID"
-    );
+    ensure_claim_hints_are_spent(&readable_names, &mut selector_overrides)?;
     drop(problem);
 
     Ok(SelectedViewChange {

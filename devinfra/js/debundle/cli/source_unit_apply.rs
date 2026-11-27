@@ -55,6 +55,25 @@ pub enum SelectorOverride {
     Relational(Box<spec::member_selectors::RawMemberSelector>),
 }
 
+/// Both apply paths finish by draining the review document's claim hints: a
+/// readable name or selector override is spent by the claim that consumed it,
+/// so anything still held names a binding this batch never claimed.
+pub(crate) fn ensure_claim_hints_are_spent(
+    readable_names: &BTreeMap<String, String>,
+    selector_overrides: &mut BTreeMap<String, BTreeMap<String, SelectorOverride>>,
+) -> Result<()> {
+    anyhow::ensure!(
+        readable_names.is_empty(),
+        "readable_names must name only newly claimed bindings"
+    );
+    selector_overrides.retain(|_, selectors| !selectors.is_empty());
+    anyhow::ensure!(
+        selector_overrides.is_empty(),
+        "selector_overrides must name newly claimed bindings by selected source-unit ID"
+    );
+    Ok(())
+}
+
 fn resolve_plan_destinations(
     changes: &mut [SourceUnitAssignment],
     docs: &ModuleDocs,
@@ -304,15 +323,7 @@ pub fn run_source_unit_apply(
         )?;
     }
 
-    anyhow::ensure!(
-        readable_names.is_empty(),
-        "readable_names must name only newly claimed bindings"
-    );
-    selector_overrides.retain(|_, selectors| !selectors.is_empty());
-    anyhow::ensure!(
-        selector_overrides.is_empty(),
-        "selector_overrides must name newly claimed bindings by selected source-unit ID"
-    );
+    ensure_claim_hints_are_spent(&readable_names, &mut selector_overrides)?;
     let synthesized_claims = residual_claims.realize(&mut docs, modules_root)?;
 
     let moved_names_by_destination = apply_planned_moves(&mut docs, modules_root, &planned_moves)?;
