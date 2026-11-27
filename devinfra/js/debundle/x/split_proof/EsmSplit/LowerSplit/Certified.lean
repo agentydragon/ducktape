@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.Cli
 import EsmSplit.CoreJS.ConstructedOutput
 import EsmSplit.CoreJS.IndexedCheckedSplit
+import EsmSplit.CoreJS.IndexedDefaultSnapshot
 import EsmSplit.CoreJS.IndexedExportedFunction
 import EsmSplit.CoreJS.IndexedHoistedSwap
 import EsmSplit.CoreJS.IndexedInlineConstructor
@@ -295,6 +296,35 @@ private def tryExportedFunction (spec : Spec) (src : BundleInput)
     | .error refusal => return some (← emitRefusal options.request.label refusal scope)
   catch e => return some (← emitVerdict options.request.label (.error e.toString) scope)
 
+/-- Publish the original executable default syntax; a local export list
+cannot stand in for the snapshotted expression. -/
+private def tryDefaultSnapshot (spec : Spec) (src : BundleInput)
+    (decoded : CoreJS.AuthenticatedSource.IndexedSource) (out work : System.FilePath)
+    (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  unless spec.sequential && !spec.privateEntryBody && decoded.nodes.any isIdentifierDefault &&
+      decoded.source.body.any (fun (_, stmt) => match stmt with | .funDecl _ => true | _ => false) do
+    return none
+  let scope := "indexed-default-snapshot"
+  let bundle := snapshotSourceBundle decoded.nodes
+  let built ← match CoreJS.IndexedDefaultSnapshot.construct decoded bundle spec with
+    | .ok built => pure built
+    | .error reason => return some (← emitRefusal options.request.label
+        { reason, reasonCode := some "no_constructed_rule" } scope)
+  try
+    let programs ← IO.ofExcept (ESTreeEmit.programs decoded.nodes bundle built.schedule.plan src.source spec.entry)
+    let checked ← stageGenerated programs src out work options timings fun files => do
+      let ⟨same⟩ ← (CoreJS.ConstructedOutput.checkConstructedOutput files built.program).mapError
+        fun reason => ({ reason } : CertificationRefusal)
+      let _proof := fun observed
+          (reread : CoreJS.ConstructedOutput.decodeConstructedOutput files built.program = .ok observed) =>
+        built.readbackGuarantees (Except.ok.inj (reread.symm.trans same))
+      return ()
+    match checked with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) scope
+        [("strategy", toJson "compiled-constructor")])
+    | .error refusal => return some (← emitRefusal options.request.label refusal scope)
+  catch e => return some (← emitVerdict options.request.label (.error e.toString) scope)
+
 /-- Both emission and readback must start from a successful construction. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
@@ -310,6 +340,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         if let some verdict ← tryInlineDeclarations chunk src classified indexed out work options timings then return verdict
         if javascriptSource chunk.source then
           if let .ok decoded := indexed then
+            if let some verdict ← tryDefaultSnapshot spec src decoded out work options timings then return verdict
             if let some verdict ← tryExportedFunction spec src decoded out work options timings then return verdict
   noConstructor options.request.label s!"no constructor accepts the requested placement of {chunk.path}"
 

@@ -1671,6 +1671,7 @@ lean_library(
         ":corejs_checked_split",
         ":corejs_constructed_output",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_default_snapshot",
         ":corejs_indexed_exported_function",
         ":corejs_indexed_hoisted_swap",
         ":corejs_indexed_inline_constructor",
@@ -3769,6 +3770,34 @@ lean_library(
         ":corejs_indexed_const_link",
         ":corejs_indexed_input_checks",
     ],
+)
+
+lean_library(
+    name = "corejs_indexed_default_snapshot",
+    srcs = ["EsmSplit/CoreJS/IndexedDefaultSnapshot.lean"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_deployment_placement",
+        ":corejs_indexed_inline_constructor",
+        ":corejs_indexed_input_checks",
+        ":corejs_indexed_reorder",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+        ":corejs_plan_placement",
+        ":corejs_primitive_rhs",
+        ":corejs_syntax_match",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_default_snapshot_axioms_test",
+    modules = ["EsmSplit.CoreJS.IndexedDefaultSnapshot"],
+    required_theorems = [
+        "CoreJS.IndexedDefaultSnapshot.Construction.readbackGuarantees",
+        "CoreJS.IndexedDefaultSnapshot.construct",
+        "CoreJS.IndexedDefaultSnapshot.snapshotStep",
+    ],
+    deps = [":corejs_indexed_default_snapshot"],
 )
 
 lean_library(

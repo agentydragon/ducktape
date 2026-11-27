@@ -41,6 +41,19 @@ the default cell at that statement. `export { candidate as default }`
 returns `2` because it aliases the live local binding. The two forms are
 not interchangeable; neither control replaces any shipped source.
 
+The indexed default snapshot constructor now publishes the intended split
+at `all-outcomes`. It preserves the original captured bound and adds the
+implicit default cell to the planner footprint for the existing executable
+row #2. That row reads the function during evaluation and initializes the
+separate public cell; its original ESTree and ordinal survive disk readback.
+The misplaced export still refuses and leaves any existing output intact.
+
+The test loads the emitted split through unchanged copies of the original
+package consumer and configuration. A separate executable fixture assigns a
+new function after the snapshot. The split still exports the old function.
+Either converting the snapshot to a live alias or moving the same expression
+after the reassignment changes the Node result and is refused on disk reread.
+
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:lodash_is_length_test
 ```
