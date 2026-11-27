@@ -1671,6 +1671,7 @@ lean_library(
         ":corejs_checked_split",
         ":corejs_constructed_output",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_exported_function",
         ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
         ":corejs_linked_input",
@@ -3730,6 +3731,32 @@ lean_library(
         ":corejs_indexed_const_link",
         ":corejs_indexed_input_checks",
     ],
+)
+
+lean_library(
+    name = "corejs_indexed_exported_function",
+    srcs = ["EsmSplit/CoreJS/IndexedExportedFunction.lean"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_deployment_placement",
+        ":corejs_export_rows_order",
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_constructor",
+        ":corejs_indexed_input_checks",
+        ":corejs_indexed_sorted_scopes",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_exported_function_axioms_test",
+    modules = ["EsmSplit.CoreJS.IndexedExportedFunction"],
+    required_theorems = [
+        "CoreJS.IndexedExportedFunction.construct",
+        "CoreJS.IndexedExportedFunction.Construction.readbackGuarantees",
+    ],
+    deps = [":corejs_indexed_exported_function"],
 )
 
 lean_library(
