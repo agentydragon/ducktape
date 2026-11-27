@@ -12,7 +12,7 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
-load("//devinfra/python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_module_stdout")
 load(":vitest.bzl", "augur_vitest_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -61,17 +61,10 @@ py_library(
     ],
 )
 
-py_binary(
-    name = "export_rollout_event_vocabulary_bin",
-    main_module = "finance.augur.frontend.export_rollout_event_vocabulary",
-    deps = [":export_rollout_event_vocabulary"],
-)
-
-genrule(
+py_module_stdout(
     name = "rollout_event_vocabulary_generated",
-    outs = ["rollout_event_vocabulary.generated.ts"],
-    cmd = "$(location :export_rollout_event_vocabulary_bin) > $@",
-    tools = [":export_rollout_event_vocabulary_bin"],
+    out = "rollout_event_vocabulary.generated.ts",
+    module = "export_rollout_event_vocabulary",
 )
 
 ts_library(

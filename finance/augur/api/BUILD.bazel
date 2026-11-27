@@ -2,7 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_module_stdout", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -417,17 +417,10 @@ py_library(
     deps = [":server"],
 )
 
-py_binary(
-    name = "export_schema_bin",
-    main_module = "finance.augur.api.export_schema",
-    deps = [":export_schema"],
-)
-
-genrule(
+py_module_stdout(
     name = "frontend_openapi_json",
-    outs = ["frontend_openapi.json"],
-    cmd = "$(location :export_schema_bin) > $@",
-    tools = [":export_schema_bin"],
+    out = "frontend_openapi.json",
+    module = "export_schema",
     visibility = ["//finance/augur/frontend/lib:__pkg__"],
 )
 

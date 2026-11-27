@@ -5,7 +5,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_module_stdout", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -156,18 +156,10 @@ py_library(
     deps = [":app"],
 )
 
-# Prints the OpenAPI schema artifact consumed by the frontend's file-input converter.
-py_binary(
-    name = "export_schema_bin",
-    main_module = "haku.console.export_schema",
-    deps = [":export_schema"],
-)
-
-genrule(
+py_module_stdout(
     name = "openapi_schema",
-    outs = ["openapi.json"],
-    cmd = "$(location :export_schema_bin) > $@",
-    tools = [":export_schema_bin"],
+    out = "openapi.json",
+    module = "export_schema",
     visibility = ["//haku/console/frontend:__pkg__"],
 )
 
@@ -180,18 +172,10 @@ py_library(
     ],
 )
 
-# Prints the ToolCallRecord JSON Schema for the frontend's declared schema artifact.
-py_binary(
-    name = "export_tool_call_schema_bin",
-    main_module = "haku.console.export_tool_call_schema",
-    deps = [":export_tool_call_schema"],
-)
-
-genrule(
+py_module_stdout(
     name = "tool_call_record_schema",
-    outs = ["tool_call_record.schema.json"],
-    cmd = "$(location :export_tool_call_schema_bin) > $@",
-    tools = [":export_tool_call_schema_bin"],
+    out = "tool_call_record.schema.json",
+    module = "export_tool_call_schema",
     visibility = ["//haku/console/frontend:__pkg__"],
 )
 

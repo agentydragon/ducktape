@@ -2,7 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_module_stdout", "py_test")
 load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
@@ -54,19 +54,11 @@ py_library(
     ],
 )
 
-# Prints the OpenAPI schema for the frontend's declared schema artifact.
-py_binary(
-    name = "export_schema_bin",
-    main_module = "devinfra.claude.session_export.export_schema",
-    visibility = ["//devinfra/claude/session_export/frontend:__pkg__"],
-    deps = [":export_schema"],
-)
-
-genrule(
+py_module_stdout(
     name = "openapi_schema",
-    outs = ["openapi.json"],
-    cmd = "$(location :export_schema_bin) > $@",
-    tools = [":export_schema_bin"],
+    out = "openapi.json",
+    binary_visibility = ["//devinfra/claude/session_export/frontend:__pkg__"],
+    module = "export_schema",
     visibility = ["//devinfra/claude/session_export/frontend:__pkg__"],
 )
 

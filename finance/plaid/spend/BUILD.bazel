@@ -1,7 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_module_stdout", "py_test")
 load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
@@ -295,18 +295,11 @@ py_library(
     deps = [":app"],
 )
 
-py_binary(
-    name = "export_schema_bin",
-    main_module = "finance.plaid.spend.export_schema",
-    visibility = ["//finance/plaid/spend/ui:__pkg__"],
-    deps = [":export_schema"],
-)
-
-genrule(
+py_module_stdout(
     name = "openapi_schema",
-    outs = ["openapi.json"],
-    cmd = "$(location :export_schema_bin) > $@",
-    tools = [":export_schema_bin"],
+    out = "openapi.json",
+    binary_visibility = ["//finance/plaid/spend/ui:__pkg__"],
+    module = "export_schema",
     visibility = ["//finance/plaid/spend/ui:__pkg__"],
 )
 

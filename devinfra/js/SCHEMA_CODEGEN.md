@@ -7,12 +7,12 @@ produces the artifact; the converter does not invoke a backend exporter.
 ```starlark
 load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/python:defs.bzl", "py_module_stdout")
 
-genrule(
+py_module_stdout(
     name = "openapi_schema",
-    outs = ["openapi.json"],
-    cmd = "$(location :export_schema_bin) > $@",
-    tools = [":export_schema_bin"],
+    module = "export_schema",
+    out = "openapi.json",
 )
 
 openapi_js_library(
@@ -27,6 +27,9 @@ ts_library(
     deps = [":schema"],
 )
 ```
+
+`py_module_stdout` runs the producer package’s `export_schema` Python module and captures its stdout.
+The module’s `py_library` remains managed by Gazelle.
 
 `schema` and every entry in `schema_files` must be a single-file Bazel target. List each file
 reached through a relative local `$ref` in `schema_files`; source, generated, and cross-package
