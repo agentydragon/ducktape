@@ -206,8 +206,10 @@ By default each transaction installs at most four APB blocks. Set `--max-blocks-
 to commit one output block at a time. The existing entry and byte limits still apply.
 PostgreSQL limits lock waits to 100 ms. The repacker requests cancellation after 250 ms holding
 the lock. On restart, it scans from the beginning and skips batches whose stored bytes already
-match the profile. `--all` visits retained Sessions in keyset order and defers busy Sessions after
-bounded retries. Repeat the pass until all Sessions finish.
+match the profile. After the short `--busy-retries` are exhausted, a single-Session command waits
+5 seconds and retries from its last committed batch. Consecutive waits double up to 5 minutes.
+`--all` finishes its keyset scan before revisiting only the busy Sessions in rounds with the same
+backoff. Both modes release the transaction before waiting and stop on cancellation.
 
 Sampler and History share the nested `event_block_profile` settings. The base profile targets 64 KiB
 with zstd level 3 and 128 entries for Sampler or 32 for History. History can override the byte

@@ -63,7 +63,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 	})
 	options := sessionstore.JournalCompactionOptions{
 		FromFirstLegacyBlock: *fromFirstLegacy, MaxBlocksPerTxn: *maxBlocks, BatchDelay: *batchDelay, PauseFile: *pauseFile,
-		ContentionRetries: *busyRetries, RetryDelay: *retryDelay,
+		ContentionRetries: *busyRetries, RetryDelay: *retryDelay, WaitForIdle: !*all,
 	}
 	run := func(id string) error {
 		result, err := store.CompactJournalWithOptions(ctx, id, *apply, options)
@@ -89,7 +89,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 		}
 		return nil
 	}
-	var deferred, failed int
+	var deferred []string
 	var failures []error
 	seenSession := false
 	for after := ""; ; {
@@ -109,18 +109,45 @@ func runCompactJournal(ctx context.Context, args []string) error {
 			seenSession = true
 			if err := run(id); err != nil {
 				if errors.Is(err, sessionstore.ErrJournalBusy) {
-					deferred++
+					deferred = append(deferred, id)
 					slog.WarnContext(ctx, "sampler journal Session deferred after bounded contention retries", "session_id", id, "error", err)
 					continue
 				}
-				failed++
 				failures = append(failures, fmt.Errorf("Session %q: %w", id, err))
 				slog.ErrorContext(ctx, "sampler journal Session repack failed", "session_id", id, "error", err)
 			}
 		}
 		after = ids[len(ids)-1]
 	}
-	slog.InfoContext(ctx, "sampler journal repack fleet pass finished", "apply", *apply, "deferred_busy_sessions", deferred, "failed_sessions", failed)
+	// Revisit only busy Sessions, after every other Session had its first turn.
+	if err := retryBusyJournals(ctx, deferred, run); err != nil {
+		failures = append(failures, err)
+	}
+	return errors.Join(failures...)
+}
+
+func retryBusyJournals(ctx context.Context, pending []string, run func(string) error) error {
+	var failures []error
+	for round := 0; len(pending) > 0; round++ {
+		delay := sessionstore.JournalBusyBackoff(round)
+		slog.InfoContext(ctx, "waiting to retry busy sampler journals", "sessions", len(pending), "delay", delay)
+		if err := waitCLIContext(ctx, delay); err != nil {
+			return errors.Join(append(failures, err)...)
+		}
+		next := pending[:0]
+		for _, id := range pending {
+			if err := ctx.Err(); err != nil {
+				return errors.Join(append(failures, err)...)
+			}
+			err := run(id)
+			if errors.Is(err, sessionstore.ErrJournalBusy) {
+				next = append(next, id)
+			} else if err != nil {
+				failures = append(failures, fmt.Errorf("Session %q: %w", id, err))
+			}
+		}
+		pending = next
+	}
 	return errors.Join(failures...)
 }
 

@@ -37,6 +37,9 @@ var (
 
 // JournalCompactionOptions controls pacing and bounded maintenance runs.
 type JournalCompactionOptions struct {
+	// WaitForIdle keeps a single-Session maintenance job on its current batch
+	// after the short retries are exhausted. Fleet scans yield to other Sessions.
+	WaitForIdle          bool
 	FromFirstLegacyBlock bool
 	MaxBlocksPerTxn      int // Zero selects DefaultJournalBlocksPerTxn.
 	BatchDelay           time.Duration
@@ -183,6 +186,18 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 						}
 						continue
 					}
+					if options.WaitForIdle {
+						// applyJournalRepack has rolled back: never sleep with a row lock held.
+						delay := JournalBusyBackoff(attempt - options.ContentionRetries)
+						slog.WarnContext(ctx, "sampler journal batch busy; backing off", "session_id", sessionID, "cursor", state.through, "delay", delay)
+						if err := waitForJournalCompaction(ctx, delay); err != nil {
+							return result, err
+						}
+						if err := waitForJournalPause(ctx, options.PauseFile); err != nil {
+							return result, err
+						}
+						continue
+					}
 					return result, fmt.Errorf("%w after %d compare-and-swap retries", ErrJournalBusy, attempt)
 				}
 				if err != nil {
@@ -217,6 +232,11 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 			}
 		}
 	}
+}
+
+// JournalBusyBackoff is the cooldown after a round of short contention retries.
+func JournalBusyBackoff(round int) time.Duration {
+	return min(5*time.Second<<min(round, 6), 5*time.Minute)
 }
 
 func addLockHold(result *JournalCompactionResult, hold time.Duration) {
