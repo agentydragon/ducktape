@@ -48,6 +48,29 @@ assert.match(readFileSync(path.join(negationOut, "worker.mjs"), "utf8"), /const 
 assert.equal((await import(pathToFileURL(path.join(negationOut, "entry.mjs")))).result, false);
 assert.equal(split({ source, spec, out: negationOut, require: "all-outcomes", checkOutput: true }).status, "certified");
 
+// Earlier-binding binary expressions in initialized lexical declarations use the compiled proof.
+writeFileSync(source, "let seed = 7; let ready = seed + 2; export let result = ready;\n");
+const arithmeticLetPlacement = {
+  entry: "entry.mjs",
+  modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+  order: ["worker.mjs"],
+  sequential: true,
+};
+writeFileSync(spec, JSON.stringify(arithmeticLetPlacement));
+const arithmeticLetOut = path.join(root, "arithmetic-let-out");
+const arithmeticLet = split({ source, spec, out: arithmeticLetOut, require: "all-outcomes" });
+assert.equal(arithmeticLet.status, "certified", arithmeticLet.log);
+assert.equal(arithmeticLet.scope, "named-declarations", JSON.stringify(arithmeticLet));
+assert.equal(arithmeticLet.guarantee, "all-outcomes");
+assert.equal(arithmeticLet.verdict.strategy, "compiled-constructor");
+assert.match(readFileSync(path.join(arithmeticLetOut, "entry.mjs"), "utf8"), /let ready = seed \+ 2;/);
+const arithmeticLetEntry = await import(pathToFileURL(path.join(arithmeticLetOut, "entry.mjs")));
+assert.equal(arithmeticLetEntry.result, 9);
+assert.equal(
+  split({ source, spec, out: arithmeticLetOut, require: "all-outcomes", checkOutput: true }).status,
+  "certified"
+);
+
 // Initialized lexical declarations use the same actual-source constructor.
 writeFileSync(spec, JSON.stringify(placement));
 writeFileSync(source, "let seed = 7; export let result = seed;\n");

@@ -2,11 +2,11 @@ import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.ResolvedPlacement
 
 /-! A construction for actual source modules containing unique `const`
-bindings and initialized lexical `let` bindings. Initializers are primitive
-values, reads of earlier bindings, or logical negations of those expressions.
-The supplied sequential placement is used unchanged by the existing planner.
-No assignment statements are admitted, so the proof does not cover later
-mutations or reordered evaluation. -/
+bindings and initialized lexical `let` bindings. Initializers are recursively
+formed from primitive values, reads of earlier bindings, and source unary and
+binary expressions. The supplied sequential placement is used unchanged by the
+existing planner. No assignment statements are admitted, so the proof does not
+cover later mutations or reordered evaluation. -/
 
 namespace CoreJS.NamedDeclarationSplit
 
@@ -20,8 +20,14 @@ inductive EarlierInitializer (earlier : List Name) : Expr → Prop where
   | num (value : Float) : EarlierInitializer earlier (.num value)
   | str (value : String) : EarlierInitializer earlier (.str value)
   | read (name : Name) : name ∈ earlier → EarlierInitializer earlier (.var name)
-  | logicalNot {value : Expr} : EarlierInitializer earlier value →
-      EarlierInitializer earlier (.unary .not value)
+  | unary {op : UnOp} {value : Expr} : op ≠ .toString → EarlierInitializer earlier value →
+      EarlierInitializer earlier (.unary op value)
+  | binary {op : BinOp} {left right : Expr} : EarlierInitializer earlier left →
+      EarlierInitializer earlier right → EarlierInitializer earlier (.binary op left right)
+
+private def sourceUnary : UnOp → Bool
+  | .toString => false
+  | _ => true
 
 /-- The accumulator makes freshness and the earlier-read requirement explicit
 for every declaration, for lists of any length. -/
@@ -43,9 +49,19 @@ private def checkInitializer (earlier : List Name) : (expr : Expr) → Option (P
   | .num value => some ⟨.num value⟩
   | .str value => some ⟨.str value⟩
   | .var name => if h : name ∈ earlier then some ⟨.read name h⟩ else none
-  | .unary .not value => do
-    let ⟨inner⟩ ← checkInitializer earlier value
-    return ⟨.logicalNot inner⟩
+  | .unary op value => do
+    if supported : sourceUnary op = true then
+      let ⟨inner⟩ ← checkInitializer earlier value
+      have opNotToString : op ≠ .toString := by
+        intro equal
+        subst op
+        simp [sourceUnary] at supported
+      return ⟨.unary opNotToString inner⟩
+    else none
+  | .binary op left right => do
+    let ⟨lhs⟩ ← checkInitializer earlier left
+    let ⟨rhs⟩ ← checkInitializer earlier right
+    return ⟨.binary lhs rhs⟩
   | _ => none
 
 private def initializedValue : Expr → Bool
@@ -112,7 +128,7 @@ def construct (source : Program) (request : EsmSplit.Spec) : Except String (Cons
   match single : source.modules with
   | [module] =>
     let some ⟨admitted⟩ := checkDeclarations [] module.body |
-      throw "expected unique const or initialized let declarations with primitive initializers, earlier reads, or their logical negations"
+      throw "expected unique const or initialized let declarations with primitive initializers or source unary/binary expressions over earlier reads"
     let ⟨normalized, selected, ⟨selection⟩⟩ ← selectionWitness module request
     let .isTrue unique := (inferInstance : Decidable ((selected.map Prod.fst).Nodup)) |
       throw "an original unit is selected more than once"

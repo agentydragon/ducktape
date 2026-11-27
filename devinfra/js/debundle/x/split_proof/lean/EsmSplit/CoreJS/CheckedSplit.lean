@@ -16,7 +16,9 @@ private def simpleValue : Expr → Bool
   | _ => false
 
 private def simpleInitializer : Expr → Bool
-  | .unary .not value => simpleInitializer value
+  | .unary .toString _ => false
+  | .unary _ value => simpleInitializer value
+  | .binary _ left right => simpleInitializer left && simpleInitializer right
   | value => simpleValue value
 
 private def initializedValue : Expr → Bool
