@@ -8,6 +8,8 @@ import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.StructuralCertificate
 import EsmSplit.CoreJS.OrderedConstSyntax
+import EsmSplit.CoreJS.TerminalExportPlacement
+import EsmSplit.CoreJS.TerminalSource
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
 import EsmSplit.LowerSplit.SliceCertificate
@@ -296,6 +298,30 @@ private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
     | .error refusal => return some (← emitRefusal options.request.label refusal "indexed-local-exports")
   catch e => return some (← emitVerdict options.request.label (.error e.toString) "indexed-local-exports")
 
+/-- Reject malformed terminal-row selectors before any constructor can decline
+the proof and let the ordinary checker reinterpret the authored request. This
+uses the terminal selector resolver without imposing its coverage or owner
+requirements on otherwise unsupported placements. -/
+private def rejectDuplicateTerminalSelectors (chunk : DeploymentChunk) (src : BundleInput)
+    (options : CertifiedOptions) : IO (Option UInt32) := do
+  let .authored spec := chunk.placement | return none
+  unless spec.sequential && !spec.privateEntryBody do return none
+  let .ok input := CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
+  let .ok terminal := CoreJS.TerminalSource.check input | return none
+  let terminalSource : CoreJS.TerminalExportPlacement.TerminalSource := {
+    module := terminal.source
+    exportOrdinal := terminal.row.ordinal
+  }
+  match CoreJS.TerminalExportPlacement.selectRequests terminalSource spec with
+  | .error reason => return some (← emitRefusal options.request.label
+      { reason, reasonCode := some "linked_placement" } "terminal-declarations")
+  | .ok selected =>
+    unless (selected.map Prod.fst).Nodup do
+      return some (← emitRefusal options.request.label
+        { reason := "an original unit is selected more than once", reasonCode := some "linked_placement" }
+        "terminal-declarations")
+    return none
+
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
@@ -306,6 +332,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
   let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
+  if let some verdict ← rejectDuplicateTerminalSelectors chunk src options then return verdict
   if let some verdict ← tryLocalExports chunk src out work options timings then return verdict
   if let some verdict ← tryNamedDeclarations chunk src out work options timings then return verdict
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption

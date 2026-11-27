@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.DeploymentPlacement
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.SingleModule
 import EsmSplit.CoreJS.SyntaxMatch
+import EsmSplit.CoreJS.PrimitiveRhs
 import EsmSplit.Split
 
 /-! Construct a CoreJS split for an order-preserving placement of simple
@@ -15,12 +16,6 @@ private def simpleValue : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ | .var _ => true
   | _ => false
 
-private def simpleInitializer : Expr → Bool
-  | .unary .toString _ => false
-  | .unary _ value => simpleInitializer value
-  | .binary _ left right => simpleInitializer left && simpleInitializer right
-  | value => simpleValue value
-
 private def initializedValue : Expr → Bool
   | .undef => false
   | _ => true
@@ -28,8 +23,8 @@ private def initializedValue : Expr → Bool
 private def supportedUnit : Stmt → Bool
   | .funDecl (.mk _ .normal false [] [.ret value]) => simpleValue value
   | .decl .const _ (.call (.var _) []) => true
-  | .decl .const _ value => simpleInitializer value
-  | .decl .let_ _ value => simpleInitializer value && initializedValue value
+  | .decl .const _ value => (PrimitiveRhs.check (fun _ => true) value).isSome
+  | .decl .let_ _ value => (PrimitiveRhs.check (fun _ => true) value).isSome && initializedValue value
   | _ => false
 
 /-- The source-derived bundle used by the checked constructor. -/
@@ -97,8 +92,8 @@ def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarante
     throw "source must be an import-free entry with consecutive unit identities starting at zero"
   if spec.sequential then
     unless m.body.all (fun (_, stmt) => match stmt with
-        | .decl .const _ value => simpleInitializer value
-        | .decl .let_ _ value => simpleInitializer value && initializedValue value
+        | .decl .const _ value => (PrimitiveRhs.check (fun _ => true) value).isSome
+        | .decl .let_ _ value => (PrimitiveRhs.check (fun _ => true) value).isSome && initializedValue value
         | _ => false) do
       throw "explicit sequential placement supports only simple const or initialized let declarations"
   for (id, stmt) in m.body do

@@ -520,6 +520,32 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "corejs_indexed_source_schedule",
+    srcs = ["EsmSplit/CoreJS/IndexedSourceSchedule.lean"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_sparse_projected_order",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_source_schedule_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedSourceSchedule"],
+    required_theorems = [
+        "CoreJS.IndexedSourceSchedule.checkSequence",
+        "CoreJS.IndexedSourceSchedule.check",
+        "CoreJS.IndexedSourceSchedule.constructedRows",
+        "CoreJS.IndexedSourceSchedule.constructedPlacementOwner",
+        "CoreJS.IndexedSourceSchedule.metadataOmitted",
+        "CoreJS.IndexedSourceSchedule.uniquePlanOwner",
+        "CoreJS.IndexedSourceSchedule.assignmentOwnerIsAuthored",
+    ],
+    deps = [":corejs_indexed_source_schedule"],
+)
+
 executable_test(
     name = "corejs_sparse_projected_order_test",
     src = "SparseProjectedOrderTest.lean",
@@ -610,7 +636,10 @@ lean_library(
 lean_library(
     name = "ordered_const_syntax",
     srcs = ["EsmSplit/CoreJS/OrderedConstSyntax.lean"],
-    deps = [":ordered_region"],
+    deps = [
+        ":corejs_runtime",
+        ":ordered_region",
+    ],
 )
 
 lean_proof_test(
@@ -621,7 +650,6 @@ lean_proof_test(
         "CoreJS.OrderedConstSyntax.all_const",
         "CoreJS.OrderedConstSyntax.checkBody",
         "CoreJS.OrderedConstSyntax.checkEarlierReads",
-        "CoreJS.OrderedConstSyntax.checkRhs",
         "CoreJS.OrderedConstSyntax.dense_runs",
         "CoreJS.OrderedConstSyntax.rhs_free",
     ],
@@ -733,6 +761,7 @@ lean_library(
     deps = [
         ":corejs_checked_split",
         ":corejs_resolved_placement",
+        ":corejs_runtime",
     ],
 )
 
@@ -939,39 +968,6 @@ lean_proof_test(
     deps = [":sparse_checked_artifact"],
 )
 
-lean_library(
-    name = "terminal_export_artifact",
-    srcs = ["EsmSplit/LowerSplit/TerminalExportArtifact.lean"],
-    deps = [
-        ":corejs_link_world",
-        ":corejs_structural",
-        ":sparse_checked_artifact",
-    ],
-)
-
-lean_proof_test(
-    name = "terminal_export_artifact_axioms_test",
-    allow_empty = True,
-    modules = ["EsmSplit.LowerSplit.TerminalExportArtifact"],
-    required_theorems = [
-        "EsmSplit.LowerSplit.TerminalExportArtifact.prepare",
-        "EsmSplit.LowerSplit.TerminalExportArtifact.verify",
-        "EsmSplit.LowerSplit.TerminalExportArtifact.verify_sound",
-    ],
-    deps = [":terminal_export_artifact"],
-)
-
-test_runner(
-    name = "terminal_export_artifact_test_runner",
-    src = "TerminalExportArtifactMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = [
-        ":lowersplit_support",
-        ":lowersplit_workflows",
-        ":terminal_export_artifact",
-    ],
-)
-
 test_runner(
     name = "checked_artifact_test_runner",
     src = "CheckedSplitArtifactMain.lean",
@@ -1018,12 +1014,14 @@ lean_library(
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
+        ":corejs_terminal_source",
         ":lowersplit_input",
         ":lowersplit_support",
         ":named_declaration_split",
         ":ordered_const_syntax",
         ":planner",
         ":sparse_checked_artifact",
+        ":terminal_export_placement",
     ],
 )
 
@@ -1146,6 +1144,8 @@ test_runner(
     src = "LocalExportDecodeTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
     deps = [
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_source_schedule",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":corejs_terminal_constructor",
@@ -1199,6 +1199,7 @@ lean_library(
         "EsmSplit/CoreJS/BrowserGlobals.lean",
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/Syntax.lean",
+        "EsmSplit/CoreJS/PrimitiveRhs.lean",
         "EsmSplit/CoreJS/Decode.lean",
         "EsmSplit/CoreJS/Fragment.lean",
         "EsmSplit/CoreJS/SyntaxMatch.lean",
@@ -1213,6 +1214,20 @@ lean_library(
         ":estree",
         ":module_order",
     ],
+)
+
+lean_proof_test(
+    name = "primitive_rhs_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PrimitiveRhs"],
+    required_theorems = [
+        "CoreJS.PrimitiveRhs.check",
+        "CoreJS.PrimitiveRhs.free_allowed",
+        "CoreJS.PrimitiveRhs.policy_iff",
+        "CoreJS.PrimitiveRhs.restrict",
+        "CoreJS.PrimitiveRhs.weaken",
+    ],
+    deps = [":corejs_runtime"],
 )
 
 test_runner(
@@ -1412,6 +1427,9 @@ lean_proof_test(
         "CoreJS.cellFootprint_readVar",
         "CoreJS.cellFootprint_initVar",
         "CoreJS.cellFootprint_writeVar",
+        "CoreJS.BindingAllocation.binding_present",
+        "CoreJS.BindingAllocation.present",
+        "CoreJS.newCells_allocation",
         "CoreJS.newCells_distinct",
         "CoreJS.LinkedCellsExamples.nonempty_allocation",
         "CoreJS.LinkedCellsExamples.names_allow_alias",
@@ -2756,4 +2774,17 @@ lean_proof_test(
         "CoreJS.ExportRows.rows_scope_cells",
     ],
     deps = [":corejs_export_rows_link"],
+)
+
+lean_proof_test(
+    name = "linked_cells_allocation_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedCells"],
+    required_theorems = [
+        "CoreJS.BindingAllocation.binding_present",
+        "CoreJS.BindingAllocation.present",
+        "CoreJS.newCells_allocation",
+        "CoreJS.newCells_fresh",
+    ],
+    deps = [":corejs_certificate_support_base"],
 )

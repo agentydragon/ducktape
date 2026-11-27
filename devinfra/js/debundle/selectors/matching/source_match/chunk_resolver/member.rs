@@ -148,13 +148,11 @@ pub(super) fn member_matches_declarator_hole(
             continue;
         };
         let Some(Some(candidate_decl_idx)) = alignment.site.get(target_decl_idx) else {
-            return Err(SourceMatchError::binding(
+            return Err(SourceMatchError::matched_hole(
                 request_id,
                 selector,
                 target_binding,
-                BindingProblem::MatchedHole {
-                    hole: ProjectionHole::Declarators,
-                },
+                ProjectionHole::Declarators,
             )
             .into());
         };

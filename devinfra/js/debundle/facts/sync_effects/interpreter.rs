@@ -1638,6 +1638,18 @@ pub(super) struct RootAttemptCheckpoint {
 }
 
 impl Executor<'_, '_> {
+    /// Merge one nested local execution into the frame that invoked it:
+    /// its rebinds, call effects, executed owners, uncertainty and
+    /// completeness. A caller that still needs a fact from the nested
+    /// outcome reads it before calling here, never after.
+    pub(super) fn absorb_nested_call(&mut self, outcome: &mut Outcome, mut nested: Outcome) {
+        self.apply_rebind_effects(&nested.effects.rebinds);
+        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
+        outcome.executed_owners.extend(nested.executed_owners);
+        outcome.unknown_call |= nested.unknown_call;
+        outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+    }
+
     /// The destructuring classifies every field, so a new one fails to
     /// compile until it is placed.
     pub(super) fn checkpoint_root_attempt(&self) -> RootAttemptCheckpoint {

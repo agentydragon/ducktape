@@ -104,6 +104,10 @@ private def run : IO Unit := do
   let forward : Program := ⟨entry, [⟨entry, [],
     [(0, .decl .const "a" (.var "b")), (1, .decl .const "b" (.num 2))], []⟩]⟩
   requireRefusal "forward read" forward simpleSpec
+  let nestedForward : Program := ⟨entry, [⟨entry, [],
+    [(0, .decl .const "a" (.binary .add (.num 1) (.unary .neg (.var "b")))),
+     (1, .decl .const "b" (.num 2))], []⟩]⟩
+  requireRefusal "nested forward read" nestedForward simpleSpec
   let selfRead : Program := ⟨entry, [⟨entry, [], [(0, .decl .const "a" (.var "a"))], []⟩]⟩
   let selfSpec : EsmSplit.Spec := { entry, modules := [(entry, [.stmt 0])], sequential := true }
   requireRefusal "self read" selfRead selfSpec

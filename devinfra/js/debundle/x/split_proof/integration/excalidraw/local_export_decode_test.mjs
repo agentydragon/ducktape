@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { dump } from "../../translation/parser.mjs";
-import { moduleGraphFixture } from "../../translation/linked/module_graph_fixture.mjs";
+import { moduleGraphFixture, sparseNonterminalFixture } from "../../translation/linked/module_graph_fixture.mjs";
 
 // Use the production parser and unchanged authored spec from the #32 CLI fixture.
 const fixture = moduleGraphFixture();
+const sparse = sparseNonterminalFixture();
 const sources = [
   fixture.source,
-  "const seed = 42; export { seed as exposed }; const result = seed;",
+  sparse.source,
   'const seed = 42; export { seed as publicName, seed as "with-dash" }; export {}; const result = seed;',
   "export const declared = 1;",
   "export default 7;",
@@ -19,7 +20,12 @@ const sources = [
 const run = spawnSync(process.env.LOCAL_EXPORT_DECODE_TEST, [], {
   encoding: "utf8",
   input:
-    JSON.stringify([...sources.map((source) => dump(source)), JSON.stringify(fixture.spec), fixture.source]) + "\n",
+    JSON.stringify([
+      ...sources.map((source) => dump(source)),
+      JSON.stringify(fixture.spec),
+      fixture.source,
+      JSON.stringify(sparse.spec),
+    ]) + "\n",
   maxBuffer: 64 * 1024 * 1024,
 });
 if (run.error) throw run.error;

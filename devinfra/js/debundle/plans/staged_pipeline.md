@@ -82,5 +82,5 @@ Keep each step independently reviewable and land it only after its own evidence:
    repeatable end-to-end benefit for the observed edit mix justifies the
    measured cold-build, lookup, encoding, storage, and memory costs.
 
-Per-chunk S3 actions and a separate vendor-strip action remain deferred until
+Per-chunk analysis actions and a separate vendor-strip action remain deferred until
 these measurements show that their added action and artifact costs pay back.

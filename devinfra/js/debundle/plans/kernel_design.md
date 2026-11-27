@@ -156,7 +156,7 @@ Left of the callback family:
   keep the flattened lane's callback-factory arms.
 
 The flat lane `invoke_with_cells` still takes bodies with an ordered plan
-behind four gates; its `CLEANUP` in `interpreter.rs` names the kernel rule each
+behind four gates; its `CLEANUP` in `interpreter/invocation.rs` names the kernel rule each
 one waits for.
 
 ## Root phases over `World` owners
