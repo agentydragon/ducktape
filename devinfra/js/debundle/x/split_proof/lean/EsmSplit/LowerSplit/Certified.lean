@@ -310,6 +310,16 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
       | _ => false) do return none
   unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
   let .ok constructed := CoreJS.NamedDeclarationSplit.construct source spec | return none
+  -- This dense constructor accounts for executable source units only. Do not
+  -- publish or fall through to another route when original nodes were omitted
+  -- or a standalone export row lacks an authenticated owner.
+  let decoded ← match CoreJS.LinkedInput.decodeIndexedSource src.program src.source spec.entry with
+    | .ok decoded => pure decoded
+    | .error reason =>
+      return some (← emitRefusal options.request.label { reason := s!"source provenance: {reason}" } "named-declarations")
+  unless decoded.localExports.isEmpty do
+    return some (← emitRefusal options.request.label
+      { reason := "standalone export rows require source-indexed placement" } "named-declarations")
   try
     let programs ← IO.ofExcept (ESTreeEmit.corePrograms constructed.split.program src.source)
     let part : OutputPart := { programs, source := src.source, input := src.input, work }

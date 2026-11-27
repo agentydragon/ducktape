@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { split } from "../testing/split.mjs";
@@ -101,6 +101,28 @@ assert.deepEqual(
   good.files.map((file) => readFileSync(path.join(out, file), "utf8")),
   before
 );
+
+// The dense constructor must account for every original node, including a
+// standalone export row and a debugger omitted by the CoreJS decoder.
+writeFileSync(spec, JSON.stringify(placement));
+for (const [label, originalSource] of [
+  ["unclaimed-export", "const seed = 7; const result = seed; export { result };\n"],
+  ["omitted-debugger", "const seed = 7; export const result = seed; debugger;\n"],
+]) {
+  writeFileSync(source, originalSource);
+  for (const guarantee of ["normal-completion", "all-outcomes"]) {
+    const target = path.join(root, `${label}-${guarantee}`);
+    const fresh = split({ source, spec, out: target, require: guarantee });
+    assert.equal(fresh.status, "refused", fresh.log);
+    assert(!existsSync(target));
+    mkdirSync(target);
+    const sentinel = path.join(target, "sentinel.txt");
+    writeFileSync(sentinel, "preserve existing bytes\n");
+    const existing = split({ source, spec, out: target, require: guarantee, allowExistingOut: true });
+    assert.equal(existing.status, "refused", existing.log);
+    assert.equal(readFileSync(sentinel, "utf8"), "preserve existing bytes\n");
+  }
+}
 
 // A forward lexical read keeps its temporal-dead-zone failure. Reversing these
 // units must not take the all-outcomes constructor path or publish output.
