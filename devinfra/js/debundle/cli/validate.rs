@@ -369,10 +369,7 @@ fn validate_modules_against_source(
     source_file: &Path,
     chunk: &str,
 ) -> Result<SelectorOutcomeReport> {
-    let source = std::fs::read_to_string(source_file)
-        .with_context(|| format!("reading source file {}", source_file.display()))?;
-    let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)
-        .with_context(|| format!("parsing source file {}", source_file.display()))?;
+    let parsed = js_ast::parse_js_module_file(source_file)?;
 
     let mut outcomes = Vec::new();
     let mut modules = Vec::new();
