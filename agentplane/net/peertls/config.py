@@ -6,28 +6,59 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# The fixed first-party service identities. Each `<PATH>_URI` names `spiffe://agentplane/<path>` and sits in
+# exactly one role set below; `render_go_roster` checks both and generates the Go side (`service_identities.go`).
 ACTIONS_URI: Final = "spiffe://agentplane/actions"
 APP_URI: Final = "spiffe://agentplane/app"
-POLICY_CONTROLLER_URI: Final = "spiffe://agentplane/policy-controller"
 CENTRAL_SAMPLER_URI: Final = "spiffe://agentplane/central-sampler"
 EGRESS_PROXY_URI: Final = "spiffe://agentplane/egress-proxy"
-GATEWAY_SESSIONS_URI: Final = "spiffe://agentplane/sessions"
-GATEWAY_RUNTIME_PROXY_URI: Final = "spiffe://agentplane/runtime-proxy"
-HISTORY_SERVICE_URI: Final = "spiffe://agentplane/history-ingress"
+ENVIRONMENTS_URI: Final = "spiffe://agentplane/environments"
+HISTORY_INGRESS_URI: Final = "spiffe://agentplane/history-ingress"
 LLM_INGRESS_URI: Final = "spiffe://agentplane/llm-ingress"
 MCP_EDGE_URI: Final = "spiffe://agentplane/mcp-edge"
 NOTIFICATIONS_URI: Final = "spiffe://agentplane/notifications"
-SESSION_DISPATCHER_URI: Final = "spiffe://agentplane/session-dispatcher"
+POLICY_CONTROLLER_URI: Final = "spiffe://agentplane/policy-controller"
+# The Runner Gateway in the runner control mutual-TLS trust domain.
+RUNNER_GATEWAY_URI: Final = "spiffe://agentplane/runner-gateway"
+# `SESSIONS_URI` and `RUNTIME_PROXY_URI` follow Runner Gateway roles across the planned binary split.
+RUNTIME_PROXY_URI: Final = "spiffe://agentplane/runtime-proxy"
 SANDBOX_CONTROLLER_URI: Final = "spiffe://agentplane/sandbox-controller"
+SESSION_DISPATCHER_URI: Final = "spiffe://agentplane/session-dispatcher"
+SESSIONS_URI: Final = "spiffe://agentplane/sessions"
+# The isolated Runtime-proxy reader of the k3s system-test fixture.
+SYSTEM_TEST_RUNTIME_PROXY_READER_URI: Final = "spiffe://agentplane/system-test-runtime-proxy-reader"
+
+# Serve a workload-CA listener (Sandbox and service clients).
+WORKLOAD_SERVER_URIS: Final = frozenset(
+    {
+        ACTIONS_URI,
+        CENTRAL_SAMPLER_URI,
+        EGRESS_PROXY_URI,
+        HISTORY_INGRESS_URI,
+        LLM_INGRESS_URI,
+        MCP_EDGE_URI,
+        NOTIFICATIONS_URI,
+        POLICY_CONTROLLER_URI,
+        SANDBOX_CONTROLLER_URI,
+        SESSION_DISPATCHER_URI,
+    }
+)
+# Serve the runner control listener.
+RUNNER_CONTROL_SERVER_URIS: Final = frozenset({RUNNER_GATEWAY_URI})
+# Only ever authenticate as clients.
+CLIENT_ONLY_URIS: Final = frozenset(
+    {APP_URI, ENVIRONMENTS_URI, RUNTIME_PROXY_URI, SESSIONS_URI, SYSTEM_TEST_RUNTIME_PROXY_READER_URI}
+)
+SERVER_URIS: Final = WORKLOAD_SERVER_URIS | RUNNER_CONTROL_SERVER_URIS
+SERVICE_URIS: Final = SERVER_URIS | CLIENT_ONLY_URIS
+
+
+def _exact_pattern(uris: frozenset[str]) -> str:
+    return f"^({'|'.join(sorted(uris))})$"
 
 
 # Service IDs never use the agent Identity workload grammar.
-type ServiceSPIFFEID = Annotated[
-    str,
-    Field(
-        pattern=r"^spiffe://agentplane/(app|mcp-edge|sessions|runtime-proxy|environments|runner-gateway|sandbox-controller|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|system-test-runtime-proxy-reader)$"
-    ),
-]
+type ServiceSPIFFEID = Annotated[str, Field(pattern=_exact_pattern(SERVICE_URIS))]
 
 
 class TLS(BaseModel):
@@ -99,9 +130,7 @@ class ClientTLS(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     ca_file: Path
-    server_uri: str = Field(
-        pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|mcp-edge|sandbox-controller)$"
-    )
+    server_uri: str = Field(pattern=_exact_pattern(SERVER_URIS))
     cert_file: Path | None = None
     key_file: Path | None = None
     client_uri: ServiceSPIFFEID | None = None

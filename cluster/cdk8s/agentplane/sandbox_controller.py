@@ -28,12 +28,12 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    GATEWAY_RUNTIME_PROXY_URI,
-    GATEWAY_SESSIONS_URI,
     MTLS,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
+    RUNTIME_PROXY_URI,
     SANDBOX_CONTROLLER_URI,
+    SESSIONS_URI,
     PolicyServicePeer,
     ServiceSPIFFEID,
 )
@@ -207,7 +207,7 @@ class SandboxController(Construct):
             env,
             name="environments-runtime-proxy-client-workload",
             secret_name="environments-runtime-proxy-client-workload-tls",
-            uri=GATEWAY_RUNTIME_PROXY_URI,
+            uri=RUNTIME_PROXY_URI,
         )
 
         environments_scope = Construct(self, "environments")
@@ -242,7 +242,7 @@ class SandboxController(Construct):
             runtime_proxy=RuntimeProxy(
                 runner_security=MTLS(tls=proxy_client),
                 readers=tuple(sorted(runtime_proxy_readers)),
-                session_callers=(GATEWAY_SESSIONS_URI,),
+                session_callers=(SESSIONS_URI,),
                 controller_callers=(SANDBOX_CONTROLLER_URI,),
                 executor_callers=(CENTRAL_SAMPLER_URI,) if env.central_sampler is not None else (),
             ),

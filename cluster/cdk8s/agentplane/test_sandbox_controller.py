@@ -15,10 +15,10 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    GATEWAY_RUNTIME_PROXY_URI,
-    GATEWAY_SESSIONS_URI,
+    RUNTIME_PROXY_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    SESSIONS_URI,
 )
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
@@ -280,14 +280,14 @@ def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_iden
     assert proxy is not None
     assert "audience" not in proxy.model_dump(mode="json")
     assert proxy.readers == ()
-    assert set(proxy.session_callers) == {GATEWAY_SESSIONS_URI}
+    assert set(proxy.session_callers) == {SESSIONS_URI}
     assert set(proxy.controller_callers) == {SANDBOX_CONTROLLER_URI}
     assert set(proxy.executor_callers) == {CENTRAL_SAMPLER_URI}
     assert proxy.runner_security.mode == "mtls"
     assert controller_settings.runner_security.mode == "mtls"
     assert proxy.runner_security.tls.cert_file != controller_settings.runner_security.tls.cert_file
     certificate = find_resource(staging_manifests, "Certificate", f"{name}-runtime-proxy-client-workload")
-    assert certificate["spec"]["uris"] == [GATEWAY_RUNTIME_PROXY_URI]
+    assert certificate["spec"]["uris"] == [RUNTIME_PROXY_URI]
     deployment = find_resource(staging_manifests, "Deployment", name)
     pod = deployment["spec"]["template"]["spec"]
     volume = one(

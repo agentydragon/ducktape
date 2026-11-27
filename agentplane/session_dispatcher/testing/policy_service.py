@@ -16,7 +16,7 @@ from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config import new_client_from_config
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.net.peertls.config import GATEWAY_SESSIONS_URI, POLICY_CONTROLLER_URI, ClientTLS, PolicyServicePeer
+from agentplane.net.peertls.config import POLICY_CONTROLLER_URI, SESSIONS_URI, ClientTLS, PolicyServicePeer
 from agentplane.policy.v1 import policy_service_pb2, policy_service_pb2_grpc
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf
 
@@ -91,7 +91,7 @@ async def serve_identities(
     client_directory = directory / "policy-service-client"
     client_directory.mkdir()
     server_cert, server_key = issue_workload_leaf(ca, POLICY_CONTROLLER_URI, server_directory)
-    client_cert, client_key = issue_workload_leaf(ca, GATEWAY_SESSIONS_URI, client_directory)
+    client_cert, client_key = issue_workload_leaf(ca, SESSIONS_URI, client_directory)
     async with await new_client_from_config(config_file=str(kubeconfig)) as api:
         server = grpc.aio.server()
         policy_service_pb2_grpc.add_PolicyServiceServicer_to_server(_IdentityService(api, namespace), server)
@@ -112,7 +112,7 @@ async def serve_identities(
                     server_uri=POLICY_CONTROLLER_URI,
                     cert_file=client_cert,
                     key_file=client_key,
-                    client_uri=GATEWAY_SESSIONS_URI,
+                    client_uri=SESSIONS_URI,
                 ),
             )
         finally:

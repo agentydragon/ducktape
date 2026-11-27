@@ -34,11 +34,11 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    GATEWAY_SESSIONS_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    SESSIONS_URI,
     PolicyServicePeer,
     ServiceSPIFFEID,
 )
@@ -199,7 +199,7 @@ class RunnerGateway(Construct):
             env,
             name="sessions-client-workload",
             secret_name="sessions-client-workload-tls",
-            uri=GATEWAY_SESSIONS_URI,
+            uri=SESSIONS_URI,
         )
 
         sessions = Construct(self, "sessions")
@@ -224,7 +224,7 @@ class RunnerGateway(Construct):
         central_sampler_target = (
             CentralSamplerTarget(
                 target=central_sampler.service(namespace).authority,
-                tls=client.client_tls(CENTRAL_SAMPLER_URI, client_uri=GATEWAY_SESSIONS_URI),
+                tls=client.client_tls(CENTRAL_SAMPLER_URI, client_uri=SESSIONS_URI),
             )
             if env.central_sampler is not None
             else None
@@ -251,11 +251,11 @@ class RunnerGateway(Construct):
             policy_namespace=namespace,
             policy_service=PolicyServicePeer(
                 target=policy_controller.tls_service(namespace).authority,
-                tls=client.client_tls(POLICY_CONTROLLER_URI, client_uri=GATEWAY_SESSIONS_URI),
+                tls=client.client_tls(POLICY_CONTROLLER_URI, client_uri=SESSIONS_URI),
             ),
             kubernetes_client_qps=-1,
             rpc=serving_tls.spiffe_listener(endpoint.pod_port),
-            gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=GATEWAY_SESSIONS_URI),
+            gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=SESSIONS_URI),
             runner_control_target_template=environment_service.environments_service(namespace).authority,
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
             wake_service_callers=wake_service_callers,

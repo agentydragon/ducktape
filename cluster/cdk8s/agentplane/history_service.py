@@ -26,7 +26,7 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
     PolicyServicePeer,
@@ -132,7 +132,7 @@ class HistoryService(Construct):
         # The History Service writes the `sandbox_service` database, so it connects as that
         # database's owner; its read API's sessions are read-only (main.go).
         health = TlsGrpcHealth(
-            port=endpoint.pod_port, ca_file=workload_tls.TRUST_BUNDLE_FILE, server_uri=HISTORY_SERVICE_URI
+            port=endpoint.pod_port, ca_file=workload_tls.TRUST_BUNDLE_FILE, server_uri=HISTORY_INGRESS_URI
         )
         workload = add_service_workload(
             self,
@@ -153,7 +153,7 @@ class HistoryService(Construct):
             registry_secret_name=registry_secret_name,
         )
         serving_tls = workload_tls.service_certificate(
-            self, env, container=workload.container, name=NAME, uri=HISTORY_SERVICE_URI
+            self, env, container=workload.container, name=NAME, uri=HISTORY_INGRESS_URI
         )
         settings = Settings(
             reader_service_callers=frozenset((ACTIONS_URI, APP_URI, NOTIFICATIONS_URI)),
@@ -161,7 +161,7 @@ class HistoryService(Construct):
             policy_namespace=env.namespace,
             policy_service=PolicyServicePeer(
                 target=policy_controller.tls_service(env.namespace).authority,
-                tls=serving_tls.client_tls(POLICY_CONTROLLER_URI, client_uri=HISTORY_SERVICE_URI),
+                tls=serving_tls.client_tls(POLICY_CONTROLLER_URI, client_uri=HISTORY_INGRESS_URI),
             ),
             ingress=ingress_settings,
             rpc=serving_tls.spiffe_listener(endpoint.pod_port),

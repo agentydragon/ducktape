@@ -25,67 +25,6 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
-// GatewayURI is the fixed identity of the Runner Gateway in the runner
-// control mutual-TLS trust domain.
-const GatewayURI = "spiffe://agentplane/runner-gateway"
-
-// SandboxControllerURI is the Sandbox Controller's passive Runtime observer identity.
-const SandboxControllerURI = "spiffe://agentplane/sandbox-controller"
-
-// AppURI and MCPEdgeURI identify first-party clients, independently of agent Identities.
-const (
-	// SessionsURI and RuntimeProxyURI follow roles across the planned binary split.
-	SessionsURI     = "spiffe://agentplane/sessions"
-	RuntimeProxyURI = "spiffe://agentplane/runtime-proxy"
-	EnvironmentsURI = "spiffe://agentplane/environments"
-	AppURI          = "spiffe://agentplane/app"
-	MCPEdgeURI      = "spiffe://agentplane/mcp-edge"
-)
-
-// IsServiceURI accepts the fixed first-party service identities. Workload credential
-// URIs have a separate grammar and are never service identities.
-func IsServiceURI(uri string) bool {
-	return uri == SessionsURI || uri == RuntimeProxyURI || uri == EnvironmentsURI || uri == AppURI || uri == GatewayURI || isWorkloadServiceURI(uri)
-}
-
-// EgressProxyURI is the fixed identity of the optional workload-authenticated
-// forward-proxy listener.
-const EgressProxyURI = "spiffe://agentplane/egress-proxy"
-
-// HistoryIngressURI is the History Service workload listener.
-const HistoryIngressURI = "spiffe://agentplane/history-ingress"
-
-// NotificationsURI is the Notification Service workload listener.
-const NotificationsURI = "spiffe://agentplane/notifications"
-
-// LLMIngressURI is the LLM ingress listener that authenticates Sandbox SVIDs.
-const LLMIngressURI = "spiffe://agentplane/llm-ingress"
-
-// SessionDispatcherURI is the Runner Gateway's Sandbox workload listener.
-const SessionDispatcherURI = "spiffe://agentplane/session-dispatcher"
-
-// ActionsURI is the Action Service workload listener.
-const ActionsURI = "spiffe://agentplane/actions"
-
-// PolicyControllerURI is the Policy Controller's server-authentication identity.
-const PolicyControllerURI = "spiffe://agentplane/policy-controller"
-
-// CentralSamplerURI is the Central Sampler's server-authentication identity.
-const CentralSamplerURI = "spiffe://agentplane/central-sampler"
-
-// SystemTestRuntimeProxyReaderURI is the isolated Runtime-proxy reader for the k3s system-test fixture.
-const SystemTestRuntimeProxyReaderURI = "spiffe://agentplane/system-test-runtime-proxy-reader"
-
-func isWorkloadServiceURI(uri string) bool {
-	switch uri {
-	case EgressProxyURI, HistoryIngressURI, NotificationsURI, LLMIngressURI, SessionDispatcherURI, ActionsURI,
-		PolicyControllerURI, CentralSamplerURI, MCPEdgeURI, SandboxControllerURI, SystemTestRuntimeProxyReaderURI:
-		return true
-	default:
-		return false
-	}
-}
-
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
 // Config names either the projected certificate, private key, and trust roots,
@@ -141,7 +80,7 @@ func parseWorkloadAPISocket(raw string) (string, error) {
 }
 
 // ClientCredentials creates mTLS client credentials pinned to the exact
-// GatewayURI or a workload URI supplied as expectedPeerURI.
+// RunnerGatewayURI or a workload URI supplied as expectedPeerURI.
 func (c Config) ClientCredentials(expectedPeerURI string) (credentials.TransportCredentials, error) {
 	if c.WorkloadAPISocket != "" {
 		return nil, errors.New("Workload API TLS configuration requires Security.Open(ctx)")
@@ -612,7 +551,7 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 func parseIdentity(identity string) (spiffeid.ID, error) {
 	if !IsServiceURI(identity) {
 		if _, err := workloadid.Parse(identity); err != nil {
-			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid workload URI: %w", err)
+			return spiffeid.ID{}, fmt.Errorf("identity must be RunnerGatewayURI or a valid workload URI: %w", err)
 		}
 	}
 	return spiffeid.FromString(identity)

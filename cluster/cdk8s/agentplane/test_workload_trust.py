@@ -19,15 +19,15 @@ from agentplane.net.peertls.config import (
     APP_URI,
     CENTRAL_SAMPLER_URI,
     EGRESS_PROXY_URI,
-    GATEWAY_RUNTIME_PROXY_URI,
-    GATEWAY_SESSIONS_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     LLM_INGRESS_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
+    RUNTIME_PROXY_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    SESSIONS_URI,
 )
 from cluster.cdk8s.agentplane import egress, runner_gateway, staging
 from cluster.cdk8s.agentplane.sandbox_pod import SIDECAR_SETTINGS_VOLUME_NAME
@@ -189,13 +189,13 @@ def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(stagi
     ("deployment", "settings_map", "settings_key", "client_uri"),
     [
         ("mcp-edge", "mcp-edge-settings", "settings.yaml", MCP_EDGE_URI),
-        ("history-service", "history-service-config", "config.yaml", HISTORY_SERVICE_URI),
+        ("history-service", "history-service-config", "config.yaml", HISTORY_INGRESS_URI),
         ("llm-ingress", "llm-ingress-settings", "settings.yaml", LLM_INGRESS_URI),
         ("notifications", "notifications-settings", "settings.yaml", NOTIFICATIONS_URI),
         (egress.NAME, "egress-go-settings", "settings.yaml", EGRESS_PROXY_URI),
         ("actions", "actions-settings", "settings.yaml", ACTIONS_URI),
         # The Session Dispatcher calls out only as the gateway Sessions SVID.
-        (runner_gateway.NAME, "sessions-settings", "settings.yaml", GATEWAY_SESSIONS_URI),
+        (runner_gateway.NAME, "sessions-settings", "settings.yaml", SESSIONS_URI),
         ("environments", "environments-settings", "config.yaml", SANDBOX_CONTROLLER_URI),
     ],
 )
@@ -230,8 +230,8 @@ def test_policy_service_exposes_its_tls_listener_to_the_app(staging_manifests: l
         ACTIONS_URI,
         APP_URI,
         EGRESS_PROXY_URI,
-        GATEWAY_SESSIONS_URI,
-        HISTORY_SERVICE_URI,
+        SESSIONS_URI,
+        HISTORY_INGRESS_URI,
         LLM_INGRESS_URI,
         MCP_EDGE_URI,
         NOTIFICATIONS_URI,
@@ -263,7 +263,7 @@ def test_notifications_calls_backends_with_its_mounted_service_svid(staging_mani
     settings = config_map_yaml(staging_manifests, "notifications-settings", "settings.yaml")
     for peer, server_uri in {
         "actions": ACTIONS_URI,
-        "history_service": HISTORY_SERVICE_URI,
+        "history_service": HISTORY_INGRESS_URI,
         "session_dispatcher": SESSION_DISPATCHER_URI,
     }.items():
         assert "token_file" not in settings[peer]
@@ -280,7 +280,7 @@ def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -
         ("egress_admin", EGRESS_PROXY_URI),
         ("runner_gateway", SANDBOX_CONTROLLER_URI),
         ("session_dispatcher", SESSION_DISPATCHER_URI),
-        ("history_service", HISTORY_SERVICE_URI),
+        ("history_service", HISTORY_INGRESS_URI),
         ("notifications", NOTIFICATIONS_URI),
         ("actions", ACTIONS_URI),
         ("connection_service", MCP_EDGE_URI),
@@ -374,9 +374,9 @@ def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifest
         APP_URI,
         CENTRAL_SAMPLER_URI,
         EGRESS_PROXY_URI,
-        GATEWAY_RUNTIME_PROXY_URI,
-        GATEWAY_SESSIONS_URI,
-        HISTORY_SERVICE_URI,
+        RUNTIME_PROXY_URI,
+        SESSIONS_URI,
+        HISTORY_INGRESS_URI,
         LLM_INGRESS_URI,
         MCP_EDGE_URI,
         NOTIFICATIONS_URI,

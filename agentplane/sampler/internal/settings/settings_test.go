@@ -910,10 +910,10 @@ func TestSettingsAcceptCentralSamplerSVIDForHistoryAndGateway(t *testing.T) {
 	for name, edit := range map[string]func(*Settings){
 		"history mixed credentials": func(s *Settings) { s.HistoryTokenFile = "/run/agentplane/history-token" },
 		"history wrong caller":      func(s *Settings) { s.HistoryTLS.ClientURI = peertls.AppURI },
-		"history wrong server":      func(s *Settings) { s.HistoryTLS.ServerURI = peertls.GatewayURI },
+		"history wrong server":      func(s *Settings) { s.HistoryTLS.ServerURI = peertls.RunnerGatewayURI },
 		"gateway mixed credentials": func(s *Settings) { s.GatewayTokenFile = "/run/agentplane/gateway-token" },
 		"gateway wrong caller":      func(s *Settings) { s.GatewayTLS.ClientURI = peertls.AppURI },
-		"gateway wrong server":      func(s *Settings) { s.GatewayTLS.ServerURI = peertls.GatewayURI },
+		"gateway wrong server":      func(s *Settings) { s.GatewayTLS.ServerURI = peertls.RunnerGatewayURI },
 	} {
 		t.Run(name, func(t *testing.T) {
 			invalid := settings

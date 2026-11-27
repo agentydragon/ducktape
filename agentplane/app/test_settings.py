@@ -12,7 +12,7 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     EGRESS_PROXY_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
@@ -88,7 +88,7 @@ def test_service_svid_callers_need_no_token_file_setting() -> None:
         session_dispatcher_token_file=None,
         runner_gateway_tls=_svid(SESSION_DISPATCHER_URI),
         runner_gateway_token_file=None,
-        history_service_tls=_svid(HISTORY_SERVICE_URI),
+        history_service_tls=_svid(HISTORY_INGRESS_URI),
         history_service_token_file=None,
         policy_service_tls=_svid(POLICY_CONTROLLER_URI),
         policy_service_token_file=None,
@@ -145,7 +145,7 @@ def test_environment_service_peer_is_optional_and_uses_its_own_controller_svid()
         ),
         ({"session_dispatcher_tls": None, "session_dispatcher_token_file": None}, "a token file is required"),
         (
-            {"runner_gateway_tls": _svid(HISTORY_SERVICE_URI), "runner_gateway_token_file": None},
+            {"runner_gateway_tls": _svid(HISTORY_INGRESS_URI), "runner_gateway_token_file": None},
             "runner_gateway_tls.server_uri must identify",
         ),
         (

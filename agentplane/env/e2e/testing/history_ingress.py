@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
 from agentplane.env.config import Endpoint, SVIDEndpoint
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI
+from agentplane.net.peertls.config import HISTORY_INGRESS_URI
 
 
 @asynccontextmanager
@@ -62,7 +62,7 @@ async def history_ingress(target: str) -> AsyncIterator[Endpoint]:
     server = await asyncio.start_server(accept, "127.0.0.1", 0)
     try:
         proxy_address = f"127.0.0.1:{server.sockets[0].getsockname()[1]}"
-        yield Endpoint(target=target, svid=SVIDEndpoint(server_uri=HISTORY_SERVICE_URI, proxy_address=proxy_address))
+        yield Endpoint(target=target, svid=SVIDEndpoint(server_uri=HISTORY_INGRESS_URI, proxy_address=proxy_address))
     finally:
         server.close()
         await server.wait_closed()

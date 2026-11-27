@@ -21,7 +21,7 @@ from agentplane.env.runtime.harness import Harness
 from agentplane.net.peertls.config import (
     APP_URI,
     EGRESS_PROXY_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
@@ -211,7 +211,7 @@ def settings(
         runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
         session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
         history_service_target=(history_service.service(namespace).authority),
-        history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
+        history_service_tls=workload_tls.service_client_tls(HISTORY_INGRESS_URI, client_uri=APP_URI),
         notifications_url=AnyHttpUrl(notifications.service(namespace).url),
         notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),
         listen_address="0.0.0.0:8080",

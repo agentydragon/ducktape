@@ -33,7 +33,7 @@ from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     POLICY_CONTROLLER_URI,
     ClientTLS,
     PolicyServicePeer,
@@ -85,7 +85,7 @@ def migrate_history_database(database_url: str) -> None:
                     server_uri=POLICY_CONTROLLER_URI,
                     cert_file=cert_file,
                     key_file=key_file,
-                    client_uri=HISTORY_SERVICE_URI,
+                    client_uri=HISTORY_INGRESS_URI,
                 ),
             ),
             rpc=workload_listener.Listener(
@@ -383,7 +383,7 @@ async def go_history_service(
         server_directory = tls_directory / "server"
         server_directory.mkdir()
         server_cert, server_key = issue_workload_leaf(
-            svid_ca, HISTORY_SERVICE_URI, server_directory, dns_name="localhost"
+            svid_ca, HISTORY_INGRESS_URI, server_directory, dns_name="localhost"
         )
         reader_directory = tls_directory / "reader"
         reader_directory.mkdir()
@@ -400,7 +400,7 @@ async def go_history_service(
         )
         history_tls = ClientTLS(
             ca_file=ca_file,
-            server_uri=HISTORY_SERVICE_URI,
+            server_uri=HISTORY_INGRESS_URI,
             cert_file=sampler_cert,
             key_file=sampler_key,
             client_uri=CENTRAL_SAMPLER_URI,
@@ -419,7 +419,7 @@ async def go_history_service(
                     server_uri=POLICY_CONTROLLER_URI,
                     cert_file=server_cert,
                     key_file=server_key,
-                    client_uri=HISTORY_SERVICE_URI,
+                    client_uri=HISTORY_INGRESS_URI,
                 ),
             ),
             request_timeout_s=10,
@@ -458,7 +458,7 @@ async def go_history_service(
                 history_tls=history_tls,
                 reader_tls=ClientTLS(
                     ca_file=ca_file,
-                    server_uri=HISTORY_SERVICE_URI,
+                    server_uri=HISTORY_INGRESS_URI,
                     cert_file=reader_cert,
                     key_file=reader_key,
                     client_uri=APP_URI,

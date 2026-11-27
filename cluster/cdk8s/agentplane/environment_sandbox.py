@@ -47,7 +47,7 @@ from agentplane.env.config import (
     PID1Environment,
     SVIDEndpoint,
 )
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
+from agentplane.net.peertls.config import HISTORY_INGRESS_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium, piraeus_storage
@@ -274,7 +274,7 @@ class EnvironmentSandboxTemplate(Construct):
             ingress=Endpoint(
                 target=history_service.service(self.env.namespace).authority,
                 svid=SVIDEndpoint(
-                    server_uri=HISTORY_SERVICE_URI, proxy_address=f"127.0.0.1:{sandbox_pod.SIDECAR_LISTEN_PORT}"
+                    server_uri=HISTORY_INGRESS_URI, proxy_address=f"127.0.0.1:{sandbox_pod.SIDECAR_LISTEN_PORT}"
                 ),
             ),
             model_config_target=PLATFORM_ROUTES_LISTEN_ADDRESS,

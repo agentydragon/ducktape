@@ -50,12 +50,12 @@ func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testi
 		t.Fatalf("LocalIdentity() = %q, %v; want %q", got, err, runnerURI)
 	}
 
-	gateway := ca.Issue(t, peertls.GatewayURI)
+	gateway := ca.Issue(t, peertls.RunnerGatewayURI)
 	clientCredentials, err := gateway.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := opened.ServerCredentials(peertls.GatewayURI)
+	serverCredentials, err := opened.ServerCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestWorkloadAPIConfigurationRequiresOneCanonicalUnixSocket(t *testing.T) {
 		Mode: peertls.MutualTLS,
 		TLS:  &peertls.Config{WorkloadAPISocket: "unix:///run/agentplane/workload.sock"},
 	}
-	if _, err := config.TLS.ServerCredentials(peertls.GatewayURI); err == nil || !strings.Contains(err.Error(), "Security.Open(ctx)") {
+	if _, err := config.TLS.ServerCredentials(peertls.RunnerGatewayURI); err == nil || !strings.Contains(err.Error(), "Security.Open(ctx)") {
 		t.Fatalf("file-only Config.ServerCredentials() error = %v, want explicit Open(ctx) error", err)
 	}
 }

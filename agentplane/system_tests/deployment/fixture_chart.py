@@ -72,13 +72,13 @@ from agentplane.net.peertls.config import (
     APP_URI,
     CENTRAL_SAMPLER_URI,
     EGRESS_PROXY_URI,
-    GATEWAY_SESSIONS_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     LLM_INGRESS_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    SESSIONS_URI,
     TLS,
 )
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -303,7 +303,7 @@ def app_props(
             policy_service_target=policy_controller.tls_service(NAMESPACE).authority,
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
             history_service_target=(history_service.service(NAMESPACE).authority),
-            history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
+            history_service_tls=workload_tls.service_client_tls(HISTORY_INGRESS_URI, client_uri=APP_URI),
             notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
             notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),
             listen_address="0.0.0.0:8080",
@@ -335,7 +335,7 @@ def app_props(
 
 def central_sampler_props(models: Sequence[Route]) -> CentralSamplerProps:
     return CentralSamplerProps(
-        admin_service_callers=(GATEWAY_SESSIONS_URI,),
+        admin_service_callers=(SESSIONS_URI,),
         actions=ActionsConfig(
             target=ACTIONS_SERVICE.authority,
             tls=TLS(

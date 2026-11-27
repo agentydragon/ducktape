@@ -15,11 +15,11 @@ from more_itertools import one
 from agentplane.env.runtime.harness import Harness
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
-    GATEWAY_SESSIONS_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     LLM_INGRESS_URI,
     POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
+    SESSIONS_URI,
 )
 from cluster.cdk8s.agentplane import (
     central_sampler,
@@ -69,7 +69,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         find_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"]
     )
     assert "database_url" not in config
-    assert config["service_callers"] == [GATEWAY_SESSIONS_URI]
+    assert config["service_callers"] == [SESSIONS_URI]
     assert "admin_service_callers" not in config
     assert config["health_listen"] == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
     assert config["listen_tls"] == {
@@ -97,7 +97,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
     for tls, server_uri in (
-        (config["history_tls"], HISTORY_SERVICE_URI),
+        (config["history_tls"], HISTORY_INGRESS_URI),
         (config["gateway_tls"], SANDBOX_CONTROLLER_URI),
         (llm_connection["tls"], LLM_INGRESS_URI),
     ):
@@ -128,7 +128,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert target["target"] == central_sampler.service(namespace).authority
     assert "token_file" not in target
     assert target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
-    assert target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
+    assert target["tls"]["client_uri"] == SESSIONS_URI
     for field in ("cert_file", "key_file", "ca_file"):
         assert target["tls"][field] == gateway["gateway_tls"][field]
     controller = config_map_yaml(staging_manifests, f"{sandbox_controller.NAME}-settings", "config.yaml")

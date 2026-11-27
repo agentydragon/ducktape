@@ -21,12 +21,12 @@ from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     CENTRAL_SAMPLER_URI,
-    GATEWAY_SESSIONS_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     LLM_INGRESS_URI,
     MCP_EDGE_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    SESSIONS_URI,
 )
 
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
@@ -376,7 +376,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rende
         "server_uri": SANDBOX_CONTROLLER_URI,
         "cert_file": str(sessions_tls_path / "tls.crt"),
         "key_file": str(sessions_tls_path / "tls.key"),
-        "client_uri": GATEWAY_SESSIONS_URI,
+        "client_uri": SESSIONS_URI,
     }
     assert not any(key.startswith("environment_") for key in sessions_config)
     assert sessions_config["rpc"]["listen_address"] == "0.0.0.0:8080"
@@ -452,7 +452,7 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rende
     history = history_service.service(fixture.namespace)
     assert runner_config["ingress"]["target"] == history.authority
     assert runner_config["ingress"]["svid"] == {
-        "server_uri": HISTORY_SERVICE_URI,
+        "server_uri": HISTORY_INGRESS_URI,
         "proxy_address": sidecar_settings["listen_address"],
     }
     runtime = next(
@@ -687,7 +687,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     assert _host_port(config["model_config_target"]) == guest_listener
     history = history_service.service(vm_fixture.namespace)
     assert config["ingress"]["target"] == history.authority
-    assert config["ingress"]["svid"]["server_uri"] == HISTORY_SERVICE_URI
+    assert config["ingress"]["svid"]["server_uri"] == HISTORY_INGRESS_URI
     assert _host_port(config["ingress"]["svid"]["proxy_address"]) == (
         "10.0.2.1",
         _host_port(relay["listen_address"])[1],
@@ -817,7 +817,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert sampler_target["target"] == central_sampler.service(NAMESPACE).authority
     assert "token_file" not in sampler_target
     assert sampler_target["tls"]["server_uri"] == CENTRAL_SAMPLER_URI
-    assert sampler_target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
+    assert sampler_target["tls"]["client_uri"] == SESSIONS_URI
     for field in ("cert_file", "key_file", "ca_file"):
         assert sampler_target["tls"][field] == gateway_config["gateway_tls"][field]
     sampler_certificate = _resource(docs, "Certificate", f"{central_sampler.NAME}-workload")["spec"]

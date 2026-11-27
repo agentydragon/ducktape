@@ -87,7 +87,7 @@ func TestSecurityMTLSMisconfigurationDoesNotFallBackToInsecure(t *testing.T) {
 	if _, err := security.ClientCredentials(runnerURI); err == nil {
 		t.Fatal("ClientCredentials accepted missing mTLS files")
 	}
-	if _, err := security.ServerCredentials(peertls.GatewayURI); err == nil {
+	if _, err := security.ServerCredentials(peertls.RunnerGatewayURI); err == nil {
 		t.Fatal("ServerCredentials accepted missing mTLS files")
 	}
 }
@@ -119,14 +119,14 @@ func TestSecurityMTLSAuthorizesExactVerifiedIdentity(t *testing.T) {
 	runnerURI := workloadURI(t, "pod-uid")
 	otherEnvironmentRuntimeURI := workloadURI(t, "other-pod-uid")
 	runnerTLS := ca.Issue(t, runnerURI)
-	gatewayTLS := ca.Issue(t, peertls.GatewayURI)
+	gatewayTLS := ca.Issue(t, peertls.RunnerGatewayURI)
 	runnerSecurity := peertls.Security{Mode: peertls.MutualTLS, TLS: &runnerTLS}
 	gatewaySecurity := peertls.Security{Mode: peertls.MutualTLS, TLS: &gatewayTLS}
 	clientCredentials, err := gatewaySecurity.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := runnerSecurity.ServerCredentials(peertls.GatewayURI)
+	serverCredentials, err := runnerSecurity.ServerCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestSecurityMTLSAuthorizesExactVerifiedIdentity(t *testing.T) {
 	if err := gatewaySecurity.AuthorizePeer(clientContext, runnerURI); err != nil {
 		t.Fatalf("client rejected verified Runner identity: %v", err)
 	}
-	if err := runnerSecurity.AuthorizePeer(serverContext, peertls.GatewayURI); err != nil {
+	if err := runnerSecurity.AuthorizePeer(serverContext, peertls.RunnerGatewayURI); err != nil {
 		t.Fatalf("server rejected verified Gateway identity: %v", err)
 	}
 	if err := gatewaySecurity.AuthorizePeer(clientContext, otherEnvironmentRuntimeURI); err == nil {

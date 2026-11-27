@@ -25,7 +25,7 @@ from agentplane.environments.testing.environment_service_process import (
 )
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
-from agentplane.net.peertls.config import APP_URI, CENTRAL_SAMPLER_URI, GATEWAY_RUNTIME_PROXY_URI
+from agentplane.net.peertls.config import APP_URI, CENTRAL_SAMPLER_URI, RUNTIME_PROXY_URI
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher.client import SandboxControlClient
@@ -273,7 +273,7 @@ class TestGatewayContinuity:
 
             # Real Runtime auth rejects stale values before Executor.StartProcess can create a process.
             runtime_client_tls = sibling_environment_service.issue_workload_tls(
-                GATEWAY_RUNTIME_PROXY_URI, tmp_path / "direct-runtime-proxy-client"
+                RUNTIME_PROXY_URI, tmp_path / "direct-runtime-proxy-client"
             )
             assert runtime_client_tls.cert_file is not None
             assert runtime_client_tls.key_file is not None

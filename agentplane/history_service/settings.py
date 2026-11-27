@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 from agentplane.eventblock.settings import EventBlockProfile
 from agentplane.identity.auth.delegation import ServiceDelegation
 from agentplane.identity.auth.listener import Listener
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI, PolicyServicePeer, ServiceSPIFFEID
+from agentplane.net.peertls.config import HISTORY_INGRESS_URI, PolicyServicePeer, ServiceSPIFFEID
 
 
 class IngressSettings(BaseModel):
@@ -91,5 +91,5 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def policy_service_as_history(self) -> Self:
-        self.policy_service.tls.validate_caller(None, HISTORY_SERVICE_URI)
+        self.policy_service.tls.validate_caller(None, HISTORY_INGRESS_URI)
         return self

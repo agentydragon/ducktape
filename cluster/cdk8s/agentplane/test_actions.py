@@ -17,7 +17,7 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
@@ -336,8 +336,8 @@ def test_staging_session_delegation_tools_and_peer_credentials(
     for peer_name, server_uri, target in [
         ("session_dispatcher", SESSION_DISPATCHER_URI, dispatcher.authority),
         ("session_delegation_dispatcher", SESSION_DISPATCHER_URI, dispatcher.authority),
-        ("history_service", HISTORY_SERVICE_URI, history.authority),
-        ("session_delegation_history", HISTORY_SERVICE_URI, history.authority),
+        ("history_service", HISTORY_INGRESS_URI, history.authority),
+        ("session_delegation_history", HISTORY_INGRESS_URI, history.authority),
     ]:
         peer = staging_settings[peer_name]
         assert peer["target"] == target

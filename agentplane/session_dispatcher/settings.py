@@ -15,9 +15,9 @@ from agentplane.identity.auth.delegation import ServiceDelegation
 from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
-    GATEWAY_SESSIONS_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    SESSIONS_URI,
     ClientTLS,
     PolicyServicePeer,
     ServiceSPIFFEID,
@@ -40,7 +40,7 @@ class CentralSamplerTarget(BaseModel):
         if self.tls is not None and self.tls.server_uri != CENTRAL_SAMPLER_URI:
             raise ValueError("central_sampler.tls.server_uri must identify the Central Sampler")
         if self.tls is not None:
-            self.tls.validate_caller(self.token_file, GATEWAY_SESSIONS_URI)
+            self.tls.validate_caller(self.token_file, SESSIONS_URI)
         elif self.token_file is None:
             raise ValueError("a bearer token file or service SVID is required")
         return self
@@ -124,8 +124,8 @@ class Settings(BaseModel):
     def validate_receiver_and_control_tls(self) -> Settings:
         if self.gateway_tls.server_uri not in {SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI}:
             raise ValueError("gateway_tls.server_uri must identify the Gateway or Environments Runtime proxy")
-        self.gateway_tls.validate_caller(self.runner_token_file, GATEWAY_SESSIONS_URI)
-        self.policy_service.tls.validate_caller(None, GATEWAY_SESSIONS_URI)
+        self.gateway_tls.validate_caller(self.runner_token_file, SESSIONS_URI)
+        self.policy_service.tls.validate_caller(None, SESSIONS_URI)
         return self
 
     @field_validator("kubernetes_client_qps")

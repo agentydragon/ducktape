@@ -11,7 +11,7 @@ import grpc
 from cryptography import x509
 
 from agentplane.env.runtime.control import environment_runtime_pb2
-from agentplane.net.peertls.config import GATEWAY_RUNTIME_PROXY_URI, TLS
+from agentplane.net.peertls.config import RUNTIME_PROXY_URI, TLS
 from agentplane.proto import environment_runtime_state_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -43,7 +43,7 @@ class _WatchStateInterceptor(grpc.aio.ServerInterceptor):
         async def watch_state(
             request: environment_runtime_pb2.WatchStateRequest, context: grpc.aio.ServicerContext
         ) -> AsyncIterator[environment_runtime_pb2.WatchStateResponse]:
-            if _proxy_peer_uri(context) != GATEWAY_RUNTIME_PROXY_URI:
+            if _proxy_peer_uri(context) != RUNTIME_PROXY_URI:
                 await context.abort(grpc.StatusCode.PERMISSION_DENIED, "peer is not the Runtime proxy")
             if not request.sandbox_uid or not request.incarnation_uid:
                 await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Sandbox and incarnation are required")

@@ -356,7 +356,7 @@ History reads. Those receivers enforce their own same-principal checks; the exis
 Managed Pod, VM and Firecracker CLIs also receive `AGENTPLANE_HISTORY_URL`, set to the shared local
 platform gRPC listener at `http://<local gateway>:3130`. Its History method route connects to
 `history-service.<namespace>.svc.cluster.local:8080` with TLS. The sidecar presents the Sandbox
-Workload SVID and verifies `HISTORY_SERVICE_URI`; the central proxy carries that TLS connection
+Workload SVID and verifies `HISTORY_INGRESS_URI`; the central proxy carries that TLS connection
 opaquely. History authorizes the read against the exact Identity name and UID in the SVID. This path
 uses no History bearer credential or projected audience token and adds no `reader_service_callers` grant.
 

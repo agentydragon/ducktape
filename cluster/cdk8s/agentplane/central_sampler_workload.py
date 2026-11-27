@@ -11,9 +11,9 @@ from constructs import Construct
 
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
-    GATEWAY_SESSIONS_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     SANDBOX_CONTROLLER_URI,
+    SESSIONS_URI,
     ServerTLSListener,
 )
 from agentplane.sampler.settings import Settings
@@ -78,14 +78,14 @@ class CentralSampler(Construct):
             actions=props.actions,
             models=dict(props.models),
             platform_instructions=platform_instructions(env, session_runtime=SessionRuntime.CENTRAL_SAMPLER),
-            service_callers=[GATEWAY_SESSIONS_URI],
+            service_callers=[SESSIONS_URI],
             admin_service_callers=list(props.admin_service_callers),
             code_mode_host=Path("/usr/local/bin/codex-code-mode-host"),
             # The sandbox exec-server resolves this binary through its normal PATH.
             executor_codex="codex",
             logs=Path(_LOGS_PATH),
             history_target=self.history_ingress.authority,
-            history_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=CENTRAL_SAMPLER_URI),
+            history_tls=workload_tls.service_client_tls(HISTORY_INGRESS_URI, client_uri=CENTRAL_SAMPLER_URI),
             gateway_target=environment_service.environments_service(namespace).authority,
             gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=CENTRAL_SAMPLER_URI),
             max_live_sessions=props.max_live_sessions,

@@ -463,7 +463,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testi
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Runtime proxy must not inherit Controller passive watch: %v", err)
 	}
-	legacy := environmentruntimepb.NewEnvironmentRuntimeClient(peers.dial(t, environmentruntimetransport.GatewayURI))
+	legacy := environmentruntimepb.NewEnvironmentRuntimeClient(peers.dial(t, environmentruntimetransport.RunnerGatewayURI))
 	if _, err := legacy.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("retired Gateway peer bypassed the Runtime TLS allowlist: %v", err)
 	}

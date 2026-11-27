@@ -200,7 +200,7 @@ async def run_gateway(
                 policy_service=policy_service,
                 kubeconfig=kubeconfig,
                 rpc=rpc_settings,
-                gateway_tls=environment_service.tls_for(runtime_transport.GATEWAY_SESSIONS_URI),
+                gateway_tls=environment_service.tls_for(runtime_transport.SESSIONS_URI),
                 runner_control_target_template=environment_service.target,
                 dispatcher_service_callers={runtime_transport.APP_URI},
             )

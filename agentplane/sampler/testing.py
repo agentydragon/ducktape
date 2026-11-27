@@ -18,7 +18,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
-from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, GATEWAY_SESSIONS_URI, ClientTLS, ServerTLSListener
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, SESSIONS_URI, ClientTLS, ServerTLSListener
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2
 from agentplane.sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
@@ -107,8 +107,8 @@ def settings(
             ),
         },
         platform_instructions="Fixture Agentplane guidance.",
-        service_callers=[GATEWAY_SESSIONS_URI],
-        admin_service_callers=[GATEWAY_SESSIONS_URI],
+        service_callers=[SESSIONS_URI],
+        admin_service_callers=[SESSIONS_URI],
         code_mode_host=Path(host),
         executor_codex=codex_binary,
         logs=logs,
@@ -163,7 +163,7 @@ async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[Sampler
         server_directory.mkdir()
         client_directory.mkdir()
         server_cert, server_key = issue_workload_leaf(ca, CENTRAL_SAMPLER_URI, server_directory, dns_name="localhost")
-        client_cert, client_key = issue_workload_leaf(ca, GATEWAY_SESSIONS_URI, client_directory, dns_name="localhost")
+        client_cert, client_key = issue_workload_leaf(ca, SESSIONS_URI, client_directory, dns_name="localhost")
         client_credentials = grpc.ssl_channel_credentials(
             root_certificates=ca.cert_pem,
             private_key=client_key.read_bytes(),
@@ -184,7 +184,7 @@ async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[Sampler
             "key_file": str(server_key),
             "client_ca_file": str(ca_file),
         }
-        values["service_callers"] = [GATEWAY_SESSIONS_URI]
+        values["service_callers"] = [SESSIONS_URI]
         for index, (connection, connection_config) in enumerate(config.connections.items()):
             credential = connection_config.auth.credential
             if credential is not None:

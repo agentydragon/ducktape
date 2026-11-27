@@ -28,7 +28,7 @@ func (c ClientTLS) Validate() error {
 		return errors.New("client TLS requires an absolute ca_file")
 	}
 	id, err := spiffeid.FromString(c.ServerURI)
-	if err != nil || !id.MemberOf(trustDomain) || !(isWorkloadServiceURI(c.ServerURI) || c.ServerURI == GatewayURI) {
+	if err != nil || !id.MemberOf(trustDomain) || !isServerURI(c.ServerURI) {
 		return errors.New("client TLS server_uri must name a supported agentplane service")
 	}
 	if c.UsesSVID() {

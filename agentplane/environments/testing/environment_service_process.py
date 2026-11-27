@@ -17,9 +17,9 @@ from python.runfiles import Runfiles
 from agentplane.grpc.calls import ServiceError
 from agentplane.net.peertls.config import (
     APP_URI,
-    GATEWAY_RUNTIME_PROXY_URI,
-    GATEWAY_SESSIONS_URI,
+    RUNTIME_PROXY_URI,
     SANDBOX_CONTROLLER_URI,
+    SESSIONS_URI,
     TLS,
     ClientTLS,
 )
@@ -136,7 +136,7 @@ async def run_environment_service(
         cert, key = issue_workload_leaf(ca, SANDBOX_CONTROLLER_URI, server_dir, dns_name="localhost")
 
         service_callers = (caller_uri,)
-        runtime_proxy_readers = (APP_URI, GATEWAY_SESSIONS_URI)
+        runtime_proxy_readers = (APP_URI, SESSIONS_URI)
         runtime_callers = tuple(
             dict.fromkeys(
                 (
@@ -144,7 +144,7 @@ async def run_environment_service(
                     *runtime_proxy_readers,
                     *runtime_proxy_controller_callers,
                     *runtime_proxy_executor_callers,
-                    GATEWAY_RUNTIME_PROXY_URI,
+                    RUNTIME_PROXY_URI,
                     SANDBOX_CONTROLLER_URI,
                 )
             )
@@ -155,7 +155,7 @@ async def run_environment_service(
             client_dir.mkdir()
             service_certificates[uri] = issue_workload_leaf(ca, uri, client_dir)
 
-        runtime_proxy_cert, runtime_proxy_key = service_certificates[GATEWAY_RUNTIME_PROXY_URI]
+        runtime_proxy_cert, runtime_proxy_key = service_certificates[RUNTIME_PROXY_URI]
         credentials = grpc.ssl_channel_credentials(root_certificates=ca.cert_pem)
         environment = {
             **os.environ,
@@ -170,7 +170,7 @@ async def run_environment_service(
             "ENVIRONMENTS_TEST_RUNTIME_PROXY_KEY": str(runtime_proxy_key),
             "ENVIRONMENTS_TEST_RUNTIME_PROXY_CA": str(ca_file),
             "ENVIRONMENTS_TEST_RUNTIME_READERS": ",".join(runtime_proxy_readers),
-            "ENVIRONMENTS_TEST_RUNTIME_SESSION_CALLERS": GATEWAY_SESSIONS_URI,
+            "ENVIRONMENTS_TEST_RUNTIME_SESSION_CALLERS": SESSIONS_URI,
             "ENVIRONMENTS_TEST_RUNTIME_CONTROLLER_CALLERS": ",".join(runtime_proxy_controller_callers),
             "ENVIRONMENTS_TEST_RUNTIME_EXECUTOR_CALLERS": ",".join(runtime_proxy_executor_callers),
         }

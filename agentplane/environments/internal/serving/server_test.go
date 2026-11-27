@@ -666,7 +666,7 @@ func callContext(t *testing.T) (context.Context, context.CancelFunc) {
 
 func TestRuntimeProxyRejectsBindingObserverCredentials(t *testing.T) {
 	ca := peertlstesting.NewCA(t)
-	for _, uri := range []string{peertls.RuntimeProxyURI, peertls.SandboxControllerURI, peertls.GatewayURI} {
+	for _, uri := range []string{peertls.RuntimeProxyURI, peertls.SandboxControllerURI, peertls.RunnerGatewayURI} {
 		t.Run(uri, func(t *testing.T) {
 			leaf := ca.Issue(t, uri)
 			c := RuntimeProxyConfig{RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &leaf}}

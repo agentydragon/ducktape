@@ -31,13 +31,13 @@ func TestGatewayClientAuthenticatesEnvironmentRuntimeServer(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	runnerURI := workloadURI(t, "pod-uid")
 	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
-	gateway := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth)
+	gateway := ca.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageClientAuth)
 
 	clientCredentials, err := gateway.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
+	serverCredentials, err := runner.ServerCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,13 +48,13 @@ func TestGatewayClientAuthenticatesEnvironmentRuntimeServer(t *testing.T) {
 	if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: clientInfo})); err != nil || got != runnerURI {
 		t.Fatalf("client saw peer identity %q, error %v", got, err)
 	}
-	if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != peertls.GatewayURI {
+	if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != peertls.RunnerGatewayURI {
 		t.Fatalf("server saw peer identity %q, error %v", got, err)
 	}
 	if got, err := runner.LocalIdentity(x509.ExtKeyUsageServerAuth); err != nil || got != runnerURI {
 		t.Fatalf("local identity is %q, error %v", got, err)
 	}
-	if got, err := gateway.LocalIdentity(x509.ExtKeyUsageClientAuth); err != nil || got != peertls.GatewayURI {
+	if got, err := gateway.LocalIdentity(x509.ExtKeyUsageClientAuth); err != nil || got != peertls.RunnerGatewayURI {
 		t.Fatalf("Gateway local identity is %q, error %v", got, err)
 	}
 }
@@ -88,10 +88,10 @@ func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 	if _, err := peertls.PeerIdentityFromTLSState(serverState, x509.ExtKeyUsageServerAuth); err == nil {
 		t.Fatal("peer helper accepted a certificate without the requested EKU")
 	}
-	if _, err := clientConfig.ClientTLSConfig(peertls.GatewayURI); err == nil {
+	if _, err := clientConfig.ClientTLSConfig(peertls.RunnerGatewayURI); err == nil {
 		t.Fatal("client config accepted a non-egress peer URI")
 	}
-	if _, err := serverConfig.WorkloadServerTLSConfig(peertls.GatewayURI); err == nil {
+	if _, err := serverConfig.WorkloadServerTLSConfig(peertls.RunnerGatewayURI); err == nil {
 		t.Fatal("server config accepted a non-egress local URI")
 	}
 
@@ -99,7 +99,7 @@ func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 	if _, err := wrongEKU.ClientTLSConfig(peertls.EgressProxyURI); err == nil {
 		t.Fatal("client config accepted local certificate without clientAuth")
 	}
-	wrongIdentity := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth)
+	wrongIdentity := ca.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageClientAuth)
 	wrongClientTLS, err := wrongIdentity.ClientTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
 	for name, bad := range map[string]peertls.Config{
 		"forged":         otherCA.IssueWithUsage(t, uri, x509.ExtKeyUsageClientAuth),
 		"wrong EKU":      ca.IssueWithUsage(t, uri, x509.ExtKeyUsageServerAuth),
-		"wrong identity": ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth),
+		"wrong identity": ca.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageClientAuth),
 		"expired":        ca.IssueWithValidity(t, uri, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour), x509.ExtKeyUsageClientAuth),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -319,7 +319,7 @@ func TestCredentialsRejectWrongPeersAndMissingEKU(t *testing.T) {
 	otherCA := environmentruntimetransporttesting.NewCA(t)
 	runnerURI := workloadURI(t, "pod-uid")
 	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
-	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
+	serverCredentials, err := runner.ServerCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,9 +327,9 @@ func TestCredentialsRejectWrongPeersAndMissingEKU(t *testing.T) {
 		client peertls.Config
 		pinned string
 	}{
-		"client pins another runner":     {ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth), workloadURI(t, "other-pod-uid")},
+		"client pins another runner":     {ca.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageClientAuth), workloadURI(t, "other-pod-uid")},
 		"another runner as the client":   {ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth), runnerURI},
-		"Gateway from an untrusted root": {otherCA.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth), runnerURI},
+		"Gateway from an untrusted root": {otherCA.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageClientAuth), runnerURI},
 	} {
 		t.Run(name, func(t *testing.T) {
 			clientCredentials, err := tc.client.ClientCredentials(tc.pinned)
@@ -341,7 +341,7 @@ func TestCredentialsRejectWrongPeersAndMissingEKU(t *testing.T) {
 			}
 		})
 	}
-	if _, err := runner.ClientCredentials(peertls.GatewayURI); err == nil {
+	if _, err := runner.ClientCredentials(peertls.RunnerGatewayURI); err == nil {
 		t.Fatal("client credentials accepted a certificate without clientAuth EKU")
 	}
 }
@@ -355,9 +355,9 @@ func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 	runnerURI := workloadURI(t, "credential-id")
 	runner := workload.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
 	runner.CAFile = root.RootFile
-	gateway := workload.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth)
+	gateway := workload.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageClientAuth)
 	gateway.CAFile = root.RootFile
-	impostor := root.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth)
+	impostor := root.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageClientAuth)
 
 	clientOf := func(config peertls.Config) credentials.TransportCredentials {
 		creds, err := config.ClientCredentials(runnerURI)
@@ -368,7 +368,7 @@ func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 	}
 	rootOnly := runner
 	rootOnly.ClientCAFile = ""
-	rootOnlyServer, err := rootOnly.ServerCredentials(peertls.GatewayURI)
+	rootOnlyServer, err := rootOnly.ServerCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 	}
 
 	runner.ClientCAFile = workload.RootFile
-	fileServer, err := runner.ServerCredentials(peertls.GatewayURI)
+	fileServer, err := runner.ServerCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer opened.Close()
-	openedServer, err := opened.ServerCredentials(peertls.GatewayURI)
+	openedServer, err := opened.ServerCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if _, serverInfo, err := handshake(t, clientOf(gateway), server); err != nil {
 				t.Fatalf("workload CA Gateway was refused: %v", err)
-			} else if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != peertls.GatewayURI {
+			} else if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != peertls.RunnerGatewayURI {
 				t.Fatalf("server saw peer identity %q, error %v", got, err)
 			}
 			if _, _, err := handshake(t, clientOf(impostor), server); err == nil {
@@ -444,13 +444,13 @@ func TestClientsVerifyServerSVIDsAgainstTheWorkloadCAAlone(t *testing.T) {
 
 	// The Gateway dialing a runner: the same file also verifies the Gateway's own chain.
 	runnerURI := workloadURI(t, "credential-id")
-	gateway, err := workload.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth).ClientCredentials(runnerURI)
+	gateway, err := workload.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageClientAuth).ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
 	runnerServer := func(runner peertls.Config) credentials.TransportCredentials {
 		runner.ClientCAFile = workload.RootFile
-		server, err := runner.ServerCredentials(peertls.GatewayURI)
+		server, err := runner.ServerCredentials(peertls.RunnerGatewayURI)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -476,13 +476,13 @@ func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 		x509.ExtKeyUsageClientAuth,
 		x509.ExtKeyUsageServerAuth,
 	)
-	if _, err := expiredLeaf.ServerCredentials(peertls.GatewayURI); err == nil {
+	if _, err := expiredLeaf.ServerCredentials(peertls.RunnerGatewayURI); err == nil {
 		t.Fatal("server credentials accepted an expired leaf certificate")
 	}
 
 	expiredCA := environmentruntimetransporttesting.NewCAWithValidity(t, now.Add(-2*time.Hour), now.Add(-time.Hour))
 	runner := expiredCA.Issue(t, runnerURI)
-	if _, err := runner.ServerCredentials(peertls.GatewayURI); err == nil {
+	if _, err := runner.ServerCredentials(peertls.RunnerGatewayURI); err == nil {
 		t.Fatal("server credentials accepted an expired CA certificate")
 	}
 }
@@ -537,12 +537,12 @@ func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	newCA := environmentruntimetransporttesting.NewCA(t)
 	runnerURI := workloadURI(t, "pod-uid")
 	runner := oldCA.Issue(t, runnerURI)
-	gateway := oldCA.Issue(t, peertls.GatewayURI)
+	gateway := oldCA.Issue(t, peertls.RunnerGatewayURI)
 	clientCredentials, err := gateway.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
+	serverCredentials, err := runner.ServerCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,8 +584,8 @@ func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
 	now := time.Now().UTC()
 	short := ca.IssueWithValidity(t, runnerURI, now.Add(-time.Minute), now.Add(4*time.Second), x509.ExtKeyUsageClientAuth)
 	rotated := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth)
-	gateway := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageServerAuth)
-	clientCredentials, err := short.ClientCredentials(peertls.GatewayURI)
+	gateway := ca.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageServerAuth)
+	clientCredentials, err := short.ClientCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -609,7 +609,7 @@ func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testin
 	now := time.Now().UTC()
 	short := ca.IssueWithValidity(t, runnerURI, now.Add(-time.Minute), now.Add(4*time.Second), x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth)
 	rotated := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth)
-	gateway := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageServerAuth)
+	gateway := ca.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageServerAuth)
 	rootDER := readCertificateDER(t, ca.RootFile)
 	workloadServer := newWorkloadAPITestServer(t, workloadX509SVID(t, short, runnerURI, rootDER), rootDER)
 	opened, err := (peertls.Security{
@@ -620,7 +620,7 @@ func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testin
 		t.Fatal(err)
 	}
 	defer opened.Close()
-	clientCredentials, err := opened.ClientCredentials(peertls.GatewayURI)
+	clientCredentials, err := opened.ClientCredentials(peertls.RunnerGatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -899,14 +899,14 @@ func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
 					clientEnd = now.Add(5 * time.Second)
 				}
 				clientConfig := ca.IssueWithValidity(t, clientURI, now.Add(-time.Minute), clientEnd, x509.ExtKeyUsageClientAuth)
-				serverConfig := ca.IssueWithValidity(t, peertls.GatewayURI, now.Add(-time.Minute), serverEnd, x509.ExtKeyUsageServerAuth)
+				serverConfig := ca.IssueWithValidity(t, peertls.RunnerGatewayURI, now.Add(-time.Minute), serverEnd, x509.ExtKeyUsageServerAuth)
 				var clientCreds, serverCreds credentials.TransportCredentials
 				var err error
 				if serverEnforces {
 					clientCreds = standardTestCredentials(t, clientConfig, false)
 					serverCreds, err = serverConfig.ServerCredentials(clientURI)
 				} else {
-					clientCreds, err = clientConfig.ClientCredentials(peertls.GatewayURI)
+					clientCreds, err = clientConfig.ClientCredentials(peertls.RunnerGatewayURI)
 					serverCreds = standardTestCredentials(t, serverConfig, true)
 				}
 				if err != nil {
@@ -994,7 +994,7 @@ func TestOpenedServerCredentialsAdmitOnlyExplicitClientIdentities(t *testing.T) 
 	if _, err := opened.ServerCredentials(); err == nil {
 		t.Fatal("ServerCredentials accepted an empty client identity list")
 	}
-	server, err := opened.ServerCredentials(peertls.GatewayURI, peertls.SandboxControllerURI)
+	server, err := opened.ServerCredentials(peertls.RunnerGatewayURI, peertls.SandboxControllerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1002,7 +1002,7 @@ func TestOpenedServerCredentialsAdmitOnlyExplicitClientIdentities(t *testing.T) 
 		identity string
 		accepted bool
 	}{
-		{identity: peertls.GatewayURI, accepted: true},
+		{identity: peertls.RunnerGatewayURI, accepted: true},
 		{identity: peertls.SandboxControllerURI, accepted: true},
 		{identity: peertls.HistoryIngressURI},
 		{identity: runnerURI},

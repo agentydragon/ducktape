@@ -14,10 +14,10 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    GATEWAY_SESSIONS_URI,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    SESSIONS_URI,
 )
 from agentplane.session_dispatcher.settings import Settings
 from cluster.cdk8s.agentplane import (
@@ -58,12 +58,12 @@ def test_dispatcher_serves_and_dials_with_its_respective_identities(
     sampler = settings["central_sampler"]["tls"]
     assert gateway["server_uri"] == SANDBOX_CONTROLLER_URI
     assert sampler["server_uri"] == CENTRAL_SAMPLER_URI
-    assert gateway["client_uri"] == sampler["client_uri"] == GATEWAY_SESSIONS_URI
+    assert gateway["client_uri"] == sampler["client_uri"] == SESSIONS_URI
     for field in ("cert_file", "key_file", "ca_file"):
         assert sampler[field] == gateway[field]
     assert auth["ca_file"] == gateway["ca_file"]
 
-    for tls, expected_uri in ((rpc["tls"], SESSION_DISPATCHER_URI), (gateway, GATEWAY_SESSIONS_URI)):
+    for tls, expected_uri in ((rpc["tls"], SESSION_DISPATCHER_URI), (gateway, SESSIONS_URI)):
         for field, key in (("cert_file", "tls.crt"), ("key_file", "tls.key")):
             path = PurePosixPath(tls[field])
             secret = mounts[path.parent]["secret"]

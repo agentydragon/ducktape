@@ -1,7 +1,21 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
+
+# `config.py` holds the service-identity roster; Go gets it generated.
+genrule(
+    name = "service_identities_go",
+    outs = ["service_identities.go"],
+    cmd = "$(location :render_go_roster_bin) > $@",
+    tools = [":render_go_roster_bin"],
+)
+
+py_binary(
+    name = "render_go_roster_bin",
+    main_module = "agentplane.net.peertls.render_go_roster",
+    deps = [":render_go_roster"],
+)
 
 go_library(
     name = "peertls",
@@ -13,6 +27,7 @@ go_library(
         "http_server_expiry.go",
         "open.go",
         "security.go",
+        "service_identities.go",
         "workload_source.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/net/peertls",
@@ -77,4 +92,10 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "render_go_roster",
+    srcs = ["render_go_roster.py"],
+    deps = [":config"],
 )

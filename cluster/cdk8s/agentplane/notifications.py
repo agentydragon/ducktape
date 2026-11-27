@@ -21,7 +21,7 @@ from agentplane.crd_group import GROUP
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
@@ -138,7 +138,7 @@ class Notifications(Construct):
             ),
             history_service=HistoryServiceSettings(
                 target=history.authority,
-                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=NOTIFICATIONS_URI),
+                tls=workload_tls.service_client_tls(HISTORY_INGRESS_URI, client_uri=NOTIFICATIONS_URI),
             ),
             session_dispatcher=SessionDispatcherSettings(
                 target=dispatcher.authority,

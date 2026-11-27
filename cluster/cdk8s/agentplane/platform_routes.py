@@ -24,7 +24,7 @@ from agentplane.egress.platform_routes import (
 )
 from agentplane.net.peertls.config import (
     EGRESS_PROXY_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     LLM_INGRESS_URI,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
@@ -74,7 +74,7 @@ def history_grpc(namespace: str) -> Route:
     return Route(
         "history",
         history_service.service(namespace),
-        TLSConnectRouteTransport(server_uri=HISTORY_SERVICE_URI),
+        TLSConnectRouteTransport(server_uri=HISTORY_INGRESS_URI),
         ("/agentplane.history_service.HistoryService/",),
     )
 

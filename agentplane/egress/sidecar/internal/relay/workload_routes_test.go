@@ -109,7 +109,7 @@ func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) 
 		t.Fatal(err)
 	}
 	var calls atomic.Int32
-	wrongService := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageServerAuth)
+	wrongService := ca.IssueWithUsage(t, peertls.RunnerGatewayURI, x509.ExtKeyUsageServerAuth)
 	pair, err := tls.LoadX509KeyPair(wrongService.CertFile, wrongService.KeyFile)
 	if err != nil {
 		t.Fatal(err)

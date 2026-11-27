@@ -35,7 +35,7 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
@@ -400,7 +400,7 @@ class Actions(Construct):
             ServicePeer(
                 target=self.history.authority,
                 request_timeout_s=timeout_seconds,
-                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
+                tls=workload_tls.service_client_tls(HISTORY_INGRESS_URI, client_uri=ACTIONS_URI),
             ),
         )
 

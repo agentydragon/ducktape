@@ -7,14 +7,14 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.history_service.settings import Settings
-from agentplane.net.peertls.config import APP_URI, HISTORY_SERVICE_URI, POLICY_CONTROLLER_URI
+from agentplane.net.peertls.config import APP_URI, HISTORY_INGRESS_URI, POLICY_CONTROLLER_URI
 
 _POLICY_SERVICE_TLS = {
     "ca_file": "/test/workload-ca.crt",
     "server_uri": POLICY_CONTROLLER_URI,
     "cert_file": "/test/history.crt",
     "key_file": "/test/history.key",
-    "client_uri": HISTORY_SERVICE_URI,
+    "client_uri": HISTORY_INGRESS_URI,
 }
 
 

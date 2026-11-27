@@ -12,7 +12,7 @@ import (
 
 func TestClientTLSValidatesSupportedServerURIs(t *testing.T) {
 	for _, uri := range []string{
-		peertls.GatewayURI,
+		peertls.RunnerGatewayURI,
 		peertls.EgressProxyURI,
 		peertls.HistoryIngressURI,
 		peertls.NotificationsURI,

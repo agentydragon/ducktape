@@ -9,7 +9,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 from agentplane.identity.auth.listener import Listener, SPIFFEAuth
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     NOTIFICATIONS_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
@@ -126,7 +126,7 @@ class HistoryServiceSettings(BaseModel):
 
     @model_validator(mode="after")
     def caller_authentication(self) -> Self:
-        validate_outbound_caller(self.tls, self.token_file, (HISTORY_SERVICE_URI,))
+        validate_outbound_caller(self.tls, self.token_file, (HISTORY_INGRESS_URI,))
         return self
 
 

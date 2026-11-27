@@ -14,7 +14,7 @@ from agentplane.egress.settings import Settings as EgressSettings
 from agentplane.net.peertls.config import (
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     LLM_INGRESS_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
@@ -269,7 +269,7 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
     for route in history_configured:
         assert route["service_prefixes"] == ["/agentplane.history_service.HistoryService/"]
         assert route["upstream"] == history.authority
-        assert route["transport"] == {"mode": "tls_connect", "server_uri": HISTORY_SERVICE_URI}
+        assert route["transport"] == {"mode": "tls_connect", "server_uri": HISTORY_INGRESS_URI}
 
     assert environments_configured
     for route in environments_configured:

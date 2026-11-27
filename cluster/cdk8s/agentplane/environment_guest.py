@@ -18,7 +18,7 @@ from agentplane.env.config import (
     SVIDEndpoint,
     SystemdEnvironment,
 )
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
+from agentplane.net.peertls.config import HISTORY_INGRESS_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s.agentplane import history_service, llm_ingress, platform_routes, sandbox_pod, telemetry
@@ -83,7 +83,7 @@ def guest_config_data(
         ingress=Endpoint(
             target=history_service.service(namespace).authority,
             svid=SVIDEndpoint(
-                server_uri=HISTORY_SERVICE_URI, proxy_address=guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)
+                server_uri=HISTORY_INGRESS_URI, proxy_address=guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)
             ),
         ),
         model_config_target=guest_address(PLATFORM_ROUTES_PORT),

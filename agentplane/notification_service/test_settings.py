@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
-    HISTORY_SERVICE_URI,
+    HISTORY_INGRESS_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
@@ -73,7 +73,7 @@ def test_outbound_service_svid_authentication_needs_no_token_file() -> None:
         }
 
     values["actions"] = {"url": "http://actions", "tls": client_tls(ACTIONS_URI)}
-    values["history_service"] = {"target": "history:8080", "tls": client_tls(HISTORY_SERVICE_URI)}
+    values["history_service"] = {"target": "history:8080", "tls": client_tls(HISTORY_INGRESS_URI)}
     values["session_dispatcher"] = {"target": "dispatcher:8080", "tls": client_tls(SESSION_DISPATCHER_URI)}
 
     settings = Settings.model_validate(values)
@@ -143,7 +143,7 @@ def test_outbound_service_svid_authentication_rejects_mixed_or_wrong_callers() -
     server_only_values = static_values()
     server_only_values["history_service"] = {
         "target": "history:8080",
-        "tls": {"ca_file": "/trust/agentplane.pem", "server_uri": HISTORY_SERVICE_URI},
+        "tls": {"ca_file": "/trust/agentplane.pem", "server_uri": HISTORY_INGRESS_URI},
     }
     with pytest.raises(ValidationError):
         Settings.model_validate(server_only_values)
