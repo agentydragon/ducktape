@@ -204,7 +204,7 @@ private theorem alloc_field (previous : Fields) (k v : String) :
     unfold createData defineOwn
     rw [M.bind_assoc, bind_of_ok hg]
     have harray : (literalRecord previous).array = false := rfl
-    simp only [harray]
+    simp [ownIndexWrite, harray, defineOwnProps]
     have hl : (literalRecord previous).props.lookup (PropertyKey.str k) = (previous.reverse.lookup k).map literalDataProperty :=
       lookup_literalProperties previous k
     rw [hl]

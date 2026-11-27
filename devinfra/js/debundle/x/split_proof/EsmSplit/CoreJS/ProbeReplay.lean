@@ -666,7 +666,7 @@ private theorem replay_defineOwn {source target : World} (addr : Addr) (key : Pr
   by_cases frozen : obj.frozen && (obj.props.lookup key).isNone
   · simp [frozen]
     exact replay_throwErr .type "cannot add property to a frozen object"
-  · by_cases array : obj.array && !obj.frozen && key.string?.isSome
+  · by_cases array : (ownIndexWrite obj key).isNone
     · simp [frozen, array]
       exact replay_unknown "a property is defined on an array"
     · simp [frozen, array]
@@ -676,7 +676,7 @@ private theorem replay_defineOwn {source target : World} (addr : Addr) (key : Pr
       | none => exact replay_throwErr .type s!"cannot redefine property: {key}"
       | some property =>
         apply replay_bind (replay_modifyObj addr fun current =>
-          { current with props := setOwn current.props key property })
+          { current with props := defineOwnProps ((ownIndexWrite obj key).getD none) current key property })
         intro _
         exact replay_pure ()
 

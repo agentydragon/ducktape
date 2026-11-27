@@ -495,6 +495,17 @@ private theorem setOwn_nodes (o : Obj) (k : PropertyKey) (p : Property) :
   · exact Or.inl (Or.inr h)
 
 
+private theorem defineOwnProps_nodes (growth : Option Nat) (o : Obj) (k : PropertyKey) (p : Property) :
+    ∀ node ∈ ({ o with props := defineOwnProps growth o k p }).nodes, node ∈ o.nodes ∨ node ∈ p.nodes := by
+  intro node edge
+  cases growth with
+  | none => exact setOwn_nodes o k p node edge
+  | some len =>
+    rcases setOwn_nodes { o with props := setOwn o.props k p } (.str "length")
+      (.data (.num (Float.ofNat len)) true false false) node edge with old | impossible
+    · exact setOwn_nodes o k p node old
+    · simp [Property.nodes, Val.nodes] at impossible
+
 private theorem reachFrame_applyDesc {r R cells A} (old : Option Property) (d : Desc)
     (safe : SafeDesc A d) (oldSafe : ∀ p, p ∈ old → ∀ node ∈ p.nodes, A node) :
     ReachFrame r R cells A (fun result => ∀ p, p ∈ result → ∀ node ∈ p.nodes, A node)
@@ -525,7 +536,7 @@ theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : 
     | none => exact reachFrame_throwErr r R cells A _ _ _
     | some p =>
       exact reachFrame_modifyObj away a ha _ fun o node edge =>
-        (setOwn_nodes o key p node edge).imp id (guard p rfl node)
+        (defineOwnProps_nodes _ o key p node edge).imp id (guard p rfl node)
 
 private theorem reachFrame_setValue {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
     (key : PropertyKey) (value : Val) (safe : SafeVal A value) :
