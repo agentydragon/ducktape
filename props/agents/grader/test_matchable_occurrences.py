@@ -11,10 +11,9 @@ from __future__ import annotations
 import pytest_bazel
 from sqlalchemy import text
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:runs
-pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
+pytest_plugins = ("props.testing.fixtures.db", "props.testing.fixtures.runs")
 
 
 class TestMatchableOccurrences:

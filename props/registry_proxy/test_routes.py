@@ -32,9 +32,8 @@ from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, FAKE_CRITIC_DIGEST
 from testing.asgi import serve_app_in_loop
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("props.testing.fixtures.db",)
 
 DOCKER_ACCEPT_TYPES = [
     "application/vnd.docker.distribution.manifest.v2+json",

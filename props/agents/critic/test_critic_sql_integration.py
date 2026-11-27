@@ -18,10 +18,9 @@ from props.db.models import AgentRunStatus, ReportedIssue, ReportedIssueOccurren
 from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:runs
-pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
+pytest_plugins = ("props.testing.fixtures.db", "props.testing.fixtures.runs")
 
 
 async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, temp_engine, db: Database):

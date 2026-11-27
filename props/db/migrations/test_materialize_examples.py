@@ -13,9 +13,8 @@ from sqlalchemy import Engine, create_engine, text
 from props.db.config import DatabaseConfig
 from testing.postgres import DatabaseNames, create_temporary_database
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("props.testing.fixtures.db",)
 
 
 @pytest.fixture

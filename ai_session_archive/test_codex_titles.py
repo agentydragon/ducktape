@@ -1,4 +1,3 @@
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 """Codex names from captured metadata, including later renames and ambiguous IDs."""
 
@@ -20,7 +19,7 @@ from ai_session_archive.restic import ResticCommandError
 from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import backup, new_ingestor, new_repository
 
-pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ("ai_session_archive.testing",)
 
 
 def _index_record(title: str, *, timestamp: str = "2026-01-01T00:00:00Z") -> str:

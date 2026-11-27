@@ -1,4 +1,3 @@
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -18,7 +17,7 @@ from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository
 from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import backup, new_ingestor, new_repository
 
-pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ("ai_session_archive.testing",)
 
 
 def test_postgres_file_transaction_rolls_back_and_retries(tmp_path: Path, postgres_engine: Engine) -> None:

@@ -17,13 +17,11 @@ from props.testing.fixtures.runs import (
 )
 from props.testing.models import DEFAULT_TEST_MODEL
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:ground_truth
 # gazelle:include_dep //props/testing/fixtures:runs
 # gazelle:include_dep //props/testing/fixtures:scopes
 pytest_plugins = (
-    "testing.postgres_fixtures",
     "props.testing.fixtures.db",
     "props.testing.fixtures.ground_truth",
     "props.testing.fixtures.runs",

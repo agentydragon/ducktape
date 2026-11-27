@@ -17,6 +17,5 @@ py_library(
         "//props/testing/fixtures:e2e_infra",
         "//props/testing/fixtures:runs",
         "//props/testing/fixtures:scopes",
-        "//testing:postgres_fixtures",
     ],
 )

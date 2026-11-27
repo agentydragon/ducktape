@@ -15,6 +15,9 @@ from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.restic import ResticRepository, find_pinned_restic_binary
 from ai_session_archive.source_paths import HarnessRoot
 
+# gazelle:include_dep //testing:postgres_fixtures
+pytest_plugins = ("testing.postgres_fixtures",)
+
 
 @pytest.fixture
 def postgres_engine(empty_postgres_url: str) -> Iterator[Engine]:

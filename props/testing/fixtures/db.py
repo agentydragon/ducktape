@@ -22,6 +22,9 @@ from props.db.database import Database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 from testing.postgres import DatabaseNames, PostgresDatabaseTemplate
+from testing.postgres_fixtures import database_names, postgres_container, postgres_image
+
+__all__ = ["database_names", "postgres_container", "postgres_image"]
 
 
 def _test_model_config() -> PropsConfig:

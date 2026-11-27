@@ -1,4 +1,3 @@
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 """Title projection preserves physical-file ambiguity and index-only gating."""
 
@@ -15,7 +14,7 @@ from ai_session_archive.restic import ResticRepository
 from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import new_ingestor
 
-pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ("ai_session_archive.testing",)
 
 
 def test_projection_preserves_paths_and_index_only_ambiguity(postgres_engine: Engine) -> None:

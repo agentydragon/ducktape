@@ -29,6 +29,7 @@ py_library(
         "//props/db/sync",
         "//props/db/sync:model_metadata",
         "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",

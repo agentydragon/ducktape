@@ -18,9 +18,8 @@ from props.testing.examples import TRAIN_EXAMPLE
 from props.testing.fixtures.runs import make_fake_critic_run, make_llm_request
 from props.testing.models import BUDGET_TEST_MODEL
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("props.testing.fixtures.db",)
 
 
 @pytest.mark.parametrize("budget_usd", [10.0, 0.0], ids=["positive-budget", "zero-budget"])
