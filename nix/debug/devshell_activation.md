@@ -93,7 +93,9 @@ Our flake's inputs are all remote (`github:`), so #837's temp copy covers them. 
 
 ### E. Fewer misses
 
-- Move `skills` from the devshell to home-manager (it installs skills, not a dev tool); most pin churn is `skill-*`.
+- Drop `skills` from the devshell; most pin churn is `skill-*`. Cheap, owner OK with it (draft: #20544): only the `devtools` profile reads
+  `share/claude-hooks/skills` (`web_setup.sh` profile mode, Haku `env_setup.sh` via `agent-haku`); local hosts and claude-web HM use
+  `nix/home/skills.nix`. Also stops the devshell reading `skills/skills_registry.json`.
 - Narrow `watch_file`s to what the devshell reads.
 - `bbr`/`bbapi`/`claude-hook` bumps still miss. Combine with any of B–D.
 
