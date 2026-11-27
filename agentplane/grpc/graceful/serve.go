@@ -2,6 +2,7 @@ package graceful
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -42,10 +43,10 @@ type Group struct {
 func Serve(ctx context.Context, g Group) error {
 	failed := make(chan error, len(g.GRPC)+len(g.HTTP))
 	for _, s := range g.GRPC {
-		go func() { failed <- fmt.Errorf("%s listener: %w", s.Name, s.Server.Serve(s.Listener)) }()
+		go func() { failed <- listenerFailure(s.Name, s.Server.Serve(s.Listener)) }()
 	}
 	for _, s := range g.HTTP {
-		go func() { failed <- fmt.Errorf("%s listener: %w", s.Name, s.Server.Serve(s.Listener)) }()
+		go func() { failed <- listenerFailure(s.Name, s.Server.Serve(s.Listener)) }()
 	}
 	var result error
 	select {
@@ -67,6 +68,14 @@ func Serve(ctx context.Context, g Group) error {
 		within(stopping, func(ctx context.Context) { Stop(ctx, s.Server) })
 	}
 	return result
+}
+
+// listenerFailure labels a listener that stopped serving; a gRPC server stopped elsewhere returns nil.
+func listenerFailure(name string, err error) error {
+	if err == nil {
+		err = errors.New("stopped unexpectedly")
+	}
+	return fmt.Errorf("%s listener: %w", name, err)
 }
 
 // within runs stop under its own Grace, so a slow server cannot spend the next one's.
