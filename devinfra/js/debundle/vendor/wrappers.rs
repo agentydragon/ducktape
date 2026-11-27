@@ -7,7 +7,7 @@ use serde_json::Value;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 
-use artifact::paths::path_from_module_path;
+use artifact::paths::{module_path_from_path, path_from_module_path};
 use binding_targets::public_export_name;
 use js_ast::{
     ParsedJsModule, emit_js_module, import_decl_module_item, is_binding_identifier,
@@ -320,7 +320,7 @@ pub(super) fn plan_bundled_partial_swap_assets(
             package_name.clone(),
             PlannedFacade {
                 abs_path: abs_dir.join(&file_name),
-                app_path: path_to_module_string(&app_dir.join(&file_name)),
+                app_path: module_path_from_path(&app_dir.join(&file_name)),
                 source: generate_bundled_partial_swap_facade(&package.bundle_export)?,
             },
         );
@@ -379,13 +379,6 @@ fn package_slug(package_name: &str) -> String {
             }
         })
         .collect()
-}
-
-fn path_to_module_string(path: &Path) -> String {
-    path.components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 pub(super) fn set_diff(left: &BTreeSet<String>, right: &BTreeSet<String>) -> BTreeSet<String> {
