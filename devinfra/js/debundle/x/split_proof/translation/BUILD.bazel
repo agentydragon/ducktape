@@ -46,6 +46,7 @@ js_binary(
     entry_point = "module_io.mjs",
     visibility = [
         "//devinfra/js/debundle/x/split_proof:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",

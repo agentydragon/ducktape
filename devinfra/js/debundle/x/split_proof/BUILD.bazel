@@ -3486,6 +3486,18 @@ lean_proof_test(
     deps = [":literal_swap_check"],
 )
 
+test_runner(
+    name = "prefix_readback_test_runner",
+    src = "PrefixReadbackTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_syntax_match",
+        ":lowersplit_input",
+        ":split_declarator_schedule",
+    ],
+)
+
 lean_library(
     name = "split_declarator_schedule",
     srcs = ["SplitDeclaratorSchedule.lean"],
