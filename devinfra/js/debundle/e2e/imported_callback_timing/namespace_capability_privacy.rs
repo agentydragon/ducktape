@@ -1,6 +1,6 @@
 //! Private namespace capabilities keep unrelated receivers independent.
 
-use super::peer_api_callback_factories;
+use super::{API_MAKE_PEER, SplitCase, peer_api_callback_factories};
 use debundle_e2e_support::*;
 
 #[test]
@@ -23,25 +23,19 @@ fn private_namespace_capabilities_keep_unrelated_receivers_independent() {
         let peer = format!(
             "const backing = {{ marker: 'ready', children: {{ list(items) {{ return items; }} }}, Base: class {{ value = 7; }}, make(callback) {{ return {{ invoke: () => callback() }}; }} }};{facade}\n"
         );
-        let fixture = run_fixture(
-            FixtureOpts::new(
-                source,
-                vec![
-                    logical_module(
-                        "callbacks/wrapped",
-                        &binding_members([
-                            "shadow", "Buffer", "buffer", "marker", "children", "Local", "wrapped",
-                        ]),
-                    ),
-                    logical_module("values/later", &[Member::new("later")]),
-                ],
-            )
-            .with_extra_chunks(&[("static/peer", &peer)])
-            .with_chunk_export_purity(&[peer_api_callback_factories(&["make"])
+        SplitCase {
+            name: facade,
+            source,
+            wrapped: &[
+                "shadow", "Buffer", "buffer", "marker", "children", "Local", "wrapped",
+            ],
+            peers: &[("static/peer", peer.as_str())],
+            contracts: &[peer_api_callback_factories(&["make"])
                 .with_namespace_independent_members("api", &["make", "marker", "children", "Base"])
-                .build()]),
-        );
-        assert_preserved_entry_output(&fixture, "42 ready 2 7\n");
+                .build()],
+            ..Default::default()
+        }
+        .assert_split_runs("42 ready 2 7\n");
     }
 }
 
@@ -108,7 +102,6 @@ fn namespace_capability_privacy_rejects_explicit_namespace_routes() {
         ("", "api['make'] = eager;", None),
         ("const alias = other;", "alias.make = eager;", Some("alias")),
     ] {
-        eprintln!("namespace route: {declarations} {setup}");
         let source = format!(
             "import {{ api, other }} from './peer.js';\n\
             let later = 0;\n\
@@ -119,70 +112,45 @@ fn namespace_capability_privacy_rejects_explicit_namespace_routes() {
         );
         // All setup belongs to wrapped; only the lexical cell and its final
         // assignment belong to the other destination.
-        let mut members = vec![Member::new("eager"), Member::new("wrapped")];
-        if let Some(binding) = binding {
-            members.push(Member::new(binding));
-        }
-        let split = vec![
-            logical_module_with_anon("callbacks/wrapped", &members, &[setup]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ];
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(&source, split)
-                .with_import_order(&["callbacks/wrapped", "values/later"])
-                .with_extra_chunks(&peers)
-                .with_chunk_export_purity(&contracts),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
-        let colocated = run_fixture(
-            FixtureOpts::new(&source, vec![])
-                .with_import_order(&["residual"])
-                .with_extra_chunks(&peers)
-                .with_chunk_export_purity(&contracts),
-        );
-        assert_preserved_entry_output(&colocated, "0\n");
+        let members: Vec<&'static str> = ["eager", "wrapped"].into_iter().chain(binding).collect();
+        let case = SplitCase {
+            name: &format!("namespace route: {declarations} {setup}"),
+            source: &source,
+            wrapped: &members,
+            wrapped_statements: &[setup],
+            later_write: true,
+            import_order: Some(&["callbacks/wrapped", "values/later"]),
+            peers: &peers,
+            contracts: &contracts,
+            ..Default::default()
+        };
+        case.assert_split_rejected(&[]);
+        case.assert_residual_runs("0\n");
     }
 }
 
 #[test]
 fn namespace_capability_privacy_preserves_early_result_invocation() {
-    let source = "import { api } from './peer.js';\n\
-        let later = 0;\n\
-        const wrapped = api.make(() => later);\n\
-        const observed = wrapped.invoke();\n\
-        later = 42;\nconsole.log(observed);\n";
-    let peers = [(
-        "static/peer",
-        "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
-    )];
+    let peers = [("static/peer", API_MAKE_PEER)];
     let contracts = [peer_api_callback_factories(&["make"])
         .with_namespace_independent_members("api", &["make"])
         .build()];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["wrapped", "observed"]),
-                ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_import_order(&["callbacks/wrapped", "values/later"])
-        .with_extra_chunks(&peers)
-        .with_chunk_export_purity(&contracts),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-    let colocated = run_fixture(
-        FixtureOpts::new(source, vec![])
-            .with_import_order(&["residual"])
-            .with_extra_chunks(&peers)
-            .with_chunk_export_purity(&contracts),
-    );
-    assert_preserved_entry_output(&colocated, "0\n");
+    let case = SplitCase {
+        name: "early result invocation",
+        source: "import { api } from './peer.js';\n\
+                 let later = 0;\n\
+                 const wrapped = api.make(() => later);\n\
+                 const observed = wrapped.invoke();\n\
+                 later = 42;\nconsole.log(observed);\n",
+        wrapped: &["wrapped", "observed"],
+        later_write: true,
+        import_order: Some(&["callbacks/wrapped", "values/later"]),
+        peers: &peers,
+        contracts: &contracts,
+        ..Default::default()
+    };
+    case.assert_split_rejected(&[]);
+    case.assert_residual_runs("0\n");
 }
 
 #[test]

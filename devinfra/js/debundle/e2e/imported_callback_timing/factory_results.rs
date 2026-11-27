@@ -1,39 +1,62 @@
 //! Imported, inferred and inline callback factories defer callback reads while their results stay observable.
 
-use super::{SOURCE, modules, peer_api_callback_factories};
-use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
-use debundle_e2e_graph_support::FixtureGraphExt;
+use super::{API_MAKE_PEER, SOURCE, SplitCase, modules, peer_api_callback_factories};
+use analysis_vocabulary::report_schema::{CallbackFactoryUseKind, CallbackFactoryUseReport};
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
+use graph::DependencyGraphReport;
 
-#[test]
-fn namespace_factory_keeps_unrelated_optional_member_values_independent() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { api } from './peer.js';\n\
-             const input = { message: 'ready' };\n\
-             const message = input?.message;\n\
-             const wrapped = api.make(() => later);\n\
-             const later = 42;\n\
-             console.log(message, wrapped.invoke());\n",
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["input", "message", "wrapped"]),
-                ),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
-        )])
-        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
-    );
-    assert_preserved_entry_output(&fixture, "ready 42\n");
+const NO_CAUSES: &[&str] = &[];
+
+const WRAPPER_PEER: &str = "export function factory(callback) { return () => callback(); }\n";
+
+const INLINE_ACTION_PEER: &str = r#"export function action(callback) {
+function wrapped() { return callback(); }
+wrapped.kind = 'action';
+return wrapped;
+}
+"#;
+
+const OBJECT_SOURCE: &str = "import { factory } from './peer.js';\n\
+    const wrapped = factory(() => later);\n\
+    const later = 42;\nconsole.log(wrapped.invoke());\n";
+
+const OBJECT_FACTORY: &str = "let creations = 0;\n\
+    export function factory(callback) { creations++; return { invoke: () => callback() }; }\n";
+
+fn callback_factory_uses<'a>(
+    graph: &'a DependencyGraphReport,
+    binding: &str,
+) -> &'a [CallbackFactoryUseReport] {
+    &node_declaring(graph, binding)
+        .synchronous_execution
+        .as_ref()
+        .unwrap()
+        .callback_factory_uses
+}
+
+fn closed_result_roots(graph: &DependencyGraphReport) -> Vec<&CallbackFactoryUseReport> {
+    graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.synchronous_execution.as_ref())
+        .flat_map(|execution| &execution.callback_factory_uses)
+        .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
+        .collect()
+}
+
+fn residual_graph_fixture(source: &str) -> Fixture {
+    run_fixture_with_graphs(
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&[("static/peer", WRAPPER_PEER)]),
+    )
 }
 
 #[test]
 fn optional_namespace_member_aliases_still_disable_factory_deferral() {
+    let peer = [("static/peer", API_MAKE_PEER)];
+    let purity = [peer_api_callback_factories(&["make"]).build()];
     for (holder, lookup) in [
         ("{ api }", "holder?.api"),
         ("{ api }", "holder?.['api']"),
@@ -50,54 +73,24 @@ fn optional_namespace_member_aliases_still_disable_factory_deferral() {
              later = 42;\n\
              console.log(globalThis.observed, wrapped.invoke());\n"
         );
-        let peer = [(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
-        )];
-        let purity = [peer_api_callback_factories(&["make"]).build()];
-        let colocated = run_fixture(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module_with_anon(
-                    "all",
-                    &binding_members(["later", "holder", "alias", "eager", "wrapped"]),
-                    &["alias.make = eager;", "later = 42;"],
-                )],
-            )
-            .with_extra_chunks(&peer)
-            .with_chunk_export_purity(&purity),
-        );
-        assert_preserved_entry_output(&colocated, "0 42\n");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module_with_anon(
-                        "callbacks/wrapped",
-                        &binding_members(["holder", "alias", "eager", "wrapped"]),
-                        &["alias.make = eager;"],
-                    ),
-                    logical_module_with_anon(
-                        "values/later",
-                        &[Member::new("later")],
-                        &["later = 42;"],
-                    ),
-                ],
-            )
-            .with_extra_chunks(&peer)
-            .with_chunk_export_purity(&purity),
-            &["callbacks/wrapped", "values/later"],
-            &["eager_use", "sequenced"],
-        );
+        let case = SplitCase {
+            name: &format!("{holder} via {lookup}"),
+            source: &source,
+            wrapped: &["holder", "alias", "eager", "wrapped"],
+            wrapped_statements: &["alias.make = eager;"],
+            later_write: true,
+            peers: &peer,
+            contracts: &purity,
+            ..Default::default()
+        };
+        case.assert_colocated_runs("0 42\n");
+        case.assert_split_rejected(&["eager_use", "sequenced"]);
     }
 }
 
 #[test]
 fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
+    let peers = [("static/peer", WRAPPER_PEER)];
     let fixture =
         run_fixture_with_graphs(FixtureOpts::new(SOURCE, modules()).with_extra_chunks(&peers));
     assert_preserved_entry_output(&fixture, "42\n");
@@ -113,20 +106,7 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
     assert_eq!(evidence["source_location"]["start_column"], 8);
     let graph = fixture.dependency_graph();
     assert_eq!(graph.imported_callable_summaries.len(), 1);
-    let wrapped = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "wrapped")
-        })
-        .unwrap();
-    let uses = &wrapped
-        .synchronous_execution
-        .as_ref()
-        .unwrap()
-        .callback_factory_uses;
+    let uses = callback_factory_uses(&graph, "wrapped");
     assert!(
         uses.iter()
             .any(|proof_use| proof_use.kind == CallbackFactoryUseKind::CallTiming)
@@ -141,52 +121,153 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
 }
 
 #[test]
-fn inferred_two_parameter_module_factory_defers_initializer() {
-    let peers = [(
+fn deferring_factories_admit_the_split() {
+    let wrapper = [("static/peer", WRAPPER_PEER)];
+    let inline = [("static/peer", INLINE_ACTION_PEER)];
+    let inline_contract = [ChunkExportPurityBuilder::new("static/peer")
+        .with_inline_callback_factories(&["action"])
+        .build()];
+    let object_with_host = [
+        ("static/peer", OBJECT_FACTORY),
+        (
+            "static/host",
+            "export function consume(value) { return Reflect.apply(value.invoke, value, []); }\n",
+        ),
+    ];
+    let object_contract = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factories(&["factory"])
+        .build()];
+    let api_peer = [("static/peer", API_MAKE_PEER)];
+    let api_contract = [peer_api_callback_factories(&["make"]).build()];
+    let inferred_two_parameter = [(
         "static/peer",
         "export var factory = (initialize, cache) => () => {\n\
          if (!cache) { cache = { exports: {} }; initialize(cache.exports, cache); }\n\
          return cache.exports;\n\
          };\n",
     )];
-    let source = "import { factory } from './peer.js';\n\
-                  const wrapped = factory((exports) => { exports.value = later; });\n\
-                  const later = 42;\n\
-                  console.log(wrapped().value);\n\
-                  export { wrapped, later };\n";
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&peers),
-    );
-    assert_preserved_entry_output(&fixture, "42\n");
-}
-
-#[test]
-fn inferred_factory_accepts_assignment_valued_fresh_member_argument() {
-    let provider =
-        "export var factory = (callback, cache) => () => callback((cache = { value: 1 }).value);\n";
-    let source = "import { factory } from './peer.js';\n\
-                  const wrapped = factory((value) => later + value);\n\
-                  const later = 42;\n\
-                  console.log(wrapped());\n\
-                  export { wrapped, later };\n";
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", provider)]),
-    );
-    assert_preserved_entry_output(&fixture, "43\n");
+    let assignment_valued_argument = [(
+        "static/peer",
+        "export var factory = (callback, cache) => () => callback((cache = { value: 1 }).value);\n",
+    )];
+    let aliased_export = [(
+        "static/peer",
+        "function build(callback) { return () => callback(); }\nexport { build as factory };\n",
+    )];
+    for (case, output) in [
+        (
+            SplitCase {
+                name: "inferred two-parameter module factory defers its initializer",
+                source: "import { factory } from './peer.js';\n\
+                         const wrapped = factory((exports) => { exports.value = later; });\n\
+                         const later = 42;\n\
+                         console.log(wrapped().value);\n\
+                         export { wrapped, later };\n",
+                wrapped: &["wrapped"],
+                peers: &inferred_two_parameter,
+                ..Default::default()
+            },
+            "42\n",
+        ),
+        (
+            SplitCase {
+                name: "inferred factory accepts an assignment-valued fresh member argument",
+                source: "import { factory } from './peer.js';\n\
+                         const wrapped = factory((value) => later + value);\n\
+                         const later = 42;\n\
+                         console.log(wrapped());\n\
+                         export { wrapped, later };\n",
+                wrapped: &["wrapped"],
+                peers: &assignment_valued_argument,
+                ..Default::default()
+            },
+            "43\n",
+        ),
+        (
+            SplitCase {
+                name: "audited inline factory defers its single callback",
+                source: "import { action as create } from './peer.js';\n\
+                         const wrapped = create(() => later);\n\
+                         const later = 42;\nconsole.log(wrapped());\n",
+                wrapped: &["wrapped"],
+                peers: &inline,
+                contracts: &inline_contract,
+                ..Default::default()
+            },
+            "42\n",
+        ),
+        (
+            SplitCase {
+                name: "successive factories do not publish callbacks to the next factory",
+                source: "import { factory } from './peer.js';\n\
+                         const first = factory(() => later);\n\
+                         const second = factory(() => later);\n\
+                         const later = 42;\nconsole.log(first(), second());\n",
+                wrapped: &["first", "second"],
+                peers: &wrapper,
+                ..Default::default()
+            },
+            "42 42\n",
+        ),
+        (
+            SplitCase {
+                name: "import and local aliases preserve factory identity",
+                source: "import { factory as create } from './peer.js';\nconst alias = create;\n\
+                         const wrapped = alias(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
+                wrapped: &["wrapped"],
+                import_order: Some(&["callbacks/wrapped", "values/later", "residual"]),
+                peers: &aliased_export,
+                ..Default::default()
+            },
+            "42\n",
+        ),
+        (
+            SplitCase {
+                name: "primitive metadata writes keep the callback deferred",
+                source: "import { factory } from './peer.js';\n\
+                         const wrapped = factory(() => later);\n\
+                         const named = (wrapped.label = 'factory');\n\
+                         const later = 42;\nconsole.log(wrapped(), wrapped.label);\n",
+                wrapped: &["wrapped", "named"],
+                peers: &wrapper,
+                ..Default::default()
+            },
+            "42 factory\n",
+        ),
+        (
+            SplitCase {
+                name: "invoked factory result does not run its callback after await synchronously",
+                source: "import { factory } from './peer.js';\n\
+                         import { consume } from './host.js';\n\
+                         const wrapped = factory(async () => { await 0; return later; });\n\
+                         const consumed = consume(wrapped);\n\
+                         const later = 42;\nconsole.log(later);\n",
+                wrapped: &["wrapped", "consumed"],
+                peers: &object_with_host,
+                contracts: &object_contract,
+                ..Default::default()
+            },
+            "42\n",
+        ),
+        (
+            SplitCase {
+                name: "namespace factory keeps unrelated optional member values independent",
+                source: "import { api } from './peer.js';\n\
+                         const input = { message: 'ready' };\n\
+                         const message = input?.message;\n\
+                         const wrapped = api.make(() => later);\n\
+                         const later = 42;\n\
+                         console.log(message, wrapped.invoke());\n",
+                wrapped: &["input", "message", "wrapped"],
+                peers: &api_peer,
+                contracts: &api_contract,
+                ..Default::default()
+            },
+            "ready 42\n",
+        ),
+    ] {
+        case.assert_split_runs(output);
+    }
 }
 
 #[test]
@@ -213,40 +294,15 @@ fn inferred_module_factory_rejects_extra_callback_roots_and_mutable_exports() {
         "export var factory = ({ callback }, cache) => () => callback();\n",
         "export var factory = (callback, cache) => () => callback(); factory = callback => callback();\n",
     ] {
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                app,
-                vec![
-                    logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
-                    logical_module("values/later", &[Member::new("later")]),
-                ],
-            )
-            .with_extra_chunks(&[("static/peer", provider)]),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
+        SplitCase {
+            name: provider,
+            source: app,
+            wrapped: &["wrapped"],
+            peers: &[("static/peer", provider)],
+            ..Default::default()
+        }
+        .assert_split_rejected(&[]);
     }
-}
-
-#[test]
-fn inferred_module_factory_does_not_admit_a_second_supplied_capability() {
-    let provider =
-        "export var factory = (callback, cache) => () => { callback(); return cache(); };\n";
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-             const wrapped = factory(() => 1, () => later);\n\
-             const later = 42;\n\
-             console.log(wrapped());\n",
-            vec![
-                logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", provider)]),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
 }
 
 #[test]
@@ -269,68 +325,29 @@ fn inferred_var_factory_keeps_a_caught_preinitialization_throw() {
     assert_preserved_entry_output(&fixture, "TypeError\n");
 }
 
-const INLINE_ACTION_PEER: &str = r#"export function action(callback) {
-function wrapped() { return callback(); }
-wrapped.kind = 'action';
-return wrapped;
-}
-"#;
-
 #[test]
-fn audited_inline_factory_defers_its_single_callback() {
-    let peers = [("static/peer", INLINE_ACTION_PEER)];
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { action as create } from './peer.js';\n\
-             const wrapped = create(() => later);\n\
-             const later = 42;\nconsole.log(wrapped());\n",
-            modules(),
-        )
-        .with_extra_chunks(&peers)
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_inline_callback_factories(&["action"])
-            .build()]),
-    );
-    assert_preserved_entry_output(&fixture, "42\n");
-}
-
-#[test]
-fn inline_only_contract_keeps_other_call_shapes_conservative() {
-    let peers = [("static/peer", INLINE_ACTION_PEER)];
-    for (setup, call, members) in [
-        (
-            "const callback = () => later;\n",
-            "action(callback)",
-            vec![Member::new("callback"), Member::new("wrapped")],
-        ),
-        ("", "action(...[() => later])", vec![Member::new("wrapped")]),
-        ("", "new action(() => later)", vec![Member::new("wrapped")]),
-    ] {
-        let source = format!(
-            "import {{ action }} from './peer.js';\n{setup}\
-             const wrapped = {call};\nconst later = 42;\nconsole.log(wrapped());\n"
-        );
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module("callbacks/wrapped", &members),
-                    logical_module("values/later", &[Member::new("later")]),
-                ],
-            )
-            .with_extra_chunks(&peers)
-            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                .with_inline_callback_factories(&["action"])
-                .build()]),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
-    }
-}
-
-#[test]
-fn inline_only_contract_does_not_compose_a_retained_object() {
-    let peers = [(
+fn observable_or_unproven_callback_reads_keep_the_split_atomic() {
+    let wrapper = [("static/peer", WRAPPER_PEER)];
+    let inline = [("static/peer", INLINE_ACTION_PEER)];
+    let inline_contract = [ChunkExportPurityBuilder::new("static/peer")
+        .with_inline_callback_factories(&["action"])
+        .build()];
+    let object = [("static/peer", OBJECT_FACTORY)];
+    let object_contract = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factories(&["factory"])
+        .build()];
+    let immediate = [(
+        "static/peer",
+        "export function factory(callback) { return callback(); }\n",
+    )];
+    let pure_contract = [ChunkExportPurityBuilder::new("static/peer")
+        .with_pure_exports(&["factory"])
+        .build()];
+    let second_capability = [(
+        "static/peer",
+        "export var factory = (callback, cache) => () => { callback(); return cache(); };\n",
+    )];
+    let retained = [(
         "static/peer",
         "export function make(callback) { return { invoke: () => callback() }; }\n\
          export function action(value) {\n\
@@ -339,206 +356,282 @@ fn inline_only_contract_does_not_compose_a_retained_object() {
            wrapped.kind = 'action';\n\
            return wrapped;\n}\n",
     )];
-    let source = "import { make, action } from './peer.js';\n\
-                  let later = 0;\nconst result = action(make(() => later));\n\
-                  later = 42;\nconsole.log(result);\n";
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("callbacks/result", &[Member::new("result")]),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&peers)
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factories(&["make"])
-            .with_inline_callback_factories(&["action"])
-            .build()]),
-        &["callbacks/result", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn inline_only_contract_does_not_cross_an_unresolved_reexport() {
-    let peers = [
+    let retained_contract = [ChunkExportPurityBuilder::new("static/peer")
+        .with_callback_factories(&["make"])
+        .with_inline_callback_factories(&["action"])
+        .build()];
+    let reexported = [
         ("static/peer", INLINE_ACTION_PEER),
         (
             "static/bridge",
             "export { action as create } from './peer.js';\n",
         ),
     ];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { create } from './bridge.js';\n\
-             const wrapped = create(() => later);\n\
-             const later = 42;\nconsole.log(wrapped());\n",
-            modules(),
-        )
-        .with_extra_chunks(&peers)
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_inline_callback_factories(&["action"])
-            .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn inline_only_result_invoked_before_later_write_remains_atomic() {
-    let peers = [("static/peer", INLINE_ACTION_PEER)];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { action } from './peer.js';\n\
-             let later = 0;\nconst wrapped = action(() => later);\n\
-             const observed = wrapped();\nlater = 42;\nconsole.log(observed, later);\n",
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["wrapped", "observed"]),
-                ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&peers)
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_inline_callback_factories(&["action"])
-            .build()]),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn immediate_callback_invocation_preserves_the_tdz() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return callback(); }\n",
-    )];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(SOURCE, modules()).with_extra_chunks(&peers),
-        &["callbacks/wrapped", "values/later"],
-        &["eager_use", "sequenced"],
-    );
-}
-
-#[test]
-fn successive_factories_do_not_publish_callbacks_to_the_next_factory() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-         const first = factory(() => later);\n\
-         const second = factory(() => later);\n\
-         const later = 42;\nconsole.log(first(), second());\n",
-            vec![
-                logical_module("callbacks/wrapped", &binding_members(["first", "second"])),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&peers),
-    );
-    assert_preserved_entry_output(&fixture, "42 42\n");
-}
-
-#[test]
-fn invoking_returned_wrapper_before_initialization_is_rejected() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-             const wrapped = factory(() => later);\n\
-             const outcome = wrapped();\nconst later = 42;\nconsole.log(outcome);\n",
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["wrapped", "outcome"]),
-                ),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&peers),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn escaped_wrapper_can_be_invoked_by_a_later_opaque_call() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-             const wrapped = factory(() => later);\n\
-             globalThis.saved = wrapped;\nconst outcome = host();\n\
-             const later = 42;\nconsole.log(outcome);\n",
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["wrapped", "outcome"]),
-                ),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&peers),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn reassigned_provider_does_not_inherit_the_original_factory_summary() {
-    let peers = [(
+    let reassigned = [(
         "static/peer",
         "export function factory(callback) { return () => callback(); }\nfactory = callback => callback();\n",
     )];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(SOURCE, modules()).with_extra_chunks(&peers),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn a_shadowing_parameter_does_not_inherit_the_import_contract() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-             function invoke(factory) { return factory(() => later); }\n\
-             const outcome = invoke(callback => callback());\n\
-             const later = 42;\nconsole.log(outcome);\n",
-            vec![
-                logical_module("callbacks/wrapped", &[Member::new("outcome")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
+    let inline_call_shapes = [
+        (
+            "const callback = () => later;\n",
+            "action(callback)",
+            &["callback", "wrapped"][..],
+        ),
+        ("", "action(...[() => later])", &["wrapped"][..]),
+        ("", "new action(() => later)", &["wrapped"][..]),
+    ]
+    .map(|(setup, call, members)| {
+        (
+            call,
+            format!(
+                "import {{ action }} from './peer.js';\n{setup}\
+                 const wrapped = {call};\nconst later = 42;\nconsole.log(wrapped());\n"
+            ),
+            members,
         )
-        .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
-        .with_extra_chunks(&peers),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
+    });
+    let result_mutations = [
+        ("__proto__", "wrapped.value"),
+        ("options", "wrapped.options.value"),
+    ]
+    .map(|(property, read)| {
+        (
+            property,
+            format!(
+                "import {{ factory }} from './peer.js';\n\
+                 const wrapped = factory(() => 0);\n\
+                 const configured = (wrapped.{property} = {{ get value() {{ return later; }} }});\n\
+                 const outcome = {read};\nconst later = 42;\nconsole.log(outcome);\n",
+            ),
+        )
+    });
+    let synchronous_reads = [
+        (
+            "async () => { globalThis.seen = later; await 0; }",
+            "export function consume(value) { return Reflect.apply(value.invoke, value, []); }\n",
+        ),
+        (
+            "() => () => { globalThis.seen = later; }",
+            "export function consume(value) { return Reflect.apply(Reflect.apply(value.invoke, value, []), null, []); }\n",
+        ),
+    ]
+    .map(|(callback, consumer)| {
+        (
+            callback,
+            format!(
+                "import {{ factory }} from './peer.js';\n\
+                 import {{ consume }} from './host.js';\n\
+                 let later = 0;\nconst wrapped = factory({callback});\n\
+                 const consumed = consume(wrapped);\nlater = 42;\n\
+                 console.log(globalThis.seen, later);\n"
+            ),
+            [("static/peer", OBJECT_FACTORY), ("static/host", consumer)],
+        )
+    });
+    let mut cases = vec![
+        (
+            SplitCase {
+                name: "immediate callback invocation preserves the TDZ",
+                source: SOURCE,
+                wrapped: &["wrapped"],
+                peers: &immediate,
+                ..Default::default()
+            },
+            &["eager_use", "sequenced"][..],
+        ),
+        (
+            SplitCase {
+                name: "purity alone does not defer callbacks",
+                source: SOURCE,
+                wrapped: &["wrapped"],
+                peers: &immediate,
+                contracts: &pure_contract,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "inferred module factory does not admit a second supplied capability",
+                source: "import { factory } from './peer.js';\n\
+                         const wrapped = factory(() => 1, () => later);\n\
+                         const later = 42;\n\
+                         console.log(wrapped());\n",
+                wrapped: &["wrapped"],
+                peers: &second_capability,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "inline-only contract does not compose a retained object",
+                source: "import { make, action } from './peer.js';\n\
+                         let later = 0;\nconst result = action(make(() => later));\n\
+                         later = 42;\nconsole.log(result);\n",
+                wrapped: &["result"],
+                later_write: true,
+                peers: &retained,
+                contracts: &retained_contract,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "inline-only contract does not cross an unresolved re-export",
+                source: "import { create } from './bridge.js';\n\
+                         const wrapped = create(() => later);\n\
+                         const later = 42;\nconsole.log(wrapped());\n",
+                wrapped: &["wrapped"],
+                peers: &reexported,
+                contracts: &inline_contract,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "inline-only result invoked before the later write",
+                source: "import { action } from './peer.js';\n\
+                         let later = 0;\nconst wrapped = action(() => later);\n\
+                         const observed = wrapped();\nlater = 42;\nconsole.log(observed, later);\n",
+                wrapped: &["wrapped", "observed"],
+                later_write: true,
+                peers: &inline,
+                contracts: &inline_contract,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "invoking the returned wrapper before initialization",
+                source: "import { factory } from './peer.js';\n\
+                         const wrapped = factory(() => later);\n\
+                         const outcome = wrapped();\nconst later = 42;\nconsole.log(outcome);\n",
+                wrapped: &["wrapped", "outcome"],
+                peers: &wrapper,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "escaped wrapper can be invoked by a later opaque call",
+                source: "import { factory } from './peer.js';\n\
+                         const wrapped = factory(() => later);\n\
+                         globalThis.saved = wrapped;\nconst outcome = host();\n\
+                         const later = 42;\nconsole.log(outcome);\n",
+                wrapped: &["wrapped", "outcome"],
+                peers: &wrapper,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "reassigned provider does not inherit the original factory summary",
+                source: SOURCE,
+                wrapped: &["wrapped"],
+                peers: &reassigned,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "a shadowing parameter does not inherit the import contract",
+                source: "import { factory } from './peer.js';\n\
+                         function invoke(factory) { return factory(() => later); }\n\
+                         const outcome = invoke(callback => callback());\n\
+                         const later = 42;\nconsole.log(outcome);\n",
+                wrapped: &["outcome"],
+                import_order: Some(&["callbacks/wrapped", "values/later", "residual"]),
+                peers: &wrapper,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "unknown complex factory remains conservative",
+                source: OBJECT_SOURCE,
+                wrapped: &["wrapped"],
+                peers: &object,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "callback factory contract does not apply to an existing callback",
+                source: "import { factory } from './peer.js';\n\
+                         const callback = () => later;\nconst wrapped = factory(callback);\n\
+                         const later = 42;\nconsole.log(wrapped.invoke());\n",
+                wrapped: &["wrapped", "callback"],
+                peers: &object,
+                contracts: &object_contract,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+        (
+            SplitCase {
+                name: "callbacks written to the returned value remain observable",
+                source: "import { factory } from './peer.js';\n\
+                         const wrapped = factory(() => 0);\nwrapped.read = () => later;\n\
+                         const outcome = wrapped.read();\nconst later = 42;\nconsole.log(outcome);\n",
+                wrapped: &["wrapped", "outcome"],
+                peers: &wrapper,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ),
+    ];
+    for (call, source, members) in &inline_call_shapes {
+        cases.push((
+            SplitCase {
+                name: call,
+                source,
+                wrapped: members,
+                peers: &inline,
+                contracts: &inline_contract,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ));
+    }
+    for (property, source) in &result_mutations {
+        cases.push((
+            SplitCase {
+                name: property,
+                source,
+                wrapped: &["wrapped", "configured", "outcome"],
+                peers: &wrapper,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ));
+    }
+    for (callback, source, peers) in &synchronous_reads {
+        cases.push((
+            SplitCase {
+                name: callback,
+                source,
+                wrapped: &["wrapped", "consumed"],
+                later_write: true,
+                peers,
+                contracts: &object_contract,
+                ..Default::default()
+            },
+            NO_CAUSES,
+        ));
+    }
+    for (case, causes) in cases {
+        case.assert_split_rejected(causes);
+    }
 }
-
-const OBJECT_SOURCE: &str = "import { factory } from './peer.js';\n\
-    const wrapped = factory(() => later);\n\
-    const later = 42;\nconsole.log(wrapped.invoke());\n";
-
-const OBJECT_FACTORY: &str = "let creations = 0;\n\
-    export function factory(callback) { creations++; return { invoke: () => callback() }; }\n";
 
 #[test]
 fn audited_factory_keeps_callbacks_in_its_returned_object() {
@@ -564,21 +657,8 @@ fn audited_factory_keeps_callbacks_in_its_returned_object() {
     );
     let graph = fixture.dependency_graph();
     assert_eq!(graph.imported_callable_summaries.len(), 1);
-    let wrapped = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "wrapped")
-        })
-        .unwrap();
     assert!(
-        wrapped
-            .synchronous_execution
-            .as_ref()
-            .unwrap()
-            .callback_factory_uses
+        callback_factory_uses(&graph, "wrapped")
             .iter()
             .any(|proof_use| proof_use.kind == CallbackFactoryUseKind::ReturnShape)
     );
@@ -604,6 +684,7 @@ fn available_imported_factory_without_eligible_call_has_no_proof_use() {
             &["residual"][..],
         ),
     ] {
+        eprintln!("case: {source}");
         let fixture = run_fixture_with_graphs(
             FixtureOpts::new(source, vec![])
                 .with_import_order(priority)
@@ -623,35 +704,17 @@ fn available_imported_factory_without_eligible_call_has_no_proof_use() {
 
 #[test]
 fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
-    let source = "import { factory } from './peer.js';\n\
-                  function wrap() { return factory(() => later); }\n\
-                  const pair = [wrap(), wrap()];\n\
-                  const later = 42;\n\
-                  console.log(pair[0](), pair[1]());\n";
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(source, vec![])
-            .with_import_order(&["residual"])
-            .with_extra_chunks(&[(
-                "static/peer",
-                "export function factory(callback) { return () => callback(); }\n",
-            )]),
+    let fixture = residual_graph_fixture(
+        "import { factory } from './peer.js';\n\
+         function wrap() { return factory(() => later); }\n\
+         const pair = [wrap(), wrap()];\n\
+         const later = 42;\n\
+         console.log(pair[0](), pair[1]());\n",
     );
     assert_preserved_entry_output(&fixture, "42 42\n");
     let graph = fixture.dependency_graph();
-    let pair = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "pair")
-        })
-        .unwrap();
-    let uses = &pair
-        .synchronous_execution
-        .as_ref()
-        .unwrap()
-        .callback_factory_uses;
+    let pair = node_declaring(&graph, "pair");
+    let uses = callback_factory_uses(&graph, "pair");
     assert_eq!(
         uses.iter()
             .filter(|proof_use| proof_use.kind == CallbackFactoryUseKind::CallTiming)
@@ -670,23 +733,7 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
                 && proof_use.source_location.as_ref().unwrap().start_line == 2
         )
     );
-    let later = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "later")
-        })
-        .unwrap();
-    assert!(
-        later
-            .synchronous_execution
-            .as_ref()
-            .unwrap()
-            .callback_factory_uses
-            .is_empty()
-    );
+    assert!(callback_factory_uses(&graph, "later").is_empty());
     let mut old_graph = serde_json::to_value(&graph).unwrap();
     old_graph
         .as_object_mut()
@@ -697,43 +744,22 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
             execution.remove("callback_factory_uses");
         }
     }
-    let historical: graph::DependencyGraphReport = serde_json::from_value(old_graph).unwrap();
+    let historical: DependencyGraphReport = serde_json::from_value(old_graph).unwrap();
     assert!(historical.imported_callable_summaries.is_empty());
 }
 
 #[test]
 fn private_factory_result_records_reachability_exemption() {
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            "const wrapped = factory(() => later);\n\
+    // The import declaration follows its first use.
+    let fixture = residual_graph_fixture(
+        "const wrapped = factory(() => later);\n\
          import { factory } from './peer.js';\n\
          const later = 42;\n\
          console.log(wrapped());\n",
-            vec![],
-        )
-        .with_import_order(&["residual"])
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export function factory(callback) { return () => callback(); }\n",
-        )]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
-    let graph = fixture.dependency_graph();
-    let wrapped = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "wrapped")
-        })
-        .unwrap();
     assert!(
-        wrapped
-            .synchronous_execution
-            .as_ref()
-            .unwrap()
-            .callback_factory_uses
+        callback_factory_uses(&fixture.dependency_graph(), "wrapped")
             .iter()
             .any(|proof_use| proof_use.kind == CallbackFactoryUseKind::ClosedResultRoot)
     );
@@ -758,35 +784,15 @@ fn private_factory_result_requires_an_exact_initializer_and_retains_summary_evid
             1,
         ),
     ] {
-        let source = format!(
+        eprintln!("case: {initializer}");
+        let fixture = residual_graph_fixture(&format!(
             "import {{ factory }} from './peer.js';\n\
              globalThis.marker = 0;\nconst wrapped = {initializer};\n\
              const later = 42;\nconsole.log(globalThis.marker, wrapped());\n"
-        );
-        let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(&source, vec![])
-                .with_import_order(&["residual"])
-                .with_extra_chunks(&[(
-                    "static/peer",
-                    "export function factory(callback) { return () => callback(); }\n",
-                )]),
-        );
+        ));
         assert_preserved_entry_output(&fixture, &format!("{marker} 42\n"));
         let graph = fixture.dependency_graph();
-        let wrapped = graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|binding| binding.binding == "wrapped")
-            })
-            .unwrap();
-        let uses: Vec<_> = wrapped
-            .synchronous_execution
-            .as_ref()
-            .unwrap()
-            .callback_factory_uses
+        let uses: Vec<_> = callback_factory_uses(&graph, "wrapped")
             .iter()
             .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
             .collect();
@@ -811,25 +817,12 @@ fn callback_factory_privacy_does_not_cover_throwing_operands() {
         "factory((() => { throw new Error('operand'); })())",
         "({get current() { throw new Error('operand'); }}).current(() => 42)",
     ] {
-        let source =
-            format!("import {{ factory }} from './peer.js';\nconst wrapped = {initializer};\n");
-        let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(&source, vec![])
-                .with_import_order(&["residual"])
-                .with_extra_chunks(&[(
-                    "static/peer",
-                    "export function factory(callback) { return () => callback(); }\n",
-                )]),
-        );
+        eprintln!("case: {initializer}");
+        let fixture = residual_graph_fixture(&format!(
+            "import {{ factory }} from './peer.js';\nconst wrapped = {initializer};\n"
+        ));
         assert_preserved_entry_error(&fixture, "Error: operand");
-        assert!(fixture.dependency_graph().nodes.iter().all(|node| {
-            node.synchronous_execution.as_ref().is_none_or(|execution| {
-                execution
-                    .callback_factory_uses
-                    .iter()
-                    .all(|proof| proof.kind != CallbackFactoryUseKind::ClosedResultRoot)
-            })
-        }));
+        assert!(closed_result_roots(&fixture.dependency_graph()).is_empty());
     }
 }
 
@@ -851,13 +844,7 @@ fn private_factory_result_retains_the_audited_summary() {
     );
     assert_preserved_entry_output(&fixture, "42\n");
     let graph = fixture.dependency_graph();
-    let uses: Vec<_> = graph
-        .nodes
-        .iter()
-        .filter_map(|node| node.synchronous_execution.as_ref())
-        .flat_map(|execution| &execution.callback_factory_uses)
-        .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
-        .collect();
+    let uses = closed_result_roots(&graph);
     assert_eq!(uses.len(), 1);
     assert_eq!(
         graph
@@ -881,27 +868,12 @@ fn acyclic_exported_factory_result_keeps_its_initialization_exemption() {
         "export const wrapped = factory(() => later);",
         "const wrapped = factory(() => later);\nexport { wrapped };",
     ] {
-        let source = format!(
+        let fixture = residual_graph_fixture(&format!(
             "import {{ factory }} from './peer.js';\n{declaration}\nconst later = 42;\nconsole.log(wrapped());\n"
-        );
-        let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(&source, vec![])
-                .with_import_order(&["residual"])
-                .with_extra_chunks(&[(
-                    "static/peer",
-                    "export function factory(callback) { return () => callback(); }\n",
-                )]),
-        );
+        ));
         assert_preserved_entry_output(&fixture, "42\n");
         assert_eq!(
-            fixture
-                .dependency_graph()
-                .nodes
-                .iter()
-                .filter_map(|node| node.synchronous_execution.as_ref())
-                .flat_map(|execution| &execution.callback_factory_uses)
-                .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
-                .count(),
+            closed_result_roots(&fixture.dependency_graph()).len(),
             1,
             "{declaration}"
         );
@@ -923,244 +895,11 @@ fn joined_imported_factories_preserve_behavior_without_false_direct_proof_use() 
         )
         .with_import_order(&["residual"])
         .with_extra_chunks(&[
-            (
-                "static/first",
-                "export function factory(callback) { return () => callback(); }\n",
-            ),
-            (
-                "static/second",
-                "export function factory(callback) { return () => callback(); }\n",
-            ),
+            ("static/first", WRAPPER_PEER),
+            ("static/second", WRAPPER_PEER),
         ]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
     let graph = fixture.dependency_graph();
     assert!(graph.imported_callable_summaries.is_empty());
-}
-
-#[test]
-fn invoked_factory_result_does_not_run_its_callback_after_await_synchronously() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-             import { consume } from './host.js';\n\
-             const wrapped = factory(async () => { await 0; return later; });\n\
-             const consumed = consume(wrapped);\n\
-             const later = 42;\nconsole.log(later);\n",
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["wrapped", "consumed"]),
-                ),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&[
-            ("static/peer", OBJECT_FACTORY),
-            (
-                "static/host",
-                "export function consume(value) { return Reflect.apply(value.invoke, value, []); }\n",
-            ),
-        ])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factories(&["factory"])
-            .build()]),
-    );
-    assert_preserved_entry_output(&fixture, "42\n");
-}
-
-#[test]
-fn invoked_factory_result_keeps_synchronous_callback_and_returned_callback_reads() {
-    for (callback, consumer) in [
-        (
-            "async () => { globalThis.seen = later; await 0; }",
-            "export function consume(value) { return Reflect.apply(value.invoke, value, []); }\n",
-        ),
-        (
-            "() => () => { globalThis.seen = later; }",
-            "export function consume(value) { return Reflect.apply(Reflect.apply(value.invoke, value, []), null, []); }\n",
-        ),
-    ] {
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &format!(
-                    "import {{ factory }} from './peer.js';\n\
-                     import {{ consume }} from './host.js';\n\
-                     let later = 0;\nconst wrapped = factory({callback});\n\
-                     const consumed = consume(wrapped);\nlater = 42;\n\
-                     console.log(globalThis.seen, later);\n"
-                ),
-                vec![
-                    logical_module(
-                        "callbacks/wrapped",
-                        &binding_members(["wrapped", "consumed"]),
-                    ),
-                    logical_module_with_anon(
-                        "values/later",
-                        &[Member::new("later")],
-                        &["later = 42;"],
-                    ),
-                ],
-            )
-            .with_extra_chunks(&[("static/peer", OBJECT_FACTORY), ("static/host", consumer)])
-            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                .with_callback_factories(&["factory"])
-                .build()]),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
-    }
-}
-
-#[test]
-fn unknown_complex_factory_remains_conservative() {
-    let peers = [("static/peer", OBJECT_FACTORY)];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(OBJECT_SOURCE, modules()).with_extra_chunks(&peers),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn callback_factory_contract_does_not_apply_to_an_existing_callback() {
-    let peers = [("static/peer", OBJECT_FACTORY)];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factories(&["factory"])
-        .build()];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-             const callback = () => later;\nconst wrapped = factory(callback);\n\
-             const later = 42;\nconsole.log(wrapped.invoke());\n",
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["wrapped", "callback"]),
-                ),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&peers)
-        .with_chunk_export_purity(&contracts),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn purity_alone_does_not_defer_callbacks() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return callback(); }\n",
-    )];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_pure_exports(&["factory"])
-        .build()];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(SOURCE, modules())
-            .with_extra_chunks(&peers)
-            .with_chunk_export_purity(&contracts),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn callbacks_written_to_the_returned_value_remain_observable() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-             const wrapped = factory(() => 0);\nwrapped.read = () => later;\n\
-             const outcome = wrapped.read();\nconst later = 42;\nconsole.log(outcome);\n",
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["wrapped", "outcome"]),
-                ),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&peers),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn import_and_local_aliases_preserve_factory_identity() {
-    let peers = [(
-        "static/peer",
-        "function build(callback) { return () => callback(); }\nexport { build as factory };\n",
-    )];
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { factory as create } from './peer.js';\nconst alias = create;\n\
-         const wrapped = alias(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
-            modules(),
-        )
-        .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
-        .with_extra_chunks(&peers),
-    );
-    assert_preserved_entry_output(&fixture, "42\n");
-}
-
-#[test]
-fn result_mutation_cannot_hide_an_early_getter_read() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
-    for (property, read) in [
-        ("__proto__", "wrapped.value"),
-        ("options", "wrapped.options.value"),
-    ] {
-        let source = format!(
-            "import {{ factory }} from './peer.js';\n\
-             const wrapped = factory(() => 0);\n\
-             const configured = (wrapped.{property} = {{ get value() {{ return later; }} }});\n\
-             const outcome = {read};\nconst later = 42;\nconsole.log(outcome);\n",
-        );
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module(
-                        "callbacks/wrapped",
-                        &binding_members(["wrapped", "configured", "outcome"]),
-                    ),
-                    logical_module("values/later", &[Member::new("later")]),
-                ],
-            )
-            .with_extra_chunks(&peers),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
-    }
-}
-
-#[test]
-fn primitive_metadata_writes_keep_the_callback_deferred() {
-    let peers = [(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )];
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { factory } from './peer.js';\n\
-         const wrapped = factory(() => later);\n\
-         const named = (wrapped.label = 'factory');\n\
-         const later = 42;\nconsole.log(wrapped(), wrapped.label);\n",
-            vec![
-                logical_module("callbacks/wrapped", &binding_members(["wrapped", "named"])),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_extra_chunks(&peers),
-    );
-    assert_preserved_entry_output(&fixture, "42 factory\n");
 }

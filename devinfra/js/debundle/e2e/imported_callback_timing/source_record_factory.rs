@@ -265,19 +265,20 @@ fn source_record_with_global_namespace(namespace: &str) -> Fixture {
 }
 
 #[test]
-fn source_record_native_integrity_preserves_symbol_namespace_writes() {
-    let fixture = source_record_with_global_namespace(
-        "const namespace = Symbol.for('example.registry');\nconst alias = namespace;\nexport function publish(value) { globalThis[alias] = value; }\nexport function clear() { delete globalThis[namespace]; }\n",
-    );
-    assert_preserved_entry_output(&fixture, "0 Later\n");
-}
-
-#[test]
-fn source_record_native_integrity_preserves_closed_entries_namespace_writes() {
-    let fixture = source_record_with_global_namespace(
-        "export function publish() { const root = globalThis; for (const [key, value] of Object.entries({ first: 1, second: 2 })) { Object.defineProperty(root, key, { value, configurable: true }); } }\n",
-    );
-    assert_preserved_entry_output(&fixture, "0 Later\n");
+fn source_record_native_integrity_preserves_closed_namespace_writes() {
+    for (name, namespace) in [
+        (
+            "registered symbol key",
+            "const namespace = Symbol.for('example.registry');\nconst alias = namespace;\nexport function publish(value) { globalThis[alias] = value; }\nexport function clear() { delete globalThis[namespace]; }\n",
+        ),
+        (
+            "closed Object.entries keys",
+            "export function publish() { const root = globalThis; for (const [key, value] of Object.entries({ first: 1, second: 2 })) { Object.defineProperty(root, key, { value, configurable: true }); } }\n",
+        ),
+    ] {
+        eprintln!("case: {name}");
+        assert_preserved_entry_output(&source_record_with_global_namespace(namespace), "0 Later\n");
+    }
 }
 
 #[test]
