@@ -654,11 +654,6 @@ lean_proof_test(
 )
 
 lean_library(
-    name = "certificate_data",
-    srcs = ["EsmSplit/CertificateData.lean"],
-)
-
-lean_library(
     name = "corejs_deployment_placement",
     srcs = ["EsmSplit/CoreJS/DeploymentPlacement.lean"],
     deps = [
@@ -692,7 +687,6 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.LinkedInput"],
     required_theorems = ["CoreJS.LinkedInput.checkConstructedOutput_sound"],
     deps = [
-        ":certificate_data",
         ":corejs_deployment_placement",
         ":corejs_linked_input",
     ],
@@ -765,12 +759,6 @@ lean_library(
 )
 
 lean_library(
-    name = "corejs_linked_certificate_quote_json",
-    srcs = ["EsmSplit/CoreJS/LinkedCertificate/QuoteJson.lean"],
-    deps = [":certificate_data"],
-)
-
-lean_library(
     name = "corejs_linked_certificate_probe",
     srcs = ["EsmSplit/CoreJS/LinkedCertificate/Probe.lean"],
     deps = [
@@ -779,36 +767,6 @@ lean_library(
         ":corejs_linked_certificate_quote_corejs",
         ":corejs_probe_replay",
         ":corejs_state_match",
-    ],
-)
-
-lean_library(
-    name = "corejs_linked_certificate_quote_records",
-    srcs = ["EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean"],
-    deps = [
-        ":certificate_data",
-        ":corejs_linked_certificate_quote_corejs",
-        ":corejs_literal_record",
-    ],
-)
-
-lean_library(
-    name = "corejs_linked_certificate_quote_writes",
-    srcs = ["EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean"],
-    deps = [
-        ":certificate_data",
-        ":corejs_linked_certificate_quote_corejs",
-    ],
-)
-
-lean_library(
-    name = "corejs_certificates",
-    srcs = ["EsmSplit/CoreJS/LinkedCertificate.lean"],
-    deps = [
-        ":corejs_linked_certificate_probe",
-        ":corejs_linked_certificate_quote_json",
-        ":corejs_linked_certificate_quote_records",
-        ":corejs_linked_certificate_quote_writes",
     ],
 )
 
@@ -2062,7 +2020,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/LinkedBehaviorExamples.lean"],
     visibility = ["//visibility:private"],
     deps = [
-        ":corejs_certificates",
+        ":corejs_linked_certificate_probe",
         ":corejs_linked_pivot_certificate",
     ],
 )
@@ -2145,6 +2103,7 @@ lean_proof_test(
         "EsmSplit.CoreJS.JointStatic",
         "EsmSplit.CoreJS.LinkWorld",
         "EsmSplit.CoreJS.LinkedBehaviorExamples",
+        "EsmSplit.CoreJS.LinkedCertificate.Probe",
         "EsmSplit.CoreJS.LinkedCells",
         "EsmSplit.CoreJS.LinkedPivot",
         "EsmSplit.CoreJS.LinkedPivotCertificate",
@@ -2196,8 +2155,6 @@ lean_proof_test(
         "CoreJS.LinkedBehavior.CheckedProbePair.sameExports",
         "CoreJS.LinkedBehavior.probeObservationMismatchRefutesEquivalent",
         "CoreJS.LinkedBehaviorExamples.literalRoundTrip",
-        "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",
-        "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.movedClosure",
         "CoreJS.StaticProviderBoundary.liveCells",
         "CoreJS.StaticProviderBoundary.nestedDependencyExtension",
@@ -2476,6 +2433,7 @@ lean_proof_test(
         ":corejs_link_world",
         ":corejs_linked_behavior_examples",
         ":corejs_linked_cells",
+        ":corejs_linked_certificate_probe",
         ":corejs_linked_pivot",
         ":corejs_linked_pivot_certificate",
         ":corejs_linked_pivot_check",
