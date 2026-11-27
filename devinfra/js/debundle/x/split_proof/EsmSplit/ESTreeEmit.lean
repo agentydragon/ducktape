@@ -171,6 +171,9 @@ private def coreExpr (shadowed : Bool) (expr : CoreJS.Expr) (operand := false) :
       | .nullish => pure "??"
     return node "LogicalExpression" [("operator", .str operator),
       ("left", ← coreExpr shadowed left true), ("right", ← coreExpr shadowed right true)]
+  | .cond test yes no => do
+    return node "ConditionalExpression" [("test", ← coreExpr shadowed test true),
+      ("consequent", ← coreExpr shadowed yes true), ("alternate", ← coreExpr shadowed no true)]
   | _ => throw "unsupported CoreJS initializer for direct printing"
 
 private def coreStatement (shadowed : Bool) : CoreJS.Stmt → Except String Json

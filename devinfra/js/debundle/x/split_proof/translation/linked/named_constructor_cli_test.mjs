@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { split } from "../testing/split.mjs";
+import { moduleEvaluationOrder } from "./harness.mjs";
 
 const root = process.env.TEST_TMPDIR;
 const source = path.join(root, "source.mjs");
@@ -103,6 +104,50 @@ assert.equal(
   split({ source, spec, out: arithmeticLetOut, require: "all-outcomes", checkOutput: true }).status,
   "certified"
 );
+
+// Preserve the original two-unit authored placement for primitive conditionals.
+const conditionalPlacement = {
+  entry: "entry.mjs",
+  modules: { "part.mjs": ["#0"], "entry.mjs": ["#1"] },
+  order: ["part.mjs"],
+  sequential: true,
+};
+writeFileSync(spec, JSON.stringify(conditionalPlacement));
+for (const [label, code, value] of [
+  ["true", "const x=1; export const y=x===1?2:3;", 2],
+  ["false", "const x=0; export const y=x===1?2:3;", 3],
+  ["nested", "const x=1; export const y=x===1?(x?2:4):3;", 2],
+]) {
+  writeFileSync(source, code);
+  const target = path.join(root, `conditional-${label}`);
+  const result = split({ source, spec, out: target, require: "all-outcomes" });
+  assert.equal(result.status, "certified", result.log);
+  assert.equal(result.scope, "named-declarations", result.log);
+  assert.equal(result.guarantee, "all-outcomes", result.log);
+  assert.equal(result.verdict.strategy, "compiled-constructor", result.log);
+  assert.deepEqual(result.files, ["entry.mjs", "part.mjs"]);
+  assert.match(readFileSync(path.join(target, "part.mjs"), "utf8"), /const x\s*=/);
+  assert.match(readFileSync(path.join(target, "entry.mjs"), "utf8"), /const y\s*=/);
+  assert.deepEqual(moduleEvaluationOrder(target, "entry.mjs"), ["part.mjs", "entry.mjs"]);
+  assert.equal((await import(pathToFileURL(source).href + `?${label}`)).y, value);
+  assert.equal((await import(pathToFileURL(path.join(target, "entry.mjs")).href)).y, value);
+  assert.equal(split({ source, spec, out: target, require: "all-outcomes", checkOutput: true }).status, "certified");
+  if (label === "true") {
+    const entryFile = path.join(target, "entry.mjs");
+    const emitted = readFileSync(entryFile, "utf8");
+    const altered = emitted.replace(/\?\s*2\s*:\s*3/, "? 3 : 3");
+    assert.notEqual(altered, emitted);
+    writeFileSync(entryFile, altered);
+    assert.equal(split({ source, spec, out: target, require: "all-outcomes", checkOutput: true }).status, "refused");
+    assert.equal(readFileSync(entryFile, "utf8"), altered);
+  }
+}
+
+// A skipped branch is still checked against the earlier-binding policy.
+writeFileSync(source, "const x=1; export const y=x===1?2:missing;");
+const unboundConditionalOut = path.join(root, "conditional-unbound");
+assert.equal(split({ source, spec, out: unboundConditionalOut, require: "all-outcomes" }).status, "refused");
+assert(!existsSync(unboundConditionalOut));
 
 // Initialized lexical declarations use the same actual-source constructor.
 writeFileSync(spec, JSON.stringify(placement));
