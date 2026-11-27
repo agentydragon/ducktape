@@ -1,6 +1,7 @@
 import EsmSplit.CoreJS.LinkedEntryFind
 import EsmSplit.CoreJS.TerminalEntryCells
 import EsmSplit.CoreJS.TerminalEntryTable
+import EsmSplit.CoreJS.IndexedEntryLink
 
 /-! The original row and actual linked entry have the same complete public
 address table once actual candidate scopes use the source allocation frames. -/
@@ -40,7 +41,7 @@ theorem linked_table {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} 
       some (moduleOf ss B P entry, candidateEnv) := linkedFind
   have exports : (moduleOf ss B P entry).exports = row.names :=
     TerminalEntryTable.exact_exports units unpublished glue rowFootprint
-  apply TerminalEntryTable.resolve_table sourceFind rightFind rfl exports
+  apply IndexedEntryLink.resolved_entries_equal sourceFind rightFind exports
   intro pair member
   exact bindings pair member
 

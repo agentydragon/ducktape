@@ -37,6 +37,30 @@ lean_library(
 )
 
 lean_library(
+    name = "plan_glue",
+    srcs = ["EsmSplit/PlanGlue.lean"],
+    deps = [":planner"],
+)
+
+lean_proof_test(
+    name = "plan_glue_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.PlanGlue"],
+    required_theorems = [
+        "EsmSplit.PlanGlue.published_contains_iff",
+        "EsmSplit.PlanGlue.glue_length",
+        "EsmSplit.PlanGlue.covered_of_glue_empty",
+        "EsmSplit.PlanGlue.glue_empty_of_covered",
+        "EsmSplit.PlanGlue.finishPlan_glue",
+        "EsmSplit.PlanGlue.mkPlan_glue_equation",
+        "EsmSplit.PlanGlue.mkPlan_no_extra_glue",
+        "EsmSplit.PlanGlue.mkPlan_no_extra_glue_iff",
+        "EsmSplit.PlanGlue.uncovered_adds_public_name",
+    ],
+    deps = [":plan_glue"],
+)
+
+lean_library(
     name = "estree",
     srcs = [
         # Keep import order for the native Lean rule.
@@ -291,7 +315,38 @@ lean_library(
 lean_library(
     name = "static_provider_boundary",
     srcs = ["EsmSplit/CoreJS/StaticProviderBoundary.lean"],
-    deps = [":corejs_certificate_support_base"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_nested_module_extension",
+    ],
+)
+
+lean_proof_test(
+    name = "static_provider_boundary_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.StaticProviderBoundary"],
+    required_theorems = ["CoreJS.StaticProviderBoundary.nestedDependencyExtension"],
+    deps = [":static_provider_boundary"],
+)
+
+lean_library(
+    name = "corejs_nested_module_extension",
+    srcs = ["EsmSplit/CoreJS/NestedModuleExtension.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_indexed_allocated_cells",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_nested_module_extension_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.NestedModuleExtension"],
+    required_theorems = [
+        "CoreJS.NestedModuleExtension.prior_allocations_survive",
+        "CoreJS.NestedModuleExtension.nestedModuleExtension",
+    ],
+    deps = [":corejs_nested_module_extension"],
 )
 
 lean_library(
@@ -545,6 +600,23 @@ lean_proof_test(
         "CoreJS.IndexedSourceSchedule.assignmentOwnerIsAuthored",
     ],
     deps = [":corejs_indexed_source_schedule"],
+)
+
+lean_library(
+    name = "corejs_source_row_order",
+    srcs = ["EsmSplit/CoreJS/SourceRowOrder.lean"],
+    deps = [":corejs_indexed_source_schedule"],
+)
+
+lean_proof_test(
+    name = "corejs_source_row_order_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SourceRowOrder"],
+    required_theorems = [
+        "CoreJS.IndexedSourceSchedule.metadataOrderFromItems",
+        "CoreJS.IndexedSourceSchedule.metadataRowsOrdered",
+    ],
+    deps = [":corejs_source_row_order"],
 )
 
 executable_test(
@@ -1020,6 +1092,8 @@ lean_library(
     deps = [
         ":corejs_certificate_probe",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_source_facts",
+        ":corejs_indexed_source_schedule",
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
@@ -1156,6 +1230,7 @@ test_runner(
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
     deps = [
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
         ":corejs_linked_input",
         ":corejs_runtime",
@@ -1176,9 +1251,11 @@ test_runner(
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
     deps = [
+        ":corejs_indexed_inline_plan",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
+        ":lowersplit_input",
         ":named_declaration_split",
         ":planner",
     ],
@@ -1386,6 +1463,7 @@ lean_proof_test(
         "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.movedClosure",
         "CoreJS.StaticProviderBoundary.liveCells",
+        "CoreJS.StaticProviderBoundary.nestedDependencyExtension",
         "CoreJS.StaticProviderBoundary.providerPrefix",
         "CoreJS.StaticProviderBoundary.importerContinuation",
         "CoreJS.StaticProviderBoundary.linkedBoundary",
@@ -2068,7 +2146,6 @@ lean_library(
     name = "corejs_terminal_entry_table",
     srcs = ["EsmSplit/CoreJS/TerminalEntryTable.lean"],
     deps = [
-        ":corejs_certificate_support_base",
         ":corejs_export_rows",
         ":corejs_terminal_entry_names",
     ],
@@ -2080,7 +2157,6 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.TerminalEntryTable"],
     required_theorems = [
         "CoreJS.TerminalEntryTable.exact_exports",
-        "CoreJS.TerminalEntryTable.resolve_table",
     ],
     deps = [":corejs_terminal_entry_table"],
 )
@@ -2126,6 +2202,7 @@ lean_library(
     name = "corejs_terminal_linked_exports",
     srcs = ["EsmSplit/CoreJS/TerminalLinkedExports.lean"],
     deps = [
+        ":corejs_indexed_entry_link",
         ":corejs_linked_entry_find",
         ":corejs_terminal_entry_cells",
         ":corejs_terminal_entry_table",
@@ -2687,6 +2764,7 @@ lean_library(
     name = "corejs_indexed_const_link",
     srcs = ["EsmSplit/CoreJS/IndexedConstLink.lean"],
     deps = [
+        ":corejs_export_rows_link",
         ":corejs_indexed_units_agree",
         ":corejs_single_module",
     ],
@@ -2698,6 +2776,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.IndexedConstLink"],
     required_theorems = [
         "CoreJS.IndexedConstLink.declarations_same_exports_of_order_kept",
+        "CoreJS.IndexedConstLink.rows_same_exports_of_order_kept",
         "CoreJS.IndexedConstLink.same_exports_of_order_kept",
         "CoreJS.IndexedConstLink.source_allocation",
         "CoreJS.IndexedConstLink.source_decl_allocation",
@@ -2723,6 +2802,7 @@ lean_proof_test(
         "CoreJS.IndexedReorder.inline_tables",
         "CoreJS.IndexedReorder.run_of_schedule",
         "CoreJS.IndexedReorder.same_inline_exports",
+        "CoreJS.IndexedReorder.same_inline_exports_of_declarations",
     ],
     deps = [":corejs_indexed_reorder"],
 )
@@ -2748,9 +2828,29 @@ lean_library(
     name = "corejs_indexed_checked_split",
     srcs = ["EsmSplit/CoreJS/IndexedCheckedSplit.lean"],
     deps = [
+        ":corejs_export_rows_order",
         ":corejs_indexed_const_link",
         ":corejs_indexed_input_checks",
     ],
+)
+
+lean_library(
+    name = "corejs_indexed_source_facts",
+    srcs = ["EsmSplit/CoreJS/IndexedSourceFacts.lean"],
+    deps = [
+        ":corejs_indexed_checked_split",
+        ":corejs_source_row_order",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_source_facts_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedSourceFacts"],
+    required_theorems = [
+        "CoreJS.IndexedCheckedSplit.SourceFacts.fromSequence",
+    ],
+    deps = [":corejs_indexed_source_facts"],
 )
 
 lean_proof_test(
@@ -2762,6 +2862,30 @@ lean_proof_test(
         "CoreJS.IndexedCheckedSplit.construct_sound",
     ],
     deps = [":corejs_indexed_checked_split"],
+)
+
+lean_library(
+    name = "corejs_indexed_inline_plan",
+    srcs = ["EsmSplit/CoreJS/IndexedInlinePlan.lean"],
+    deps = [
+        ":corejs_indexed_input_checks",
+        ":corejs_indexed_reorder",
+        ":corejs_indexed_source_schedule",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_inline_plan_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedInlinePlan"],
+    required_theorems = [
+        "CoreJS.IndexedInlinePlan.checkSource",
+        "CoreJS.IndexedInlinePlan.check",
+        "CoreJS.IndexedInlinePlan.allOutcomes",
+        "CoreJS.IndexedInlinePlan.sameExports",
+        "CoreJS.IndexedInlinePlan.placementOwner",
+    ],
+    deps = [":corejs_indexed_inline_plan"],
 )
 
 lean_library(
@@ -2813,6 +2937,7 @@ lean_library(
     deps = [
         ":corejs_export_rows",
         ":corejs_indexed_entry_link",
+        ":plan_glue",
     ],
 )
 
@@ -2826,6 +2951,7 @@ lean_proof_test(
         "CoreJS.ExportRows.rowAt_some",
         "CoreJS.ExportRows.row_alias_live_cell",
         "CoreJS.ExportRows.rows_resolved_from_plan",
+        "CoreJS.ExportRows.rows_resolved_from_mkPlan",
         "CoreJS.ExportRows.selected_row",
         "CoreJS.ExportRows.rows_scope_cells",
     ],
@@ -2865,4 +2991,23 @@ lean_proof_test(
         "CoreJS.newCells_fresh",
     ],
     deps = [":corejs_certificate_support_base"],
+)
+
+lean_library(
+    name = "primitive_rhs_frame",
+    srcs = ["EsmSplit/CoreJS/PrimitiveRhsFrame.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "primitive_rhs_frame_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PrimitiveRhsFrame"],
+    required_theorems = [
+        "CoreJS.PrimitiveRhs.checked_inert",
+        "CoreJS.PrimitiveRhs.eval_inert",
+        "CoreJS.PrimitiveRhs.lexical_outcome",
+        "CoreJS.PrimitiveRhs.inert_logical",
+    ],
+    deps = [":primitive_rhs_frame"],
 )

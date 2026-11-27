@@ -41,7 +41,6 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	other := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "delegated-identity-other", policyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	otherIdentity := &identitypb.Identity{Name: other.Identity.Name, Uid: string(other.Identity.UID)}
-	ownerAccount := serviceAccountIdentityFor(owner.Principal.Account, owner.Principal.ServiceAccountUID)
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
 	inventory := &authorityInventory{sandbox: ownerSandbox, identity: ownerIdentity}
 	rules := access.NewIndex()
@@ -107,9 +106,8 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	seed := func(sandbox SandboxSnapshot, execution store.SessionExecution, creator store.Caller) string {
 		t.Helper()
 		sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
-		testPlacement(spec, sandbox.Name, sandbox.UID)
-		if _, err := queueStore.CreateSessionWithPlacementForCaller(t.Context(), sessionID, sandbox.Name, sandbox.UID,
-			spec, nil, nil, execution, creator); err != nil {
+		if _, err := createSessionForCaller(queueStore, t.Context(), sessionID, sandbox.Name, sandbox.UID,
+			spec, nil, execution.Identity, creator); err != nil {
 			t.Fatalf("seed Session: %v", err)
 		}
 		return sessionID
@@ -119,8 +117,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	otherSandbox := SandboxSnapshot{Name: other.Sandbox.Name, Namespace: other.Sandbox.Namespace, UID: string(other.Sandbox.UID)}
 	otherSession := seed(otherSandbox, store.SessionExecution{Identity: otherIdentity},
 		store.IdentityCaller{Identity: otherIdentity, Proof: store.IdentitySVID{}})
-	accountSession := seed(ownerSandbox, store.SessionExecution{Identity: otherIdentity},
-		store.ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: ownerAccount, Attribution: &store.AdmissionAttribution{Actor: ownerAccount, EffectiveCaller: ownerAccount}})
+	platformSession := seed(ownerSandbox, store.SessionExecution{Identity: otherIdentity}, testStoreCaller())
 
 	const command = "delegated-identity-input"
 	wantCommand := input(command, "owned")
@@ -166,7 +163,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if err != nil || len(listed.GetSessions()) != 1 || listed.GetSessions()[0].GetSessionId() != owned {
 		t.Fatalf("delegated Identity ListSessions = %v, %v; want only its Session", listed, err)
 	}
-	for _, foreign := range []string{otherSession, accountSession} {
+	for _, foreign := range []string{otherSession, platformSession} {
 		if _, err := client.GetSession(actingFor(ownerIdentity), &dispatcherpb.GetSessionRequest{SessionId: foreign}); status.Code(err) != codes.NotFound {
 			t.Fatalf("delegated Identity read a Session it does not own: %v", err)
 		}

@@ -250,66 +250,92 @@ fn callable_native_constructor_refusals_keep_node_behavior() {
 }
 
 #[test]
-fn class_constructor_does_not_treat_a_getter_as_a_data_field() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+fn class_constructors_outside_the_former_evaluator_get_no_summary() {
+    for (name, source, provider, expected, reason) in [
+        (
+            "GetterReader",
             "import { GetterReader } from './peer.js';\nglobalThis.getterCalls = 0;\nconst reader = new GetterReader();\nconsole.log(globalThis.getterCalls, reader.invoke());\n",
-            vec![],
-        ).with_import_order(&["residual"])
-        .with_extra_chunks(&[(
-            "static/peer",
             "export class GetterReader { #read; constructor() { const record = { get value() { globalThis.getterCalls++; return () => 42; } }; this.#read = record.value; } invoke() { return this.#read(); } }\n",
-        )]),
-    );
-    assert_preserved_entry_output(&fixture, "1 42\n");
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    assert!(
-        report["imported_callables"]["GetterReader"]["foreign_call"].is_null(),
-        "an accessor read is not a data-field read"
-    );
-}
-
-#[test]
-fn a_constructor_returning_this_keeps_the_legacy_admission_boundary() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            "1 42\n",
+            "an accessor read is not a data-field read",
+        ),
+        (
+            "SelfReturning",
             "import { SelfReturning } from './peer.js';\nconst value = new SelfReturning();\nconsole.log(value instanceof SelfReturning);\n",
-            vec![],
-        ).with_import_order(&["residual"])
-        .with_extra_chunks(&[(
-            "static/peer",
             "export class SelfReturning { constructor() { return this; } }\n",
-        )]),
-    );
-    assert_preserved_entry_output(&fixture, "true\n");
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    assert!(
-        report["imported_callables"]["SelfReturning"]["foreign_call"].is_null(),
-        "the former class evaluator rejected object-valued constructor returns"
-    );
+            "true\n",
+            "the former class evaluator rejected object-valued constructor returns",
+        ),
+    ] {
+        println!("case: {name}");
+        let fixture = run_fixture(
+            FixtureOpts::new(source, vec![])
+                .with_import_order(&["residual"])
+                .with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert!(
+            report["imported_callables"][name]["foreign_call"].is_null(),
+            "{reason}"
+        );
+    }
 }
 
 #[test]
-fn a_public_field_write_keeps_the_constructor_unknown() {
-    reject(
-        "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
-        "export class Box { constructor(callback) { this.callback = callback; } invoke() { return this.callback(); } }\n",
-    );
+fn providers_that_may_run_retained_code_stay_unknown() {
+    for (label, source, provider) in [
+        (
+            "public field write keeps the constructor unknown",
+            "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
+            "export class Box { constructor(callback) { this.callback = callback; } invoke() { return this.callback(); } }\n",
+        ),
+        (
+            // The value model has no foreign object identity, so `.describe` is an
+            // unknown member call that may run the retained callback.
+            "method on the summarized result",
+            "import { object } from './peer.js';\nconst wrapped = object({ read: () => later }).describe('note');\nconst later = 42;\nconsole.log(wrapped.shape.read());\n",
+            "export function object(shape) { return { shape, describe(text) { return this; } }; }\n",
+        ),
+        (
+            "provider that may invoke its callback",
+            "import { untracked } from './peer.js';\nconst wrapped = untracked(() => later, false);\nconst later = 42;\nconsole.log(wrapped, later);\n",
+            "export function untracked(callback, run) { if (run) callback(); return 0; }\n",
+        ),
+        (
+            // An importer can replace `registry.lazy` before the call.
+            "provider reading exported state",
+            "import { lazy } from './peer.js';\nconst wrapped = lazy(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
+            "export const registry = { lazy(e) { return () => e(); } };\nexport function lazy(e) { return registry.lazy(e); }\n",
+        ),
+    ] {
+        println!("case: {label}");
+        reject(source, provider);
+    }
 }
 
 #[test]
-fn builder_entry_defers_the_callbacks_in_its_input() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+fn passive_providers_defer_the_callbacks_in_their_input() {
+    for (label, source, provider) in [
+        (
+            "builder entry",
             "import { object } from './peer.js';\nconst wrapped = object({ read: () => later }, 'note');\nconst later = 42;\nconsole.log(wrapped.shape.read());\n",
-            modules(),
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
             "export function object(shape, description) { const kind = 'object'; return { kind, shape }; }\n",
-        )]),
-    );
-    assert_preserved_entry_output(&fixture, "42\n");
+        ),
+        (
+            // Identity returns its argument and drops the other.
+            "identity",
+            "import { keep } from './peer.js';\nconst wrapped = keep({ read: () => later }, () => later);\nconst later = 42;\nconsole.log(wrapped.read());\n",
+            "export function keep(value, reset) { return value; }\n",
+        ),
+    ] {
+        println!("case: {label}");
+        let fixture = run_fixture(
+            FixtureOpts::new(source, modules()).with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, "42\n");
+    }
 }
 
 #[test]
@@ -417,104 +443,79 @@ fn returned_closure_can_resolve_provider_module_bindings_without_callback_eviden
 }
 
 #[test]
-fn returned_closure_can_read_a_destructured_catch_binding() {
-    let source = "import { make } from './peer.js';\n\
-                  const wrapped = make(42, () => { throw Error('unused callback'); });\n\
-                  console.log(wrapped(42), wrapped(false));\n";
-    let provider = "export function make(value, unused) {\n\
-                     return (input) => {\n\
-                       try { throw { observed: input }; }\n\
-                       catch ({ observed }) { return observed === value; }\n\
-                     };\n\
-                   }\n";
-    let fixture = run_fixture(
-        FixtureOpts::new(source, vec![])
-            .with_import_order(&["residual"])
-            .with_extra_chunks(&[("static/peer", provider)]),
-    );
-    assert_preserved_entry_output(&fixture, "true false\n");
-
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    let callable = &report["imported_callables"]["make"];
-    assert_eq!(
-        callable["foreign_call"]["returns"],
-        serde_json::json!([{"kind": "fresh_allocation"}])
-    );
-    assert_eq!(
-        callable["foreign_call"]["retained_arguments"],
-        serde_json::json!([0, 1]),
-        "the returned closure conservatively retains every formal"
-    );
-    assert_eq!(
-        callable["callback_factory_evidence"],
-        serde_json::json!([]),
-        "a catch-local read does not establish callback factory behavior"
-    );
-}
-
-#[test]
-fn returned_closure_destructuring_locals_stay_deferred() {
-    let source = "import { make } from './peer.js';\n\
-                  let reads = 0;\n\
-                  const input = { get value() { reads++; return 42; } };\n\
-                  const wrapped = make();\n\
-                  console.log(reads, wrapped(input), reads);\n";
-    let provider = "export function make() {\n\
-                     return (input) => {\n\
-                       const { value } = input;\n\
-                       return value;\n\
-                     };\n\
-                   }\n";
-    let fixture = run_fixture(
-        FixtureOpts::new(source, vec![])
-            .with_import_order(&["residual"])
-            .with_extra_chunks(&[("static/peer", provider)]),
-    );
-    assert_preserved_entry_output(&fixture, "0 42 1\n");
-
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    let callable = &report["imported_callables"]["make"];
-    assert_eq!(
-        callable["foreign_call"]["returns"],
-        serde_json::json!([{"kind": "fresh_allocation"}])
-    );
-    assert_eq!(
-        callable["foreign_call"]["retained_arguments"],
-        serde_json::json!([])
-    );
-    assert_eq!(callable["callback_factory_evidence"], serde_json::json!([]));
-}
-
-#[test]
-fn returned_closure_nested_patterns_keep_formals_and_callback_policy() {
-    let source = "import { make } from './peer.js';\n\
-                  const wrapped = make(() => 42, () => { throw Error('unused'); });\n\
-                  console.log(...wrapped({ nested: {}, items: [7, 8] }));\n";
-    let provider = "export function make(callback, unused) {\n\
-                     const wrapped = (input) => {\n\
-                       const { nested: { value = callback() }, ...rest } = input;\n\
-                       const [head, ...tail] = rest.items;\n\
-                       return [value, head, tail.length];\n\
-                     };\n\
-                     return wrapped;\n\
-                   }\n";
-    let fixture = run_fixture(
-        FixtureOpts::new(source, vec![])
-            .with_import_order(&["residual"])
-            .with_extra_chunks(&[("static/peer", provider)]),
-    );
-    assert_preserved_entry_output(&fixture, "42 7 1\n");
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    let callable = &report["imported_callables"]["make"];
-    assert_eq!(
-        callable["foreign_call"]["returns"],
-        serde_json::json!([{"kind": "fresh_allocation"}])
-    );
-    assert_eq!(
-        callable["foreign_call"]["retained_arguments"],
-        serde_json::json!([0, 1])
-    );
-    assert_eq!(callable["callback_factory_evidence"], serde_json::json!([]));
+fn returned_closure_bindings_keep_formals_without_callback_evidence() {
+    for (label, source, provider, expected, retained) in [
+        (
+            // The closure reads a destructured catch binding; a catch-local read
+            // does not establish callback factory behavior.
+            "destructured catch binding",
+            "import { make } from './peer.js';\n\
+             const wrapped = make(42, () => { throw Error('unused callback'); });\n\
+             console.log(wrapped(42), wrapped(false));\n",
+            "export function make(value, unused) {\n\
+               return (input) => {\n\
+                 try { throw { observed: input }; }\n\
+                 catch ({ observed }) { return observed === value; }\n\
+               };\n\
+             }\n",
+            "true false\n",
+            vec![0, 1],
+        ),
+        (
+            // Destructuring locals stay deferred until the closure runs.
+            "destructuring locals",
+            "import { make } from './peer.js';\n\
+             let reads = 0;\n\
+             const input = { get value() { reads++; return 42; } };\n\
+             const wrapped = make();\n\
+             console.log(reads, wrapped(input), reads);\n",
+            "export function make() {\n\
+               return (input) => {\n\
+                 const { value } = input;\n\
+                 return value;\n\
+               };\n\
+             }\n",
+            "0 42 1\n",
+            vec![],
+        ),
+        (
+            "nested patterns",
+            "import { make } from './peer.js';\n\
+             const wrapped = make(() => 42, () => { throw Error('unused'); });\n\
+             console.log(...wrapped({ nested: {}, items: [7, 8] }));\n",
+            "export function make(callback, unused) {\n\
+               const wrapped = (input) => {\n\
+                 const { nested: { value = callback() }, ...rest } = input;\n\
+                 const [head, ...tail] = rest.items;\n\
+                 return [value, head, tail.length];\n\
+               };\n\
+               return wrapped;\n\
+             }\n",
+            "42 7 1\n",
+            vec![0, 1],
+        ),
+    ] {
+        println!("case: {label}");
+        let fixture = run_fixture(
+            FixtureOpts::new(source, vec![])
+                .with_import_order(&["residual"])
+                .with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        let callable = &report["imported_callables"]["make"];
+        assert_eq!(
+            callable["foreign_call"]["returns"],
+            serde_json::json!([{"kind": "fresh_allocation"}])
+        );
+        assert_eq!(
+            callable["foreign_call"]["retained_arguments"],
+            serde_json::json!(retained),
+            "the returned closure conservatively retains every formal it can read"
+        );
+        assert_eq!(callable["callback_factory_evidence"], serde_json::json!([]));
+    }
 }
 
 #[test]
@@ -773,53 +774,48 @@ console.log(observed);
 }
 
 #[test]
-fn returned_result_preserves_live_input_aliases() {
-    assert_live_retained_input(
-        "const input = {}; const alias = input;",
-        "alias.read = read;",
-        "box.value.read()",
-    );
-}
-
-#[test]
-fn returned_result_preserves_cyclic_input_reach() {
-    assert_live_retained_input(
-        "const input = {}; input.self = input;",
-        "input.self.read = read;",
-        "box.value.self.read()",
-    );
-}
-
-#[test]
-fn returned_result_keeps_array_insertion_conservative() {
-    assert_live_retained_input("const input = [];", "input.push(read);", "box.value[0]()");
-}
-
-#[test]
-fn returned_result_keeps_map_key_insertion_conservative() {
-    assert_live_retained_input(
-        "const input = new Map();",
-        "input.set(read, 1);",
-        "[...box.value.keys()][0]()",
-    );
-}
-
-#[test]
-fn returned_result_keeps_map_value_insertion_conservative() {
-    assert_live_retained_input(
-        "const input = new Map();",
-        "input.set('read', read);",
-        "box.value.get('read')()",
-    );
-}
-
-#[test]
-fn returned_result_keeps_set_insertion_conservative() {
-    assert_live_retained_input(
-        "const input = new Set();",
-        "input.add(read);",
-        "[...box.value][0]()",
-    );
+fn returned_result_keeps_live_retained_inputs_conservative() {
+    for (label, setup, mutation, use_result) in [
+        (
+            "input aliases",
+            "const input = {}; const alias = input;",
+            "alias.read = read;",
+            "box.value.read()",
+        ),
+        (
+            "cyclic input reach",
+            "const input = {}; input.self = input;",
+            "input.self.read = read;",
+            "box.value.self.read()",
+        ),
+        (
+            "array insertion",
+            "const input = [];",
+            "input.push(read);",
+            "box.value[0]()",
+        ),
+        (
+            "map key insertion",
+            "const input = new Map();",
+            "input.set(read, 1);",
+            "[...box.value.keys()][0]()",
+        ),
+        (
+            "map value insertion",
+            "const input = new Map();",
+            "input.set('read', read);",
+            "box.value.get('read')()",
+        ),
+        (
+            "set insertion",
+            "const input = new Set();",
+            "input.add(read);",
+            "[...box.value][0]()",
+        ),
+    ] {
+        println!("case: {label}");
+        assert_live_retained_input(setup, mutation, use_result);
+    }
 }
 
 #[test]
@@ -881,48 +877,6 @@ console.log(wrapped.value);
         .with_chunk_export_purity(&[assertion]),
         &["callbacks/wrapped", "values/later"],
         &[],
-    );
-}
-
-#[test]
-fn a_method_on_the_summarized_result_stays_unknown() {
-    // The value model has no foreign object identity, so `.describe` is an
-    // unknown member call that may run the retained callback.
-    reject(
-        "import { object } from './peer.js';\nconst wrapped = object({ read: () => later }).describe('note');\nconst later = 42;\nconsole.log(wrapped.shape.read());\n",
-        "export function object(shape) { return { shape, describe(text) { return this; } }; }\n",
-    );
-}
-
-#[test]
-fn identity_returns_its_argument_and_drops_the_other() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { keep } from './peer.js';\nconst wrapped = keep({ read: () => later }, () => later);\nconst later = 42;\nconsole.log(wrapped.read());\n",
-            modules(),
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export function keep(value, reset) { return value; }\n",
-        )]),
-    );
-    assert_preserved_entry_output(&fixture, "42\n");
-}
-
-#[test]
-fn a_provider_that_may_invoke_its_callback_stays_unknown() {
-    reject(
-        "import { untracked } from './peer.js';\nconst wrapped = untracked(() => later, false);\nconst later = 42;\nconsole.log(wrapped, later);\n",
-        "export function untracked(callback, run) { if (run) callback(); return 0; }\n",
-    );
-}
-
-#[test]
-fn a_provider_reading_exported_state_stays_unknown() {
-    // An importer can replace `registry.lazy` before the call.
-    reject(
-        "import { lazy } from './peer.js';\nconst wrapped = lazy(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
-        "export const registry = { lazy(e) { return () => e(); } };\nexport function lazy(e) { return registry.lazy(e); }\n",
     );
 }
 

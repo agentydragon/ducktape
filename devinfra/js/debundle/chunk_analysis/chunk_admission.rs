@@ -217,6 +217,26 @@ impl AdmissionScan<'_> {
         });
     }
 
+    /// A property initializer: a static value runs when the class is built,
+    /// so it is scanned eagerly; an instance value runs only per instance, so
+    /// it is scanned lazily.
+    fn visit_property_value(&mut self, value: &Expr, is_static: bool) {
+        if is_static {
+            value.visit_with(self);
+        } else {
+            self.descend_lazy(|scan| value.visit_with(scan));
+        }
+    }
+
+    /// A getter or setter body, scanned lazily: it runs per call, not per parse.
+    fn descend_function_body(&mut self, function: &Function) {
+        self.descend_lazy(|scan| {
+            if let Some(body) = &function.body {
+                body.visit_with(scan);
+            }
+        });
+    }
+
     fn descend_lazy(&mut self, f: impl FnOnce(&mut Self)) {
         self.lazy_depth += 1;
         f(self);
@@ -339,11 +359,7 @@ impl Visit for AdmissionScan<'_> {
 
     fn visit_getter_prop(&mut self, node: &GetterProp) {
         node.key.visit_with(self);
-        self.descend_lazy(|scan| {
-            if let Some(body) = &node.function.body {
-                body.visit_with(scan);
-            }
-        });
+        self.descend_function_body(&node.function);
     }
 
     fn visit_setter_prop(&mut self, node: &SetterProp) {
@@ -351,11 +367,7 @@ impl Visit for AdmissionScan<'_> {
         for param in &node.function.params {
             param.pat.visit_with(self);
         }
-        self.descend_lazy(|scan| {
-            if let Some(body) = &node.function.body {
-                body.visit_with(scan);
-            }
-        });
+        self.descend_function_body(&node.function);
     }
 
     fn visit_class(&mut self, node: &Class) {
@@ -386,20 +398,12 @@ impl Visit for AdmissionScan<'_> {
             ClassMember::ClassProp(prop) => {
                 visit_computed_prop_name(self, &prop.key);
                 if let Some(value) = &prop.value {
-                    if prop.is_static {
-                        value.visit_with(self);
-                    } else {
-                        self.descend_lazy(|scan| value.visit_with(scan));
-                    }
+                    self.visit_property_value(value, prop.is_static);
                 }
             }
             ClassMember::PrivateProp(prop) => {
                 if let Some(value) = &prop.value {
-                    if prop.is_static {
-                        value.visit_with(self);
-                    } else {
-                        self.descend_lazy(|scan| value.visit_with(scan));
-                    }
+                    self.visit_property_value(value, prop.is_static);
                 }
             }
             ClassMember::StaticBlock(block) => {
@@ -410,11 +414,7 @@ impl Visit for AdmissionScan<'_> {
                     visit_computed_prop_name(self, name);
                 }
                 if let Some(value) = &accessor.value {
-                    if accessor.is_static {
-                        value.visit_with(self);
-                    } else {
-                        self.descend_lazy(|scan| value.visit_with(scan));
-                    }
+                    self.visit_property_value(value, accessor.is_static);
                 }
             }
             ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {}

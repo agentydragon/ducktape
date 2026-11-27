@@ -32,6 +32,7 @@ var (
 	ErrUnknownProcess  = errors.New("process not found")
 	ErrProcessExists   = errors.New("process ID already exists")
 	ErrInvalidRequest  = errors.New("invalid request")
+	ErrUnknownFile     = errors.New("file handle not found")
 )
 
 // Limits bounds native execution resources and retention within one server.
@@ -1282,7 +1283,7 @@ func (s *Session) ReadFile(id string, offset int64, length int) ([]byte, bool, e
 	defer s.mu.Unlock()
 	f := s.files[id]
 	if f == nil {
-		return nil, false, errors.New("file handle not found")
+		return nil, false, ErrUnknownFile
 	}
 	b := make([]byte, length)
 	n, err := f.ReadAt(b, offset)
@@ -1297,8 +1298,9 @@ func (s *Session) CloseFile(id string) error {
 	defer s.mu.Unlock()
 	f := s.files[id]
 	if f == nil {
-		return errors.New("file handle not found")
+		return ErrUnknownFile
 	}
+	// The handle is gone even if closing its descriptor fails.
 	delete(s.files, id)
 	return f.Close()
 }

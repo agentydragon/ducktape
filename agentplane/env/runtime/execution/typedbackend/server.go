@@ -19,6 +19,10 @@ type Server struct {
 	native *native.Server
 }
 
+// UnknownFileCode is the upstream code (JSON-RPC invalid params) of a rejection naming a file handle the
+// execution session does not hold.
+const UnknownFileCode int32 = -32602
+
 func New(s *native.Server) *Server { return &Server{native: s} }
 func completed() *pb.ExecutionStatus {
 	return &pb.ExecutionStatus{Outcome: pb.ExecutionStatus_OUTCOME_COMPLETED}
@@ -28,7 +32,12 @@ func rejected(err error) *pb.ExecutionStatus {
 	if err == nil {
 		return completed()
 	}
-	return &pb.ExecutionStatus{Outcome: pb.ExecutionStatus_OUTCOME_REJECTED, Message: err.Error()}
+	response := &pb.ExecutionStatus{Outcome: pb.ExecutionStatus_OUTCOME_REJECTED, Message: err.Error()}
+	if errors.Is(err, native.ErrUnknownFile) {
+		code := UnknownFileCode
+		response.UpstreamCode = &code
+	}
+	return response
 }
 
 // A native failure after invocation can follow a partial mutation. Do not claim
@@ -192,8 +201,13 @@ func (s *Server) ReadFile(ctx context.Context, r *pb.ReadFileRequest) (*pb.ReadF
 
 func (s *Server) CloseFile(ctx context.Context, r *pb.CloseFileRequest) (*pb.CloseFileResponse, error) {
 	sess, err := s.session(r.GetExecutionSessionId())
-	if err == nil {
-		err = sess.CloseFile(r.HandleId)
+	if err != nil {
+		return &pb.CloseFileResponse{Status: rejected(err)}, nil
+	}
+	err = sess.CloseFile(r.HandleId)
+	if err != nil && !errors.Is(err, native.ErrUnknownFile) {
+		// The handle is released; only closing its descriptor failed.
+		return &pb.CloseFileResponse{Status: &pb.ExecutionStatus{Outcome: pb.ExecutionStatus_OUTCOME_COMPLETED, Message: err.Error()}}, nil
 	}
 	return &pb.CloseFileResponse{Status: rejected(err)}, nil
 }

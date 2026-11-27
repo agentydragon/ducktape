@@ -67,48 +67,56 @@ pub(super) fn encode(dependencies: &ProofDependencies) -> proto::ProofDependenci
     }
 }
 
+/// Decode one family's authored-input references. Every family's domain
+/// record is `{ defining_chunk, input_index }`; `reference` names it. The
+/// wire index is `u64` and must fit the domain `usize`, so a saved index out
+/// of `usize` range fails the decode.
+fn decode_author_inputs<T, C>(
+    inputs: Vec<proto::AuthorInputRef>,
+    reference: impl Fn(String, usize) -> T,
+) -> Result<C>
+where
+    C: FromIterator<T>,
+{
+    inputs
+        .into_iter()
+        .map(|input| {
+            let input_index: usize = input.input_index.try_into()?;
+            Ok(reference(input.defining_chunk, input_index))
+        })
+        .collect()
+}
+
 pub(super) fn decode(dependencies: proto::ProofDependencies) -> Result<ProofDependencies> {
     Ok(ProofDependencies {
-        value_inputs: dependencies
-            .value_inputs
-            .into_iter()
-            .map(|input| {
-                Ok(ValueInputRef {
-                    defining_chunk: input.defining_chunk,
-                    input_index: input.input_index.try_into()?,
-                })
-            })
-            .collect::<Result<_>>()?,
-        native_operation_inputs: dependencies
-            .native_operation_inputs
-            .into_iter()
-            .map(|input| {
-                Ok(NativeOperationInputRef {
-                    defining_chunk: input.defining_chunk,
-                    input_index: input.input_index.try_into()?,
-                })
-            })
-            .collect::<Result<_>>()?,
-        initializer_call_effect_inputs: dependencies
-            .initializer_call_effect_inputs
-            .into_iter()
-            .map(|input| {
-                Ok(InitializerCallEffectInputRef {
-                    defining_chunk: input.defining_chunk,
-                    input_index: input.input_index.try_into()?,
-                })
-            })
-            .collect::<Result<_>>()?,
-        imported_primitive_array_spread_inputs: dependencies
-            .imported_primitive_array_spread_inputs
-            .into_iter()
-            .map(|input| {
-                Ok(ImportedPrimitiveArraySpreadInputRef {
-                    defining_chunk: input.defining_chunk,
-                    input_index: input.input_index.try_into()?,
-                })
-            })
-            .collect::<Result<_>>()?,
+        value_inputs: decode_author_inputs(
+            dependencies.value_inputs,
+            |defining_chunk, input_index| ValueInputRef {
+                defining_chunk,
+                input_index,
+            },
+        )?,
+        native_operation_inputs: decode_author_inputs(
+            dependencies.native_operation_inputs,
+            |defining_chunk, input_index| NativeOperationInputRef {
+                defining_chunk,
+                input_index,
+            },
+        )?,
+        initializer_call_effect_inputs: decode_author_inputs(
+            dependencies.initializer_call_effect_inputs,
+            |defining_chunk, input_index| InitializerCallEffectInputRef {
+                defining_chunk,
+                input_index,
+            },
+        )?,
+        imported_primitive_array_spread_inputs: decode_author_inputs(
+            dependencies.imported_primitive_array_spread_inputs,
+            |defining_chunk, input_index| ImportedPrimitiveArraySpreadInputRef {
+                defining_chunk,
+                input_index,
+            },
+        )?,
         descriptor_copy_authors: dependencies
             .descriptor_copy_authors
             .into_iter()
@@ -118,16 +126,13 @@ pub(super) fn decode(dependencies: proto::ProofDependencies) -> Result<ProofDepe
                 spec_location: input.spec_location,
             })
             .collect(),
-        argument_inputs: dependencies
-            .argument_inputs
-            .into_iter()
-            .map(|input| {
-                Ok(ArgumentInputRef {
-                    defining_chunk: input.defining_chunk,
-                    input_index: input.input_index.try_into()?,
-                })
-            })
-            .collect::<Result<_>>()?,
+        argument_inputs: decode_author_inputs(
+            dependencies.argument_inputs,
+            |defining_chunk, input_index| ArgumentInputRef {
+                defining_chunk,
+                input_index,
+            },
+        )?,
         host_behavior: dependencies
             .host_behavior
             .into_iter()
@@ -138,16 +143,13 @@ pub(super) fn decode(dependencies: proto::ProofDependencies) -> Result<ProofDepe
             .into_iter()
             .map(proto::ProgramPremiseKey::try_from)
             .collect::<std::result::Result<_, _>>()?,
-        no_accessor_install_callables: dependencies
-            .no_accessor_install_callables
-            .into_iter()
-            .map(|input| {
-                Ok(NoAccessorInstallRef {
-                    defining_chunk: input.defining_chunk,
-                    input_index: input.input_index.try_into()?,
-                })
-            })
-            .collect::<Result<_>>()?,
+        no_accessor_install_callables: decode_author_inputs(
+            dependencies.no_accessor_install_callables,
+            |defining_chunk, input_index| NoAccessorInstallRef {
+                defining_chunk,
+                input_index,
+            },
+        )?,
     })
 }
 

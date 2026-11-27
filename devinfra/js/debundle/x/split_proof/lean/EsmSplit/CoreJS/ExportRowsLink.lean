@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.ExportRows
 import EsmSplit.CoreJS.IndexedEntryLink
+import EsmSplit.PlanGlue
 
 /-! Link the actual indexed constructor's complete public surface from
 source-indexed local-export rows and the authored plan. -/
@@ -179,11 +180,42 @@ theorem rows_resolved_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle
     obtain ⟨a, b, original, _, present⟩ := agree pair member
     exact ⟨a, b, original, present⟩
 
+/-- The actual planner's consumed-name check supplies the common no-glue
+premise for terminal and interior rows. Source-row provenance, complete unit
+footprints, and the original order of metadata rows remain explicit premises;
+no equality of the resulting export tables is assumed. `SourceRows` does not
+by itself detect an omitted empty metadata row; the caller must establish
+complete source-unit provenance at its input boundary. -/
+theorem rows_resolved_from_mkPlan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S))
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {s s' : State W} {frames : List (Nat × List (Name × Addr))}
+    (allocated : declareTops body s = .ok frames s')
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    {rows : List EsmSplit.LocalExportUnit} (sourceRows : SourceRows source rows)
+    {owner : EsmSplit.Module}
+    (planEntry : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some owner)
+    (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
+    (orderedRows : owner.stmts.filterMap (rowAt rows) = rows)
+    (covered : EsmSplit.PlanGlue.EntryCovered B S owner)
+    (sourceDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    ∃ targetLinked table,
+      (splitProgramIndexed body B (EsmSplit.mkPlan B S)).scopes frames
+        (splitProgramIndexed body B (EsmSplit.mkPlan B S)).loaded = .ok targetLinked ∧
+      (∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧ S.claimants B row.ordinal = [owner.name]) ∧
+      EntryExports.resolve sourceProgram.entry [(source, { vars := source.scope frames, this := .undef })] = .ok table ∧
+      EntryExports.resolve (splitProgramIndexed body B (EsmSplit.mkPlan B S)).entry targetLinked = .ok table ∧
+      ∀ pair ∈ source.exports, ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ s'.cellAt a = some b :=
+  rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind sourceRows
+    planEntry unitMatches orderedRows (EsmSplit.PlanGlue.mkPlan_no_extra_glue planEntry covered) sourceDefs
+
 #print axioms rowAt_some
 #print axioms selected_row
 #print axioms row_alias_live_cell
 #print axioms rows_scope_cells
 #print axioms rows_resolved_from_plan
+#print axioms rows_resolved_from_mkPlan
 #print axioms indexed_module_dense
 #print axioms indexed_program_dense
 

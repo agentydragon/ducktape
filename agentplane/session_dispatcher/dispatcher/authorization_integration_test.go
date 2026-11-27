@@ -294,10 +294,9 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 		t.Fatalf("ServiceAccount SVID created a Session: %v, want PermissionDenied", err)
 	}
 	identity := &identitypb.Identity{Name: "svid-session-owner", Uid: "00000000-0000-4000-8000-00000000a002"}
-	testPlacement(request.GetSpec(), ownerSandbox.Name, ownerSandbox.UID)
-	if _, err := authority.queueStore.CreateSessionWithPlacementForCaller(t.Context(), sessionID, ownerSandbox.Name, ownerSandbox.UID,
-		request.GetSpec(), nil, nil,
-		store.SessionExecution{Identity: identity}, store.IdentityCaller{Identity: identity, Proof: store.IdentitySVID{}}); err != nil {
+	if _, err := createSessionForCaller(authority.queueStore, t.Context(), sessionID, ownerSandbox.Name, ownerSandbox.UID,
+		request.GetSpec(), nil,
+		identity, store.IdentityCaller{Identity: identity, Proof: store.IdentitySVID{}}); err != nil {
 		t.Fatalf("seed Identity-owned Session: %v", err)
 	}
 	if _, err := ownerClient.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
@@ -412,12 +411,6 @@ func TestCreateSessionRejectsMissingIdentityEvenWhenSandboxLookupSucceeds(t *tes
 	}
 }
 
-// admissionAttribution is a row's ServiceAccount attribution, nil when it has none.
-func admissionAttribution(attribution store.Attribution) *store.AdmissionAttribution {
-	account, _ := attribution.(*store.AdmissionAttribution)
-	return account
-}
-
 func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	queueStore := testStore(t, 3)
 	identity := &identitypb.Identity{Name: "durable-retry-identity", Uid: "00000000-0000-4000-8000-00000000a005"}
@@ -482,7 +475,7 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 		}
 		after, err := queueStore.GetSession(t.Context(), stored.SessionID)
 		if err != nil || after.State != state || after.Reason != "retained outcome" ||
-			!after.UpdatedAt.Equal(stored.UpdatedAt) || !reflect.DeepEqual(after.Creator, stored.Creator) || !reflect.DeepEqual(after.Attribution, stored.Attribution) {
+			!after.UpdatedAt.Equal(stored.UpdatedAt) || !reflect.DeepEqual(after.Attribution, stored.Attribution) {
 			t.Fatalf("receipt retry changed durable state: %+v %v", after, err)
 		}
 	}
@@ -539,7 +532,7 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		if row.harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
 			spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "discovery-sandbox", Uid: uid}}}}
 		}
-		if _, err := createSession(queueStore, t.Context(), row.id, "discovery-sandbox", uid, spec, nil, nil); err != nil {
+		if _, err := createSession(queueStore, t.Context(), row.id, "discovery-sandbox", uid, spec, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -604,7 +597,7 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 	id, uid := uuid.NewString(), uuid.NewString()
 	enqueue := func(command string) {
 		t.Helper()
-		if _, err := enqueueWithSession(t, queueStore, ctx, id, "test-page-env", uid, input(command, "test retained text"), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, id, "test-page-env", uid, input(command, "test retained text")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -624,7 +617,7 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 	if len(first.Dispatches) != 1 || first.Dispatches[0].GetCommandId() != "test-third" || first.NextPageToken == "" {
 		t.Fatalf("first receipt page: %v", first)
 	}
-	if _, err := enqueueWithSession(t, queueStore, ctx, uuid.NewString(), "foreign-env", uuid.NewString(), input("foreign", "private"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, uuid.NewString(), "foreign-env", uuid.NewString(), input("foreign", "private")); err != nil {
 		t.Fatal(err)
 	}
 	batch := &dispatcherpb.BatchGetDispatchesRequest{SessionId: id, CommandIds: []string{"foreign", "test-first", "test-third"}}
@@ -720,7 +713,7 @@ func TestBatchGetDispatchesRetainsOriginalsAcrossEnvironmentDeletionAndLimitsRes
 	id, uid := uuid.NewString(), uuid.NewString()
 	text := strings.Repeat("x", 2<<20)
 	for _, cmd := range []string{"one", "two"} {
-		if _, err := enqueueWithSession(t, queueStore, ctx, id, "test-batch-env", uid, input(cmd, text), nil); err != nil {
+		if _, err := enqueueWithSession(t, queueStore, ctx, id, "test-batch-env", uid, input(cmd, text)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -751,7 +744,7 @@ func TestBatchGetDispatchesChoosesLiveThenLatestDeletionInSession(t *testing.T) 
 	const commandID = "same-id"
 	const sourceID = "another-source"
 	for _, fixture := range []struct{ session, id string }{{sessionID, commandID}, {anotherSession, sourceID}} {
-		if _, err := enqueueWithSession(t, queue, ctx, fixture.session, "test-env", uid, input(fixture.id, "original"), nil); err != nil {
+		if _, err := enqueueWithSession(t, queue, ctx, fixture.session, "test-env", uid, input(fixture.id, "original")); err != nil {
 			t.Fatal(err)
 		}
 	}

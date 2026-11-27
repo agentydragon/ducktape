@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -26,31 +25,31 @@ import (
 func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
-	first, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "hello"), &auth.Account{"agentplane", "app"})
+	first, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "hello"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.State != QueueState || !first.WakeEligible || first.WakeCaller == nil {
+	if first.State != QueueState || first.Attribution == nil {
 		t.Fatalf("unexpected accepted row: %+v", first)
 	}
 	// A different store instance models a retry after a lost reply/restart.
 	restarted := NewStore(store.DB, 3)
-	again, err := enqueueWithSession(t, restarted, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "hello"), nil)
+	again, err := enqueueWithSession(t, restarted, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "hello"))
 	if err != nil || again.Position != first.Position {
 		t.Fatalf("retry: row=%+v err=%v", again, err)
 	}
-	if _, err := enqueueWithSession(t, restarted, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "other"), nil); !errors.Is(err, ErrCommandConflict) {
+	if _, err := enqueueWithSession(t, restarted, ctx, "session-a", "sandbox-a", sandboxUID, input("a", "other")); !errors.Is(err, ErrCommandConflict) {
 		t.Fatalf("payload conflict: %v", err)
 	}
 	for i := 1; i < 3; i++ {
-		if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input(fmt.Sprintf("input-%d", i), "x"), nil); err != nil {
+		if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input(fmt.Sprintf("input-%d", i), "x")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x"), nil); !errors.Is(err, ErrQueueFull) {
+	if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x")); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("cap: %v", err)
 	}
-	rows, err := store.ListDispatchesForCaller(ctx, storeDispatchFilter("session-a"), ServiceAccountCaller{Privileged: true})
+	rows, err := store.ListDispatchesForCaller(ctx, storeDispatchFilter("session-a"), testStoreCaller())
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("list: %v, %v", rows, err)
 	}
@@ -66,7 +65,7 @@ func TestExpiredWakeFailureStoresTypedAssessmentWithTerminalDelivery(t *testing.
 	store := testStore(t, 3)
 	uid := uuid.NewString()
 	dispatch, err := enqueueWithSession(t, store, ctx, "wake-deadline-session", "sandbox-wake-deadline", uid,
-		input("wake-deadline-command", "hello"), nil)
+		input("wake-deadline-command", "hello"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,18 +98,18 @@ func TestSessionOpeningRetryPreservesBinding(t *testing.T) {
 	ctx := t.Context()
 	store := testStore(t, 3)
 	spec := &sessionpb.SessionSpec{}
-	opened, err := createSession(store, ctx, "session-b", "sandbox-b", sandboxUID, spec, nil, nil)
+	opened, err := createSession(store, ctx, "session-b", "sandbox-b", sandboxUID, spec, nil)
 	if err != nil || opened.State != SessionWaitingState {
 		t.Fatalf("open: %+v %v", opened, err)
 	}
-	again, err := createSession(store, ctx, "session-b", "sandbox-b", sandboxUID, spec, nil, nil)
+	again, err := createSession(store, ctx, "session-b", "sandbox-b", sandboxUID, spec, nil)
 	if err != nil || again.CreatedAt != opened.CreatedAt {
 		t.Fatalf("opening retry: %+v %v", again, err)
 	}
 	otherUID := "00000000-0000-4000-8000-000000000002"
 	otherSpec := proto.Clone(spec).(*sessionpb.SessionSpec)
 	otherSpec.GetPlacement().GetEnvironmentHosted().GetEnvironment().Uid = otherUID
-	if _, err := createSession(store, ctx, "session-b", "sandbox-b", otherUID, otherSpec, nil, nil); !errors.Is(err, ErrSessionConflict) {
+	if _, err := createSession(store, ctx, "session-b", "sandbox-b", otherUID, otherSpec, nil); !errors.Is(err, ErrSessionConflict) {
 		t.Fatalf("opening UID conflict: %v", err)
 	}
 }
@@ -124,7 +123,7 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, err := enqueueWithSession(t, store, ctx, "session-c", "sandbox-c", sandboxUID, input(fmt.Sprintf("c-%d", i), "x"), nil)
+			_, err := enqueueWithSession(t, store, ctx, "session-c", "sandbox-c", sandboxUID, input(fmt.Sprintf("c-%d", i), "x"))
 			errs <- err
 		}(i)
 	}
@@ -144,7 +143,7 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 	if accepted != 2 || full != 1 {
 		t.Fatalf("cap race: accepted=%d full=%d", accepted, full)
 	}
-	caller := wakeBudgetCaller("agentplane", "app", "wake-budget-app-uid")
+	caller := identityWakeKey("agentplane", "app", "wake-budget-app-uid")
 	var wakeWG sync.WaitGroup
 	wakeErrs := make(chan error, WakeLimit+1)
 	wakeDurations := make(chan bool, WakeLimit+1)
@@ -153,7 +152,7 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 		wakeWG.Add(1)
 		go func(i int) {
 			defer wakeWG.Done()
-			wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), sandboxUID, int64(i+1))
+			wait, err := store.ReserveWakeAttempt(ctx, caller, sandboxUID, int64(i+1))
 			wakeErrs <- err
 			wakeDurations <- wait > 0
 			if err == nil && wait == 0 {
@@ -184,13 +183,12 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 		acceptedGeneration = generation
 		break
 	}
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), sandboxUID, acceptedGeneration); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, caller, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
 		t.Fatalf("same-generation retry: %v %v", wait, err)
 	}
-	callerAccount := accountOfIdentity(caller)
-	replacement := wakeBudgetCaller(callerAccount.Namespace, callerAccount.Name, "replacement-wake-budget-app-uid")
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replacement), sandboxUID, acceptedGeneration); err != nil || wait != 0 {
-		t.Fatalf("replacement ServiceAccount inherited old budget: %v %v", wait, err)
+	replacement := identityWakeKey(caller.Namespace, caller.Name, "replacement-wake-budget-app-uid")
+	if wait, err := store.ReserveWakeAttempt(ctx, replacement, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
+		t.Fatalf("replacement Identity inherited old budget: %v %v", wait, err)
 	}
 }
 
@@ -201,10 +199,9 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 
 	// Hold the old advisory key so this check proves new writers serialize with
 	// previous replicas before reading or inserting their budget row.
-	lockCaller := wakeBudgetCaller("mixed-writer", "shared-lock", "shared-lock-uid")
+	lockCaller := identityWakeKey("mixed-writer", "shared-lock", "shared-lock-uid")
 	lockSandboxUID := uuid.NewString()
-	lockAccount := accountOfIdentity(lockCaller)
-	lockKey := "dispatcher-wake:" + lockAccount.Namespace + ":" + lockAccount.Name
+	lockKey := "dispatcher-wake:" + lockCaller.Namespace + ":" + lockCaller.Name
 	lockTx, err := store.DB.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal("begin old-writer lock fixture:", err)
@@ -217,7 +214,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	newWriter, newWriterPID := connectStore(t, ctx, databaseURL)
 	newWriterDone := make(chan error, 1)
 	go func() {
-		_, err := newWriter.ReserveWakeAttempt(ctx, wakeKey(lockCaller), lockSandboxUID, 1)
+		_, err := newWriter.ReserveWakeAttempt(ctx, lockCaller, lockSandboxUID, 1)
 		newWriterDone <- err
 	}()
 	postgres.WaitForBlocker(t, ctx, store.DB, newWriterPID, oldWriterPID)
@@ -230,7 +227,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 
 	// An interleaved old/new burst consumes one shared ten-wake budget even
 	// though old writes use the empty UID and current writes use the live UID.
-	mixedCaller := wakeBudgetCaller("mixed-writer", "shared-cap", "shared-cap-uid")
+	mixedCaller := identityWakeKey("mixed-writer", "shared-cap", "shared-cap-uid")
 	mixedSandboxUID := uuid.NewString()
 	type reservationResult struct {
 		limited bool
@@ -248,7 +245,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 			if i%2 == 0 {
 				wait, err = reserveWakeAttemptAsPreviousWriter(ctx, store, mixedCaller, mixedSandboxUID, int64(i+1))
 			} else {
-				wait, err = store.ReserveWakeAttempt(ctx, wakeKey(mixedCaller), mixedSandboxUID, int64(i+1))
+				wait, err = store.ReserveWakeAttempt(ctx, mixedCaller, mixedSandboxUID, int64(i+1))
 			}
 			results <- reservationResult{limited: wait > 0, err: err}
 		}(i)
@@ -273,19 +270,19 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	assertWakeAttemptCount(t, store, mixedCaller, mixedSandboxUID, WakeLimit)
 
 	// Old code sees every UID for the named caller, while the new caller must
-	// not inherit another nonempty UID's reservations after ServiceAccount replacement.
-	replaced := wakeBudgetCaller("mixed-writer", "uid-replacement", "old-uid")
+	// not inherit another nonempty UID's reservations after Identity replacement.
+	replaced := identityWakeKey("mixed-writer", "uid-replacement", "old-uid")
 	replacementSandboxUID := uuid.NewString()
 	for generation := int64(1); generation <= WakeLimit; generation++ {
-		if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replaced), replacementSandboxUID, generation); err != nil || wait != 0 {
+		if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, generation); err != nil || wait != 0 {
 			t.Fatalf("old UID reservation %d: %v %v", generation, wait, err)
 		}
 	}
 	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait == 0 {
 		t.Fatalf("previous writer did not count all nonempty UIDs: %v %v", wait, err)
 	}
-	replaced.Uid = "replacement-uid"
-	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replaced), replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
+	replaced.UID = "replacement-uid"
+	if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
 		t.Fatalf("replacement UID inherited another nonempty UID's budget: %v %v", wait, err)
 	}
 }
@@ -294,7 +291,7 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 	ctx := context.Background()
 	store := testStore(t, 3)
 	const uid = "00000000-0000-4000-8000-000000000085"
-	if _, err := enqueueWithSession(t, store, ctx, "admission-session", "sandbox-admission", uid, input("admission-input", "hello"), nil); err != nil {
+	if _, err := enqueueWithSession(t, store, ctx, "admission-session", "sandbox-admission", uid, input("admission-input", "hello")); err != nil {
 		t.Fatal(err)
 	}
 	deliveryOwner := claimSessionOwner(t, store, "admission-session")
@@ -315,13 +312,13 @@ func TestDeletedSandboxWakesReplicasAndRetainsSessionCommands(t *testing.T) {
 	ctx := context.Background()
 	store, _ := testStoreWithURL(t, 3)
 	uid := "00000000-0000-4000-8000-000000000099"
-	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-queued", "q"), nil); err != nil {
+	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-queued", "q")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-delivering", "d"), nil); err != nil {
+	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-delivering", "d")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("test-deleted-cancelled", "test-cancelled-input"), nil); err != nil {
+	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("test-deleted-cancelled", "test-cancelled-input")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch SET state_value=$2,reason='test-prior-cancellation' WHERE command_id=$1", "test-deleted-cancelled", CancelledState); err != nil {
@@ -331,7 +328,7 @@ func TestDeletedSandboxWakesReplicasAndRetainsSessionCommands(t *testing.T) {
 		CommandId: "deleted-admitted-interrupt",
 		Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "active-turn"}},
 	}
-	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, interrupt, nil); err != nil {
+	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, interrupt); err != nil {
 		t.Fatal(err)
 	}
 	deliveryOwner := claimSessionOwner(t, store, "session-deleted")
@@ -409,7 +406,7 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 	cleanupStore, cleanupPID := connectStore(t, ctx, databaseURL)
 	opened := make(chan error, 1)
 	go func() {
-		_, err := createSession(openingStore, ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil, nil)
+		_, err := createSession(openingStore, ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil)
 		opened <- err
 	}()
 	postgres.WaitForBlocker(t, ctx, store.DB, openingPID, gatePID)
@@ -445,7 +442,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 			if kind == "central" {
 				spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "test-rejection-race", Uid: uid}}}}
 			}
-			if _, err := createSession(store, ctx, sessionID, "test-rejection-race", uid, spec, nil, nil); err != nil {
+			if _, err := createSession(store, ctx, sessionID, "test-rejection-race", uid, spec, nil); err != nil {
 				t.Fatal(err)
 			}
 			staleDelivery := claimSessionOwner(t, store, sessionID)
@@ -467,7 +464,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 			rejecter, rejecterPID := connectStore(t, ctx, databaseURL)
 			admitted := make(chan error, 1)
 			go func() {
-				_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
+				_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"))
 				admitted <- err
 			}()
 			postgres.WaitForBlocker(t, ctx, store.DB, admitterPID, gatePID)
@@ -506,7 +503,7 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			store, databaseURL := testStoreWithURL(t, 3)
-			head, err := enqueueWithSession(t, store, ctx, "fence-order-session", "sandbox-worker", sandboxUID, input("fence-order-input", "hello"), nil)
+			head, err := enqueueWithSession(t, store, ctx, "fence-order-session", "sandbox-worker", sandboxUID, input("fence-order-input", "hello"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -582,18 +579,16 @@ func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
 	foreignCaller := IdentityCaller{Identity: foreign, Proof: IdentitySVID{}}
 	id, uid := uuid.NewString(), uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
-	testPlacement(spec, "transaction-sandbox", uid)
-	if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, "transaction-sandbox", uid,
-		spec, nil, nil, SessionExecution{Identity: owner}, ownerCaller); err != nil {
+	if _, err := createSessionForCaller(store, t.Context(), id, "transaction-sandbox", uid,
+		spec, nil, owner, ownerCaller); err != nil {
 		t.Fatal(err)
 	}
 	// This is the transactional path after another opener wins the Session-ID lock,
 	// including when the API's initial read did not yet see that winning opening.
 	for _, name := range []string{"transaction-sandbox", "conflicting-sandbox"} {
 		conflictingSpec := &sessionpb.SessionSpec{}
-		testPlacement(conflictingSpec, name, uid)
-		if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, name, uid,
-			conflictingSpec, nil, nil, SessionExecution{Identity: foreign}, foreignCaller); !errors.Is(err, ErrNotFound) {
+		if _, err := createSessionForCaller(store, t.Context(), id, name, uid,
+			conflictingSpec, nil, foreign, foreignCaller); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("transaction exposed an existing opening to foreign Identity: %v", err)
 		}
 	}
@@ -602,7 +597,7 @@ func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
 func TestDeletedAdmittedInputRetainsKnownAdmissionWithUnknownEffect(t *testing.T) {
 	ctx := t.Context()
 	store := testStore(t, 3)
-	head, err := enqueueWithSession(t, store, ctx, "admitted-effect-session", "sandbox-worker", sandboxUID, input("admitted-effect-input", "hello"), nil)
+	head, err := enqueueWithSession(t, store, ctx, "admitted-effect-session", "sandbox-worker", sandboxUID, input("admitted-effect-input", "hello"))
 	if err != nil {
 		t.Fatal(err)
 	}

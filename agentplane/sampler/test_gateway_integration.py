@@ -45,7 +45,15 @@ from testing.postgres import create_temporary_database
 from testing.sqlalchemy_engines import postgres_async_engine
 
 # gazelle:include_dep //agentplane/env/runtime/execution/testing:executor_companion
-pytest_plugins = ("agentplane.env.runtime.execution.testing.executor_companion",)
+# gazelle:include_dep //agentplane/testing:codex_fixtures
+# gazelle:include_dep //agentplane/testing:kubernetes_apiserver_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
+pytest_plugins = (
+    "agentplane.env.runtime.execution.testing.executor_companion",
+    "agentplane.testing.codex_fixtures",
+    "agentplane.testing.kubernetes_apiserver_fixtures",
+    "testing.postgres_fixtures",
+)
 logger = logging.getLogger(__name__)
 
 

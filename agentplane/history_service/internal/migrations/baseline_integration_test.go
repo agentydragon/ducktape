@@ -147,3 +147,27 @@ func TestHistoryBaselineSerializesConcurrentCreation(t *testing.T) {
 		t.Fatal("baseline recorded more than once")
 	}
 }
+
+func TestBlockInventoryColumnsOnUpgrade(t *testing.T) {
+	db := baselineDB(t)
+	upTo(t, db, 20)
+	id := uuid.New()
+	execute(t, db, `INSERT INTO session_history(id,last_cursor,source_id) VALUES($1,1,'fixture-source')`, id)
+	// A single gzip member containing "abc".
+	execute(t, db, `INSERT INTO session_event_block(session_id,first_cursor,last_cursor,kind,cursors,sizes,payload)
+		VALUES($1,1,1,1,'{1}','{3}',decode('1f8b08000000000000034b4c4a0600c241243503000000','hex'))`, id)
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if postgres.Count(t, db, `SELECT count(*) FROM session_event_block WHERE block_format IS NULL`) != 1 {
+		t.Fatal("schema upgrade unexpectedly rewrote an existing block")
+	}
+	execute(t, db, `UPDATE session_event_block SET block_format=NULL WHERE session_id=$1`, id)
+	if postgres.Count(t, db, `SELECT count(*) FROM session_event_block WHERE block_format='legacy_gzip' AND uncompressed_bytes=3`) != 1 {
+		t.Fatal("backfilled gzip block missing from inventory")
+	}
+	execute(t, db, `UPDATE session_event_block SET payload=decode('41504202','hex'), block_format='apb_v1' WHERE session_id=$1`, id)
+	if postgres.Count(t, db, `SELECT count(*) FROM session_event_block WHERE block_format='unknown' AND uncompressed_bytes IS NULL`) != 1 {
+		t.Fatal("unknown version kept stale metadata")
+	}
+}
