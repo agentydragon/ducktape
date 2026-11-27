@@ -52,7 +52,7 @@ use property_keys::{
 
 use crate::namespace_wrapper::NamespaceWrapperCandidate;
 use crate::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
-use analysis::facts::OwnerInitializationCoverageRefusalReason;
+use analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use analysis::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness,

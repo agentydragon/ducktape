@@ -28,7 +28,8 @@ use anyhow::{Context, Result, bail};
 use swc_ecma_ast::Module;
 
 use analysis::diagnostics::{ChunkDiagnostic, Diagnostics};
-use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis};
+use analysis::facts::analyze::ExportReentryPolicy;
+use analysis::facts::statement_facts::{ChunkFactAnalysis, StructuralChunkAnalysis};
 use analysis_vocabulary::execution_evidence::SourceLocator;
 use analysis_vocabulary::inputs::AnalysisInputs;
 use analysis_vocabulary::inputs::ResolvedCommutingStatements;
@@ -167,8 +168,8 @@ mod tests {
         swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
             let module =
                 raw_js_test_support::parse("function leaf() { return 7; } export { leaf };\n");
-            let structural = analysis::facts::complete_chunk_structural(
-                analysis::facts::collect_chunk_source_facts(&module, None),
+            let structural = analysis::facts::analyze::complete_chunk_structural(
+                analysis::facts::analyze::collect_chunk_source_facts(&module, None),
             );
             let mut inputs = AnalysisInputs::default();
             inputs.assumptions.declared_pure.insert("leaf".to_owned());

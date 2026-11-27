@@ -78,11 +78,3 @@ pub(crate) use global_object::*;
 pub(crate) use local_effect_targets::*;
 pub(crate) use statement_facts::{ConstructorFacts, ExportLinkage};
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow};
-
-// CLEANUP(added 2026-11-27): Remove these re-exports and point
-//   `chunk_analysis/mod.rs` and `facts/sync_effects/execution_index/mod.rs`
-//   at the defining modules once the open PRs touching those files
-//   (#20495, #20532, #20539, #20545) land.
-pub use analyze::{ExportReentryPolicy, collect_chunk_source_facts, complete_chunk_structural};
-pub use initialization_effects::OwnerInitializationCoverageRefusalReason;
-pub use statement_facts::{ChunkFactAnalysis, StructuralChunkAnalysis};
