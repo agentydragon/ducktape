@@ -16,7 +16,7 @@ from cilium_crds.io.cilium import (
 )
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import pod_policy
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
@@ -65,7 +65,7 @@ def _cronjob(
                         spec=k8s.PodSpec(
                             automount_service_account_token=False,
                             restart_policy="Never",
-                            node_selector={"kubernetes.io/hostname": _WORKER},
+                            node_selector={node_scheduling.HOSTNAME_LABEL: _WORKER},
                             security_context=k8s.PodSecurityContext(
                                 run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
                             ),

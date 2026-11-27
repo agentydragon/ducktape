@@ -54,7 +54,7 @@ VIRT_OPERATOR_AVAILABILITY = Json6902Patch(
                 "value": [
                     {
                         "labelSelector": {"matchLabels": {"kubevirt.io": "virt-operator"}},
-                        "topologyKey": "kubernetes.io/hostname",
+                        "topologyKey": node_scheduling.HOSTNAME_LABEL,
                     }
                 ],
             },

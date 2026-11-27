@@ -101,7 +101,7 @@ def _spread(component: str) -> dict[str, object]:
                                     "app.kubernetes.io/instance": NAME,
                                 }
                             },
-                            "topologyKey": "kubernetes.io/hostname",
+                            "topologyKey": node_scheduling.HOSTNAME_LABEL,
                         },
                     }
                 ]

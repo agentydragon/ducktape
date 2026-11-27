@@ -194,7 +194,7 @@ def _values() -> dict[str, object]:
                     "size": "50Gi",
                 },
                 "antiAffinity": "hard",
-                "affinity": {"podAntiAffinity": {"topologyKey": "kubernetes.io/hostname"}},
+                "affinity": {"podAntiAffinity": {"topologyKey": node_scheduling.HOSTNAME_LABEL}},
                 # The chart's cgroup init container needs a writable host cgroup mount. Local
                 # Gitaly process isolation stays off until Talos policy and mount support are proven.
                 "cgroups": {"enabled": False},
@@ -202,7 +202,7 @@ def _values() -> dict[str, object]:
             "praefect": {
                 "replicas": 3,
                 "antiAffinity": "hard",
-                "affinity": {"podAntiAffinity": {"topologyKey": "kubernetes.io/hostname"}},
+                "affinity": {"podAntiAffinity": {"topologyKey": node_scheduling.HOSTNAME_LABEL}},
             },
             "webservice": {
                 "minReplicas": 2,

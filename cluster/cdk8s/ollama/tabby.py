@@ -11,7 +11,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 )
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.container_resources import quantities
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT, SWITCHING_SERVICE
@@ -28,7 +28,6 @@ _CHECKPOINTS = (
 )
 _PREFIX_CACHE = "tabbyapi-prefix-cache"
 _PREFIX_CACHE_PATH = "/prefix-cache"
-_HOSTNAME_LABEL = "kubernetes.io/hostname"
 _SWITCHING_LABEL = {"ducktape.org/tabbyapi-model-switching": "true"}
 _PODS = Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),))
 SERVICE = ServiceRef(name=NAME, port=Port(name="http", number=PORT), pods=_PODS)
@@ -53,7 +52,9 @@ def _local_claim(scope: Construct, path: str, claim: str, capacity: str) -> None
                     node_selector_terms=[
                         k8s.NodeSelectorTerm(
                             match_expressions=[
-                                k8s.NodeSelectorRequirement(key=_HOSTNAME_LABEL, operator="In", values=[_NODE])
+                                k8s.NodeSelectorRequirement(
+                                    key=node_scheduling.HOSTNAME_LABEL, operator="In", values=[_NODE]
+                                )
                             ]
                         )
                     ]
@@ -91,7 +92,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     runtime_class_name="nvidia",
-                    node_selector={_HOSTNAME_LABEL: _NODE},
+                    node_selector={node_scheduling.HOSTNAME_LABEL: _NODE},
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(

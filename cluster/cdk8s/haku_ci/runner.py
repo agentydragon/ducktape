@@ -41,7 +41,7 @@ from keda_triggerauthentication_crds.sh.keda import (
     TriggerAuthenticationSpecSecretTargetRef,
 )
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku_ci import egress_gateway, runner_config
@@ -503,7 +503,7 @@ def _add_runner(chart: Chart) -> None:
                         topology_spread_constraints=[
                             keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraints(
                                 max_skew=1,
-                                topology_key="kubernetes.io/hostname",
+                                topology_key=node_scheduling.HOSTNAME_LABEL,
                                 when_unsatisfiable="ScheduleAnyway",
                                 label_selector=keda.ScaledJobSpecJobTargetRefTemplateSpecTopologySpreadConstraintsLabelSelector(
                                     match_labels=_LABELS

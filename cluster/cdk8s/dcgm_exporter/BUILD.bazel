@@ -15,6 +15,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "@pypi//cdk8s",

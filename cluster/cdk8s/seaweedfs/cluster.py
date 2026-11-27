@@ -124,7 +124,6 @@ TENANTS = {
     "study-casino",  # study_casino/app.py
     "tofu-state",  # tofu_state.py
 }
-_HOSTNAME = "kubernetes.io/hostname"
 
 
 def _component_labels(component: str) -> dict[str, str]:
@@ -189,7 +188,7 @@ def _volume_topology(
                         label_selector=SeaweedSpecVolumeTopologyAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
                             match_labels={"app.kubernetes.io/instance": CLUSTER_NAME, **_component_labels("volume")}
                         ),
-                        topology_key=_HOSTNAME,
+                        topology_key=node_scheduling.HOSTNAME_LABEL,
                     )
                 ]
             )
@@ -289,7 +288,7 @@ def seaweed(scope: Construct) -> Seaweed:
                                 label_selector=SeaweedSpecMasterAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
                                     match_labels=_component_labels("master")
                                 ),
-                                topology_key=_HOSTNAME,
+                                topology_key=node_scheduling.HOSTNAME_LABEL,
                             )
                         ]
                     )
@@ -327,7 +326,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     max_volume_counts=2000,
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
-                        _HOSTNAME: "ovh-ns103656",
+                        node_scheduling.HOSTNAME_LABEL: "ovh-ns103656",
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
                 ),
@@ -339,7 +338,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     max_volume_counts=2000,
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
-                        _HOSTNAME: "ovh-ns103711",
+                        node_scheduling.HOSTNAME_LABEL: "ovh-ns103711",
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
                 ),
@@ -351,7 +350,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     max_volume_counts=2000,
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
-                        _HOSTNAME: "ovh-ns102453",
+                        node_scheduling.HOSTNAME_LABEL: "ovh-ns102453",
                         "storage.allegedly.works/piraeus-ready": "true",
                     },
                 ),
@@ -364,7 +363,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
-                    node_selector={_HOSTNAME: "ovh-ns1001419"},
+                    node_selector={node_scheduling.HOSTNAME_LABEL: "ovh-ns1001419"},
                 ),
                 "ssd-piraeus-104952": _volume_topology(
                     rack="hil-ovh-h108b01",
@@ -372,7 +371,10 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
-                    node_selector={_HOSTNAME: "ovh-ns104952", "storage.allegedly.works/piraeus-ready": "true"},
+                    node_selector={
+                        node_scheduling.HOSTNAME_LABEL: "ovh-ns104952",
+                        "storage.allegedly.works/piraeus-ready": "true",
+                    },
                 ),
                 "ssd-piraeus-104963": _volume_topology(
                     rack="hil-ovh-h108b01",
@@ -380,7 +382,10 @@ def seaweed(scope: Construct) -> Seaweed:
                     storage_class=piraeus_storage.SSD_LOCAL,
                     disk="ssd",
                     max_volume_counts=200,
-                    node_selector={_HOSTNAME: "ovh-ns104963", "storage.allegedly.works/piraeus-ready": "true"},
+                    node_selector={
+                        node_scheduling.HOSTNAME_LABEL: "ovh-ns104963",
+                        "storage.allegedly.works/piraeus-ready": "true",
+                    },
                 ),
             },
             filer=SeaweedSpecFiler(
@@ -440,7 +445,7 @@ def seaweed(scope: Construct) -> Seaweed:
                                 label_selector=SeaweedSpecFilerAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
                                     match_labels=_component_labels("filer")
                                 ),
-                                topology_key=_HOSTNAME,
+                                topology_key=node_scheduling.HOSTNAME_LABEL,
                             )
                         ]
                     ),

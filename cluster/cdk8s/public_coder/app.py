@@ -21,7 +21,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.egress.resources import placeholder_of
-from cluster.cdk8s import agent_access_profiles as access, namespaces
+from cluster.cdk8s import agent_access_profiles as access, namespaces, node_scheduling
 from cluster.cdk8s.agentplane import platform_routes
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json_config
@@ -315,7 +315,9 @@ def _deployment(scope: Construct) -> None:
                                     k8s.NodeSelectorTerm(
                                         match_expressions=[
                                             k8s.NodeSelectorRequirement(
-                                                key="kubernetes.io/hostname", operator="In", values=["ovh-ns102453"]
+                                                key=node_scheduling.HOSTNAME_LABEL,
+                                                operator="In",
+                                                values=["ovh-ns102453"],
                                             )
                                         ]
                                     )

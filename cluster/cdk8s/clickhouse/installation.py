@@ -409,7 +409,7 @@ def clickhouse_chart(app: App) -> Chart:
                 pod_templates=[_clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR)]
                 + [
                     _clickhouse_pod_template(
-                        replica.pod_template, {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": replica.node}
+                        replica.pod_template, {**_HDD_NODE_SELECTOR, node_scheduling.HOSTNAME_LABEL: replica.node}
                     )
                     for replica in _REPLICAS
                 ],
