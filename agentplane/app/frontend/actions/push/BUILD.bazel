@@ -34,7 +34,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/action_service/api/web_push:web_push_service_pb",
         "//agentplane/app/frontend/transport:client",
-        "//agentplane/app/frontend/transport:stream_reader",
+        "//agentplane/app/frontend/transport:watch_collection",
         "//agentplane/app/frontend/transport:watch_stream",
     ],
 )

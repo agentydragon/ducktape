@@ -1,11 +1,26 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { type QueryClient, QueryClientProvider, queryOptions } from "@tanstack/react-query";
 import { IconCheck, IconX } from "../ui/icons";
-import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type JSX,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { displayableError } from "../transport/client";
-import type { StreamConnection } from "../transport/stream_reader";
 import { useOptionalStreamStatus } from "../transport/stream_status";
+import {
+  useWatchCollection,
+  type CollectionConfig,
+  type CollectionFrame,
+  type CollectionWatchHandlers,
+} from "../transport/watch_collection";
 import { createAppQueryClient } from "../transport/query";
 import { ActionCall } from "./call";
 import {
@@ -13,6 +28,7 @@ import {
   Verdict,
   type ActionGroup,
   type ActionRequest,
+  type ActionRequestChunk,
 } from "../../../action_service/api/contracts/action_service_pb";
 import { timestampText } from "../transport/response_fields";
 import { decideActionById, followActionRequests, getAction, listActionGroups } from "./client";
@@ -100,6 +116,21 @@ export function ActionDecisionButtons({
   );
 }
 
+const PENDING: CollectionConfig<ActionRequest, ActionRequest> = {
+  kind: "ActionRequest",
+  key: (request) => request.id,
+  // A request that left DECISION_PENDING arrives as an upsert of its new state, which removes what it supersedes.
+  removal: { key: (request) => request.id, matches: (held, request) => request.version >= held.version },
+  // A decision's HTTP answer and the watch both write a request; keep the newer.
+  supersedes: (held, incoming) => incoming.version >= held.version,
+};
+
+const pendingChunk = (chunk: ActionRequestChunk): ActionRequest[] => chunk.actionRequests;
+
+function newestFirst(left: ActionRequest, right: ActionRequest): number {
+  return Date.parse(timestampText(right.createdAt) ?? "") - Date.parse(timestampText(left.createdAt) ?? "");
+}
+
 /** Shared fetch/decide plumbing for the pending and history views, over Action Service watches. */
 export function useActionRequests(enabled = true): {
   requests: ActionRequest[];
@@ -109,10 +140,7 @@ export function useActionRequests(enabled = true): {
   decide: (request: ActionRequest, verdict: Verdict) => void;
   queryClient: QueryClient;
 } {
-  const [requests, setRequests] = useState<ActionRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [connection, setConnection] = useState<StreamConnection | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
   const [queryClient] = useState(() => {
     const client = createAppQueryClient();
@@ -129,8 +157,6 @@ export function useActionRequests(enabled = true): {
     });
     return client;
   });
-  const requestsRef = useRef<ActionRequest[]>([]);
-  useOptionalStreamStatus("Actions", connection);
 
   useEffect(() => () => queryClient.clear(), [queryClient]);
 
@@ -143,83 +169,49 @@ export function useActionRequests(enabled = true): {
     [queryClient]
   );
 
-  const storePendingSnapshot = useCallback(
-    (rows: ActionRequest[]): void => {
-      const nextIds = new Set(rows.map((request) => request.id));
-      for (const previous of requestsRef.current) {
-        const queryKey = actionRequestQuery(previous.id).queryKey;
-        if (
-          previous.state === ActionState.DECISION_PENDING &&
-          !nextIds.has(previous.id) &&
-          queryClient.getQueryData(queryKey)?.state === ActionState.DECISION_PENDING
-        ) {
-          void queryClient.invalidateQueries({ queryKey, exact: true }, { cancelRefetch: false });
-        }
-      }
-      requestsRef.current = rows;
-      setRequests(rows);
-      rememberRequests(rows);
-    },
-    [queryClient, rememberRequests]
+  const follow = useCallback(
+    (handlers: CollectionWatchHandlers<CollectionFrame<ActionRequest, ActionRequestChunk, ActionRequest>>) =>
+      followActionRequests({
+        ...handlers,
+        onFrame: ({ frame }) => {
+          handlers.onFrame(
+            frame.case === "upsert" && frame.value.state !== ActionState.DECISION_PENDING
+              ? { case: "removed", value: frame.value }
+              : frame
+          );
+          if (frame.case === "upsert") rememberRequests([frame.value]);
+          if (frame.case === "snapshotComplete" || frame.case === "upsert") setError(null);
+        },
+      }),
+    [rememberRequests]
   );
+  const watch = useWatchCollection(PENDING, enabled ? follow : null, pendingChunk);
+  useOptionalStreamStatus("Actions", enabled ? watch.connection : null);
+  const requests = useMemo(() => [...(watch.items ?? [])].sort(newestFirst), [watch.items]);
 
+  // A pending request missing from a new snapshot was decided elsewhere: refetch its cached detail.
+  const shown = useRef<readonly ActionRequest[]>([]);
   useEffect(() => {
-    if (!enabled) return;
-    let snapshot: ActionRequest[] = [];
-    return followActionRequests({
-      onOpen: () => {
-        snapshot = [];
-      },
-      onFrame: (message) => {
-        const frame = message.frame;
-        switch (frame.case) {
-          case "snapshot":
-            snapshot.push(...frame.value.actionRequests);
-            break;
-          case "snapshotComplete":
-            storePendingSnapshot(snapshot);
-            snapshot = [];
-            setError(null);
-            setLoading(false);
-            break;
-          case "upsert": {
-            const current = requestsRef.current;
-            const exists = current.some((item) => item.id === frame.value.id);
-            const next =
-              frame.value.state === ActionState.DECISION_PENDING
-                ? exists
-                  ? current.map((item) =>
-                      item.id === frame.value.id && frame.value.version >= item.version ? frame.value : item
-                    )
-                  : [...current, frame.value].sort(
-                      (left, right) =>
-                        Date.parse(timestampText(right.createdAt) ?? "") -
-                        Date.parse(timestampText(left.createdAt) ?? "")
-                    )
-                : current.filter((item) => item.id !== frame.value.id);
-            requestsRef.current = next;
-            setRequests(next);
-            rememberRequests([frame.value]);
-            setError(null);
-            setLoading(false);
-            break;
-          }
-          case "reconnectRequired":
-            break;
-        }
-      },
-      onConnection: setConnection,
-    });
-  }, [enabled, rememberRequests, storePendingSnapshot]);
+    const ids = new Set(requests.map((request) => request.id));
+    for (const previous of shown.current) {
+      const queryKey = actionRequestQuery(previous.id).queryKey;
+      if (
+        previous.state === ActionState.DECISION_PENDING &&
+        !ids.has(previous.id) &&
+        queryClient.getQueryData(queryKey)?.state === ActionState.DECISION_PENDING
+      ) {
+        void queryClient.invalidateQueries({ queryKey, exact: true }, { cancelRefetch: false });
+      }
+    }
+    shown.current = requests;
+    rememberRequests(requests);
+  }, [queryClient, rememberRequests, requests]);
 
   async function decideRequest(request: ActionRequest, verdict: Verdict): Promise<void> {
     setDeciding(request.id);
     try {
       const updated = await decideActionById(request.id, request.version, verdict);
-      const current = requestsRef.current;
-      const next = current.map((item) => (item.id === updated.id && updated.version >= item.version ? updated : item));
-      requestsRef.current = next;
-      setRequests(next);
+      watch.replace(updated);
       rememberRequests([updated]);
       setError(null);
     } catch (failure) {
@@ -232,7 +224,7 @@ export function useActionRequests(enabled = true): {
   return {
     requests,
     error,
-    loading,
+    loading: watch.items === null,
     deciding,
     decide: (request, verdict) => void decideRequest(request, verdict),
     queryClient,
