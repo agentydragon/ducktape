@@ -920,22 +920,32 @@ def stringOwn (s : String) : PropertyKey → Option (Except Abort Val)
         .error (.unknown "string index reads an isolated UTF-16 surrogate")
       else .ok (.str (String.singleton (Char.ofNat unit)))
 
-/-- The property `k` of the object at `a`, read for `base`: a getter runs with `base` as `this`. -/
-def getFrom (call : Call W) (a : Addr) (base : Val) (k : PropertyKey) : M W Val := do
-  match ← lookupProp a k with
+/-- Look up the property once; an inherited getter receives the original base. -/
+abbrev getFromWith {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (call : Val → Val → List Val → m Val) (a : Addr) (base : Val) (k : PropertyKey) : m Val := do
+  match ← sync (lookupProp a k) with
   | none => pure .undef
   | some (.data v ..) => pure v
   | some (.accessor .undef ..) => pure .undef
   | some (.accessor getter ..) => call getter base []
 
-/-- A property of a primitive that it does not have itself: a member of its prototype `owner`, which is a value of
-the host, or else what `Object.prototype` has. -/
-def protoProp (call : Call W) (owner : String) (names : List String) (base : Val) : PropertyKey → M W Val
-  | .str k => if names.contains k then pure (.host s!"{owner}.{k}") else getFrom call objectProto base (.str k)
+/-- State-only instantiation of the shared read rule. -/
+def getFrom (call : Call W) (a : Addr) (base : Val) (k : PropertyKey) : M W Val :=
+  getFromWith (fun x => x) call a base k
+
+/-- A member of a primitive prototype, or else what `Object.prototype` has. -/
+abbrev protoPropWith {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (call : Val → Val → List Val → m Val) (owner : String) (names : List String) (base : Val) :
+    PropertyKey → m Val
+  | .str k => if names.contains k then pure (.host s!"{owner}.{k}") else getFromWith sync call objectProto base (.str k)
   | .wellKnownSymbol sym =>
-    if sym == .iterator && owner == "String.prototype" then unknown "String.prototype[Symbol.iterator] is a host method"
-    else getFrom call objectProto base (.wellKnownSymbol sym)
-  | .symbol identity => getFrom call objectProto base (.symbol identity)
+    if sym == .iterator && owner == "String.prototype" then
+      sync (unknown "String.prototype[Symbol.iterator] is a host method")
+    else getFromWith sync call objectProto base (.wellKnownSymbol sym)
+  | .symbol identity => getFromWith sync call objectProto base (.symbol identity)
+
+def protoProp (call : Call W) (owner : String) (names : List String) (base : Val) (key : PropertyKey) : M W Val :=
+  protoPropWith (fun x => x) call owner names base key
 
 def readHostRef (ref : HostRef) : M W Val := fun s =>
   match W.hostRef ref s.world.state with
@@ -958,24 +968,30 @@ def hostMember (name k : String) : M W Val :=
     readHostRef (.property name k)
   else unknown s!"a property of host value {name}"
 
-/-- `base[key]`. A getter runs with `base` as `this`. -/
-def getProp (call : Call W) (base key : Val) : M W Val := do
+/-- `base[key]` in the caller's effect. Only the actual accessor invocation
+can re-enter the evaluator; its result flows out with that effect intact. -/
+abbrev getPropWith {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (call : Val → Val → List Val → m Val) (base key : Val) : m Val := do
   match base with
-  | .undef | .null => throwErr .type "cannot read properties of undefined or null"
-  | .obj a => getFrom call a base (← toKey key)
+  | .undef | .null => sync (throwErr .type "cannot read properties of undefined or null")
+  | .obj a => getFromWith sync call a base (← sync (toKey key))
   | .str s =>
-    let k ← toKey key
+    let k ← sync (toKey key)
     match stringOwn s k with
-    | some v => lift v
-    | none => protoProp call "String.prototype" stringProtoNames base k
-  | .num _ => protoProp call "Number.prototype" numberProtoNames base (← toKey key)
-  | .bool _ => protoProp call "Boolean.prototype" booleanProtoNames base (← toKey key)
-  | .wellKnownSymbol _ | .symbol _ => unknown "a property of a symbol primitive"
-  | .error .. => unknown "a property of an engine error"
+    | some v => sync (lift v)
+    | none => protoPropWith sync call "String.prototype" stringProtoNames base k
+  | .num _ => protoPropWith sync call "Number.prototype" numberProtoNames base (← sync (toKey key))
+  | .bool _ => protoPropWith sync call "Boolean.prototype" booleanProtoNames base (← sync (toKey key))
+  | .wellKnownSymbol _ | .symbol _ => sync (unknown "a property of a symbol primitive")
+  | .error .. => sync (unknown "a property of an engine error")
   | .host name =>
-    match ← toKey key with
-    | .str k => hostMember name k
-    | .wellKnownSymbol _ | .symbol _ => unknown s!"a symbol property of host value {name}"
+    match ← sync (toKey key) with
+    | .str k => sync (hostMember name k)
+    | .wellKnownSymbol _ | .symbol _ => sync (unknown s!"a symbol property of host value {name}")
+
+/-- State-only instantiation for existing callers. -/
+def getProp (call : Call W) (base key : Val) : M W Val :=
+  getPropWith (fun x => x) call base key
 
 /-- `base[key] = v` in strict code. A setter runs with `base` as `this`. -/
 def setProp (call : Call W) (base key v : Val) : M W Unit := do

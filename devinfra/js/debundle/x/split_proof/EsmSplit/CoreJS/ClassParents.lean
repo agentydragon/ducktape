@@ -28,7 +28,7 @@ theorem getProp_ownData {s : State W} {a : Addr} {o : Obj} {key : String} {v : V
     | zero => simp [hFuel] at hCount
     | succ n => simp only [findProp, hObj, hp]
   change getFrom call a (.obj a) key s = _
-  simp only [getFrom, M.bind_apply, hLookup] <;> rfl
+  simp only [getFrom, getFromWith, M.bind_apply, hLookup] <;> rfl
 
 /-- An own data `prototype` is found at the first lookup step. Heritage evaluation returns its address without
 invoking a getter or changing the state. -/
@@ -40,7 +40,8 @@ theorem classParents_ownPrototype {s : State W} {a p : Addr} {o : Obj} {f : Func
   have hConstructor : isConstructor (.obj a) s = .ok true s := by
     simp only [isConstructor, M.bind_apply, getObj, hObj, hCode, hKind] <;> rfl
   have hGet := getProp_ownData call hObj hProto
-  simp [classParents, classParentsNonNull, M.bind_apply, hConstructor, hGet]
+  simp only [classParents, classParentsNonNull, M.bind_apply, hConstructor, Bool.not_true,
+    Bool.false_eq_true, ↓reduceIte, hGet]
   rfl
 
 theorem classParents_extends {s t : State W} {a p : Addr} {o : Obj} {f : Func} {closed : Env}

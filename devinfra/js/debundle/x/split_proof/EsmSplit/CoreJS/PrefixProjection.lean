@@ -315,7 +315,8 @@ private def infer? (p : Facts) (env : Env) (e : Expr) : Option (ExprStep p env e
         | zero => rfl
         | succ n =>
           have prop := getProp_ownData (callFn (W := w) (n + 1)) obj (fields _ _ field)
-          simp only [rhs, evalExpr, M.pure_bind, M.bind_apply, read, prop]
+          have keyResult : (pure (.str key) : M w Val) s = .ok (.str key) s := rfl
+          simp only [rhs, evalExpr, M.bind_apply, read, keyResult, prop]
           rfl
     return ⟨rhs, none, @same, by
       intro w n s t v h run

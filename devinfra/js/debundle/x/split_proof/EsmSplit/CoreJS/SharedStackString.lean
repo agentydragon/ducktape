@@ -89,9 +89,9 @@ theorem mutantLookup (stack : String) :
       .ok (.num 2) (final W stack (.num 2)) ∧
     (Val.num 1 : Val) ≠ .num 2 := by
   refine ⟨?_, ?_, ?_⟩
-  · simp [getProp, getFrom, stringKey, lookupProp, getState, State.objectCount,
+  · simp [getProp, getPropWith, getFrom, getFromWith, stringKey, lookupProp, getState, State.objectCount,
       findProp, State.objAt, registry, bind, pure, final]
-  · simp [getProp, getFrom, stringKey, lookupProp, getState, State.objectCount,
+  · simp [getProp, getPropWith, getFrom, getFromWith, stringKey, lookupProp, getState, State.objectCount,
       findProp, State.objAt, registry, bind, pure, final]
   · decide
 

@@ -30,7 +30,7 @@ theorem getPropAt (call : Call W) (genuine : Val → Prop) (receiver : Addr)
     getProp call (.obj receiver) (.str "stack") state = .ok (.str stack) state := by
   have returns := profile identity
   cases getter <;>
-    simp_all [getProp, getFrom, stringKey, lookupProp, getState, bind, pure]
+    simp_all [getProp, getPropWith, getFrom, getFromWith, stringKey, lookupProp, getState, bind, pure]
 
 /-- Both reads are checked at this one state, not assumed for every state. -/
 theorem twoReadsAt (call : Call W) (genuine : Val → Prop) (receiver : Addr)

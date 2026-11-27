@@ -107,6 +107,16 @@ abbrev requestCall {m : Type → Type} [Monad m] (sync : {α : Type} → M W α 
   let result ← call (← sync (fromW f)) (← sync (fromW this)) (← sync (args.mapM fromW))
   pure (.value (← sync (toW result)))
 
+/-- Evaluate receiver and key before reading the property in the caller's effect. -/
+abbrev readProperty {m : Type → Type} [Monad m] (read : Val → Val → m Val)
+    (receiver key : m Val) : m Val := do
+  read (← receiver) (← key)
+
+abbrev requestGet {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (read : Val → Val → m Val) (receiver key : WVal) : m Told := do
+  let value ← read (← sync (fromW receiver)) (← sync (fromW key))
+  pure (.value (← sync (toW value)))
+
 /-- What a request of the world does, given what a call and `new` do. -/
 def perform (call : Call W) (construct : Val → List Val → M W Val) (code : Nat) (cells : List (Option Addr)) :
     Request → M W Told
@@ -117,7 +127,7 @@ def perform (call : Call W) (construct : Val → List Val → M W Val) (code : N
   | .initVar i v => do
     setCell (← opaqueCell cells i) (← fromW v)
     pure (.value (.prim .undef))
-  | .get o k => do pure (.value (← toW (← getProp call (← fromW o) (← fromW k))))
+  | .get o k => requestGet (fun run => run) (getProp call) o k
   | .set o k v => do
     setProp call (← fromW o) (← fromW k) (← fromW v)
     pure (.value (.prim .undef))
@@ -416,8 +426,9 @@ def loopIterator (call : Call W) (iteration : Val → M W Flow) : Nat → Iterat
 /-- The dispatch table for a resolved call. Capability checks, object lookup
 and host conversions are the same in each observation of the evaluator.
 The callbacks supply execution at the caller's already decremented fuel. -/
-def dispatchCall {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+def dispatchCallWithDeferred {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
     (localBody : Func → Env → Val → List Val → m Val)
+    (deferred : Func → Env → Val → List Val → String → m Val)
     (opaqueBody : Nat → List (Option Addr) → Told → m Val)
     (callee this : Val) (args : List Val) : m Val :=
   match callee with
@@ -430,7 +441,7 @@ def dispatchCall {m : Type → Type} [Monad m] (sync : {α : Type} → M W α �
         sync (throwErr .type "class constructor cannot be invoked without 'new'")
       else
         match f.opaqueBody with
-        | some (_, _, _, some reason) => sync (unknown s!"deferred function {f.name}: {reason}")
+        | some (_, _, _, some reason) => deferred f closed this args reason
         | some (code, part, free, none) =>
           opaqueBody code (free.map (closed.vars.lookup ·))
             (.run code part (← sync (toW callee)) (← sync (toW (if f.kind == .arrow then closed.this else this)))
@@ -444,6 +455,15 @@ def dispatchCall {m : Type → Type} [Monad m] (sync : {α : Type} → M W α �
   | .host name => sync (hostCall name this args)
   | _ => sync (throwErr .type "not a function")
 
+
+/-- The ordinary evaluator keeps the existing refusal for deferred closures. -/
+abbrev dispatchCall {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (localBody : Func → Env → Val → List Val → m Val)
+    (opaqueBody : Nat → List (Option Addr) → Told → m Val)
+    (callee this : Val) (args : List Val) : m Val :=
+  dispatchCallWithDeferred sync localBody
+    (fun f _ _ _ reason => sync (unknown s!"deferred function {f.name}: {reason}"))
+    opaqueBody callee this args
 
 /-- The synchronous entry actions hand their resulting effect to the body;
 its completion returns to the caller without projecting the effect. -/
@@ -537,10 +557,7 @@ def evalExpr : Nat → Env → Expr → M W Val
       finishDerived (evalMembers n) env name self members parents ctor fun c keys =>
         evalStaticInitializers (evalExpr n { env with this := .obj c, home := some c }) c
           (staticInitializers members keys)
-    | .get o k => do
-      let base ← evalExpr n env o
-      let key ← evalExpr n env k
-      getProp (callFn n) base key
+    | .get o k => readProperty (getProp (callFn n)) (evalExpr n env o) (evalExpr n env k)
     | .getSuper k => do
       getSuperProp (callFn n) env.home env.this (← evalExpr n env k)
     | .getOptional o k => do
