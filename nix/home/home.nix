@@ -220,7 +220,9 @@ in
     text = lib.concatStringsSep "\n" gtkFileChooserBookmarks + "\n";
   };
 
-  nix.package = lib.mkDefault pkgs.nix;
+  # Same Nix as NixOS hosts (base.nix): >= 2.35 avoids copying local flakes to the store.
+  # CLEANUP(added 2026-11-26): back to `pkgs.nix` once the pinned channel's is >= 2.35.
+  nix.package = lib.mkDefault pkgs.nixVersions.latest;
 
   nix.gc = {
     automatic = true;
