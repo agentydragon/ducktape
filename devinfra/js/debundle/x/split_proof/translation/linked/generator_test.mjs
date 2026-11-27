@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { runSplit } from "./harness.mjs";
 
