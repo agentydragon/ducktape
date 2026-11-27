@@ -231,8 +231,12 @@ theorem row_link_outcomes_of_order_kept {body : List (Nat × Stmt)} {B : EsmSpli
     (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
     (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
     ∀ w : World, IndexedEntryLink.EntryLinkOutcomesAgree sourceProgram (splitProgramIndexed body B P) w := by
+  have decls : ∀ p ∈ body, ∃ kind name init, p.2 = .decl kind name init := by
+    intro p member
+    obtain ⟨name, init, shape⟩ := sourceConsts p member
+    exact ⟨.const, name, init, shape⟩
   apply IndexedEntryLink.row_link_outcomes_from_plan valid footprints complete sourceBody sourceImports sourceFind
-    ordered sourceConsts (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) ?_
+    ordered decls (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) ?_
     sourceRow rowFootprint ownerIn rowWithin planEntry authored unitsUnique glue onlyRow sourceDefs
   rw [SparseProjectedOrder.split_indexed_regions_eq_source kept,
     IndexedEntryLink.singleton_source_regions singleton, sourceBody]
