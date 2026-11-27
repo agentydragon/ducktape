@@ -48,7 +48,7 @@ fn rename_namespace_and_cell_controls_fail_on_emitted_output() {
     let probe = inputs.path().join("wrong-cell.mjs");
     write_text_file(
         &probe,
-        "export default entry => console.log(entry.a === entry.b, true, entry.a !== entry.b);\n",
+        "export default async (entry, _, sourceUrl) => { const original = await import(sourceUrl); console.log(entry.a === entry.b, true, entry.a !== entry.b); for (const fn of [original.a, entry.a]) console.log(JSON.stringify({ name: fn.name, descriptor: Object.getOwnPropertyDescriptor(fn, 'name') })); };\n",
     );
     let mut wrong_cell = named_case("emission/catchall_member_rename/spec");
     wrong_cell

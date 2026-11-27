@@ -15,4 +15,7 @@ spec.yaml:
           - "a"
     emitted_probes:
       identity.probe.mjs:
-        stdout: "true true true\n"
+        stdout: |
+          true true true
+          {"name":"a","descriptor":{"value":"a","writable":false,"enumerable":false,"configurable":true}}
+          {"name":"FirstFn","descriptor":{"value":"FirstFn","writable":false,"enumerable":false,"configurable":true}}
