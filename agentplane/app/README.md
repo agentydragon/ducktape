@@ -340,10 +340,11 @@ Pod does not remove a Session. Archived Threads stay hidden unless the operator 
 The archived count uses the same Dispatcher membership and Sandbox UID filter.
 
 The Egress log watches `/upstream/egress/v1/decisions:watch` through the generated Egress facade.
-The browser follows the exact Environment target and selects its execution ServiceAccount, clearing
-the displayed window when either observation becomes stale. An initial Egress snapshot and subsequent
-additions and removals maintain the recent window for that account, which can include older Sandbox
-incarnations. The app's Egress system-status
+The browser follows the exact Environment target and filters by its Identity, clearing the displayed
+window when either observation becomes stale. A Sandbox without an Identity has no egress log. An
+initial Egress snapshot and subsequent additions and removals maintain the recent window for that
+Identity. The window is the Identity's, not the Sandbox's: it includes every Sandbox using that
+Identity and its earlier incarnations; the tab says so. The app's Egress system-status
 probe uses gRPC health on the same admin endpoint. Runner availability affects operations that need a live Session and
 whether the page can open a new one; it does not determine whether a retained Dispatcher Session appears
 in the table. Session creation displays progress and prevents duplicate clicks while the request
