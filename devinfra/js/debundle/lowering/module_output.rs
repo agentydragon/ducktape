@@ -5,7 +5,7 @@ use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
-use swc_common::{BytePos, DUMMY_SP, Spanned, SyntaxContext};
+use swc_common::{BytePos, Spanned, SyntaxContext};
 
 use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
@@ -33,7 +33,9 @@ use frontend_elaboration::source_ast::{
     RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, runtime_import_bindings,
 };
 use gate::AssignmentAnalysis;
-use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
+use js_ast::{
+    ParsedJsModule, format_comment_block_lines, set_str_value, str_value, synthesized_module,
+};
 use output_layout::{CHUNK_REPORT, REPORTS_DIR, TREE_DIR};
 use rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -720,16 +722,7 @@ fn build_module_output(
         .collect();
     let file = JsFile {
         path: plan.target_file.clone(),
-        body: JsFileBody::Ast(ParsedJsModule {
-            cm: context.runtime_ast.cm.clone(),
-            module: Module {
-                span: DUMMY_SP,
-                body,
-                shebang: None,
-            },
-            unresolved_mark: context.runtime_ast.unresolved_mark,
-            top_level_mark: context.runtime_ast.top_level_mark,
-        }),
+        body: JsFileBody::Ast(synthesized_module(context.runtime_ast, body)),
         header_lines: header,
         binding_comments,
         leading_item_comments,

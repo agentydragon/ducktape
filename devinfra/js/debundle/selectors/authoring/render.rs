@@ -695,11 +695,7 @@ pub fn named_pat(name: &str) -> Pat {
 /// Emit a synthesized selector item (a holed declaration) to source via the
 /// shared codegen — the only AST→string step, and the matcher's parse inverts it.
 pub fn emit_selector(item: ModuleItem) -> Result<String> {
-    js_ast::emit_module_source(&Module {
-        span: DUMMY_SP,
-        body: vec![item],
-        shebang: None,
-    })
+    js_ast::emit_item_source(&item)
 }
 
 /// Report keyword identifiers in generated selector syntax, not occurrences in

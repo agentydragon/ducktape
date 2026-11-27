@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use super::module_output::{
     LoweredModuleOutput, ModuleEmissionInputs, PreparedModuleEmission, prepare_module_emission,
 };
-use swc_common::{DUMMY_SP, GLOBALS};
+use swc_common::GLOBALS;
 
 use super::chunk_renames::CHUNK_RENAMES_CONTRIBUTOR;
 use super::imports::import_emit::{
@@ -42,7 +42,7 @@ use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsF
 use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_ids};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::AssignmentAnalysis;
-use js_ast::ParsedJsModule;
+use js_ast::{ParsedJsModule, synthesized_module};
 use rayon::prelude::*;
 use rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
@@ -727,16 +727,7 @@ fn entry_js_file(
 ) -> JsFile {
     JsFile {
         path: entry_file.to_string(),
-        body: JsFileBody::Ast(ParsedJsModule {
-            cm: runtime_ast.cm.clone(),
-            module: Module {
-                span: DUMMY_SP,
-                body: entry_body,
-                shebang: None,
-            },
-            unresolved_mark: runtime_ast.unresolved_mark,
-            top_level_mark: runtime_ast.top_level_mark,
-        }),
+        body: JsFileBody::Ast(synthesized_module(runtime_ast, entry_body)),
         header_lines: header_lines.to_vec(),
         binding_comments: BTreeMap::new(),
         leading_item_comments: BTreeMap::new(),

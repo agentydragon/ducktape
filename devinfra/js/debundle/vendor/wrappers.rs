@@ -12,7 +12,7 @@ use binding_targets::public_export_name;
 use js_ast::{
     ParsedJsModule, emit_js_module, import_decl_module_item, is_binding_identifier,
     member_property, module_export_name_node, named_export_module_item, named_export_specifier,
-    named_import_specifier, parse_js_module, synthesized_string_argument,
+    named_import_specifier, parse_js_module, synthesized_module, synthesized_string_argument,
 };
 use spec::vendor_marks::BundledPartialSwapPackage;
 
@@ -51,19 +51,7 @@ pub(super) fn generate_named_from_default_wrapper(
             &mut used_idents,
         );
     }
-    emit_js_module(
-        &ParsedJsModule {
-            cm: upstream_ast.cm.clone(),
-            module: Module {
-                span: DUMMY_SP,
-                body,
-                shebang: None,
-            },
-            unresolved_mark: upstream_ast.unresolved_mark,
-            top_level_mark: upstream_ast.top_level_mark,
-        },
-        &[],
-    )
+    emit_js_module(&synthesized_module(upstream_ast, body), &[])
 }
 
 pub(super) fn generate_named_from_json_default_wrapper(
@@ -238,19 +226,7 @@ pub(super) fn generate_named_from_module_default_wrapper(
             &mut used_idents,
         );
     }
-    emit_js_module(
-        &ParsedJsModule {
-            cm: upstream_ast.cm.clone(),
-            module: Module {
-                span: DUMMY_SP,
-                body,
-                shebang: None,
-            },
-            unresolved_mark: upstream_ast.unresolved_mark,
-            top_level_mark: upstream_ast.top_level_mark,
-        },
-        &[],
-    )
+    emit_js_module(&synthesized_module(upstream_ast, body), &[])
 }
 
 /// Absolute output path of a full-swap wrapper:
