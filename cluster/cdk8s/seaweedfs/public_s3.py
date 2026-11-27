@@ -40,7 +40,7 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
     S3PolicyBindingSpecSubjectsKind,
 )
 
-from cluster.cdk8s import disruption_budget, node_scheduling
+from cluster.cdk8s import disruption_budget, node_scheduling, pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -161,7 +161,7 @@ def _gateway(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=namespace.NAME),
         data={_CONFIG_KEY: '{"identities":[\n  {"name":"anonymous","actions":["Read:pr-visuals"]}\n]}\n'},
     )
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         scope,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -184,7 +184,6 @@ def _gateway(scope: Construct) -> None:
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     containers=[
@@ -213,11 +212,7 @@ def _gateway(scope: Construct) -> None:
                                 cpu="500m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"
                             ),
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                run_as_non_root=True,
-                                run_as_user=65532,
-                                run_as_group=65532,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                run_as_non_root=True, run_as_user=65532, run_as_group=65532
                             ),
                             volume_mounts=[k8s.VolumeMount(name="s3-config", mount_path=_CONFIG_DIR, read_only=True)],
                         )
@@ -227,6 +222,7 @@ def _gateway(scope: Construct) -> None:
             ),
         ),
     )
+    pod_policy.harden(deployment)
     disruption_budget.add_disruption_budget(scope, "disruption-budget", name=NAME, pods=_PODS)
     k8s.KubeService(
         scope,

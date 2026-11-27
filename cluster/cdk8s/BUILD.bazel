@@ -232,6 +232,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":container_resources",
+        ":pod_policy",
         ":public_web_pki",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -974,6 +975,7 @@ py_library(
         ":container_resources",
         ":manifest_roots",
         ":namespaces",
+        ":pod_policy",
         ":service_ref",
         ":vpa_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
@@ -1638,6 +1640,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":pod_policy",
         ":service_ref",
         ":vpa_policy",
         "@pypi//cdk8s",

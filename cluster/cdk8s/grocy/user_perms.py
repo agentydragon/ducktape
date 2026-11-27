@@ -17,6 +17,7 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
+from cluster.cdk8s import pod_policy
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs, write_kustomization
@@ -94,12 +95,7 @@ def _pod_spec(container_name: str) -> k8s.PodSpec:
         restart_policy="OnFailure",
         automount_service_account_token=False,
         image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-        security_context=k8s.PodSecurityContext(
-            run_as_non_root=True,
-            run_as_user=1000,
-            run_as_group=1000,
-            seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-        ),
+        security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=1000, run_as_group=1000),
         volumes=[k8s.Volume(name="policy", config_map=k8s.ConfigMapVolumeSource(name=_POLICY_CONFIG_MAP))],
         containers=[
             k8s.Container(
@@ -110,9 +106,6 @@ def _pod_spec(container_name: str) -> k8s.PodSpec:
                 # household's own grocy instance in whichever grocy-* namespace this runs in.
                 args=["--policy", f"{_POLICY_DIR}/{_POLICY_FILE}", "--grocy-url", "http://grocy"],
                 volume_mounts=[k8s.VolumeMount(name="policy", mount_path=_POLICY_DIR, read_only=True)],
-                security_context=k8s.SecurityContext(
-                    allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                ),
                 resources=container_resources(cpu="25m", memory="64Mi", memory_limit="128Mi"),
             )
         ],
@@ -142,7 +135,7 @@ def base_chart(app: App) -> Chart:
             ],
         ),
     )
-    k8s.KubeJob(
+    job = k8s.KubeJob(
         chart,
         "job",
         metadata=k8s.ObjectMeta(
@@ -157,7 +150,7 @@ def base_chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(metadata=k8s.ObjectMeta(labels=_LABELS), spec=_pod_spec("provisioner")),
         ),
     )
-    k8s.KubeCronJob(
+    cron_job = k8s.KubeCronJob(
         chart,
         "cronjob",
         metadata=k8s.ObjectMeta(
@@ -190,6 +183,8 @@ def base_chart(app: App) -> Chart:
             ),
         ),
     )
+    pod_policy.harden(job)
+    pod_policy.harden(cron_job)
     return chart
 
 

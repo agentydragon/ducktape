@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from cluster.cdk8s import public_web_pki
+from cluster.cdk8s import pod_policy, public_web_pki
 from cluster.cdk8s.container_resources import container_resources
 
 _CONFIG_DIR = "/config"
@@ -53,18 +53,13 @@ class RotatorCronJob(k8s.KubeCronJob):
                 k8s.Volume(name="github-pat", secret=k8s.SecretVolumeSource(secret_name=GITHUB_PAT_SECRET_NAME)),
                 *(volume for volume, _ in credential_mounts),
             ],
-            security_context=k8s.PodSecurityContext(
-                run_as_non_root=True, run_as_user=65534, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
-            ),
+            security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=65534),
             containers=[
                 k8s.Container(
                     name="rotate",
                     image=image,
                     args=["--config", f"{_CONFIG_DIR}/{config_file}"],
                     env=[public_web_pki.SSL_CERT_FILE, k8s.EnvVar(name="GIT_SSL_CAINFO", value=public_web_pki.CA_FILE)],
-                    security_context=k8s.SecurityContext(
-                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                    ),
                     volume_mounts=[
                         public_web_pki.VOLUME_MOUNT,
                         k8s.VolumeMount(name="rotations-config", mount_path=_CONFIG_DIR, read_only=True),
@@ -97,3 +92,4 @@ class RotatorCronJob(k8s.KubeCronJob):
                 ),
             ),
         )
+        pod_policy.harden(self)

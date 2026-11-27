@@ -14,7 +14,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage, pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -53,7 +53,7 @@ def _deployment(chart: Chart) -> None:
         size="100Gi",
         annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -81,9 +81,7 @@ def _deployment(chart: Chart) -> None:
                     automount_service_account_token=False,
                     # The replicated HDD class permits remote access only within hil-ovh.
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
-                    security_context=k8s.PodSecurityContext(
-                        fs_group=65532, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
-                    ),
+                    security_context=k8s.PodSecurityContext(fs_group=65532),
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -103,12 +101,10 @@ def _deployment(chart: Chart) -> None:
                             readiness_probe=_tcp_probe(HTTP.port.name, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=_tcp_probe(HTTP.port.name, initial_delay_seconds=20, period_seconds=20),
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
                                 run_as_non_root=True,
                                 run_as_user=65532,
                                 run_as_group=65532,
                                 read_only_root_filesystem=True,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
                             ),
                         ),
                         # Public basic-auth wrapper. Zot itself must stay unauthenticated on the
@@ -132,11 +128,7 @@ def _deployment(chart: Chart) -> None:
                                 _PUBLIC_AUTH.port.name, initial_delay_seconds=20, period_seconds=20
                             ),
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                run_as_non_root=True,
-                                run_as_user=101,
-                                run_as_group=101,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
+                                run_as_non_root=True, run_as_user=101, run_as_group=101
                             ),
                         ),
                     ],
@@ -161,6 +153,7 @@ def _deployment(chart: Chart) -> None:
             ),
         ),
     )
+    pod_policy.harden(deployment)
 
 
 def chart(app: App) -> Chart:

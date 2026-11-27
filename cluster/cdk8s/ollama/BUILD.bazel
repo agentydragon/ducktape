@@ -85,6 +85,7 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",

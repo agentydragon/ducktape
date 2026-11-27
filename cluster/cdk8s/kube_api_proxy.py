@@ -12,7 +12,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -48,7 +48,7 @@ _NGINX_CONF = (
 
 
 def _deployment(chart: Chart) -> None:
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -122,13 +122,7 @@ def _deployment(chart: Chart) -> None:
                             resources=container_resources(
                                 cpu=_NGINX_CPU_REQUEST, memory=_NGINX_MEMORY_REQUEST, memory_limit="64Mi"
                             ),
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
-                                read_only_root_filesystem=True,
-                                run_as_non_root=True,
-                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                            ),
+                            security_context=k8s.SecurityContext(read_only_root_filesystem=True, run_as_non_root=True),
                         )
                     ],
                     volumes=[
@@ -153,6 +147,7 @@ def _deployment(chart: Chart) -> None:
             ),
         ),
     )
+    pod_policy.harden(deployment)
 
 
 def chart(app: App) -> Chart:

@@ -11,7 +11,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -86,7 +86,7 @@ def _healthz(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
 
 
 def _deployment(chart: Chart) -> None:
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -118,20 +118,13 @@ def _deployment(chart: Chart) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=1000,
-                        run_as_group=1000,
-                        fs_group=1000,
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
+                        run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
                     ),
                     containers=[
                         k8s.Container(
                             name="proxy",
                             image=_IMAGE,
                             image_pull_policy="Always",
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                            ),
                             ports=[SERVICE.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="NAMESPACE_ALLOWLIST", value=",".join(NAMESPACE_ALLOWLIST)),
@@ -160,6 +153,7 @@ def _deployment(chart: Chart) -> None:
             ),
         ),
     )
+    pod_policy.harden(deployment)
 
 
 def chart(app: App) -> Chart:

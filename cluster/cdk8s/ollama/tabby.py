@@ -11,7 +11,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 )
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.container_resources import quantities
 from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT, SWITCHING_SERVICE
@@ -79,7 +79,7 @@ def _local_claim(scope: Construct, path: str, claim: str, capacity: str) -> None
 
 def _deploy(scope: Construct, config: ConfigMap) -> None:
     models = k8s.HttpGetAction(path=MODELS_PATH, port=k8s.IntOrString.from_string(SERVICE.port.name))
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         scope,
         "tabbyapi-deployment",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_PODS.selector),
@@ -93,15 +93,11 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                     automount_service_account_token=False,
                     runtime_class_name="nvidia",
                     node_selector={node_scheduling.HOSTNAME_LABEL: _NODE},
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
                             name=NAME,
                             image=_IMAGE,
                             ports=[SERVICE.k8s_container_port()],
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                            ),
                             env=[k8s.EnvVar(name="CUDA_DEVICE_ORDER", value="PCI_BUS_ID")],
                             resources=k8s.ResourceRequirements(
                                 requests=quantities({"cpu": "4", "memory": "20Gi"}),
@@ -162,6 +158,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
             ),
         ),
     )
+    pod_policy.harden(deployment)
 
 
 def add_tabbyapi(scope: Construct) -> None:

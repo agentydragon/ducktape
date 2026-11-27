@@ -25,7 +25,7 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from agentplane.x.indexing.settings import Settings
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.container_resources import container_resources
@@ -135,7 +135,7 @@ def _worker(
 
     worker = _service(instance)
     k8s.KubeServiceAccount(chart, f"{instance}-service-account", metadata=k8s.ObjectMeta(name=instance, namespace=NAME))
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         f"{instance}-deployment",
         metadata=k8s.ObjectMeta(name=instance, namespace=NAME),
@@ -150,19 +150,11 @@ def _worker(
                     node_selector=node_scheduling.OVH_REGION_NODE_SELECTOR,
                     # The worker reads its repository itself; nothing here talks to the API server.
                     automount_service_account_token=False,
-                    security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=1000,
-                        run_as_group=1000,
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                    ),
+                    security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=1000, run_as_group=1000),
                     containers=[
                         k8s.Container(
                             name="index",
                             image=_IMAGE,
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                            ),
                             env_from=[k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=CONFIG_MAP.name))],
                             env=[
                                 DATABASE.app_secret.key("username").env_var("DB_USERNAME"),
@@ -198,6 +190,7 @@ def _worker(
             ),
         ),
     )
+    pod_policy.harden(deployment)
     k8s.KubeService(
         chart,
         f"{instance}-service",
