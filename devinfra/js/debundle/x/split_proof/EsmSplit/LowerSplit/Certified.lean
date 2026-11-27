@@ -1,4 +1,5 @@
 import EsmSplit.Cli
+import EsmSplit.CoreJS.ConstructedOutput
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.IndexedSourceFacts
@@ -56,7 +57,7 @@ private def stageConstructed (program : CoreJS.Program) (src : BundleInput)
   let programs ← IO.ofExcept (ESTreeEmit.corePrograms program src.source)
   let part : OutputPart := { programs, source := src.source, input := src.input, work }
   certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
-    pure <| match CoreJS.LinkedInput.checkConstructedOutput files program with
+    pure <| match CoreJS.ConstructedOutput.checkConstructedOutput files program with
       | .ok _ => .ok ()
       | .error reason => .error { reason }
 

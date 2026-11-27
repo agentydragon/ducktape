@@ -5,7 +5,6 @@ import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.ModuleInput
 import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.CoreJS.StructuralRefusal
-import EsmSplit.CoreJS.SyntaxMatch
 import EsmSplit.Plan
 import EsmSplit.LocalExportUnit
 import EsmSplit.ESTreeUnits
@@ -393,6 +392,21 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
     templates := templates.toList
   }
 
+/-- Lower linked output syntax using its original executable ordinals. Imports
+and exports come from the syntax, and the body must account for every ordinal
+without needing template installation. -/
+def parseLinkedModuleWithOrdinals (name : String) (nodes : Array Json) (ids : List Nat) :
+    Except String Module := do
+  let parsed ← (parse .linked .empty name nodes 0 (some ids.toArray)).mapError StructuralRefusal.reason
+  unless parsed.units.length == ids.length && parsed.templates.isEmpty do
+    throw s!"output body of {name} differs from the constructed layout"
+  return {
+    name
+    imports := parsed.imports
+    body := ids.zip (parsed.units.map fun (_, stmt, _) => stmt)
+    exports := parsed.exports
+  }
+
 private def Parsed.numbered {nodeCount : Nat} (p : Parsed nodeCount) (name : String) (base : Nat) : Module where
   name := name
   imports := p.imports
@@ -726,46 +740,6 @@ def decodeSourceClassification (original : Json) (sourceText entry : String) :
 linked model skips, such as a debugger or empty statement, prevents coverage. -/
 def decodeIndexedSource (original : Json) (sourceText entry : String) : Except String IndexedSource := do
   checkIndexedSource (← decodeSourceClassification original sourceText entry)
-
-/-- Lower the independently parsed files using the constructor's file names
-and source ordinals. Bodies, binding names, imports and exports come from the
-reread files. The staged ESTree comparison still checks the full artifact. -/
-def decodeConstructedOutput (files : Json) (constructed : Program) : Except String Program := do
-  let names := (← files.getObj?).toList.map Prod.fst
-  unless names.Perm (constructed.modules.map (·.name)) do
-    throw "output filenames differ from the constructed modules"
-  let modules : List Module ← constructed.modules.mapM fun m => do
-    let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
-    let ids := m.body.map Prod.fst
-    let parsed ← (parse .linked .empty m.name nodes 0 (some ids.toArray)).mapError StructuralRefusal.reason
-    unless parsed.units.length == ids.length && parsed.templates.isEmpty do
-      throw s!"output body of {m.name} differs from the constructed layout"
-    return {
-      name := m.name
-      imports := parsed.imports
-      body := ids.zip (parsed.units.map fun (_, stmt, _) => stmt)
-      exports := parsed.exports
-    }
-  return { entry := constructed.entry, modules }
-
-/-- Check exact CoreJS identity at the artifact boundary. This checks the
-representation of the constructed program without evaluating either layout. -/
-def checkConstructedOutput (files : Json) (constructed : Program) :
-    Except String (PLift (decodeConstructedOutput files constructed = .ok constructed)) := do
-  match lowered : decodeConstructedOutput files constructed with
-  | .error reason => throw reason
-  | .ok actual =>
-    let some ⟨same⟩ := SyntaxMatch.programEq actual constructed |
-      throw "reread output differs from the constructed CoreJS program"
-    return ⟨lowered.trans (congrArg Except.ok same)⟩
-
-theorem checkConstructedOutput_sound {files : Json} {constructed : Program}
-    (accepted : (checkConstructedOutput files constructed).isOk = true) :
-    decodeConstructedOutput files constructed = .ok constructed := by
-  cases h : checkConstructedOutput files constructed with
-  | ok witness => exact witness.down
-  | error reason => simp [h, Except.isOk, Except.toBool] at accepted
-
 
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use
