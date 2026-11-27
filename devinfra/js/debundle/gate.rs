@@ -15,8 +15,6 @@ use serde::Serialize;
 
 mod assignment_analysis;
 mod assignment_inputs;
-#[cfg(test)]
-mod counted_digraph;
 mod realizability;
 mod report_builders;
 mod validation;
@@ -39,11 +37,6 @@ pub use realizability::{
     TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
     assignment_constraining_cycles, check_realizability_with_priority,
     check_realizability_with_schedule, project_assignment_constraints,
-};
-#[cfg(test)]
-pub use realizability::{
-    LadderDecision, ModuleAssignmentBatch, ModuleAssignmentDelta, QuotientConstraints,
-    QuotientTopologyDelta, RealizabilityIndex, check_realizability, check_realizability_touching,
 };
 pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,

@@ -55,7 +55,6 @@ Tighten before the next large peel loop:
 
 ## Avoid
 
-- Do not replace the maintained condensation order with a cache over stale
-  SCCs. Ownership batches can both add and remove quotient edges; keep exact
-  overlay handling for removals within an SCC, and compare every fast path with
-  the canonical complete gate.
+- An incremental gate must not cache stale SCCs. Ownership batches can both
+  add and remove quotient edges; handle removals within an SCC exactly, and
+  compare every fast path with the canonical complete gate.
