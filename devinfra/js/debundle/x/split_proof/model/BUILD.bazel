@@ -24,7 +24,6 @@ eslint_test(
 )
 
 _DIFFERENTIAL_DATA = [
-    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     "cases.mjs",
     "generate.mjs",
     "module_cases.mjs",
@@ -35,13 +34,11 @@ _DIFFERENTIAL_DATA = [
     "//devinfra/js/debundle/x/split_proof/translation:split_dump",
     "//devinfra/js/debundle/x/split_proof/lean:corejs",
     "//devinfra/js/debundle/x/split_proof/lean:evalorder",
-    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
 _DIFFERENTIAL_ENV = {
     "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
     "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
-    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
 }
 
 js_test(
@@ -71,8 +68,6 @@ js_test(
         "2",
         "--seed",
         "1",
-        "--splits",
-        "0",
     ],
     data = _DIFFERENTIAL_DATA,
     entry_point = "differential.mjs",
@@ -88,8 +83,6 @@ js_test(
         "24",
         "--seed",
         "1",
-        "--splits",
-        "0",
     ],
     data = _DIFFERENTIAL_DATA,
     entry_point = "differential.mjs",
@@ -106,8 +99,6 @@ js_test(
         "12",
         "--seed",
         "1",
-        "--splits",
-        "0",
     ],
     data = _DIFFERENTIAL_DATA,
     entry_point = "differential.mjs",
@@ -122,8 +113,6 @@ js_test(
         "40",
         "--seed",
         "1",
-        "--splits",
-        "150",
     ],
     data = _DIFFERENTIAL_DATA,
     entry_point = "differential.mjs",
