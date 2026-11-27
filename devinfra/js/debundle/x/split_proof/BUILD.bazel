@@ -4388,12 +4388,25 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_turn_units",
+    srcs = ["EsmSplit/CoreJS/TurnUnits.lean"],
+    deps = [
+        ":corejs_call_turn",
+        ":corejs_eval",
+        ":corejs_primitive_await",
+        ":corejs_scope",
+        ":corejs_split",
+    ],
+)
+
+lean_library(
     name = "corejs_program_turn",
     srcs = ["EsmSplit/CoreJS/ProgramTurn.lean"],
     deps = [
         ":corejs_eval",
         ":corejs_scope",
         ":corejs_turn",
+        ":corejs_turn_units",
     ],
 )
 
@@ -4479,6 +4492,7 @@ lean_library(
         ":corejs_scope",
         ":corejs_split",
         ":corejs_syntax_match",
+        ":corejs_turn_units",
         ":estree_units",
         ":plan",
     ],
@@ -4529,6 +4543,7 @@ test_runner(
         ":corejs_linked_primitive_await",
         ":corejs_linked_primitive_await_proof",
         ":corejs_primitive_await",
+        ":corejs_program_turn",
         ":corejs_state_match",
         ":estree_emit",
         ":estree_units",
@@ -4561,6 +4576,8 @@ lean_proof_test(
     required_theorems = [
         "CoreJS.LinkedPrimitiveAwait.StagedImmediate.drains",
         "CoreJS.LinkedPrimitiveAwait.StagedImmediate.publicationOfBridge",
+        "CoreJS.LinkedPrimitiveAwait.checkProductionBridges",
+        "CoreJS.LinkedPrimitiveAwait.checkStagedPublication",
     ],
     deps = [":corejs_linked_primitive_await_proof"],
 )

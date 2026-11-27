@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.LinkedPrimitiveAwait
 import EsmSplit.CoreJS.PrimitiveAwait
+import EsmSplit.CoreJS.ProgramTurn
 import EsmSplit.CoreJS.LinkedPrimitiveAwaitProof
 import EsmSplit.CoreJS.StateMatch
 import EsmSplit.ESTreeEmit
@@ -45,8 +46,8 @@ private def settled (turn : Turn World.probe) (exported : EntryExports.Bindings)
 
 private def immediate (input : LinkedPrimitiveAwait.Input) (abrupt : Bool) :
     Except String (Turn World.probe) :=
-  match LinkedPrimitiveAwait.runImmediate World.probe 96 input with
-  | .ok _ turn => if abrupt then .error "expected a synchronous throw" else .ok turn
+  match runProgramTurn World.probe 96 input with
+  | .ok () turn => if abrupt then .error "expected a synchronous throw" else .ok turn
   | .throw (.str "stop") turn => if abrupt then .ok turn else .error "unexpected module throw"
   | .throw _ _ => .error "unexpected thrown value"
   | .unknown why _ => .error why
@@ -57,9 +58,21 @@ private def drainAll (turn : Turn World.probe) : Except String (Turn World.probe
   | .ok .empty done => .ok done
   | _ => .error "the queue did not drain"
 
+private def checkOldBoundary (input : LinkedPrimitiveAwait.Input) : Except String Unit := do
+  for fuel in List.range 3 do
+    let .fuel := runProgramTurn World.probe fuel input.program | throw s!"unexpected ordinary outcome at {fuel}"
+    let .fuel := LinkedPrimitiveAwait.runImmediate World.probe fuel input | throw s!"unexpected staged outcome at {fuel}"
+  let .unknown "deferred function left: async invocation requires Promise semantics" old :=
+    runProgramTurn World.probe 3 input.program | throw "expected refusal at the first deferred closure"
+  let .fuel := runProgramTurn World.probe 3 input | throw "the checked body must still reach the operand"
+  unless old.jobs.isEmpty do throw "refusal unexpectedly queued a job"
+  let .ok () staged := runProgramTurn World.probe 7 input | throw "the checked body did not reach enqueue"
+  unless staged.jobs.length == 2 do throw "the fixed evaluator did not keep both jobs"
+
 private def replay (source files : Json) (plan : EsmSplit.Plan) (swap abrupt : Bool) :
     Except String Json := do
   let (a, b) ← LinkedPrimitiveAwait.decodePlaced source files plan
+  if !swap && !abrupt then checkOldBoundary a
   let ea ← exports a.program
   let eb ← exports b.program
   unless ea.Perm eb do throw "exported names resolve to different addresses"
@@ -70,13 +83,14 @@ private def replay (source files : Json) (plan : EsmSplit.Plan) (swap abrupt : B
   let .str "" ← value ta ea "inTurn" | throw "the caller saw a continuation"
   for name in ["first", "second"] do
     let .pending ← settled ta ea name | throw "the immediate result has a settled Promise"
+  let _ ← LinkedPrimitiveAwait.checkProductionBridges source files plan
   match LinkedPrimitiveAwait.checkStagedImmediate source files plan with
   | .error "different ordered linked units or bindings" =>
     unless swap do throw "preserving placement lost its ordered schedule"
   | .error reason => throw reason
   | .ok proof =>
     if swap then throw "swapped call sites passed the all-fuel check"
-    let _ := proof.down.drains
+    let _ := proof.down
   let .ok .paused firstTurn := drain 96 1 ta | throw "one job must leave the second job pending"
   let .str "A7" ← value firstTurn ea "trace" | throw "lost the write before the first continuation threw"
   let .rejected (.str "left") ← settled firstTurn ea "first" | throw "the first continuation did not reject"

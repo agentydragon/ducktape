@@ -76,11 +76,10 @@ observed in the probe; the resumed trace changes from `A7B7` to `B7A7`.
 Moving only the captured `trace` binding is refused because the original
 assignment would target an import.
 
-The staging callback always refuses publication. This checker proves an
+The staging callback always refuses publication. The checker proves an
 all-world, all-fuel claim about the explicit primitive-await semantics and
-the actual reread files. The production split proof still uses ordinary
-`runProgram`, which does not execute these reached awaits. It must use
-the same supported semantics before this placement can be certified.
+the actual reread files. The ordinary projection still runs unlowered
+programs with the same semantics and fuel.
 
 The staged payload now retains the exact deferred function lowered at the
 original unit. The reread declaration must match that function, including
@@ -100,9 +99,16 @@ still pending. Resumed code and other operands still use the ordinary
 rules for the supported fragment; a nested deferred suspension, unmodeled
 thenable or imported capture remains outside it.
 
-`StagedImmediate.publicationOfBridge` states the remaining certificate
-obligations: the fixed production evaluator must equal the staged turn on
-both exact decoded programs, and every modeled world needs a language
-completion and successful empty drain. The current evaluator does not
-supply those equalities for a reached await. The staging check still refuses
-publication. No ambient global policy is needed.
+`TurnProgram` carries the executable suspension bodies as data from checked
+lowering. The fixed turn evaluator runs the same linked schedule used by
+staging. Ordinary programs embed without suspension bodies; the existing
+ordinary projection theorem still covers those programs. On the original
+fixture at fuel 3, the ordinary embedding refuses the deferred function
+`left` with an empty queue, while the lowered program exhausts fuel trying
+to reach the operand. At fuel 7, the lowered program has two pending jobs.
+
+`checkProductionBridges` uses the exact decoded pair and checked links to
+prove both full-turn equalities for every world and fuel. The publication
+interface also requires a positive language completion and successful
+empty drain in every world. The staging callback still refuses publication.
+No ambient global policy is needed.
