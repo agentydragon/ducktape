@@ -3749,7 +3749,6 @@ data:
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
       "context_source_writes": true,
-      "event_block_writes": true,
       "event_block_v2_writes": true,
       "history_export_page_entries": 64,
       "history_export_pages_per_turn": 4,
