@@ -234,6 +234,10 @@ func (s *Notifications) WatchInbox(request *pb.WatchInboxRequest, stream grpc.Se
 	if err != nil {
 		return failure(ctx, err)
 	}
+	fields, err := newInboxFields(request.GetFieldMask())
+	if err != nil {
+		return err
+	}
 	var previous *pb.WatchInboxResponse
 	read := func(ctx context.Context) (*pb.WatchInboxResponse, time.Time, error) {
 		current, observed, err := s.store.SessionStatus(ctx, request.GetSessionId(), caller, s.debounce, false, false)
@@ -252,7 +256,7 @@ func (s *Notifications) WatchInbox(request *pb.WatchInboxRequest, stream grpc.Se
 		if err != nil {
 			return nil, time.Time{}, err
 		}
-		frame := &pb.WatchInboxResponse{State: &pb.WatchInboxResponse_Inbox{Inbox: view}}
+		frame := &pb.WatchInboxResponse{State: &pb.WatchInboxResponse_Inbox{Inbox: fields.apply(view)}}
 		if proto.Equal(previous, frame) {
 			return nil, nextSessionChange(current, observed), nil
 		}
