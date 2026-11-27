@@ -9,14 +9,14 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use swc_common::{DUMMY_SP, SourceFile, Span, Spanned, sync::Lrc};
+use swc_common::{SourceFile, Span, Spanned, sync::Lrc};
 use swc_ecma_ast::{
     Decl, ExportDecl, Module, ModuleDecl, ModuleItem, Stmt, VarDecl, VarDeclarator,
 };
 
 use binding_targets::{binding_name_strings, top_level_binding_name_strings};
 use js_ast::{
-    VarDeclShape, emit_module_source, parse_js_module, source_unit_ordinal_for_statement,
+    VarDeclShape, emit_item_source, parse_js_module, source_unit_ordinal_for_statement,
     split_var_declarators, statements_for_source_unit_ordinals,
 };
 
@@ -454,12 +454,7 @@ fn single_declarator_item(var: &VarDecl, declarator: &VarDeclarator, exported: b
 }
 
 fn pretty_print_item(item: &ModuleItem) -> Result<String> {
-    let module = Module {
-        span: DUMMY_SP,
-        body: vec![item.clone()],
-        shebang: None,
-    };
-    emit_module_source(&module)
+    emit_item_source(item)
 }
 
 fn line_and_byte_column(line_starts: &[usize], offset: usize) -> (usize, usize) {

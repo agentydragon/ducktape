@@ -10,7 +10,6 @@ use selector_resolve::{EntityIndex, SpecModule};
 use source_match::ParsedSourceMatchSelector;
 use spec::annotations::{SourceMatch, SourceMatchBinding, SourceMatchClaim};
 use spec::{SourceMatchBindingDetail, SourceMatchIdentifierMode};
-use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use synthesis_failure::SynthesisSkipReason;
 
@@ -264,11 +263,7 @@ fn synthesize_anonymous_statement_selector(
         .body
         .get(body_index)
         .with_context(|| format!("body index {body_index} is outside the parsed source"))?;
-    let match_source = js_ast::emit_module_source(&Module {
-        span: DUMMY_SP,
-        body: vec![item.clone()],
-        shebang: None,
-    })?;
+    let match_source = js_ast::emit_item_source(item)?;
     let selector = spec::annotations::AnonymousStatementSelector {
         match_source: match_source.clone(),
         identifiers: SourceMatchIdentifierMode::AlphaAll,

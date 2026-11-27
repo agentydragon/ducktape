@@ -93,6 +93,22 @@ pub struct ParsedJsModule {
     pub top_level_mark: Mark,
 }
 
+/// Items the tool synthesized itself, carried in the parsed module's own source
+/// map and hygiene marks: a synthesized name resolves in the same context as the
+/// chunk's own bindings, which is what makes the emitted file loadable next to it.
+pub fn synthesized_module(source: &ParsedJsModule, body: Vec<ModuleItem>) -> ParsedJsModule {
+    ParsedJsModule {
+        cm: source.cm.clone(),
+        module: Module {
+            span: DUMMY_SP,
+            body,
+            shebang: None,
+        },
+        unresolved_mark: source.unresolved_mark,
+        top_level_mark: source.top_level_mark,
+    }
+}
+
 /// Identifier reference sites that have no lexical binding in one parsed
 /// module. This is an inventory only: an unresolved identifier may name a host
 /// global and still needs a separate host/read proof before it carries value or
@@ -362,6 +378,17 @@ pub fn emit_module_source(module: &Module) -> Result<String> {
         emitter.emit_module(module)?;
     }
     Ok(String::from_utf8(buf)?.trim_end().to_string())
+}
+
+/// One top-level item as a whole module: the item goes through the same codegen
+/// as a full module, which is how a synthesized or selected statement becomes the
+/// source text the matcher later parses back.
+pub fn emit_item_source(item: &ModuleItem) -> Result<String> {
+    emit_module_source(&Module {
+        span: DUMMY_SP,
+        body: vec![item.clone()],
+        shebang: None,
+    })
 }
 
 /// Strip only **redundant** `(expr)` parenthesization, canonicalizing a module so
