@@ -1,7 +1,7 @@
-use super::required;
+use super::{decode_map, encode_map, required};
 use anyhow::{Context, Result, ensure};
 use spec_wire_proto::debundle::spec as pb;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 pub fn encode_logical_module(value: &spec::LogicalModule) -> pb::LogicalModule {
     pb::LogicalModule {
@@ -11,7 +11,7 @@ pub fn encode_logical_module(value: &spec::LogicalModule) -> pb::LogicalModule {
             .iter()
             .map(encode_source_match_claim)
             .collect(),
-        annotations: encode_binding_annotation_map(&value.annotations),
+        annotations: encode_map(&value.annotations, encode_binding_annotation),
         anonymous_statements: value
             .anonymous_statements
             .iter()
@@ -34,7 +34,7 @@ pub fn decode_logical_module(v: pb::LogicalModule) -> Result<spec::LogicalModule
             .into_iter()
             .map(decode_source_match_claim)
             .collect::<Result<_>>()?,
-        annotations: decode_binding_annotation_map(v.annotations)?,
+        annotations: decode_map(v.annotations, decode_binding_annotation)?,
         anonymous_statements: v
             .anonymous_statements
             .into_iter()
@@ -303,34 +303,6 @@ pub fn decode_source_match_binding(
         Value::Local(v) => spec::annotations::SourceMatchBinding::Local(v),
         Value::Detailed(v) => spec::annotations::SourceMatchBinding::Detailed(v),
     })
-}
-
-/// Every wire message that carries binding annotations stores the same map, and
-/// turning it into or out of the wire form is the same one step per entry.
-pub fn encode_binding_annotation_map<C>(
-    values: &BTreeMap<String, spec::annotations::BindingAnnotation>,
-) -> C
-where
-    C: FromIterator<(String, pb::BindingAnnotation)>,
-{
-    values
-        .iter()
-        .map(|(key, annotation)| (key.clone(), encode_binding_annotation(annotation)))
-        .collect()
-}
-
-/// The decode side of `encode_binding_annotation_map`: one fallible entry codec
-/// over the wire map, collected into whichever spec map the message decodes to.
-pub fn decode_binding_annotation_map<R>(
-    values: impl IntoIterator<Item = (String, pb::BindingAnnotation)>,
-) -> Result<R>
-where
-    R: FromIterator<(String, spec::annotations::BindingAnnotation)>,
-{
-    values
-        .into_iter()
-        .map(|(key, annotation)| Ok((key, decode_binding_annotation(annotation)?)))
-        .collect()
 }
 
 pub fn encode_binding_annotation(
