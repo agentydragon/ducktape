@@ -1,11 +1,7 @@
 {
-  "source_devel_commit": "cd4ebd917f674f2a7a4cddb858e675135ba6709e",
-  "window_start_utc": "2026-11-17T00:00:00Z",
-  "window_end_utc": "2026-11-24T22:30:00Z",
-  "published_at_utc": "2026-11-24T23:10:39.791945+00:00",
-  "attribution": "not collected",
-  "measurement": "Source-verified PR heads, required gates, BuildBuddy critical paths and isolated RBE comparisons",
-  "previous_report_commit": "e2dfe63219fbc66f3dedcbf9ccd95347f8387061",
-  "report_sha256": "060f0d69a48ac1dd375cea26ccd17fce131ccc229f49b17b8220bc3bfcd340b8",
-  "evidence_sha256": "cbc79ebc984297232d124c4d24db0bdfda646887ab4ce2b856c65d8d6d942303"
+  "source_devel_commit": "c1b14d378c1f06cb9c2440521e540558706adbb9",
+  "window_start_utc": "2026-11-20T00:00:00Z",
+  "window_end_utc": "2026-11-27T05:00:00Z",
+  "published_at_utc": "2026-11-27T06:55:40.980616+00:00",
+  "attribution": "not collected"
 }
