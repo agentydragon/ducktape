@@ -292,6 +292,90 @@ for (const [i, source] of hostSources.entries()) {
   );
 }
 
+// Compare the same source through the production linked AST lowering and Node.
+// Keys and getters record evaluation order, receiver identity, and abrupt completion.
+const optionalComputedSources = [
+  'const seed = null; export const result = seed?.["value"];',
+  'const seed = null; export const result = seed?.["value"]();',
+  `let trace = "";
+   function key() { trace += "k"; return "value"; }
+   const base = null;
+   console.log(base?.[key()], trace);`,
+  `let trace = "";
+   function key() { trace += "k"; return "value"; }
+   const base = { get value() { trace += this === base ? "g" : "x"; return 7; } };
+   console.log(base?.[key()], trace);`,
+  `let trace = "";
+   function key() { trace += "k"; return "method"; }
+   const base = { get method() { trace += this === base ? "g" : "x"; return function () { trace += this === base ? "m" : "x"; return 7; }; } };
+   console.log(base?.[key()](), trace);`,
+  `let trace = "";
+   function key() { trace += "k"; return "method"; }
+   const base = { get method() { trace += this === base ? "g" : "x"; return function () { trace += this === base ? "m" : "x"; return 7; }; } };
+   console.log(base[key()]?.(), trace);`,
+  `let trace = "";
+   function key() { trace += "k"; return "method"; }
+   function arg() { trace += "a"; return 1; }
+   const base = null;
+   console.log(base?.[key()](arg()), trace);`,
+  `let trace = "";
+   function key() { trace += "k"; return "method"; }
+   function arg() { trace += "a"; return 1; }
+   const base = { get method() { trace += "g"; return null; } };
+   console.log(base[key()]?.(arg()), trace);`,
+  `let trace = "";
+   function key() { trace += "k"; throw 9; }
+   try { ({})?.[key()](); } catch (error) { trace += error === 9 ? "t" : "x"; }
+   console.log(trace);`,
+  `let trace = "";
+   const base = { get method() { trace += this === base ? "g" : "x"; throw 9; } };
+   try { base?.["method"](); } catch (error) { trace += error === 9 ? "t" : "x"; }
+   console.log(trace);`,
+  `let trace = "";
+   function key() { trace += "k"; throw 9; }
+   try { null?.[key()]; (null?.[key()]).value; } catch (error) { trace += "t"; }
+   console.log(trace);`,
+  `let trace = "";
+   function key() { trace += "k"; throw 9; }
+   try { ({})?.[key()]; } catch (error) { trace += error === 9 ? "t" : "x"; }
+   console.log(trace);`,
+  `let trace = "";
+   const base = { get value() { trace += this === base ? "g" : "x"; throw 9; } };
+   try { base?.["value"]; } catch (error) { trace += error === 9 ? "t" : "x"; }
+   console.log(trace);`,
+];
+const optionalComputed = run(
+  optionalComputedSources.map((source) => dumpSource(source)),
+  true
+);
+for (const [i, source] of optionalComputedSources.entries()) {
+  const node = spawnSync(process.execPath, ["--input-type=module", "-e", source], { encoding: "utf8" });
+  assert.equal(node.status, 0, node.stderr);
+  assert.deepEqual(
+    [optionalComputed[i].end, optionalComputed[i].detail, optionalComputed[i].out],
+    ["normal", "", node.stdout.split("\n").slice(0, -1)],
+    source
+  );
+}
+// A non-optional continuation inside the same chain needs a skipped-value
+// marker; it must remain refused instead of treating an actual undefined as skipped.
+const continuationSources = [
+  'const base = null; base?.["value"].next;',
+  'const base = { value: undefined }; base?.["value"].next;',
+];
+const continuations = run(
+  continuationSources.map((source) => dumpSource(source)),
+  true
+);
+for (const [i, source] of continuationSources.entries()) {
+  assert.equal(continuations[i].end, "malformed");
+  assert.match(continuations[i].detail, /unsupported optional chain/);
+  assert.deepEqual(
+    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#continuation-${i}`),
+    i === 0 ? ["normal", ""] : ["throw", "TypeError"]
+  );
+}
+
 // Object rest excludes selected string keys and copies only enumerable own
 // properties, including symbols, after the selected getters have run.
 const objectRestSource = `

@@ -734,7 +734,6 @@ private partial def linkedExprScoped (profile : HostProfile) (imports : List Nam
       if isSuperMember member then
         unless property.isNone do throw "unsupported continuation after an optional super call"
         return .callSuper (← memberKey lower member) (← (← body.getObjValAs? (List Json) "arguments").mapM (linkedArgument lower)) true
-      if ← member.getObjValAs? Bool "computed" then throw "unsupported computed optional method call"
       let (base, key) ← linkedMember lower member (allowOptional := optionalReceiver)
       let args ← (← body.getObjValAs? (List Json) "arguments").mapM (linkedArgument lower)
       return if optionalCallee then .callOptionalCallee base key args property else .callOptionalReceiver base key args
