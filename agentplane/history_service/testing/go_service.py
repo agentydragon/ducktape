@@ -372,13 +372,13 @@ async def go_history_service(
         listeners = services.enter_context(ExitStack())
         reader_listener = listeners.enter_context(listen_tcp())
         svid_ca = svid_ca or make_ca("history test services")
-        policy_target = await services.enter_async_context(
+        policy_service = await services.enter_async_context(
             policy_controller(
-                api,
+                api.kubeconfig,
                 policy_namespace=policy_namespace,
                 ca=svid_ca,
                 directory=directory / "policy-tls",
-                readers=[HISTORY_SERVICE_URI],
+                client_uri=HISTORY_SERVICE_URI,
             )
         )
         config = directory / "history-service.yaml"
@@ -418,16 +418,7 @@ async def go_history_service(
         )
         settings = Settings(
             reader_service_callers=frozenset({APP_URI, CENTRAL_SAMPLER_URI}),
-            policy_service=PolicyServicePeer(
-                target=policy_target,
-                tls=ClientTLS(
-                    ca_file=ca_file,
-                    server_uri=POLICY_CONTROLLER_URI,
-                    cert_file=server_cert,
-                    key_file=server_key,
-                    client_uri=HISTORY_SERVICE_URI,
-                ),
-            ),
+            policy_service=policy_service,
             request_timeout_s=10,
             rpc=rpc,
             kubeconfig=api.kubeconfig,

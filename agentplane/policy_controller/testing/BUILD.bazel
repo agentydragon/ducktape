@@ -13,7 +13,6 @@ py_library(
         "//agentplane/net/peertls:config",
         "//agentplane/policy_controller:settings",
         "//agentplane/testing:go_process",
-        "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
         "//devinfra/testing:undeclared_outputs",
         "//util:net",
