@@ -261,6 +261,30 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Revoke a prior exact result for one allocation site before foreign
+    /// code can read that site again: drop its literal array and its
+    /// primitive-array proof, and mark the object tainted. The prefix
+    /// revision moves only when one of those actually changed.
+    fn revoke_dense_array_result(&mut self, result: u32) {
+        self.literal_heap().invalidate_dense_array(result);
+        let primitive_removed = self
+            .state
+            .world_mut()
+            .arrays
+            .primitive
+            .remove(&result)
+            .is_some();
+        let newly_tainted = self
+            .state
+            .world_mut()
+            .surface
+            .tainted_objects
+            .insert(result);
+        if primitive_removed || newly_tainted {
+            self.state.world_mut().revision.bump_prefix();
+        }
+    }
+
     pub(super) fn execute_array_iteration(
         &mut self,
         span: CallSite,
@@ -494,25 +518,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if contents.len() != before {
                             self.state.world_mut().revision.bump_prefix();
                         }
-                        // The same allocation site may have a prior exact result.
-                        // Revoke it before the next callback can read that site.
-                        self.literal_heap().invalidate_dense_array(result);
-                        let primitive_removed = self
-                            .state
-                            .world_mut()
-                            .arrays
-                            .primitive
-                            .remove(&result)
-                            .is_some();
-                        let newly_tainted = self
-                            .state
-                            .world_mut()
-                            .surface
-                            .tainted_objects
-                            .insert(result);
-                        if primitive_removed || newly_tainted {
-                            self.state.world_mut().revision.bump_prefix();
-                        }
+                        self.revoke_dense_array_result(result);
                     }
                 }
                 IterationResult::Filtered => {
@@ -572,23 +578,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 match slots {
                     Some(slots) => self.retain_dense_array(result, slots),
                     None => {
-                        self.literal_heap().invalidate_dense_array(result);
-                        let primitive_removed = self
-                            .state
-                            .world_mut()
-                            .arrays
-                            .primitive
-                            .remove(&result)
-                            .is_some();
-                        let newly_tainted = self
-                            .state
-                            .world_mut()
-                            .surface
-                            .tainted_objects
-                            .insert(result);
-                        if primitive_removed || newly_tainted {
-                            self.state.world_mut().revision.bump_prefix();
-                        }
+                        self.revoke_dense_array_result(result);
                     }
                 }
             }
