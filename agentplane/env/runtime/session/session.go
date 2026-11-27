@@ -103,8 +103,8 @@ func newSession(deps sessionDependencies, id string, record *retained.Record, jo
 		ctx: deps.ctx, journal: journal,
 		send:       func(ctx context.Context, frame json.RawMessage) error { return s.sendNative(ctx, deps.ctx, frame) },
 		afterBatch: s.wake,
-		stderr: func(ctx context.Context, text string) error {
-			return s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: text}), nil)
+		stderr: func(ctx context.Context, data []byte) error {
+			return s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Data: data}), nil)
 		},
 		ended: s.harnessEnded, fail: deps.fail,
 	}}

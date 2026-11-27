@@ -10,10 +10,7 @@ import (
 	"time"
 )
 
-const (
-	ReadBatchBytes  = 64 * 1024
-	stderrTailBytes = 4096
-)
+const stderrTailBytes = 4096
 
 var (
 	errCommandRequired        = errors.New("native harness command is required")

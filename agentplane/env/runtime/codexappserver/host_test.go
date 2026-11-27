@@ -344,7 +344,7 @@ func TestHostProgressesWithoutObserverAndDrainsEarlyFrames(t *testing.T) {
 			frames <- string(line)
 		}
 		return nil
-	}, Stderr: func(context.Context, string) error { return nil }, End: func(_ context.Context, code int) error { ended <- code; return nil }}
+	}, Stderr: func(context.Context, []byte) error { return nil }, End: func(_ context.Context, code int) error { ended <- code; return nil }}
 	ctx, cancel := context.WithTimeout(f.ctx, 15*time.Second)
 	defer cancel()
 	p, err := f.host.Host(ctx, owner)
@@ -388,7 +388,7 @@ func TestHostProgressesWithoutObserverAndDrainsEarlyFrames(t *testing.T) {
 
 func TestFailedDrainRetainsOwnership(t *testing.T) {
 	f := newFixture(t)
-	owner := &Attachment{ID: "owner", Frames: func(context.Context, [][]byte) error { return nil }, Stderr: func(context.Context, string) error { return nil }, End: func(context.Context, int) error { return nil }}
+	owner := &Attachment{ID: "owner", Frames: func(context.Context, [][]byte) error { return nil }, Stderr: func(context.Context, []byte) error { return nil }, End: func(context.Context, int) error { return nil }}
 	ctx, cancel := context.WithTimeout(f.ctx, 15*time.Second)
 	defer cancel()
 	p, err := f.host.Host(ctx, owner)

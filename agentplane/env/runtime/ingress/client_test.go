@@ -61,7 +61,7 @@ func newTestSource(t *testing.T, count int) (Source, ingressTestStore, []*eventl
 	if err := j.WithBatch(context.Background(), func(ctx context.Context) error {
 		for i := 1; i <= count; i++ {
 			if _, err := j.Append(ctx, &eventpb.Event{
-				Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: fmt.Sprintf("line %d", i)}},
+				Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte(fmt.Sprintf("line %d", i))}},
 			}, journal.AppendOptions{}); err != nil {
 				return err
 			}
@@ -229,7 +229,7 @@ func TestDeliverReconnectsWithFreshAnnouncement(t *testing.T) {
 	}
 	await(t, ctx, secondAnnounce, "reconnect announcement callback")
 	newEntry, err := source.Journal.Append(ctx, &eventpb.Event{
-		Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "after reconnect"}},
+		Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte("after reconnect")}},
 	}, journal.AppendOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -507,7 +507,7 @@ func TestJournalAppendAndSealWakeDeliveryWithoutRuntimeNotification(t *testing.T
 	await(t, ctx, service.announced, "empty journal announcement")
 	store.waitForUnsealedCursor(t, ctx, source.ID, 0)
 	appended, err := source.Journal.Append(ctx, &eventpb.Event{
-		Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "live"}},
+		Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte("live")}},
 	}, journal.AppendOptions{})
 	if err != nil {
 		t.Fatal(err)

@@ -54,7 +54,7 @@ func (s *Span) Derived(sources []uint64, event *eventpb.Event) uint64 {
 // Stderr appends a harness stderr line.
 func (s *Span) Stderr(line string) uint64 {
 	entry := s.next()
-	entry.Event.Observation = &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: line}}
+	entry.Event.Observation = &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte(line)}}
 	return entry.Cursor
 }
 

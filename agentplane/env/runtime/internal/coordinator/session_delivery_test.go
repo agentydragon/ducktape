@@ -87,7 +87,7 @@ func TestIngressSupervisorPublishesSealedAcknowledgementToQuiesce(t *testing.T) 
 	runtime, session := lifecycleTestSession(t)
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
-	if err := session.Emit(ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "retained"}}}, nil); err != nil {
+	if err := session.Emit(ctx, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte("retained")}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runtime.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {

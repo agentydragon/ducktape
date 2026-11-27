@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -16,7 +17,6 @@ import (
 	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/sethvargo/go-retry"
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -294,18 +294,7 @@ func StartOwned(config StartConfig) Start {
 
 		launched = true
 		go func() { _, _ = io.Copy(io.Discard, process.Stdout()) }()
-		go func() {
-			buffer := make([]byte, 4096)
-			for {
-				n, err := process.Stderr().Read(buffer)
-				if n > 0 {
-					zap.L().Info("execution backend stderr", zap.String("text", string(buffer[:n])))
-				}
-				if err != nil {
-					return
-				}
-			}
-		}()
+		go func() { _, _ = io.Copy(os.Stderr, process.Stderr()) }()
 		go func() {
 			code, err := process.Wait(context.Background())
 			select {

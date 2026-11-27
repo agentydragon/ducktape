@@ -1685,7 +1685,11 @@ function standardRows(
       { threadId }
     ),
     item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
-    lifecycle(31, fixtureEvent({ case: "harnessStderr", value: { text: "warning: fixture stderr" } }), threadId),
+    lifecycle(
+      31,
+      fixtureEvent({ case: "harnessStderr", value: { data: new TextEncoder().encode("warning: fixture stderr") } }),
+      threadId
+    ),
     item(34, "m-2", ItemKind.ASSISTANT_TEXT, "Next I will read the focused implementation.", {
       threadId,
       complete: false,
@@ -3369,7 +3373,7 @@ function archivedStderr(cursor: number): Record<string, unknown> {
       cursor: BigInt(cursor),
       origin: { sourceId: CONVERSATION_SOURCE, sequence: BigInt(cursor) },
       event: create(EventSchema, {
-        observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } },
+        observation: { case: "harnessStderr", value: { data: new TextEncoder().encode("warning: fixture stderr") } },
       }),
     })
   ) as Record<string, unknown>;

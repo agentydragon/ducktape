@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
+import { ActionIcon, Button, Code, Drawer, Group, Stack, Text } from "@mantine/core";
 import { create, toJson } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { IconHistory } from "../ui/icons";
@@ -51,12 +51,19 @@ function ObservationEntry({ threadId, cursor }: { threadId: string; cursor: stri
     );
   if (response === null) return <Text role="status">Loading entry…</Text>;
   const entry = response.entries[0];
-  return entry === undefined ? (
-    <Text role="alert" c="red">
-      History Service did not return the requested observation.
-    </Text>
-  ) : (
-    <JsonView value={toJson(EventEntrySchema, entry)} />
+  if (entry === undefined)
+    return (
+      <Text role="alert" c="red">
+        History Service did not return the requested observation.
+      </Text>
+    );
+  const observation = entry.event?.observation;
+  return (
+    <>
+      {/* Stderr is retained as raw bytes, which the JSON shows as base64. Decoding is display-only. */}
+      {observation?.case === "harnessStderr" && <Code block>{new TextDecoder().decode(observation.value.data)}</Code>}
+      <JsonView value={toJson(EventEntrySchema, entry)} />
+    </>
   );
 }
 

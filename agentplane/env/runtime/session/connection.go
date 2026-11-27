@@ -1,11 +1,9 @@
 package session
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
@@ -28,7 +26,7 @@ type nativeConnectionDependencies struct {
 	journal    *journal.Journal
 	send       func(context.Context, json.RawMessage) error
 	afterBatch func()
-	stderr     func(context.Context, string) error
+	stderr     func(context.Context, []byte) error
 	ended      func(context.Context, int) error
 	fail       func(error)
 }
@@ -146,45 +144,9 @@ func (c *nativeConnection) deliverReplies() {
 
 func (c *nativeConnection) readStdout(process *supervision.ManagedProcess, receive func(context.Context, []byte) error) {
 	defer c.readers.Done()
-	buffer := make([]byte, supervision.ReadBatchBytes)
-	var framer harness.StdoutFramer
-	var readErr error
-	for {
-		n, err := process.Stdout().Read(buffer)
-		if n > 0 {
-			batch := framer.Feed(buffer[:n])
-			if e := c.deps.journal.WithBatch(c.deps.ctx, func(ctx context.Context) error {
-				for _, line := range batch.Lines {
-					if e := receive(ctx, line); e != nil {
-						return e
-					}
-				}
-				if batch.Err != nil && !batch.PendingTooLong {
-					return batch.Err
-				}
-				return nil
-			}); e != nil {
-				readErr = e
-				break
-			}
-			c.deps.afterBatch()
-			c.deliverReplies()
-			if batch.Err != nil {
-				readErr = batch.Err
-				break
-			}
-		}
-		if err != nil {
-			if err == io.EOF {
-				if lines := framer.Finish(); len(lines) > 0 {
-					readErr = c.receiveBatch(c.deps.ctx, lines, receive)
-				}
-			} else {
-				readErr = err
-			}
-			break
-		}
-	}
+	readErr := harness.ReadFramedStdout(process.Stdout(), func(lines [][]byte) error {
+		return c.receiveBatch(c.deps.ctx, lines, receive)
+	})
 	if readErr != nil {
 		c.deps.fail(readErr)
 		if err := process.Stop(context.Background()); err != nil {
@@ -202,20 +164,7 @@ func (c *nativeConnection) readStdout(process *supervision.ManagedProcess, recei
 
 func (c *nativeConnection) readStderr(process *supervision.ManagedProcess) {
 	defer c.readers.Done()
-	buffer := make([]byte, 4096)
-	for {
-		n, err := process.Stderr().Read(buffer)
-		if n > 0 {
-			if e := c.deps.stderr(c.deps.ctx, string(bytes.ToValidUTF8(buffer[:n], []byte("�")))); e != nil {
-				c.deps.fail(e)
-				return
-			}
-		}
-		if err != nil {
-			if err != io.EOF {
-				c.deps.fail(err)
-			}
-			return
-		}
+	if err := harness.ReadChunks(process.Stderr(), func(chunk []byte) error { return c.deps.stderr(c.deps.ctx, chunk) }); err != nil {
+		c.deps.fail(err)
 	}
 }

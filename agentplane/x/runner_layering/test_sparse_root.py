@@ -91,18 +91,23 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     fences = [
         entry
         for entry in events.of_kind(session.seen, "harness_stderr")
-        if "runner-private state remains outside child root" in entry.event.harness_stderr.text
+        if b"runner-private state remains outside child root" in entry.event.harness_stderr.data
     ]
     assert len(fences) == 1
     fence = fences[0]
-    assert fence.event.harness_stderr.text.strip() == "runner-layering: runner-private state remains outside child root"
+    assert (
+        fence.event.harness_stderr.data.strip() == b"runner-layering: runner-private state remains outside child root"
+    )
 
     await session.submit_input("input-2", "Run the tool installed by the workload image and report its output.")
     request = await model.request()
     await model.reply(request, ShellCall("workload-image-tool", "/usr/local/bin/workload-tool"))
     tool_result = await model.request()
     (output,) = tool_result.tool_outputs
-    stderr = "\n".join(entry.event.harness_stderr.text for entry in events.of_kind(session.seen, "harness_stderr"))
+    stderr = "\n".join(
+        entry.event.harness_stderr.data.decode(errors="replace")
+        for entry in events.of_kind(session.seen, "harness_stderr")
+    )
     assert output.contains("WORKLOAD_IMAGE_TOOL_OK"), f"tool output: {output.blocks}\nharness stderr:\n{stderr}"
     await model.reply(tool_result, Text("WORKLOAD_IMAGE_TOOL_DONE"))
     tool_done = await session.until(events.turn_completed)
@@ -149,7 +154,8 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     resumed_tool_result = await model.request()
     (resumed_output,) = [output for output in resumed_tool_result.tool_outputs if output.call_id == resumed_call_id]
     resumed_stderr = "\n".join(
-        entry.event.harness_stderr.text for entry in events.of_kind(second.seen, "harness_stderr")
+        entry.event.harness_stderr.data.decode(errors="replace")
+        for entry in events.of_kind(second.seen, "harness_stderr")
     )
     assert resumed_output.contains("WORKLOAD_IMAGE_TOOL_OK"), (
         f"resumed tool output: {resumed_output.blocks}\nharness stderr:\n{resumed_stderr}"

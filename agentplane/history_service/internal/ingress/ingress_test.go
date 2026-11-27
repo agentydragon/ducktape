@@ -186,7 +186,7 @@ func testEntry(cursor uint64, text string) *eventlogpb.EventEntry {
 	return &eventlogpb.EventEntry{
 		Cursor: cursor,
 		Origin: &eventlogpb.EventOrigin{SourceId: "test-runner-journal", Sequence: cursor},
-		Event:  &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: text}}},
+		Event:  &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte(text)}}},
 	}
 }
 
@@ -239,7 +239,7 @@ func committed(t *testing.T, history *storage.Store, sessionID uuid.UUID) []stri
 	}
 	var texts []string
 	for _, entry := range page.GetEntries() {
-		texts = append(texts, entry.GetEvent().GetHarnessStderr().GetText())
+		texts = append(texts, string(entry.GetEvent().GetHarnessStderr().GetData()))
 	}
 	return texts
 }

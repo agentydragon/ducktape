@@ -45,8 +45,10 @@ message HarnessLaunchFailed {
   string reason = 1;
 }
 
+// One read of the harness's stderr, unchanged: it may split a multibyte character or not be UTF-8.
+// Same wire encoding as the former `string text = 1`.
 message HarnessStderr {
-  string text = 1;
+  bytes data = 1;
 }
 
 // A session's one-time workspace setup, before its first harness starts. Output remains in the

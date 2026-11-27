@@ -1,5 +1,7 @@
 """Evidence and raw expansion use scoped, keyset reads over actual projected PostgreSQL rows."""
 
+import base64
+
 import httpx
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
@@ -172,7 +174,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         # the listing carries identity only, so opening the drawer transfers no entry at all.
         source.append(event_pb2.Event(native=event_pb2.Native(line="unlinked native packet")))
         stderr = "λ" * (1024 * 1024 + 1)
-        source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text=stderr)))
+        source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(data=stderr.encode())))
         source.append(event_pb2.Event(debug_checkpoint=event_pb2.DebugCheckpoint(name="unlinked checkpoint")))
         await history.record(thread, source.entries[-3:])
         debug_tail = await client.get(chronological, params={"limit": "3"}, headers=operator_auth)
@@ -195,7 +197,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             entries.append(entry_page.json()["entries"][0])
         assert [entry["cursor"] for entry in entries] == ["10", "11", "12"]
         assert entries[0]["event"]["native"]["line"] == "unlinked native packet"
-        assert entries[1]["event"]["harnessStderr"]["text"] == stderr
+        assert base64.b64decode(entries[1]["event"]["harnessStderr"]["data"]).decode() == stderr
         assert entries[2]["event"]["debugCheckpoint"]["name"] == "unlinked checkpoint"
         absent = await client.get(
             f"{path}/events", params={"after_cursor": "99998", "limit": "1"}, headers=operator_auth

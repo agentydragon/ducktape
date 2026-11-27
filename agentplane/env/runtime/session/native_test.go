@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -471,7 +472,7 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 		if s.journal.LastCursor() != 1 {
 			t.Errorf("outbound frame was not committed before native delivery: cursor %d", s.journal.LastCursor())
 		}
-		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: "translated"}), []uint64{sequence}); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Data: []byte("translated")}), []uint64{sequence}); err != nil {
 			return err
 		}
 		close(received)
@@ -519,8 +520,35 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 3 || entries[2].GetEvent().GetHarnessStderr().Text != "translated" || entries[2].GetEvent().SourceSequences[0] != 2 {
+	if len(entries) != 3 || string(entries[2].GetEvent().GetHarnessStderr().Data) != "translated" || entries[2].GetEvent().SourceSequences[0] != 2 {
 		t.Fatalf("reply did not carry its committed translation: %v", entries)
+	}
+}
+
+// Stderr reaches History byte for byte: a character split across writes and bytes that are not UTF-8
+// are recorded as the harness wrote them, not decoded.
+func TestHarnessStderrRecordsExactBytes(t *testing.T) {
+	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", `printf 'a\342\202' >&2; sleep 0.2; printf '\254\377b' >&2; exec cat`})
+	s.connection.startStderr(p)
+	want := []byte("a\u20ac\xffb")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var got []byte
+	for cursor := uint64(0); len(got) < len(want); {
+		if err := s.journal.WaitBeyond(ctx, cursor); err != nil {
+			t.Fatalf("stderr so far %q: %v", got, err)
+		}
+		entries, err := s.journal.Since(ctx, cursor, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			got = append(got, entry.GetEvent().GetHarnessStderr().GetData()...)
+			cursor = entry.Cursor
+		}
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("recorded stderr = %q, want %q", got, want)
 	}
 }
 
@@ -599,7 +627,7 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 			close(received)
 			return nil
 		}
-		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: string(raw)}), []uint64{sequence}); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Data: raw}), []uint64{sequence}); err != nil {
 			return err
 		}
 		close(lateReplyReceived)
@@ -640,7 +668,7 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 4 || entries[3].GetEvent().GetHarnessStderr() == nil || entries[3].GetEvent().GetHarnessStderr().Text != `{"request":"echo"}` {
+	if len(entries) != 4 || entries[3].GetEvent().GetHarnessStderr() == nil || string(entries[3].GetEvent().GetHarnessStderr().Data) != `{"request":"echo"}` {
 		t.Fatalf("late response journal = %v", entries)
 	}
 }
