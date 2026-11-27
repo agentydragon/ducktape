@@ -1180,6 +1180,7 @@ test_runner(
     src = "LocalExportDecodeTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
     deps = [
+        ":corejs_indexed_checked_split",
         ":corejs_indexed_source_schedule",
         ":corejs_linked_input",
         ":corejs_runtime",

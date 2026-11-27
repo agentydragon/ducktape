@@ -3,6 +3,7 @@ import EsmSplit.CoreJS.TerminalConstructorInput
 import EsmSplit.CoreJS.TerminalConstructor
 import EsmSplit.CoreJS.TerminalFootprints
 import EsmSplit.CoreJS.IndexedSourceSchedule
+import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.LowerSplit.SparseArtifact
 import EsmSplit.Cli
 
@@ -129,6 +130,14 @@ private def checkSparse (j : Json) (specText : String) : IO Unit := do
     "actual planner did not retain the metadata ordinal's authored owner"
   require (request.claimants bundle 1 == ["entry.mjs"])
     "metadata owner differs from the parsed authored request"
+  let built ← IO.ofExcept (IndexedCheckedSplit.construct p bundle request row .allOutcomes)
+  let _samePlan : built.plan = evidence.plan := built.planEq.trans evidence.planEq.symm
+  let _allWorldsAndFuels : ∀ world fuel,
+      runProgram world fuel p = runProgram world fuel built.program := built.allOutcomes
+  let _publicNamesAndLiveCells : LinkedBehavior.SameExports p built.program := built.sameExports
+  let _authoredOwners : ∀ id owner, (id, owner) ∈ built.assignment →
+      request.claimants bundle id = [owner] := built.authored
+  let _constructorSound := IndexedCheckedSplit.construct_sound built
 
 private def checkAliases (j : Json) : IO Unit := do
   let decoded ← decodeIndexed j
