@@ -160,7 +160,7 @@ assert.deepEqual(
   before
 );
 
-// The dense constructor must account for every original node, including a
+// The inline constructor must account for every original node, including a
 // standalone export row and a debugger omitted by the CoreJS decoder.
 writeFileSync(spec, JSON.stringify(placement));
 for (const [label, originalSource] of [
@@ -206,6 +206,55 @@ const tdzOut = path.join(root, "tdz-refused");
 const tdz = split({ source, spec, out: tdzOut, require: "all-outcomes" });
 assert.equal(tdz.status, "refused", tdz.log);
 assert(!existsSync(tdzOut));
+
+// The authored selectors must resolve and cover every executable unit exactly
+// once, even when distinct selector spellings claim the same unit.
+writeFileSync(source, "const seed = 7; export const result = seed;\n");
+for (const [label, modules, reason] of [
+  [
+    "unknown-ordinal",
+    { "worker.mjs": ["#0", "#99"], "entry.mjs": ["#1"] },
+    /source position 99 has no executable unit/,
+  ],
+  ["unknown-binding", { "worker.mjs": ["#0", "unknown"], "entry.mjs": ["#1"] }, /source binding unknown is missing/],
+  ["missing-unit", { "worker.mjs": [], "entry.mjs": ["#1"] }, /selectors do not cover every original unit/],
+  [
+    "alias-duplicate",
+    { "worker.mjs": ["#0", "seed"], "entry.mjs": ["#1"] },
+    /an original unit is selected more than once/,
+  ],
+]) {
+  writeFileSync(spec, JSON.stringify({ ...placement, modules }));
+  const refused = run({ out: path.join(root, label) });
+  assert.equal(refused.status, "refused", refused.log);
+  assert.equal(refused.scope, "named-declarations", refused.log);
+  assert.match(refused.reason, reason);
+}
+
+for (const [label, request] of [
+  ["wrong-order", { ...placement, order: [] }],
+  ["non-sequential", { ...placement, sequential: false }],
+  ["moved-inline-export", { ...placement, modules: { "worker.mjs": ["#0", "#1"], "entry.mjs": [] } }],
+]) {
+  writeFileSync(spec, JSON.stringify(request));
+  const refused = run({ out: path.join(root, label) });
+  assert.equal(refused.status, "refused", refused.log);
+}
+
+// Admission is checked against real lexical source, including reads nested
+// inside primitive expressions. The parser rejects duplicate declarations.
+for (const [label, originalSource] of [
+  ["duplicate-declaration", "const seed = 1; export const seed = 2;"],
+  ["forward-read", "const seed = result; export const result = 7;"],
+  ["nested-forward-read", "const seed = 1 + -result; export const result = 7;"],
+  ["self-read", "const seed = seed; export const result = seed;"],
+  ["lexical-forward-read", "let seed = result; export let result = 7;"],
+]) {
+  writeFileSync(source, originalSource);
+  writeFileSync(spec, JSON.stringify(placement));
+  const refused = run({ out: path.join(root, label) });
+  assert.equal(refused.status, "refused", refused.log);
+}
 
 // Linked lowering can model a computed optional method call, but that alone
 // does not make its placement eligible for the ordinary constructor.

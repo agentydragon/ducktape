@@ -116,10 +116,6 @@ function probe(kind, input) {
   return JSON.parse(result.stdout)[0];
 }
 
-function namedProbe(placement, sourceText = fixture.source) {
-  return probe("namedConstructor", { source: dump(sourceText), spec: placement });
-}
-
 // Reuse the sparse_checked_artifact_test.mjs sample: the export is not terminal.
 // #2 is the actual result declaration; #1 does not execute or allocate a region.
 const { source: sparseSource, spec: sparseSpec } = sparseNonterminalFixture();
@@ -137,8 +133,12 @@ assert.deepEqual(shape.output, {
     },
   ],
 });
-const sparseConstructor = namedProbe(sparseSpec, sparseSource);
-assert.match(sparseConstructor.error, /source position 1 has no executable unit/);
+const sparseConstructor = probe("inlineConstructor", {
+  source: dump(sparseSource),
+  sourceText: sparseSource,
+  spec: sparseSpec,
+});
+assert.equal(sparseConstructor.error, "source provenance: standalone export rows require source-indexed placement");
 const sparseSourceFile = path.join(root, "sparse-source.mjs");
 const sparseSpecFile = path.join(root, "sparse-spec.json");
 const sparseOut = path.join(root, "sparse-out");

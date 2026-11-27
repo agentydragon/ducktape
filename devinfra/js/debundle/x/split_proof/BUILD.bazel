@@ -1416,37 +1416,6 @@ lean_proof_test(
 )
 
 lean_library(
-    name = "named_declaration_split",
-    srcs = ["EsmSplit/CoreJS/NamedDeclarationSplit.lean"],
-    deps = [
-        ":corejs_checked_split",
-        ":corejs_primitive_rhs",
-        ":corejs_resolved_placement",
-    ],
-)
-
-executable_test(
-    name = "named_declaration_split_test",
-    src = "NamedDeclarationSplitTest.lean",
-    deps = [
-        ":corejs_state_match",
-        ":named_declaration_split",
-    ],
-)
-
-lean_proof_test(
-    name = "named_declaration_split_axioms_test",
-    allow_empty = True,
-    modules = ["EsmSplit.CoreJS.NamedDeclarationSplit"],
-    required_theorems = [
-        "CoreJS.NamedDeclarationSplit.checkDeclarations",
-        "CoreJS.NamedDeclarationSplit.construct",
-        "CoreJS.NamedDeclarationSplit.construct_sound",
-    ],
-    deps = [":named_declaration_split"],
-)
-
-lean_library(
     name = "symbolic_terminal_const",
     srcs = ["EsmSplit/CoreJS/SymbolicTerminalConst.lean"],
     deps = [
@@ -1881,13 +1850,14 @@ test_runner(
     deps = [
         ":cli",
         ":corejs_authenticated_source",
+        ":corejs_checked_split",
         ":corejs_dynamic_imports",
         ":corejs_indexed_inline_constructor",
         ":corejs_linked_input",
         ":corejs_module_location",
         ":corejs_opaque_input",
+        ":corejs_state_match",
         ":lowersplit_input",
-        ":named_declaration_split",
     ],
 )
 

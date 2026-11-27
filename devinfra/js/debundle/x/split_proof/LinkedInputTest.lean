@@ -1,11 +1,12 @@
-import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.Cli
+import EsmSplit.CoreJS.AuthenticatedSource
+import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.DynamicImports
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.LinkedInput
-import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
+import EsmSplit.CoreJS.StateMatch
 import EsmSplit.LowerSplit.Input
 
 open Lean (Json toJson)
@@ -127,17 +128,39 @@ private def opaqueUnits (input : Json) : Except String Json := do
       toJson free, toJson body])
   return .arr units
 
-/-- Diagnose the same source/spec constructor used by the ordinary CLI. This
-probe reports a refusal; it does not certify or produce an output. -/
-private def namedConstructor (input : Json) : Except String Json := do
-  let source ← input.getObjVal? "source"
+/-- Diagnose the ordered inline constructor, separately from the CLI's
+standalone-export and literal-reorder alternatives. -/
+private def inlineConstructor (input : Json) : Except String Json := do
+  let ast ← input.getObjVal? "source"
+  let sourceText ← input.getObjValAs? String "sourceText"
   let request ← EsmSplit.parseSpec (← input.getObjVal? "spec")
-  let original ← (CoreJS.LinkedInput.decodeSingletonSource source request.entry).mapError fun why =>
-    "decodeSingletonSource: " ++ why
-  let result ← (CoreJS.NamedDeclarationSplit.construct original request).mapError fun why =>
-    "NamedDeclarationSplit.construct: " ++ why
-  return Json.mkObj [("entry", toJson result.split.program.entry),
-    ("modules", toJson (result.split.program.modules.map (·.name)))]
+  let classified ← (CoreJS.AuthenticatedSource.decodeSourceClassification ast sourceText request.entry).mapError
+    ("source classification: " ++ ·)
+  let decoded ← (CoreJS.AuthenticatedSource.checkIndexedSource classified).mapError ("source provenance: " ++ ·)
+  unless decoded.localExports.isEmpty do
+    throw "source provenance: standalone export rows require source-indexed placement"
+  let built ← (CoreJS.IndexedInlineConstructor.construct decoded (CoreJS.CheckedSplit.summarize decoded.program)
+    request).mapError ("indexed inline construction: " ++ ·)
+  let output := built.program
+  let mut fields := [("entry", toJson output.entry), ("order", toJson output.evalOrder),
+    ("placements", toJson output.fileUnitPlacements)]
+  if let .ok fuel := input.getObjValAs? Nat "checkFuel" then
+    let exportCells (program : CoreJS.Program) : Except String Json := do
+      let some cells := CoreJS.LinkedBehavior.exports CoreJS.World.probe program |
+        throw "probe could not link public export cells"
+      return .arr (cells.toArray.map fun (name, addr) => .arr #[toJson name, toJson addr.region, toJson addr.index])
+    let originalCells ← exportCells decoded.program
+    let outputCells ← exportCells output
+    let .ok () before := CoreJS.runProgram CoreJS.World.probe fuel decoded.program |
+      throw "source probe did not complete"
+    let .ok () after := CoreJS.runProgram CoreJS.World.probe fuel output |
+      throw "constructed probe did not complete"
+    unless (CoreJS.StateMatch.probe before after).isSome do throw "constructed probe changed final state"
+    match CoreJS.runProgram CoreJS.World.probe 0 decoded.program, CoreJS.runProgram CoreJS.World.probe 0 output with
+    | .fuel, .fuel => pure ()
+    | _, _ => throw "constructed probe changed zero-fuel exhaustion"
+    fields := fields ++ [("sourceCells", originalCells), ("outputCells", outputCells)]
+  return Json.mkObj fields
 
 /-- Inspect the original decoded module without projecting or renumbering its body. -/
 private def singletonSourceShape (input : Json) : Except String Json := do
@@ -179,7 +202,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "structuralSparseHole" => pure (structuralSparseHole (← fixture.getObjVal? "input"))
       | "singletonSourceShape" => pure (singletonSourceShape (← fixture.getObjVal? "input"))
-      | "namedConstructor" => pure (namedConstructor (← fixture.getObjVal? "input"))
+      | "inlineConstructor" => pure (inlineConstructor (← fixture.getObjVal? "input"))
       | "indexedInlinePlan" => pure (indexedInlinePlan (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))

@@ -20,8 +20,9 @@ placement units or applying a proof. Its current verdict discards the
 classification error. The manual diagnostic uses the same `module_io --parse`
 and indexed source decoder as that path. Its first error on the unchanged file
 is `statement 41: unsupported global Uint8Array`. Unit `#41` eagerly evaluates
-`new Uint8Array([...])`. The older `constructor_acceptance_test` probe reports
-`statement 5: unsupported global Object`
+`new Uint8Array([...])`. The current `constructor_acceptance_test` also reaches
+that refusal through the authenticated classifier. An older version of that
+probe reported `statement 5: unsupported global Object`
 ([run](https://app.buildbuddy.io/invocation/b522966b-068a-4e30-b8ff-5b8a7443610d)).
 That probe omits the opaque capture annotations that let the ordinary frontend
 retain the deferred React callback containing `Object.assign`. The first
