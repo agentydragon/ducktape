@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -160,6 +171,53 @@ const moved = path.join(prior, "moved");
 mkdirSync(moved);
 renameSync(path.join(prior, entry), path.join(moved, entry));
 checkArtifact(withPackage, /missing: _baseSortedUniq\.js; unexpected: moved\/_baseSortedUniq\.js/);
+
+// Replay the original graph through the typed artifact contract. No split is
+// claimed: the program callback here checks transport, not behavior.
+function ownedPackage(source, out, mode, expectedError) {
+  const run = spawnSync(process.env.OWNED_NODE_PACKAGE_CHECKER, [source, out, mode], {
+    encoding: "utf8",
+    env: { ...process.env, SPLIT_PROOF_MODULE_IO: path.resolve(process.env.MODULE_IO) },
+  });
+  if (run.error) throw run.error;
+  assert.equal(run.status, expectedError ? 1 : 0, run.stderr);
+  if (expectedError) assert.match(run.stderr, expectedError);
+}
+
+const owned = path.join(process.env.TEST_TMPDIR, "owned");
+ownedPackage(packageRoot, owned, "publish");
+for (const [file, text] of Object.entries(withPackage)) {
+  assert.deepEqual(readFileSync(path.join(owned, file)), Buffer.from(text));
+}
+ownedPackage(packageRoot, owned, "reread");
+ownedPackage(packageRoot, owned, "publish", /owned package destination must not exist/);
+ownedPackage(packageRoot, owned, "reread");
+
+const failed = path.join(process.env.TEST_TMPDIR, "failed");
+ownedPackage(packageRoot, failed, "reject", /deliberate check refusal after staging/);
+assert.equal(existsSync(failed), false);
+
+const wrongOutput = path.join(process.env.TEST_TMPDIR, "wrong-output");
+cpSync(owned, wrongOutput, { recursive: true });
+const wrongBytes = JSON.stringify({ ...packageMetadata, type: "commonjs" });
+writeFileSync(path.join(wrongOutput, "package.json"), wrongBytes);
+ownedPackage(packageRoot, wrongOutput, "reread", /provider package\.json differs from the source graph/);
+assert.equal(readFileSync(path.join(wrongOutput, "package.json"), "utf8"), wrongBytes);
+assert.deepEqual(readFileSync(path.join(wrongOutput, "sortedUniq.js")), Buffer.from(fixedModules["sortedUniq.js"]));
+renameSync(path.join(wrongOutput, "sortedUniq.js"), path.join(wrongOutput, "relocated.js"));
+ownedPackage(packageRoot, wrongOutput, "reread", /missing: sortedUniq\.js; unexpected: relocated\.js/);
+assert.deepEqual(readFileSync(path.join(wrongOutput, "relocated.js")), Buffer.from(fixedModules["sortedUniq.js"]));
+
+const unverified = path.join(process.env.TEST_TMPDIR, "unverified");
+cpSync(owned, unverified, { recursive: true });
+const unverifiedManifest = path.join(unverified, "package.json");
+writeFileSync(unverifiedManifest, wrongBytes);
+ownedPackage(unverified, failed, "publish", /package\.json must explicitly declare "type": "module"/);
+rmSync(unverifiedManifest);
+ownedPackage(unverified, failed, "publish", /expected a regular package file: package\.json/);
+symlinkSync(manifest, unverifiedManifest);
+ownedPackage(unverified, failed, "publish", /expected a regular package file: package\.json/);
+assert.equal(existsSync(failed), false);
 
 console.log(
   JSON.stringify({

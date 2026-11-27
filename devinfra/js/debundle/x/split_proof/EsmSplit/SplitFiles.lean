@@ -154,15 +154,17 @@ private def compareDirectory (parts : List OutputPart) (providers : List (String
   return Json.mkObj (← files.toList.mapM fun (name, ast) => do
     return (name, ← IO.ofExcept (unitProgram ast)))
 
-/-- Finish comparison and proof before publishing the complete tree by rename.
-Existing trees use the same gate and are left untouched. -/
-def certifyOutput {α : Type} (parts : List OutputPart) (providers : Json)
+/-- Finish comparison and proof before publishing by rename. Fixed files
+are checked by path and bytes without decoding them as JavaScript. The
+destination guard runs before staging and immediately before promotion. -/
+def certifyOutputWithFixed {α : Type} (parts : List OutputPart) (sources : List (String × String))
     (out work : System.FilePath) (checkOnly timings : Bool)
-    (check : Json → IO (Except CertificationRefusal α)) : IO (Except CertificationRefusal α) := do
+    (check : Json → IO (Except CertificationRefusal α))
+    (confirmDestination : IO Unit := pure ()) (recheckPublished : Bool := false) :
+    IO (Except CertificationRefusal α) := do
   let groups ← IO.ofExcept <| parts.mapM fun part => do
     return (← part.programs.getObj?).toList.map Prod.fst
-  let dependencies ← IO.ofExcept (providers.getObj?)
-  let names := groups.flatten ++ dependencies.toList.map Prod.fst
+  let names := groups.flatten ++ sources.map Prod.fst
   IO.ofExcept (EsmSplit.validateModulePaths names)
   unless names.Nodup do throw (IO.userError "output module path collision")
   let routes := Std.HashSet.ofList names
@@ -171,8 +173,7 @@ def certifyOutput {α : Type} (parts : List OutputPart) (providers : Json)
     for segment in (name.splitOn "/").dropLast do
       ancestor := if ancestor.isEmpty then segment else ancestor ++ "/" ++ segment
       if routes.contains ancestor then throw (IO.userError s!"output module {name} crosses output file {ancestor}")
-  let sources ← dependencies.toList.mapM fun (name, ast) => do
-    return (name, ← IO.ofExcept (ast.getObjValAs? String "sourceText"))
+  confirmDestination
   let verify dir := do
     let observed ← timePhase timings "output_comparison" fun _ => compareDirectory parts sources dir work
     check observed
@@ -191,9 +192,21 @@ def certifyOutput {α : Type} (parts : List OutputPart) (providers : Json)
         IO.FS.createDirAll (dest.parent.getD stage)
         IO.FS.writeFile dest source
     let result ← verify stage
-    if result.isOk then timePhase timings "output_publication" fun _ => IO.FS.rename stage out
+    if result.isOk then
+      confirmDestination
+      timePhase timings "output_publication" fun _ => IO.FS.rename stage out
+      if recheckPublished then
+        let _ ← compareDirectory parts sources out work
     return result
   finally
     if ← stage.pathExists then IO.FS.removeDirAll stage
+
+def certifyOutput {α : Type} (parts : List OutputPart) (providers : Json)
+    (out work : System.FilePath) (checkOnly timings : Bool)
+    (check : Json → IO (Except CertificationRefusal α)) : IO (Except CertificationRefusal α) := do
+  let dependencies ← IO.ofExcept (providers.getObj?)
+  let sources ← dependencies.toList.mapM fun (name, ast) => do
+    return (name, ← IO.ofExcept (ast.getObjValAs? String "sourceText"))
+  certifyOutputWithFixed parts sources out work checkOnly timings check
 
 end EsmSplit.SplitFiles

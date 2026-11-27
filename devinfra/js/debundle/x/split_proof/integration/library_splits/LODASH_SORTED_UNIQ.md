@@ -74,17 +74,30 @@ artifact checker still accepts the same JavaScript. This last case
 demonstrates the missing premise; it does not predict how a Node version
 would classify a file in an undeclared package.
 
-One narrowly scoped production option is to declare an owned, flat Node
-package root and its authenticated `package.json` as a fixed asset. Check
-the original root and real routes, keep the unmodified caller and provider
-at their original routes, and stage the manifest in the directory that is
-renamed for publication. Verify it by exact bytes and path alongside the
-modules before publication and on `--check-output`. An alternative for an
-externally managed package root would require evidence for the actual
-destination's enclosing package and a check that the staging move cannot
-change that scope; the current manifest supplies neither. Both options
-are separate from the CoreJS link proof under ESM. The production gate
-remains closed for this request.
+The bounded [artifact hook](../../EsmSplit/OwnedNodePackage.lean) accepts an
+explicit canonical source root and three direct routes (entry, provider,
+caller). Its caller is responsible for selecting these source assets and
+for controlling the existing destination parent and scratch directory;
+paths and contents must stay stable during the operation. The source root
+is read-only to the hook. It captures the regular root `package.json` and
+requires an explicit `"type": "module"`; it does not look for an enclosing
+package or follow a manifest or module symlink. The generated entry keeps
+its original route, and generated helpers stay at the root.
+
+Fresh publication requires an absent destination. The shared gate checks
+the exact file set and the captured manifest, provider, and caller bytes
+before promotion; it rereads the same paths after renaming the whole root.
+The reread mode uses the same comparison and never edits the supplied tree.
+The proof callback gets the reparsed generated JavaScript and the captured
+provider AST, after its bytes have been checked. The manifest and untouched
+caller remain fixed assets. The fixture exercises the hook on the original
+graph; it does not certify the proposed split.
+
+An externally managed package root would require evidence for the actual
+destination's enclosing package and a check that staging cannot change that
+scope. The hook refuses that case. The production CLI still has no package
+declaration, and the gate remains closed until the callable proof and
+artifact hook are wired together.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:lodash_sorted_uniq_test

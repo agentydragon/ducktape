@@ -1088,6 +1088,25 @@ lean_library(
 )
 
 lean_library(
+    name = "owned_node_package",
+    srcs = ["EsmSplit/OwnedNodePackage.lean"],
+    deps = [
+        ":module_path",
+        ":split_files",
+    ],
+)
+
+test_runner(
+    name = "owned_node_package_test_runner",
+    src = "OwnedNodePackageTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":owned_node_package",
+        ":split_files",
+    ],
+)
+
+lean_library(
     name = "read_deployment",
     srcs = ["EsmSplit/ReadDeployment.lean"],
     deps = [
