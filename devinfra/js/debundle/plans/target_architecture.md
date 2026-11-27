@@ -71,10 +71,6 @@ source, analysis projection and engine (`analysis_projection.rs`,
   from the emitted import lists (`esm_schedule/esm_import_order.rs`,
   `realizability/esm_simulator.rs`). It is a plain component with no verdict
   of its own, and it runs on the real order even when imports are cyclic.
-- **Order search.** The search chooses import orders through phantom side-effect
-  imports. It is seeded by hard facts (binding reads, rebinds, definite
-  conflicts) and prefers orders near the last accepted one. It never runs
-  inside the interpreter.
 
 ### 4. Validate
 
