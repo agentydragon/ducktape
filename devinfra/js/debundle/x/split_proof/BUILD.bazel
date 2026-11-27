@@ -4036,6 +4036,35 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_call_turn",
+    srcs = ["EsmSplit/CoreJS/CallTurn.lean"],
+    deps = [
+        ":corejs_eval",
+        ":corejs_scope",
+        ":corejs_turn",
+    ],
+)
+
+executable_test(
+    name = "call_turn_test",
+    src = "CallTurnTest.lean",
+    deps = [":corejs_call_turn"],
+)
+
+lean_proof_test(
+    name = "corejs_call_turn_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.CallTurn"],
+    required_theorems = [
+        "CoreJS.callFnTurn_overlap",
+        "CoreJS.evalCall_turn",
+        "CoreJS.execFinally_turn",
+        "CoreJS.performCall_turn",
+    ],
+    deps = [":corejs_call_turn"],
+)
+
+lean_library(
     name = "corejs_program_turn",
     srcs = ["EsmSplit/CoreJS/ProgramTurn.lean"],
     deps = [

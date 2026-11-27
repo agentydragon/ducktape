@@ -81,3 +81,31 @@ state equality and frame lemmas wholesale. The next decision is how to
 thread the queue through the shared call kernel, after one overlap proof
 through a real nontrivial caller. The staged await prototype is still a
 separate diagnostic; its proof is not a publishing proof for that kernel.
+
+## Shared resolved call dispatch
+
+Both observations now use one dispatch table on the resolved callee value.
+Alias lookup still happens in ordinary expression evaluation. The selected
+local closure runs the same body at the already reduced fuel; a synchronous
+async body still settles its Promise by the existing rule. A nested call
+enters the same table. `callFnTurn_overlap` frames any incoming FIFO around
+the complete old outcome, at identical fuel and for arbitrary worlds.
+`evalCall_turn` exposes that boundary after callee and argument evaluation.
+`execFinally_turn` passes the post-body turn to the finalizer after a return
+or throw. Its own jump or throw still wins; an unknown or fuel outcome still
+does not run the finalizer.
+
+Host behavior is unchanged. The existing argument and handle checks run
+before the corresponding host operation. A host step or conversation that
+updates its state, hands out an identity, or re-enters a closure keeps those
+effects even if it later refuses. A request with an unissued handle stops
+before calling it. `performCall_turn` exposes the shared dispatch in the
+callback request; `TurnM.attempt` catches a language throw on the resulting
+turn, without making unknown or fuel catchable.
+
+The dispatcher currently lifts the old local body and opaque conversation
+effects, which cannot enqueue. A queue-producing rule must instead thread
+the turn through bodies, host callbacks, and any other path that can re-enter
+the evaluator. In particular, wrapping a queue-producing call in the current
+`TurnM.lift` would lose the jobs; this slice neither adds such a rule nor
+changes the publishing gate.

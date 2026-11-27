@@ -129,7 +129,7 @@ theorem callFn_reachFrame_of_steps {r R cells A n} (away : Away r R A)
   cases callee
   case host name => exact reachFrame_hostCall r R cells A name this args
   case obj a =>
-    simp only [callFn]
+    simp only [callFn, dispatchCall, runLocalCall]
     apply (reachFrame_getObj away (safeVal_obj.1 hc)).bind
     intro obj safe
     cases kind : obj.code with

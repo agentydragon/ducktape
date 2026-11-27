@@ -401,6 +401,46 @@ def loopIterator (call : Call W) (iteration : Val → M W Flow) : Nat → Iterat
     | .ok (.ret v) => iteratorClose call next (.ok (.ret v))
     | .error e => iteratorClose call next (.error e)
 
+/-- The dispatch table for a resolved call. Capability checks, object lookup
+and host conversions are the same in each observation of the evaluator.
+The callbacks supply execution at the caller's already decremented fuel. -/
+def dispatchCall {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
+    (localBody : Func → Env → Val → List Val → m Val)
+    (opaqueBody : Nat → List (Option Addr) → Told → m Val)
+    (callee this : Val) (args : List Val) : m Val :=
+  match callee with
+  | .obj a => do
+    match (← sync (getObj a)).code with
+    | some .derived | some (.derivedFields ..) | some (.derivedBody ..) =>
+      sync (throwErr .type "class constructor cannot be invoked without 'new'")
+    | some (.closure f closed _) =>
+      if f.kind == .classCtor then
+        sync (throwErr .type "class constructor cannot be invoked without 'new'")
+      else
+        match f.opaqueBody with
+        | some (_, _, _, some reason) => sync (unknown s!"deferred function {f.name}: {reason}")
+        | some (code, part, free, none) =>
+          opaqueBody code (free.map (closed.vars.lookup ·))
+            (.run code part (← sync (toW callee)) (← sync (toW (if f.kind == .arrow then closed.this else this)))
+              (← sync (args.mapM toW)) false)
+        | none => localBody f closed this args
+    | some (.host name) => sync (hostCall name this args)
+    | some (.opaque code part cells _) =>
+      opaqueBody code cells (.run code part (← sync (toW callee)) (← sync (toW this))
+        (← sync (args.mapM toW)) false)
+    | none => sync (throwErr .type "not a function")
+  | .host name => sync (hostCall name this args)
+  | _ => sync (throwErr .type "not a function")
+
+/-- Enter and run a local closure; async completion still settles the Promise
+using the synchronous prefix rules. A deferred body never reaches here. -/
+def runLocalCall (body : Env → List Stmt → M W Flow) (f : Func) (closed : Env)
+    (this : Val) (args : List Val) : M W Val :=
+  let run : M W Val := do
+    let env ← enterFunction f closed this args
+    Flow.functionResult (← body env f.body)
+  if f.kind == .asyncFn then AsyncPrefix.invokeBody promiseProto run else run
+
 mutual
 
 def evalExpr : Nat → Env → Expr → M W Val
@@ -629,30 +669,7 @@ def evalFields : Nat → Env → Addr → List (PropertyKey × Expr) → M W Uni
 def callFn : Nat → Val → Val → List Val → M W Val
   | 0, _, _, _ => outOfFuel
   | n + 1, callee, this, args =>
-    match callee with
-    | .obj a => do
-      match (← getObj a).code with
-      | some .derived | some (.derivedFields ..) | some (.derivedBody ..) =>
-        throwErr .type "class constructor cannot be invoked without 'new'"
-      | some (.closure f closed _) =>
-        if f.kind == .classCtor then throwErr .type "class constructor cannot be invoked without 'new'" else do
-        match f.opaqueBody with
-        | some (_, _, _, some reason) => unknown s!"deferred function {f.name}: {reason}"
-        | some (code, part, free, none) =>
-          converse n code (free.map (closed.vars.lookup ·))
-            (.run code part (← toW callee) (← toW (if f.kind == .arrow then closed.this else this))
-              (← args.mapM toW) false)
-        | none =>
-          let run : M W Val := do
-            let env ← enterFunction f closed this args
-            Flow.functionResult (← execStmts n env f.body)
-          if f.kind == .asyncFn then AsyncPrefix.invokeBody promiseProto run else run
-      | some (.host name) => hostCall name this args
-      | some (.opaque code part cells _) => do
-        converse n code cells (.run code part (← toW callee) (← toW this) (← args.mapM toW) false)
-      | none => throwErr .type "not a function"
-    | .host name => hostCall name this args
-    | _ => throwErr .type "not a function"
+    dispatchCall (fun run => run) (runLocalCall (execStmts n)) (converse n) callee this args
 
 /-- Default derived constructors preserve the original new target through the superclass chain. -/
 def constructTarget : Nat → Val → Val → List Val → M W Val

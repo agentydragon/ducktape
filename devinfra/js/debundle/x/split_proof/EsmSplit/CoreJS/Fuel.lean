@@ -364,7 +364,7 @@ theorem Mono.fields_succ (env : Env) (a : Addr) (fs : List (PropertyKey × Expr)
 
 theorem Mono.call_succ (callee this : Val) (args : List Val) :
     (callFn (n + 1) callee this args : M W _) ⊑ callFn (m + 1) callee this args := by
-  unfold callFn
+  unfold callFn dispatchCall runLocalCall
   mono ih
   apply AsyncPrefix.invokeBody_le
   mono ih

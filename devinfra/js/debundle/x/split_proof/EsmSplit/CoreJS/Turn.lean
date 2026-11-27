@@ -67,4 +67,64 @@ def observed (outcome : TurnResult W α) : TurnResult W Unit :=
   outcome.map fun _ => ()
 
 end TurnResult
+
+/-- The turn effect threads the sidecar through successful sequencing and
+keeps it on an abrupt outcome. Exhaustion still has no resumable turn. -/
+def TurnM (W : World) (α : Type) : Type := Turn W → TurnResult W α
+
+namespace TurnM
+
+variable {W : World} {α β : Type}
+
+instance : Monad (TurnM W) where
+  pure a := fun turn => .ok a turn
+  bind m f := fun turn =>
+    match m turn with
+    | .ok a next => f a next
+    | .throw reason stopped => .throw reason stopped
+    | .unknown why stopped => .unknown why stopped
+    | .fuel => .fuel
+
+theorem bind_apply (m : TurnM W α) (f : α → TurnM W β) (turn : Turn W) :
+    (m >>= f) turn = (match m turn with
+      | .ok a next => f a next
+      | .throw reason stopped => .throw reason stopped
+      | .unknown why stopped => .unknown why stopped
+      | .fuel => .fuel) := rfl
+
+/-- Lift an effect proved not to enqueue. This retains the *result's* state
+on every stateful outcome, alongside the input queue. -/
+def lift (m : M W α) : TurnM W α := fun turn =>
+  TurnResult.withJobs turn.jobs (m turn.state)
+
+@[simp] theorem lift_bind (m : M W α) (f : α → M W β) :
+    lift (m >>= f) = (lift m >>= fun a => lift (f a)) := by
+  funext turn
+  obtain ⟨state, jobs⟩ := turn
+  rw [bind_apply]
+  change TurnResult.withJobs jobs (match m state with
+    | .ok a s => f a s
+    | .throw v s => .throw v s
+    | .unknown why s => .unknown why s
+    | .fuel => .fuel) = _
+  simp only [lift]
+  cases m state <;> rfl
+
+/-- Language throws can be caught. Refusal and fuel are not exceptions that
+a CoreJS caller (or an opaque host) can catch. -/
+def attempt (m : TurnM W α) : TurnM W (Except Val α) := fun turn =>
+  match m turn with
+  | .ok a next => .ok (.ok a) next
+  | .throw reason stopped => .ok (.error reason) stopped
+  | .unknown why stopped => .unknown why stopped
+  | .fuel => .fuel
+
+@[simp] theorem lift_attempt (m : M W α) :
+    lift (CoreJS.attempt m) = attempt (lift m) := by
+  funext turn
+  obtain ⟨state, jobs⟩ := turn
+  simp only [lift, CoreJS.attempt, attempt]
+  cases m state <;> rfl
+
+end TurnM
 end CoreJS
