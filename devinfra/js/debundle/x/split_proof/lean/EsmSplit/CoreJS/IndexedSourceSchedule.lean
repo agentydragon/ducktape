@@ -12,45 +12,51 @@ namespace CoreJS.IndexedSourceSchedule
 
 open EsmSplit
 
-/-- A source row keeps its original ordinal and kind. In particular, an empty
-local export list remains a metadata unit rather than disappearing. -/
-inductive SourceUnit where
-  | executable (ordinal : Nat) (statement : Stmt)
-  | localExport (row : LocalExportUnit)
+/-- The decoder's source-order classification carries both the original AST
+node and the exact executable statement or export row it produced. -/
+abbrev SourceUnit := LinkedInput.SourceItem
 
-def SourceUnit.ordinal : SourceUnit → Nat
-  | .executable ordinal _ => ordinal
-  | .localExport row => row.ordinal
+def SourceUnit.ordinal : SourceUnit → Nat := LinkedInput.SourceItem.ordinal
 
-def SourceUnit.executable? : SourceUnit → Option Nat
-  | .executable ordinal _ => some ordinal
-  | .localExport _ => none
+def SourceUnit.node : SourceUnit → Lean.Json := LinkedInput.SourceItem.node
 
-def SourceUnit.localExport? : SourceUnit → Option (Nat × List (Name × Name))
-  | .executable _ _ => none
-  | .localExport row => some (row.ordinal, row.names)
+def SourceUnit.nodeEncoding (unit : SourceUnit) : String := (unit.node).compress
 
-/-- Merge executable and metadata units by their original source ordinal. -/
-def orderedUnits (source : CoreJS.Module) (rows : List LocalExportUnit) : List SourceUnit :=
-  ((source.body.map fun (ordinal, statement) => SourceUnit.executable ordinal statement) ++
-    rows.map SourceUnit.localExport).mergeSort fun left right => decide (left.ordinal ≤ right.ordinal)
+def SourceUnit.executable? (unit : SourceUnit) : Option Nat :=
+  (LinkedInput.SourceItem.executable? unit).map Prod.fst
+
+def SourceUnit.executableRow? (unit : SourceUnit) : Option (Nat × Stmt) :=
+  LinkedInput.SourceItem.executable? unit
+
+def SourceUnit.localExport? (unit : SourceUnit) : Option (Nat × List (Name × Name)) :=
+  (LinkedInput.SourceItem.localExport? unit).map fun row => (row.ordinal, row.names)
+
+def SourceUnit.localExportRow? : SourceUnit → Option LocalExportUnit :=
+  LinkedInput.SourceItem.localExport?
 
 /-- The decoder's separate executable and metadata rows form one complete
 source sequence against the actual original node count and bundle. -/
 structure Sequence (decoded : LinkedInput.IndexedSource) (bundle : Bundle) where
-  source : CoreJS.Module
-  singleton : decoded.program.modules = [source]
+  source : CoreJS.Module := decoded.source
+  singleton : decoded.program.modules = [decoded.source] := decoded.singleton
   decoderCoverage : List.Perm
     (LinkedInput.sourceUnitIds decoded.program decoded.localExports)
     (List.range decoded.nodes.size)
   units : List SourceUnit
-  unitsEq : units = orderedUnits source decoded.localExports
+  unitsEq : units = decoded.sourceItems
   bundleCount : bundle.length = decoded.nodes.size
+  originalNodes : units.map SourceUnit.nodeEncoding = decoded.nodes.toList.map Lean.Json.compress
   ordinals : units.map SourceUnit.ordinal = List.range decoded.nodes.size
+  executableRows : units.filterMap SourceUnit.executableRow? = source.body
   executableIds : units.filterMap SourceUnit.executable? = source.body.map Prod.fst
-  metadataRows : units.filterMap SourceUnit.localExport? =
+  metadataSourceRows : units.filterMap SourceUnit.localExport? =
     decoded.localExports.map fun row => (row.ordinal, row.names)
+  executableIdsUnique : (source.body.map Prod.fst).Nodup
+  metadataIdsUnique : (decoded.localExports.map (·.ordinal)).Nodup
+  metadataOrdinalsOrdered : List.Pairwise (· < ·) (decoded.localExports.map (·.ordinal))
   disjoint : ∀ row ∈ decoded.localExports, row.ordinal ∉ source.body.map Prod.fst
+  sourceCoverage : ((source.body.map Prod.fst) ++ decoded.localExports.map (·.ordinal)).Perm
+    (List.range bundle.length)
 
 /-- Check the complete ordinal classification from the shared source decoder.
 This rejects missing or duplicate units and never discards empty metadata rows. -/
@@ -59,35 +65,79 @@ def checkSequence (decoded : LinkedInput.IndexedSource) (bundle : Bundle) :
   let .isTrue countMatches := (inferInstance : Decidable
       (bundle.length = decoded.nodes.size)) |
     throw "source bundle length differs from decoded original node count"
-  match modulesMatch : decoded.program.modules with
-  | [source] =>
-    let units := orderedUnits source decoded.localExports
-    let .isTrue ordinals := (inferInstance : Decidable
-        (units.map SourceUnit.ordinal = List.range decoded.nodes.size)) |
-      throw "executable and metadata ordinals do not form the complete original source order"
-    let .isTrue executableIds := (inferInstance : Decidable
-        (units.filterMap SourceUnit.executable? = source.body.map Prod.fst)) |
-      throw "sorting source units changed the executable source order"
-    let .isTrue metadataRows := (inferInstance : Decidable
-        (units.filterMap SourceUnit.localExport? =
-          decoded.localExports.map fun row => (row.ordinal, row.names))) |
-      throw "sorting source units changed the ordered metadata rows"
-    let .isTrue disjoint := (inferInstance : Decidable
-        (∀ row ∈ decoded.localExports, row.ordinal ∉ source.body.map Prod.fst)) |
-      throw "a source ordinal is both executable and metadata"
-    return {
-      source := source
-      singleton := modulesMatch
-      decoderCoverage := decoded.coverage
-      units := units
-      unitsEq := rfl
-      bundleCount := countMatches
-      ordinals := ordinals
-      executableIds := executableIds
-      metadataRows := metadataRows
-      disjoint := disjoint
-    }
-  | _ => throw "indexed source decoder did not return exactly one source module"
+  let source := decoded.source
+  let units := decoded.sourceItems
+  let .isTrue originalNodes := (inferInstance : Decidable
+      (units.map SourceUnit.nodeEncoding = decoded.nodes.toList.map Lean.Json.compress)) |
+    throw "decoder source-item provenance differs from original AST nodes"
+  let .isTrue ordinals := (inferInstance : Decidable
+      (units.map SourceUnit.ordinal = List.range decoded.nodes.size)) |
+    throw "decoder source items skip, duplicate, invent, or renumber an original node"
+  let .isTrue executableIds := (inferInstance : Decidable
+      (units.filterMap SourceUnit.executable? = source.body.map Prod.fst)) |
+    throw "source-item executable projection changed the original IDs"
+  let .isTrue metadataSourceRows := (inferInstance : Decidable
+      (units.filterMap SourceUnit.localExport? =
+        decoded.localExports.map fun row => (row.ordinal, row.names))) |
+    throw "source-item local-export projection changed the ordered rows"
+  let .isTrue executableIdsUnique := (inferInstance : Decidable
+      ((source.body.map Prod.fst).Nodup)) |
+    throw "executable source IDs are duplicated"
+  let .isTrue metadataIdsUnique := (inferInstance : Decidable
+      ((decoded.localExports.map (·.ordinal)).Nodup)) |
+    throw "local-export row ordinals are duplicated"
+  let .isTrue metadataOrdinalsOrdered := (inferInstance : Decidable
+      (List.Pairwise (· < ·) (decoded.localExports.map (·.ordinal)))) |
+    throw "local-export row ordinals are not in source order"
+  let .isTrue disjoint := (inferInstance : Decidable
+      (∀ row ∈ decoded.localExports, row.ordinal ∉ source.body.map Prod.fst)) |
+    throw "a source ordinal is both executable and local-export metadata"
+  have sourceCoverage : ((source.body.map Prod.fst) ++ decoded.localExports.map (·.ordinal)).Perm
+      (List.range bundle.length) := by
+    simpa [LinkedInput.sourceUnitIds, decoded.singleton, countMatches] using decoded.coverage
+  return {
+    source := source
+    singleton := decoded.singleton
+    decoderCoverage := decoded.coverage
+    units := units
+    unitsEq := rfl
+    bundleCount := countMatches
+    originalNodes := originalNodes
+    ordinals := ordinals
+    executableRows := by
+      change decoded.sourceItems.filterMap LinkedInput.SourceItem.executable? = decoded.source.body
+      exact decoded.executableProjection.symm
+    executableIds := executableIds
+    metadataSourceRows := metadataSourceRows
+    executableIdsUnique := executableIdsUnique
+    metadataIdsUnique := metadataIdsUnique
+    metadataOrdinalsOrdered := metadataOrdinalsOrdered
+    disjoint := disjoint
+    sourceCoverage := sourceCoverage
+  }
+
+/-- Induction-facing facts for consumers of the original decoder result. The
+classification is the decoder's source-order trace, not an inference from a
+planner schedule: each original AST node is paired with exactly one unchanged
+executable statement or local-export row, and the executable/metadata
+projections provide the complete source-ID permutation used by the list
+constructor and export-link checks. -/
+theorem sourceInductionFacts {decoded bundle}
+    (sequence : Sequence decoded bundle) :
+    sequence.units.map SourceUnit.ordinal = List.range decoded.nodes.size ∧
+    sequence.units.map SourceUnit.nodeEncoding = decoded.nodes.toList.map Lean.Json.compress ∧
+    sequence.units.filterMap SourceUnit.executableRow? = sequence.source.body ∧
+    (sequence.units.filterMap SourceUnit.localExport? =
+      (decoded.localExports.map fun row => (row.ordinal, row.names))) ∧
+    ((sequence.source.body.map Prod.fst) ++ decoded.localExports.map (·.ordinal)).Perm
+      (List.range bundle.length) ∧
+    (sequence.source.body.map Prod.fst).Nodup ∧
+    (decoded.localExports.map (·.ordinal)).Nodup ∧
+    List.Pairwise (· < ·) (decoded.localExports.map (·.ordinal)) ∧
+    (∀ row ∈ decoded.localExports, row.ordinal ∉ sequence.source.body.map Prod.fst) :=
+  ⟨sequence.ordinals, sequence.originalNodes, sequence.executableRows,
+    sequence.metadataSourceRows, sequence.sourceCoverage, sequence.executableIdsUnique,
+    sequence.metadataIdsUnique, sequence.metadataOrdinalsOrdered, sequence.disjoint⟩
 
 /-- Evidence that the actual `mkPlan` preserves the full source-unit order;
 the sparse executable projection is checked separately for the real indexed
@@ -197,6 +247,7 @@ theorem assignmentOwnerIsAuthored {decoded bundle request}
   CoreJS.PlanPlacement.authored_owner evidence.valid.2.2.1 owned
 
 #print axioms checkSequence
+#print axioms sourceInductionFacts
 #print axioms check
 #print axioms constructedRows
 #print axioms constructedPlacementOwner

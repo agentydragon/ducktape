@@ -530,6 +530,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.IndexedSourceSchedule"],
     required_theorems = [
         "CoreJS.IndexedSourceSchedule.checkSequence",
+        "CoreJS.IndexedSourceSchedule.sourceInductionFacts",
         "CoreJS.IndexedSourceSchedule.check",
         "CoreJS.IndexedSourceSchedule.constructedRows",
         "CoreJS.IndexedSourceSchedule.constructedPlacementOwner",
