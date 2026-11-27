@@ -1,5 +1,7 @@
 # TODO
 
+For current splitter work, use the [constructor milestones](CONSTRUCTION_ROADMAP.md#next-constructor-milestones) and [acceptance tracker](https://github.com/agentydragon/ducktape/issues/20280). The items below also cover independent tooling and analysis.
+
 - **Deferred async functions and methods.** Revisit hoisting, captured bindings, calls and promise outcomes after the basic CoreJS splitter handles useful synchronous regions. Stack and callable-source inspection need their own later contract; see the [construction roadmap](CONSTRUCTION_ROADMAP.md#first-milestone-useful-corejs-without-inspection).
 
 - **Production resolver-to-Lean handoff.** The [historical editor replay](integration/excalidraw/README.md#browser-deployment-replay) used Rust's resolved placement, as does the [single-input corpus adapter](PLAN.md#1-use-rust-selector-resolution-in-the-corpus-adapter). Inventory which Rust checks are useful extraction diagnostics and which Lean establishes for the emitted graph. Keep the Rust verifier until the [production acceptance contract](PLAN.md#acceptance-contract) is met.
@@ -34,4 +36,3 @@
 ## Lean build and runtime wiring
 
 - **Remove the [rules_lean patch](../../../../../patches/martianoff_rules_lean_proof_gates.patch) one hunk at a time.** When upstream can pass `--error=hasSorry` to each Lean compile, configure it there and drop the compiler hunk. Drop the audit hunks when upstream can check the transitive axioms of each named declaration (including imported definitions) and reject missing names and empty import-only audits. Verify those cases with the unpatched rules before removing the patch from [MODULE.bazel](../../../../../MODULE.bazel). These checks still apply to proofs compiled at build time.
-- **Finish the strict constructor-only dispatch.** The splitter no longer compiles per-input Lean proofs, but this intermediate change retains the existing compiled slice, replay and structural paths and diagnostic dispatch. Separately narrow production admission to the approved constructor path and update its callers and tests without adding an unchecked publisher.
