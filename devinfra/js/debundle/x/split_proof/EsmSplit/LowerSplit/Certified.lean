@@ -54,16 +54,23 @@ private structure CertifiedOptions where
 private def noConstructor (requested reason : String) : IO UInt32 :=
   emitRefusal requested { reason, reasonCode := some "no_constructed_rule" }
 
+/-- Stage generated modules with no fixed providers. Both the initial write and
+the disk recheck use the same artifact check after ESTree comparison. -/
+private def stageGenerated (programs : Json) (src : BundleInput)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool)
+    (check : Json → Except CertificationRefusal Unit) : IO (Except CertificationRefusal Unit) :=
+  let part : OutputPart := { programs, source := src.source, input := src.input, work }
+  certifyOutput [part] (Json.mkObj []) out work options.checkOnly timings (pure ∘ check)
+
 /-- Stage the constructor's modules through the shared publication gate. -/
 private def stageConstructed (program : CoreJS.Program) (src : BundleInput)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) :
     IO (Except CertificationRefusal Unit) := do
   let programs ← IO.ofExcept (ESTreeEmit.corePrograms program src.source)
-  let part : OutputPart := { programs, source := src.source, input := src.input, work }
-  certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
-    pure <| match CoreJS.ConstructedOutput.checkConstructedOutput files program with
-      | .ok _ => .ok ()
-      | .error reason => .error { reason }
+  stageGenerated programs src out work options timings fun files =>
+    match CoreJS.ConstructedOutput.checkConstructedOutput files program with
+    | .ok _ => .ok ()
+    | .error reason => .error { reason }
 
 /-- Resolve one import from the directory of the actual raw entry. The
 authenticated classifier uses a root-level entry, so restrict this route to
@@ -247,9 +254,7 @@ private def runHoistedSwap (spec : Spec) (src : BundleInput)
       return ← emitRefusal options.request.label { reason, reasonCode := some "no_constructed_rule" } scope
   try
     let programs ← IO.ofExcept (ESTreeEmit.programs decoded.nodes bundle built.plan src.source spec.entry)
-    let part : OutputPart := { programs, source := src.source, input := src.input, work }
-    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
-      pure do
+    let checked ← stageGenerated programs src out work options timings fun files => do
         let _ ← (built.checkReadback files).mapError fun reason => ({ reason } : CertificationRefusal)
         return ()
     if let .error refusal := checked then
@@ -277,9 +282,7 @@ private def tryExportedFunction (spec : Spec) (src : BundleInput)
         { reason, reasonCode := some "no_constructed_rule" } scope)
   try
     let programs ← IO.ofExcept (ESTreeEmit.programs decoded.nodes bundle built.schedule.plan src.source spec.entry)
-    let part : OutputPart := { programs, source := src.source, input := src.input, work }
-    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
-      pure do
+    let checked ← stageGenerated programs src out work options timings fun files => do
         let ⟨same⟩ ← (CoreJS.ConstructedOutput.checkConstructedOutput files built.program).mapError
           fun reason => ({ reason } : CertificationRefusal)
         let _proof := fun observed
