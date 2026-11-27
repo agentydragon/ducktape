@@ -1,9 +1,10 @@
 //! Prepared source files and the indexes used by resolution and analysis.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use js_ast::ParsedJsModule;
 use source_identity::ChunkId;
-use std::collections::BTreeSet;
+use spec::{DependencyGraphOptions, UnassignedMode};
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::paths::normalize_module_path;
 
@@ -86,6 +87,35 @@ pub fn normalized_chunk_ids(
         }
     }
     Ok(normalized_ids)
+}
+
+/// A chunk's `commuting_statements` are resolved only when its dependency
+/// graph is built, so an entry for a chunk this run does not materialize would
+/// never be checked. Both front ends gate on the entry before consuming it.
+pub fn ensure_commuting_statements_materialize(
+    chunk_analysis_options: &BTreeMap<String, DependencyGraphOptions>,
+    materialized: &BTreeSet<&str>,
+) -> Result<()> {
+    for (chunk, options) in chunk_analysis_options {
+        ensure!(
+            options.commuting_statements.is_empty()
+                || materialized.contains(normalize_module_path(chunk)?.as_str()),
+            "chunk_analysis_options.{chunk}.commuting_statements names a chunk this run does not materialize"
+        );
+    }
+    Ok(())
+}
+
+/// The spec validator requires an `unassigned_mode` entry for every chunk this
+/// run materializes, so a miss here is a validator bug rather than a
+/// recoverable spec error. Both front ends look the entry up the same way.
+pub fn chunk_unassigned_mode(
+    unassigned_mode: &BTreeMap<String, UnassignedMode>,
+    chunk_id: &str,
+) -> Result<UnassignedMode> {
+    unassigned_mode.get(chunk_id).cloned().with_context(|| {
+        format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
+    })
 }
 
 /// Resolve a prepared chunk's runtime entry and its retained original AST.
