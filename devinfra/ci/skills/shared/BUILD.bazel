@@ -1,7 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_test")
 
 exports_files(
-    ["reporting.md"],
+    [
+        "cdviz.md",
+        "reporting.md",
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -9,11 +12,13 @@ py_test(
     name = "test_reporting_packages",
     srcs = ["test_reporting_packages.py"],
     data = [
+        ":cdviz.md",
         ":reporting.md",
         "//devinfra/ci/skills/ci_latency:ci_latency_skill",
         "//devinfra/ci/skills/ci_reliability:ci_reliability_skill",
     ],
     env = {
+        "CDVIZ_SOURCE": "$(rlocationpath :cdviz.md)",
         "REPORTING_SOURCE": "$(rlocationpath :reporting.md)",
         "CI_LATENCY_ARCHIVE": "$(rlocationpath //devinfra/ci/skills/ci_latency:ci_latency_skill)",
         "CI_RELIABILITY_ARCHIVE": "$(rlocationpath //devinfra/ci/skills/ci_reliability:ci_reliability_skill)",

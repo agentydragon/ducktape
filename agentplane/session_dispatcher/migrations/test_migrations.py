@@ -41,7 +41,8 @@ def test_fresh_database_and_repeat_are_idempotent(postgres_admin_url: str, datab
         try:
             with engine.connect() as conn:
                 assert conn.scalar(text("SELECT to_regclass('dispatch') IS NOT NULL"))
-                assert conn.scalar(
+                # The latest migration (00035) dropped this column.
+                assert not conn.scalar(
                     text(
                         "SELECT EXISTS ("
                         "SELECT 1 FROM information_schema.columns "

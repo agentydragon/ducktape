@@ -3,14 +3,15 @@
 use super::ExecutionIndex;
 use super::patterns::collect_pattern_assignments;
 use super::property_keys::PropertyKeyExpr;
-use analysis_domain::item_views::{collect_declared_names, var_decl_of_item};
+use analysis_domain::item_views::collect_declared_names;
+use js_ast::item_var_decl;
 use swc_ecma_ast::*;
 use swc_ecma_visit::VisitWith;
 use value_model::ValueExpr;
 
 impl ExecutionIndex {
     pub(super) fn collect_uninitialized_lexical_bindings(&mut self, item: &ModuleItem) {
-        let Some(declaration) = var_decl_of_item(item) else {
+        let Some(declaration) = item_var_decl(item) else {
             return;
         };
         if declaration.kind == VarDeclKind::Const

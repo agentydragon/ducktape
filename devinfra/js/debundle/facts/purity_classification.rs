@@ -2,6 +2,7 @@ use super::*;
 use analysis_vocabulary::effect::{Effect, HavocCause, InvokeSite};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::purity::Effects;
+use js_ast::item_var_decl;
 use source_identity::SourceUnitOrdinal;
 
 /// Everything a statement's purity transfer reads besides the statement's own
@@ -212,7 +213,7 @@ pub(crate) fn item_purity(
                     },
                 );
             }
-            var_decl_of_item(item)
+            item_var_decl(item)
                 .map(|var| {
                     classify_var_decl_purity(var, &scope, context.proofs.fresh_record_destructuring)
                 })
@@ -238,7 +239,7 @@ fn native_pure_initializer<'a>(
     item: &ModuleItem,
     native_facts: &'a ValidatedNativeOperationFacts,
 ) -> Option<&'a analysis_vocabulary::inputs::ResolvedNativeOperationInput> {
-    let var = var_decl_of_item(item)?;
+    let var = item_var_decl(item)?;
     let [decl] = var.decls.as_slice() else {
         return None;
     };
@@ -257,7 +258,7 @@ fn native_pure_initializer<'a>(
 /// carrying the initializer-only trust assertion. It deliberately does not
 /// feed any call or constructor purity rule.
 pub fn has_trusted_initializer_purity(item: &ModuleItem, hints: &AnalysisInputs) -> bool {
-    let Some(var) = var_decl_of_item(item) else {
+    let Some(var) = item_var_decl(item) else {
         return false;
     };
     if var.decls.len() != 1 {

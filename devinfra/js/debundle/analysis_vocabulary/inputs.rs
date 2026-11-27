@@ -234,16 +234,22 @@ impl CallableSummary {
         }
     }
 
-    pub fn merge(&mut self, other: Self) {
+    /// Join two proofs of one capability, reporting whether the record grew.
+    /// Several independent proofs can support the same capability, so an equal
+    /// contribution is normal and a conflicting one is a bug.
+    pub fn merge(&mut self, other: Self) -> bool {
+        let mut changed = false;
+        let cells_before = self.may_read_importer_cells.len();
         self.may_read_importer_cells
             .extend(other.may_read_importer_cells);
+        changed |= self.may_read_importer_cells.len() != cells_before;
         if let Some(call) = other.foreign_call {
             assert!(
                 self.foreign_call
                     .as_ref()
                     .is_none_or(|previous| previous == &call)
             );
-            self.foreign_call = Some(call);
+            changed |= self.foreign_call.replace(call).is_none();
         }
         if let Some(factory) = other.descriptor_copy_factory {
             assert!(
@@ -251,7 +257,7 @@ impl CallableSummary {
                     .as_ref()
                     .is_none_or(|old| old == &factory)
             );
-            self.descriptor_copy_factory = Some(factory);
+            changed |= self.descriptor_copy_factory.replace(factory).is_none();
         }
         if let Some(wrapper) = other.namespace_wrapper {
             assert!(
@@ -259,7 +265,7 @@ impl CallableSummary {
                     .as_ref()
                     .is_none_or(|previous| previous == &wrapper)
             );
-            self.namespace_wrapper = Some(wrapper);
+            changed |= self.namespace_wrapper.replace(wrapper).is_none();
         }
         if let Some(arguments) = other.callback_object_arguments {
             assert!(
@@ -267,7 +273,7 @@ impl CallableSummary {
                     .as_ref()
                     .is_none_or(|old| old == &arguments)
             );
-            self.callback_object_arguments = Some(arguments);
+            changed |= self.callback_object_arguments.replace(arguments).is_none();
         }
         if let Some(record) = other.returned_record {
             assert!(
@@ -275,10 +281,13 @@ impl CallableSummary {
                     .as_ref()
                     .is_none_or(|previous| previous == &record)
             );
-            self.returned_record = Some(record);
+            changed |= self.returned_record.replace(record).is_none();
         }
+        let evidence_before = self.callback_factory_evidence.len();
         self.callback_factory_evidence
             .extend(other.callback_factory_evidence);
+        changed |= self.callback_factory_evidence.len() != evidence_before;
+        changed
     }
 }
 

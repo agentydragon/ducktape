@@ -26,7 +26,7 @@ use binding_targets::{
 };
 use js_ast::{
     ParsedGlobalUses, ParsedJsModule, SourceLineIndex, is_dotted_import_meta_property,
-    is_worker_constructor, str_value,
+    is_worker_constructor, item_decl, str_value,
 };
 
 mod loader_phase;
@@ -271,11 +271,7 @@ fn collect_primitive_export_candidates(
     bindings: &mut BTreeMap<Id, PrimitiveValue>,
     exports: &mut BTreeMap<String, Vec<Option<PrimitiveExportSource>>>,
 ) {
-    let declaration = match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => Some(decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => Some(&decl.decl),
-        _ => None,
-    };
+    let declaration = item_decl(item);
     if let Some(Decl::Var(var)) = declaration
         && matches!(var.kind, VarDeclKind::Const | VarDeclKind::Var)
     {

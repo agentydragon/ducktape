@@ -90,12 +90,7 @@ pub(super) fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &s
                 .iter()
                 .all(|value| same_property_or_fresh(value, alias, property))
         }
-        ValueExpr::NonCallable(_)
-        | ValueExpr::Undefined
-        | ValueExpr::Primitive(_)
-        | ValueExpr::StrictEquality(..)
-        | ValueExpr::LogicalNot(_)
-        | ValueExpr::Void(_) => true,
+        value if value.cannot_denote_an_object() => true,
         _ => false,
     }
 }
@@ -186,15 +181,7 @@ pub(super) fn confined_prepublication_alias(
         } else if uses_any_binding(&write.receiver, &derived) {
             // A derived receiver may be an alias, but this entire invocation
             // finishes before publication. Only primitive writes can survive.
-            matches!(
-                write.value,
-                ValueExpr::NonCallable(_)
-                    | ValueExpr::Undefined
-                    | ValueExpr::Primitive(_)
-                    | ValueExpr::StrictEquality(..)
-                    | ValueExpr::LogicalNot(_)
-                    | ValueExpr::Void(_)
-            )
+            write.value.cannot_denote_an_object()
         } else {
             !uses_any_binding(&write.value, &derived)
         }
