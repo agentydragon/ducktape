@@ -458,6 +458,7 @@ py_library(
     srcs = ["app.py"],
     deps = [
         ":actions",
+        ":central_sampler",
         ":database",
         ":egress",
         ":environment",

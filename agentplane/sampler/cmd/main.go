@@ -11,6 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/journalstats"
+	statspb "github.com/agentydragon/ducktape/agentplane/proto/journalstatspb"
+
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
@@ -121,6 +124,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	serverOptions := []grpc.ServerOption{grpc.MaxRecvMsgSize(64 * 1024 * 1024), grpc.MaxSendMsgSize(64 * 1024 * 1024), observability.GRPCServerOption()}
 	register := func(server *grpc.Server) {
 		sampler := &samplerrpc.Sampler{Store: store, Runtime: runtime, Settings: settings, Wakeups: hub}
+		statspb.RegisterJournalStatsServiceServer(server, journalstats.Sampler(db))
 		sampleradminpb.RegisterSamplerAdminServer(server, &samplerrpc.SamplerAdmin{Sampler: *sampler})
 		harnesshostpb.RegisterHarnessHostServer(server, &samplerrpc.HarnessHost{Sampler: sampler})
 	}

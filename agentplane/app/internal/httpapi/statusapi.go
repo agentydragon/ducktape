@@ -4,6 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/agentydragon/ducktape/agentplane/app/internal/journalcache"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -16,11 +19,12 @@ import (
 type SystemStatusHandler struct {
 	apppb.UnimplementedAppServiceServer
 	systemStatus *status.Checker
+	stats        *journalcache.Cache
 }
 
 // NewSystemStatusHandler creates a handler backed by the app's dependency health checks.
-func NewSystemStatusHandler(systemStatus *status.Checker) *SystemStatusHandler {
-	return &SystemStatusHandler{systemStatus: systemStatus}
+func NewSystemStatusHandler(systemStatus *status.Checker, stats *journalcache.Cache) *SystemStatusHandler {
+	return &SystemStatusHandler{systemStatus: systemStatus, stats: stats}
 }
 
 // RegisterRoutes mounts the generated AppService system-status route.
@@ -30,7 +34,12 @@ func (h *SystemStatusHandler) RegisterRoutes(server RouteRegistrar) error {
 		return err
 	}
 	server.RegisterRawRoute("GET /upstream/app/v1/system/status", http.StripPrefix("/upstream/app", mux), false)
+	server.RegisterRawRoute("GET /upstream/app/v1/system/journal-stats", http.StripPrefix("/upstream/app", mux), false)
 	return nil
+}
+
+func (h *SystemStatusHandler) GetJournalStats(context.Context, *emptypb.Empty) (*apppb.GetJournalStatsResponse, error) {
+	return h.stats.Snapshot(), nil
 }
 
 func (h *SystemStatusHandler) GetSystemStatus(ctx context.Context, _ *apppb.GetSystemStatusRequest) (*apppb.GetSystemStatusResponse, error) {

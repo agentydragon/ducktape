@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
-import { SystemComponentState, SystemComponentStatusSchema } from "../../app_service_pb";
+import { GetJournalStatsResponseSchema, SystemComponentState, SystemComponentStatusSchema } from "../../app_service_pb";
 import type { CheckedComponentStatus } from "./system_status_client";
 import * as systemStatusClient from "./system_status_client";
 import { SystemStatus } from "./system";
@@ -15,6 +15,7 @@ import { SystemStatus } from "./system";
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.spyOn(systemStatusClient, "getJournalStats").mockResolvedValue(create(GetJournalStatsResponseSchema));
 });
 afterEach(async () => {
   for (const { root, container } of mounted.splice(0)) {
@@ -90,4 +91,27 @@ it("reports a failed read instead of an empty list", async () => {
   vi.spyOn(systemStatusClient, "getSystemStatus").mockRejectedValue(new Error("test upstream unavailable"));
   const container = await render();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("test upstream unavailable");
+});
+
+it("keeps format sizes, unknown metadata, and a missing store distinct", async () => {
+  answer([HEALTHY]);
+  vi.mocked(systemStatusClient.getJournalStats).mockResolvedValue(
+    create(GetJournalStatsResponseSchema, {
+      sampler: {
+        measuredAt: CHECKED_AT,
+        blocks: 3n,
+        apbBlocks: 2n,
+        apbBytes: 1024n,
+        apbUncompressedBytes: 8192n,
+        legacyBlocks: 1n,
+      },
+    })
+  );
+  const view = await render();
+  const apb = rowOf(view, "APB v1");
+  expect(apb.textContent).toContain("1.0 KiB");
+  expect(apb.textContent).toContain("8.0 KiB");
+  expect(rowOf(view, "All formats").textContent).toContain("Unknown");
+  expect(view.textContent).toContain("No measurement available");
+  expect(view.textContent).toContain(HEALTHY.name);
 });

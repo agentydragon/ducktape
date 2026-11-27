@@ -24,6 +24,7 @@ type Config struct {
 	EgressAdminTLS                      *peertls.ClientTLS         `mapstructure:"egress_admin_tls"`
 	ActionsTLS                          *peertls.ClientTLS         `mapstructure:"actions_tls"`
 	NotificationsTLS                    *peertls.ClientTLS         `mapstructure:"notifications_tls"`
+	SamplerStats                        *SamplerStatsPeer          `mapstructure:"sampler_stats"`
 	HistoryServiceTLS                   *peertls.ClientTLS         `mapstructure:"history_service_tls"`
 	SessionDispatcherTLS                *peertls.ClientTLS         `mapstructure:"session_dispatcher_tls"`
 	EnvironmentService                  *EnvironmentServicePeer    `mapstructure:"environment_service"`
@@ -71,6 +72,11 @@ type EnvironmentServicePeer struct {
 	Target                string             `mapstructure:"target"`
 	RequestTimeoutSeconds float64            `mapstructure:"request_timeout_s"`
 	TLS                   *peertls.ClientTLS `mapstructure:"tls"`
+}
+
+type SamplerStatsPeer struct {
+	Target string             `mapstructure:"target"`
+	TLS    *peertls.ClientTLS `mapstructure:"tls"`
 }
 
 type ThreadPreset struct {
@@ -337,6 +343,14 @@ func (c Config) validate() error {
 	}
 	if environmentPeer.RequestTimeoutSeconds <= 0 || math.IsNaN(environmentPeer.RequestTimeoutSeconds) || math.IsInf(environmentPeer.RequestTimeoutSeconds, 0) {
 		return errors.New("environment_service.request_timeout_s must be positive")
+	}
+	if p := c.SamplerStats; p != nil {
+		if p.Target == "" || p.TLS == nil {
+			return fmt.Errorf("sampler_stats requires a target and TLS")
+		}
+		if err := validateAppServiceCaller("sampler_stats", p.TLS, "", []string{peertls.CentralSamplerURI}); err != nil {
+			return err
+		}
 	}
 	if err := validateAppServiceCaller("environment_service", environmentPeer.TLS, "", []string{peertls.SandboxControllerURI}); err != nil {
 		return err

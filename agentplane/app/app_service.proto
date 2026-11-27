@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package agentplane.app;
 
+import "agentplane/proto/journal_stats.proto";
 import "agentplane/proto/session.proto";
 import "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto";
 import "google/api/annotations.proto";
@@ -24,6 +25,11 @@ service AppService {
   // Read the health checks for services the app depends on.
   rpc GetSystemStatus(GetSystemStatusRequest) returns (GetSystemStatusResponse) {
     option (google.api.http) = {get: "/v1/system/status"};
+  }
+
+  // Last successful measurements, refreshed independently of browser requests.
+  rpc GetJournalStats(google.protobuf.Empty) returns (GetJournalStatsResponse) {
+    option (google.api.http) = {get: "/v1/system/journal-stats"};
   }
 
   // Browser-safe deployment settings for optional search links.
@@ -119,6 +125,12 @@ message HarnessModelOffers {
 
 message ListSandboxPresetsResponse {
   repeated SandboxPreset presets = 1;
+}
+
+message GetJournalStatsResponse {
+  // Absent until a measurement succeeds.
+  agentplane.journalstats.JournalStats sampler = 1;
+  agentplane.journalstats.JournalStats history = 2;
 }
 
 message GetSystemStatusRequest {}

@@ -2985,6 +2985,26 @@ routes.push(
   ],
   [
     "GET",
+    /^\/upstream\/app\/v1\/system\/journal-stats$/,
+    () => ({
+      sampler: {
+        measuredAt: ago(60000),
+        sessions: "10",
+        blocks: "25",
+        classifiedBlocks: "25",
+        storedBytes: "1536",
+        apbBlocks: "20",
+        apbBytes: "1024",
+        apbUncompressedBytes: "4096",
+        legacySessions: "2",
+        legacyBlocks: "5",
+        legacyBytes: "512",
+        legacyUncompressedBytes: "2048",
+      },
+    }),
+  ],
+  [
+    "GET",
     /^\/upstream\/app\/v1\/system\/status$/,
     () => ({
       components: [

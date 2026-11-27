@@ -29,6 +29,7 @@ go_library(
         "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/httpapi/threads",
         "//agentplane/app/internal/httpresponse",
+        "//agentplane/app/internal/journalcache",
         "//agentplane/app/internal/migrations",
         "//agentplane/app/internal/sandboxes",
         "//agentplane/app/internal/sessionclient",
@@ -51,6 +52,7 @@ go_library(
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
+        "//agentplane/proto:journal_stats_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//:grpc",
@@ -160,6 +162,7 @@ go_test(
     embed = [":server"],
     deps = [
         "//agentplane/app/internal/httpapi",
+        "//agentplane/app/internal/journalcache",
         "//agentplane/app/internal/server/testauth",
         "//agentplane/app/internal/status",
     ],

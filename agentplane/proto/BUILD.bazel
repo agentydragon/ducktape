@@ -283,3 +283,34 @@ go_proto_library(
     proto = ":delegation_proto",
     deps = [":identity_go_proto"],
 )
+
+proto_library(
+    name = "journal_stats_proto",
+    srcs = ["journal_stats.proto"],
+    deps = [
+        "@protobuf//:empty_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "journal_stats_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/journalstatspb",
+    proto = ":journal_stats_proto",
+)
+
+ts_proto_library(
+    name = "journal_stats_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":journal_stats_proto",
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "journal_stats_pb2",
+    deps = [":journal_stats_proto"],
+)
