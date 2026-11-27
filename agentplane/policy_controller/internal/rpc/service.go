@@ -29,6 +29,7 @@ type Service struct {
 	// when it is off, since no record is issued then.
 	workloadNamespaces []string
 	objects            client.WithWatch
+	informers          informers
 	sandboxes          *sandboxreader.Reader
 	readerServiceIDs   []string
 	readerServices     sets.Set[string]
@@ -58,12 +59,25 @@ func New(
 	if err != nil {
 		return nil, err
 	}
+	shared, err := newInformers(objects, namespace)
+	if err != nil {
+		return nil, err
+	}
 	return &Service{
 		namespace: namespace, workloadNamespaces: slices.Sorted(slices.Values(workloadNamespaces)), objects: objects,
-		sandboxes:        sandboxes,
+		informers: shared, sandboxes: sandboxes,
 		readerServiceIDs: slices.Clone(readerServices), readerServices: sets.New(readerServices...), writerServices: slices.Clone(writerServices),
 	}, nil
 }
+
+// Start runs the informers the Watch streams serve from until ctx ends; a stream opened earlier waits for their first
+// sync. Every replica serves watches, so it needs no leader election.
+func (s *Service) Start(ctx context.Context) error {
+	s.informers.run(ctx)
+	return nil
+}
+
+func (*Service) NeedLeaderElection() bool { return false }
 
 var (
 	readerServiceMethods = []string{
