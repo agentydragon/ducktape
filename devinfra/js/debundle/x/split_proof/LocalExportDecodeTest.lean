@@ -1,8 +1,6 @@
 import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.TerminalConstructorInput
-import EsmSplit.CoreJS.TerminalConstructor
-import EsmSplit.CoreJS.TerminalFootprints
 import EsmSplit.CoreJS.IndexedSourceSchedule
 import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.LowerSplit.Input
@@ -37,44 +35,30 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   require (row.ordinal == 32 && row.names == pairs) "lost #32 or its ordered reader exports"
   require (m.body.map Prod.fst == List.range 32) "lost original executable identities"
   require (m.exports == pairs) "module exports differ from the original export list"
-  let checked ← IO.ofExcept (TerminalConstructorInput.check (p, rows))
-  let _ := TerminalConstructorInput.all_const checked
-  let _ := TerminalConstructorInput.source_shape checked
+  let _ ← IO.ofExcept (TerminalConstructorInput.check (p, rows))
   let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
   let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
-  let plan := EsmSplit.mkPlan bundle spec
-  let statements := checked.terminal.source.body.map Prod.snd
-  unless (decide (MetadataCells.Footprints statements bundle)) do
-    throw (IO.userError "actual source bundle fails executable/metadata footprints")
-  unless (decide (checked.terminal.row.FootprintMatches (bundle.stmt checked.terminal.row.ordinal))) do
-    throw (IO.userError "actual original export row fails bundle footprint matching")
-  unless (decide (MetadataCells.RowLocalsDefined statements bundle checked.terminal.row)) do
-    throw (IO.userError "actual export row has no executable source declaration")
-  unless (decide (ProjectedOrder.Kept statements plan)) do
-    throw (IO.userError "actual plan changes executable order")
-  unless (decide (EsmSplit.Valid bundle spec plan)) do
-    throw (IO.userError "actual authored plan fails validity")
-  let some entry := plan.find plan.entry | throw (IO.userError "actual plan has no entry")
-  require (plan.evalOrder.contains plan.entry) "actual entry is not loaded"
-  require (entry.stmts == [checked.terminal.row.ordinal]) "actual entry does not contain exactly the export row"
+  let sequence ← IO.ofExcept (IndexedSourceSchedule.checkSequence decoded bundle)
+  let built ← IO.ofExcept (IndexedCheckedSplit.construct p bundle spec rows .allOutcomes
+    (IndexedCheckedSplit.SourceFacts.fromSequence sequence))
+  let some entry := built.plan.find built.plan.entry | throw (IO.userError "actual plan has no entry")
+  require (built.plan.evalOrder == spec.order ++ [spec.entry]) "actual plan changes authored order"
+  require (entry.stmts == [row.ordinal]) "actual entry does not contain exactly the export row"
   require entry.exports.isEmpty "actual entry has generated glue exports"
-  let built ← IO.ofExcept (TerminalConstructor.construct (p, rows) bundle spec)
-  let _ := TerminalConstructor.sound built
-  match spec.modules with
-  | (owner, selector :: rest) :: tail =>
-    let repeated := { spec with modules := (owner, selector :: selector :: rest) :: tail }
-    match TerminalConstructor.construct (p, rows) bundle repeated with
-    | .error "an original unit is selected more than once" => pure ()
-    | _ => throw (IO.userError "duplicate source selector was not refused")
-  | _ => throw (IO.userError "fixture has no source selector")
-  let overlapping := { spec with modules := spec.modules.map fun (owner, selectors) =>
-    (owner, if owner == "provider0.mjs" then .name "data0" :: selectors else selectors) }
-  match TerminalConstructor.construct (p, rows) bundle overlapping with
-  | .error "an original unit is selected more than once" => pure ()
-  | _ => throw (IO.userError "overlapping name and ordinal selectors were not refused")
-  match TerminalConstructor.construct (p, rows) (bundle ++ [default]) spec with
-  | .error "terminal export row must be the final original source unit" => pure ()
-  | _ => throw (IO.userError "extra omitted source unit was not refused")
+  require (built.program.loaded.flatMap (fun m => m.body.map Prod.fst) == List.range 32)
+    "constructed graph changed executable order or executed the export row"
+  for (owner, start) in [("provider0.mjs", 0), ("provider1.mjs", 8), ("consumer0.mjs", 16), ("consumer1.mjs", 24)] do
+    let some ownerModule := built.program.find owner | throw (IO.userError s!"missing constructed owner {owner}")
+    require (ownerModule.body.map Prod.fst == (List.range 8).map (start + ·))
+      s!"constructed units did not keep their authored owner {owner}"
+  let cells : List (Name × Addr) := (List.range 16).map fun i => (s!"reader{i}", ⟨i + 17, 0⟩)
+  for program in [p, built.program] do
+    let some actual := LinkedBehavior.exports World.probe program |
+      throw (IO.userError "graph did not link its entry exports")
+    require (decide (actual.Perm cells)) "graph exported a different set of live cells"
+  match IndexedSourceSchedule.checkSequence decoded (bundle ++ [default]) with
+  | .error "source bundle length differs from decoded original node count" => pure ()
+  | _ => throw (IO.userError "oversized planner bundle was not refused")
   let badImport : Program := { p with modules := [{ m with imports := [⟨"provider.mjs", []⟩] }] }
   match TerminalConstructorInput.check (badImport, rows) with
   | .error "terminal source must not import modules" => pure ()
@@ -86,7 +70,7 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   | .error "expected unique const declarations with closed primitive initializers" => pure ()
   | _ => throw (IO.userError "a non-const original statement was not refused")
 
-private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := do
+private def checkOmitted (j : Json) (sourceText : String) : IO Unit := do
   let classification ← IO.ofExcept (AuthenticatedSource.decodeSourceClassification j sourceText "entry.mjs")
   require (classification.sourceItems.map LinkedInput.SourceItem.ordinal == List.range 34)
     "decoded source classification omitted or renumbered the debugger slot"
@@ -95,12 +79,6 @@ private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := 
   match AuthenticatedSource.checkIndexedSource classification with
   | .error "unsupported omitted source node 33" => pure ()
   | _ => throw (IO.userError "the checked constructor did not refuse the classified debugger")
-  let input ← decode j
-  let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes j sourceText)
-  let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
-  match TerminalConstructor.construct input (EsmSplit.LowerSplit.sourceBundle nodes) spec with
-  | .error "terminal export row must be the final original source unit" => pure ()
-  | _ => throw (IO.userError "a real omitted debugger statement was not refused")
 
 private def checkSparse (j : Json) (specText : String) : IO Unit := do
   let sourceText ← IO.ofExcept (j.getObjValAs? String "sourceText")
@@ -228,5 +206,5 @@ def main : IO UInt32 := do
   checkRefused cases[5]! "unsupported re-export from another module"
   checkRefused cases[6]! "checked construction requires an import-free original"
   checkMixed cases[7]!
-  checkOmitted cases[8]! specText (sourceText ++ "\ndebugger;")
+  checkOmitted cases[8]! (sourceText ++ "\ndebugger;")
   return 0

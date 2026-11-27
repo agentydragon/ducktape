@@ -40,6 +40,8 @@ for (const [name, badSpec] of [
   ["wrong-owner", { ...spec, modules: { [worker]: ["#0", "#1"], [entry]: [] } }],
   ["wrong-ordinal", { ...spec, modules: { [worker]: ["#0"], [entry]: ["#2"] } }],
   ["duplicate-ordinal", { ...spec, modules: { [worker]: ["#0"], [entry]: ["#1", "#1"] } }],
+  ["duplicate-executable", { ...spec, modules: { [worker]: ["#0", "#0"], [entry]: ["#1"] } }],
+  ["overlapping-selectors", { ...spec, modules: { [worker]: ["#0", "a"], [entry]: ["#1"] } }],
   ["missing-export", { ...spec, modules: { [worker]: ["#0"], [entry]: [] } }],
 ]) {
   const badSpecFile = path.join(root, name + ".json");
@@ -56,12 +58,13 @@ const badSpecFile = path.join(root, "wrong-ordinal.json");
 assert.equal(run({ spec: badSpecFile, out: fresh }).status, "refused");
 assert(!existsSync(fresh));
 
-const duplicateSpec = path.join(root, "duplicate-ordinal.json");
-for (const guarantee of ["normal-completion", "all-outcomes"]) {
-  const duplicateOut = path.join(root, "duplicate-ordinal-" + guarantee);
-  const duplicate = run({ spec: duplicateSpec, out: duplicateOut, require: guarantee });
-  assert.equal(duplicate.status, "refused", duplicate.log);
-  assert.equal(duplicate.reasonCode, "linked_placement", duplicate.log);
-  assert.match(duplicate.reason, /an original unit is selected more than once/);
-  assert(!existsSync(duplicateOut));
+for (const label of ["duplicate-ordinal", "duplicate-executable", "overlapping-selectors"]) {
+  for (const guarantee of ["normal-completion", "all-outcomes"]) {
+    const duplicateOut = path.join(root, label + "-" + guarantee);
+    const duplicate = run({ spec: path.join(root, label + ".json"), out: duplicateOut, require: guarantee });
+    assert.equal(duplicate.status, "refused", duplicate.log);
+    assert.equal(duplicate.reasonCode, "linked_placement", duplicate.log);
+    assert.match(duplicate.reason, /an original unit is selected more than once/);
+    assert(!existsSync(duplicateOut));
+  }
 }
