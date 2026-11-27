@@ -18,6 +18,18 @@ pub struct SourceLocation {
     pub start_column: Option<usize>,
 }
 
+/// Where a located fact came from, as `<path>:<line>` plus the recorded column
+/// when the analysis has one. Command output and report text render locations
+/// through this impl instead of spelling the shape out again.
+impl std::fmt::Display for SourceLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.start_column {
+            Some(column) => write!(f, "{}:{}:{column}", self.source_path, self.start_line),
+            None => write!(f, "{}:{}", self.source_path, self.start_line),
+        }
+    }
+}
+
 /// Resolves SWC positions of one analyzed source file to [`SourceLocation`]s.
 #[derive(Debug, Clone, Copy)]
 pub struct SourceLocator<'a> {

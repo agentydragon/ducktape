@@ -423,10 +423,7 @@ impl fmt::Display for UnusedCommutingEndpoint {
             (members, _) => write!(f, "members [{}]", members.join(", "))?,
         }
         if let Some(location) = &self.source_location {
-            write!(f, " at {}:{}", location.source_path, location.start_line)?;
-            if let Some(column) = location.start_column {
-                write!(f, ":{column}")?;
-            }
+            write!(f, " at {location}")?;
         }
         Ok(())
     }

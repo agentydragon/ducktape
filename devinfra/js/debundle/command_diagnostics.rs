@@ -69,7 +69,7 @@ pub fn report(
                          statement #{ordinal} ({location}): prepared {prepared}, completed {completed}",
                         location = source_location.as_ref().map_or_else(
                             || "source location unavailable".to_owned(),
-                            render_source_location,
+                            |location| location.to_string(),
                         ),
                         prepared = render_purity(&evidence.prepared),
                         completed = render_purity(&evidence.completed),
@@ -111,15 +111,6 @@ pub fn report(
     Ok(())
 }
 
-fn render_source_location(
-    location: &analysis_vocabulary::execution_evidence::SourceLocation,
-) -> String {
-    match location.start_column {
-        Some(column) => format!("{}:{}:{column}", location.source_path, location.start_line),
-        None => format!("{}:{}", location.source_path, location.start_line),
-    }
-}
-
 fn render_purity(purity: &analysis_vocabulary::purity::Purity) -> String {
     match purity {
         analysis_vocabulary::purity::Purity::Pure { .. } => "pure".to_owned(),
@@ -134,7 +125,7 @@ fn render_purity(purity: &analysis_vocabulary::purity::Purity) -> String {
                     let location = reason
                         .source_location
                         .as_ref()
-                        .map(|location| format!(" at {}", render_source_location(location)))
+                        .map(|location| format!(" at {location}"))
                         .unwrap_or_default();
                     let detail = reason
                         .detail

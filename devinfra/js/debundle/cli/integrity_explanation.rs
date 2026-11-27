@@ -619,13 +619,7 @@ impl<'a> Sources<'a> {
 const EXCERPT_BYTES: usize = 100;
 
 fn render_location(location: Option<&SourceLocation>) -> String {
-    location.map_or_else(
-        || "<unlocated>".to_owned(),
-        |location| match location.start_column {
-            Some(column) => format!("{}:{}:{column}", location.source_path, location.start_line),
-            None => format!("{}:{}", location.source_path, location.start_line),
-        },
-    )
+    location.map_or_else(|| "<unlocated>".to_owned(), |location| location.to_string())
 }
 
 fn snake_set<T: std::fmt::Display>(values: impl IntoIterator<Item = T>) -> String {
