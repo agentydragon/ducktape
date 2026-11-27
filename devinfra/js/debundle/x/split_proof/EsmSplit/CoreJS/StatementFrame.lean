@@ -48,21 +48,34 @@ theorem loop_reachFrame_step {r R cells A n} (away : Away r R A)
       ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
     (step : ∀ env st, (∀ node ∈ Env.nodes env, A node) →
       ReachFrame r R cells A (FlowSafe A) (execStmt n env st : M W Flow))
-    (tail : ∀ env fresh test update body, (∀ node ∈ Env.nodes env, A node) →
-      ReachFrame r R cells A (FlowSafe A) (loop n env fresh test update body : M W Flow))
-    (env : Env) (safe : ∀ node ∈ env.nodes, A node) (fresh : List Name) (test update : Expr) (body : Stmt) :
-    ReachFrame r R cells A (FlowSafe A) (loop (n + 1) env fresh test update body : M W Flow) := by
+    (tail : ∀ env fresh test update body postTest, (∀ node ∈ Env.nodes env, A node) →
+      ReachFrame r R cells A (FlowSafe A) (loop n env fresh test update body postTest : M W Flow))
+    (env : Env) (safe : ∀ node ∈ env.nodes, A node) (fresh : List Name) (test update : Expr) (body : Stmt)
+    (postTest : Bool) :
+    ReachFrame r R cells A (FlowSafe A) (loop (n + 1) env fresh test update body postTest : M W Flow) := by
+  have condition (phase : Bool) :
+      ReachFrame r R cells A (fun _ => True) (loopCondition phase (evalExpr n env test) : M W Bool) := by
+    cases phase
+    · exact reachFrame_pure r R cells A true trivial
+    · exact (eval test env safe).bind fun value _ => reachFrame_truth value
   simp only [loop]
-  apply (eval test env safe).bind
-  intro v _
-  apply (reachFrame_truth v).bind
+  apply (condition (!postTest)).bind
   intro testVal _
   cases testVal
   · exact reachFrame_pure r R cells A Flow.normal (FlowSafe.normal A)
   · apply (step env body safe).bind
     intro flow hflow
-    have repeatLoop := (reachFrame_copyBindings away outside env fresh safe).bind
-      (fun next hn => (eval update next hn).bind fun _ _ => tail next fresh test update body hn)
+    have repeatLoop : ReachFrame r R cells A (FlowSafe A) (do
+        if !(← loopCondition postTest (evalExpr n env test)) then return .normal
+        let next ← copyBindings env fresh
+        let _ ← evalExpr n next update
+        loop n next fresh test update body postTest) := by
+      apply (condition postTest).bind
+      intro again _
+      cases again
+      · exact reachFrame_pure r R cells A Flow.normal (FlowSafe.normal A)
+      · exact (reachFrame_copyBindings away outside env fresh safe).bind
+          (fun next hn => (eval update next hn).bind fun _ _ => tail next fresh test update body postTest hn)
     cases flow
     case brk => exact reachFrame_pure r R cells A Flow.normal (FlowSafe.normal A)
     case ret value => exact reachFrame_pure r R cells A (Flow.ret value) hflow
@@ -237,8 +250,8 @@ theorem execStmt_reachFrame_step {r R cells A n} (away : Away r R A)
       ReachFrame r R cells A (fun _ => True) (bindPattern n env kind p v : M W Unit))
     (many : ∀ env ss, (∀ node ∈ Env.nodes env, A node) →
       ReachFrame r R cells A (FlowSafe A) (execStmts n env ss : M W Flow))
-    (repeatLoop : ∀ env fresh test update body, (∀ node ∈ Env.nodes env, A node) →
-      ReachFrame r R cells A (FlowSafe A) (loop n env fresh test update body : M W Flow))
+    (repeatLoop : ∀ env fresh test update body postTest, (∀ node ∈ Env.nodes env, A node) →
+      ReachFrame r R cells A (FlowSafe A) (loop n env fresh test update body postTest : M W Flow))
     (enter : ∀ env ss, (∀ node ∈ Env.nodes env, A node) →
       ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterBlock env ss : M W Env))
     (forOfFrame : ∀ env kind pattern source body, (∀ node ∈ Env.nodes env, A node) →
@@ -276,14 +289,14 @@ theorem execStmt_reachFrame_step {r R cells A n} (away : Away r R A)
     · exact step env t h
   | block ss =>
     exact (enter env ss h).bind fun next hn => many next ss hn
-  | loop init test update body =>
+  | loop init test update body postTest =>
     simp only [execStmt]
     apply (enter env init h).bind
     intro next hn
     apply (many next init hn).bind
     intro _ _
     exact (reachFrame_copyBindings away outside next _ hn).bind fun iteration hi =>
-      repeatLoop iteration _ test update body hi
+      repeatLoop iteration _ test update body postTest hi
   | breakScope body =>
     simp only [execStmt]
     apply (step env body h).bind

@@ -297,12 +297,13 @@ partial def stmtEq : MatchEq Stmt
     return ⟨by rw [test, yes, no]⟩
   | .block a, .block b => (listEq stmtEq a b).map fun h => ⟨congrArg Stmt.block h.down⟩
   | .brk, .brk | .cont, .cont => some ⟨rfl⟩
-  | .loop init test update body, .loop init' test' update' body' => do
+  | .loop init test update body postTest, .loop init' test' update' body' postTest' => do
     let ⟨i⟩ ← listEq stmtEq init init'
     let ⟨t⟩ ← exprEq test test'
     let ⟨u⟩ ← exprEq update update'
     let ⟨b⟩ ← stmtEq body body'
-    return ⟨i ▸ t ▸ u ▸ b ▸ rfl⟩
+    let ⟨p⟩ ← scalarEq postTest postTest'
+    return ⟨i ▸ t ▸ u ▸ b ▸ p ▸ rfl⟩
   | .breakScope a, .breakScope b => (stmtEq a b).map fun h => ⟨congrArg Stmt.breakScope h.down⟩
 
   | .forOf kind pattern source body, .forOf kind' pattern' source' body' => do

@@ -91,8 +91,10 @@ export function generatedCases(seed) {
       for (let i = 0; i < ${limit}; i++) { saved[i] = () => i; if (i === 1) continue; value += i; }
       let left = ${limit};
       while (left > 0) { left--; if (left === 1) break; value++; }
+      let postTurns = 0, remaining = ${limit};
+      do { postTurns++; } while (--remaining > 0);
       value++;
-      console.log(value, left, saved[0](), saved[${limit - 1}]());
+      console.log(value, left, postTurns, remaining, saved[0](), saved[${limit - 1}]());
     `,
     exceptions: `
       let trace = "";

@@ -240,7 +240,7 @@ inductive Stmt where
   | ite (c : Expr) (t e : Stmt)
   | block (ss : List Stmt)
   /-- `for (init; test; update) body`. -/
-  | loop (init : List Stmt) (test update : Expr) (body : Stmt)
+  | loop (init : List Stmt) (test update : Expr) (body : Stmt) (postTest : Bool)
   /-- A switch boundary consumes an unlabeled break. Other completions leave the switch. -/
   | breakScope (body : Stmt)
   | forOf (kind : DeclKind) (pattern : BindingPattern) (source : Expr) (body : Stmt)
@@ -338,7 +338,7 @@ def Stmt.varNames : Stmt → List Name
   | .varDecl x => [x]
   | .ite _ t e => t.varNames ++ e.varNames
   | .block ss => varNamesOf ss
-  | .loop init _ _ body => varNamesOf init ++ body.varNames
+  | .loop init _ _ body _ => varNamesOf init ++ body.varNames
   | .breakScope body => body.varNames
   | .forOf kind pattern _ body => (if kind == .var then pattern.names else []) ++ body.varNames
   | .tryCatch body _ handler => body.varNames ++ handler.varNames
@@ -499,7 +499,7 @@ def Stmt.free : Stmt → List Name
   | .funDecl f => f.name :: f.free
   | .ite c t e => c.free ++ (t.free ++ e.free)
   | .block ss => (freeStmts ss).filter fun x => !(lexNames ss).contains x
-  | .loop init test update body =>
+  | .loop init test update body _ =>
     (freeStmts init ++ (test.free ++ (update.free ++ body.free))).filter fun x => !(lexNames init).contains x
   | .breakScope body => body.free
   | .forOf kind pattern source body =>

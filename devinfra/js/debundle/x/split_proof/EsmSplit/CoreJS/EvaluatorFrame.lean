@@ -32,8 +32,8 @@ structure EvaluatorFrames (W : World) (n r : Nat) (R : Addr → Prop) (A : HeapN
     ReachFrame r R cells A (FlowSafe A) (execStmt n env st : M W Flow)
   stmts : ∀ cells env ss, (∀ node ∈ Env.nodes env, A node) →
     ReachFrame r R cells A (FlowSafe A) (execStmts n env ss : M W Flow)
-  loop : ∀ cells env fresh test update body, (∀ node ∈ Env.nodes env, A node) →
-    ReachFrame r R cells A (FlowSafe A) (loop n env fresh test update body : M W Flow)
+  loop : ∀ cells env fresh test update body postTest, (∀ node ∈ Env.nodes env, A node) →
+    ReachFrame r R cells A (FlowSafe A) (loop n env fresh test update body postTest : M W Flow)
   converse : ∀ code cells told, ReachFrame r R cells A (SafeVal A) (converse n code cells told : M W Val)
 
 theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
@@ -173,9 +173,9 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
           (execOpaque_reachFrame_step away object objectRoot functionRoot convo) env safe st
       · intro cells env ss safe
         exact execStmts_reachFrame_step (prev.stmt cells) (prev.stmts cells) env safe ss
-      · intro cells env fresh test update body safe
+      · intro cells env fresh test update body postTest safe
         exact loop_reachFrame_step away cell (fun e env h => prev.expr cells env e h) (prev.stmt cells)
-          (prev.loop cells) env safe fresh test update body
+          (prev.loop cells) env safe fresh test update body postTest
       · intro code cells told
         apply converse_reachFrame r R cells A code (n + 1) _ told
         intro k hk req _

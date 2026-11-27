@@ -285,7 +285,8 @@ structure Mono (W : World) (n m : Nat) : Prop where
   binding : ∀ env k p v, (bindPattern n env k p v : M W _) ⊑ bindPattern m env k p v
   stmt : ∀ env s, (execStmt n env s : M W _) ⊑ execStmt m env s
   stmts : ∀ env ss, (execStmts n env ss : M W _) ⊑ execStmts m env ss
-  loop : ∀ env fresh test update body, (loop n env fresh test update body : M W _) ⊑ loop m env fresh test update body
+  loop : ∀ env fresh test update body postTest,
+    (loop n env fresh test update body postTest : M W _) ⊑ loop m env fresh test update body postTest
   converse : ∀ code cells told, (converse n code cells told : M W _) ⊑ converse m code cells told
 
 theorem Mono.callLe {n m : Nat} (h : Mono W n m) : Call.le (callFn n : Call W) (callFn m) := h.call
@@ -305,7 +306,7 @@ macro_rules
     | with_reducible exact ($h).binding _ _ _ _
     | with_reducible exact ($h).stmt _ _
     | with_reducible exact ($h).stmts _ _
-    | with_reducible exact ($h).loop _ _ _ _ _
+    | with_reducible exact ($h).loop _ _ _ _ _ _
     | with_reducible exact ($h).converse _ _ _
     | with_reducible exact attempt_le (perform_le ($h).callLe (fun f args => ($h).construct f f args) _ _ _)
     | with_reducible exact copySpread_le ($h).callLe _ _ _
@@ -455,10 +456,11 @@ theorem Mono.stmt_succ (hFuel : n ≤ m) (env : Env) (s : Stmt) : (execStmt (n +
 theorem Mono.stmts_succ (env : Env) (ss : List Stmt) : (execStmts (n + 1) env ss : M W _) ⊑ execStmts (m + 1) env ss := by
   cases ss <;> unfold execStmts <;> mono ih
 
-theorem Mono.loop_succ (env : Env) (fresh : List Name) (test update : Expr) (body : Stmt) :
-    (CoreJS.loop (n + 1) env fresh test update body : M W _) ⊑ CoreJS.loop (m + 1) env fresh test update body := by
-  unfold CoreJS.loop
-  mono ih
+theorem Mono.loop_succ (env : Env) (fresh : List Name) (test update : Expr) (body : Stmt) (postTest : Bool) :
+    (CoreJS.loop (n + 1) env fresh test update body postTest : M W _) ⊑
+      CoreJS.loop (m + 1) env fresh test update body postTest := by
+  cases postTest <;> simp only [CoreJS.loop, loopCondition, Bool.not_true, Bool.not_false, Bool.false_eq_true,
+    ↓reduceIte] <;> mono ih
 
 theorem Mono.converse_succ (code : Nat) (cells : List (Option Addr)) (told : Told) :
     (CoreJS.converse (n + 1) code cells told : M W _) ⊑ CoreJS.converse (m + 1) code cells told := by
@@ -476,7 +478,7 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
       fun _ _ _ => M.le_outOfFuel _, fun _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _,
       fun _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _, fun _ _ _ _ => M.le_outOfFuel _,
       fun _ _ => M.le_outOfFuel _,
-      fun _ _ => M.le_outOfFuel _, fun _ _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _⟩
+      fun _ _ => M.le_outOfFuel _, fun _ _ _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _⟩
   | succ n ih =>
     intro m hm
     cases m with
