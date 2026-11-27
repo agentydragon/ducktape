@@ -77,6 +77,11 @@ Our flake's inputs are all remote (`github:`), so #837's temp copy covers them. 
 `.envrc`: `use flake path:./nix/flake` (the `path:` prefix is required; bare `./nix/flake` resolves to the git repo). Source = that directory only, including untracked/ignored files there; it cannot read outside it.
 
 - Must move inside: devshell definition (`nix/flake/devtools.nix`), `nix/packages/**`, pins, and `skills/skills_registry.json` (or drop `skills` from the devshell, see E).
+- `skills/skills_registry.json` is cheap to relocate (e.g. under `nix/`); few readers, all repo-internal:
+  - CI: `devinfra/ci/release_assets.py` (`load_releases`, one `skill-<name>` release per entry; `--skills-registry` default), `devinfra/ci/plan_releases.py` (`--skills-registry` default; `release.yml`), `devinfra/ci/artifacts.py` (`skills_registry_path()`), `devinfra/ci/BUILD.bazel` data deps, `skills/BUILD.bazel` `exports_files`, `devinfra/ci/test_plan_releases.py`.
+  - Nix: `flake.nix` (`skillsUnpacked` → `skills-tar` → `nix/home/skills.nix`), `nix/packages/default.nix` (`ducktapePkgs.skills` → `devtools` profile).
+  - Path trigger: `.github/workflows/buildbuddy-remote-runner-image.yml`.
+  - Docs: `skills/{README,TODO}.md`, `skills/ground_skill/SKILL.md`, `release.yml` header comment.
 - `nix/artifact-pins.json` non-Nix readers to repoint: `.github/workflows/{bazel-ci,pr-visuals-publish}.yml`, `devinfra/ci/{artifacts,sync_pins,prune_releases}.py`, image path triggers (`devinfra/ci/nix_images.json`, `.github/workflows/{nix-images,buildbuddy-remote-runner-image}.yml`), docs.
 - Own `flake.lock`. Root flake consumes it as an input (`inputs.nixpkgs.follows`), but direnv uses the sub-flake's own lock → keep the two in sync or `nix develop` and direnv diverge.
 - Auto-pin flow survives if `sync-pins` writes the pins at the new path.
