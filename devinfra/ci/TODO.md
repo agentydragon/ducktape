@@ -1,5 +1,27 @@
 # CI TODOs
 
+## Invalidate Nix image verification when its smoke test changes
+
+The [publisher](nix_images.py) keys verification by image attribute and output path.
+Editing [the website smoke script](../../website/image_smoke.sh) selects the image
+for CI but leaves its output path unchanged. The environment-tools smoke script
+also [builds a separate Nix check](../../agentplane/env/images/ducktape_image_smoke.sh).
+Changing [that check](../../agentplane/env/images/ducktape_tools_check.nix) changes
+its derivation independently of the image. In both cases a previous marker lets
+the build skip the revised test and lets publication accept the old pass.
+
+Two options for the two smoke-tested images:
+
+- Include the smoke script and its test dependencies in the verification identity.
+  For environment-tools this includes the evaluated Nix check output. Identical
+  inputs can reuse a pass across revisions.
+- Run the smoke script each time CI selects the image and pass the successful
+  image names from that build to its publish jobs. This avoids tracking the test's
+  dependencies and repeats the Docker load on selected revisions.
+
+In either design, exercise a failing smoke-only change with an already verified
+image. That image must stay out of publication while other successful images can publish.
+
 ## Fetch publication artifacts explicitly from BuildBuddy
 
 Image publication and the release-artifact action still rely on `bb remote build`'s
