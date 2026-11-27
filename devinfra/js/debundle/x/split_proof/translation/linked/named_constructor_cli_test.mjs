@@ -207,6 +207,17 @@ const tdz = split({ source, spec, out: tdzOut, require: "all-outcomes" });
 assert.equal(tdz.status, "refused", tdz.log);
 assert(!existsSync(tdzOut));
 
+// Linked lowering can model a computed optional method call, but that alone
+// does not make its placement eligible for the ordinary constructor.
+writeFileSync(spec, JSON.stringify(placement));
+writeFileSync(source, 'const seed = null; export const result = seed?.["value"]();');
+for (const guarantee of ["normal-completion", "all-outcomes"]) {
+  const optionalOut = path.join(root, `optional-computed-${guarantee}`);
+  const optional = split({ source, spec, out: optionalOut, require: guarantee });
+  assert.equal(optional.status, "refused", optional.log);
+  assert(!existsSync(optionalOut));
+}
+
 // These placements used to publish via the linked evaluator. A supported
 // placement shape alone cannot justify moving the declaration.
 writeFileSync(spec, JSON.stringify(placement));
