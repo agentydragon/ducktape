@@ -168,3 +168,19 @@ js_test(
     entry_point = "linked_async_differential_test.mjs",
     env = {"LINKED_ASYNC_TEST": "$(rootpath :linked_async_test_runner)"},
 )
+
+test_runner(
+    name = "primitive_await_test_runner",
+    src = "PrimitiveAwaitTest.lean",
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:corejs_eval",
+        "//devinfra/js/debundle/x/split_proof:corejs_primitive_await",
+    ],
+)
+
+js_test(
+    name = "primitive_await_differential_test",
+    data = [":primitive_await_test_runner"],
+    entry_point = "primitive_await_differential_test.mjs",
+    env = {"PRIMITIVE_AWAIT_TEST": "$(rootpath :primitive_await_test_runner)"},
+)

@@ -4028,3 +4028,27 @@ lean_proof_test(
         ":corejs_async_prefix_frame",
     ],
 )
+
+lean_library(
+    name = "corejs_primitive_await",
+    srcs = ["EsmSplit/CoreJS/PrimitiveAwait.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [
+        ":corejs_async_prefix",
+        ":corejs_eval",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_primitive_await_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PrimitiveAwait"],
+    required_theorems = [
+        "CoreJS.PrimitiveAwait.drain_head",
+        "CoreJS.PrimitiveAwait.drain_paused",
+        "CoreJS.PrimitiveAwait.launch_suspends",
+        "CoreJS.PrimitiveAwait.launch_zero",
+        "CoreJS.PrimitiveAwait.runJob_keeps_result",
+    ],
+    deps = [":corejs_primitive_await"],
+)
