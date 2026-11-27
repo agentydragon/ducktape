@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.CallTurn
 import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.LinkedInput
@@ -5,6 +6,7 @@ import EsmSplit.CoreJS.PrimitiveAwait
 import EsmSplit.CoreJS.ProgramTurn
 import EsmSplit.CoreJS.Scope
 import EsmSplit.CoreJS.Split
+import EsmSplit.CoreJS.SyntaxMatch
 import EsmSplit.ESTreeUnits
 import EsmSplit.Plan
 
@@ -28,18 +30,25 @@ open PrimitiveAwait
 
 variable {W : World}
 
+/-- A source cut carries the exact deferred function lowered at that ordinal.
+The callable site and capture list are part of that function's syntax. -/
+structure DeferredAwait where
+  deferred : Func
+  parts : FromESTree.PrimitiveAwaitParts
+
 structure Input where
   private mk ::
   program : Program
-  cuts : List (Nat × FromESTree.PrimitiveAwaitParts)
+  cuts : List (Nat × DeferredAwait)
 
-private def registerCuts (source : LinkedInput.DecodedSource) :
-    List (Nat × FromESTree.PrimitiveAwaitParts) :=
+private def registerCuts (source : LinkedInput.DecodedSource) : List (Nat × DeferredAwait) :=
   source.nodes.toList.zipIdx.filterMap fun (node, id) => do
     let parts ← (FromESTree.primitiveAwaitParts node).toOption
     let some (.funDecl f) := source.source.body.lookup id | none
-    let some (_, _, _, some _) := f.opaqueBody | none
-    if f.kind == .asyncFn && f.name == parts.scope.name then some (id, parts) else none
+    let some (unit, _, free, some _) := f.opaqueBody | none
+    guard (unit == id && f.kind == .asyncFn && f.name == parts.scope.name &&
+      parts.scope.closes.all free.contains)
+    return (id, ⟨f, parts⟩)
 
 private def decodeSource (source : Json) (entry : String) : Except String LinkedInput.DecodedSource := do
   let decoded ← LinkedInput.decodeSingletonSourceNodes (← ESTreeUnits.nodes source) entry
@@ -62,49 +71,70 @@ def decodePlacedChecked (source files : Json) (plan : EsmSplit.Plan) : Except St
   let original ← decodeSource source plan.entry
   let (before, after) ← LinkedInput.decodePair source (Json.mkObj []) files plan
   let cuts := registerCuts original
-  for (id, part) in cuts do
+  for (id, cut) in cuts do
     let some owner := after.modules.find? (fun m => (m.body.lookup id).isSome) |
       throw s!"missing placed async declaration {id}"
+    let some (.funDecl actual) := owner.body.lookup id | throw s!"missing placed async declaration {id}"
+    unless (SyntaxMatch.funcEq actual cut.deferred).isSome do
+      throw s!"placed deferred closure differs at original ordinal {id}"
     let imports := owner.imports.flatMap fun i => i.names.map Prod.snd
     -- Cut code came from the original module. It cannot be reused if a
     -- captured name became an import: an assignment would then need a
     -- frozen target, even though both lookups still reach the same cell.
-    if let some name := part.scope.free.find? imports.contains then
+    if let some name := cut.parts.scope.free.find? imports.contains then
       throw s!"placed async declaration {id} captures imported binding {name}"
   return ⟨⟨before, cuts⟩, ⟨after, cuts⟩, rfl⟩
 
 def decodePlaced (source files : Json) (plan : EsmSplit.Plan) : Except String (Input × Input) :=
   (decodePlacedChecked source files plan).map fun p => (p.before, p.after)
 
+/-- The executable payload is attached to one concrete linked closure. An
+identical name at a different address cannot acquire the payload. -/
 private structure Cut where
   callee : Addr
   closed : Env
-  parts : FromESTree.PrimitiveAwaitParts
+  lowered : DeferredAwait
 
-private def bindCut (id : Nat) (part : FromESTree.PrimitiveAwaitParts) (units : List LinkedUnit) :
+private def bindClosure (id : Nat) (lowered : DeferredAwait) (addr : Addr) : M W (Name × Cut) := do
+  unless addr.region == id + 1 do unknown "model: async closure allocated outside its original region"
+  let some (.closure actual closed _) := (← getObj addr).code | unknown "model: expected an async closure"
+  unless (SyntaxMatch.funcEq actual lowered.deferred).isSome do
+    unknown "model: the linked closure differs from the lowered await"
+  return (lowered.parts.scope.name, ⟨addr, closed, lowered⟩)
+
+private def bindCut (id : Nat) (lowered : DeferredAwait) (units : List LinkedUnit) :
     M W (Name × Cut) := do
-  let name := part.scope.name
+  let name := lowered.parts.scope.name
   let some unit := units.find? (·.id == id) | unknown "model: missing async declaration ordinal"
   let .funDecl f := unit.stmt | unknown "model: expected an async declaration at the checked ordinal"
   unless f.kind == .asyncFn && f.name == name do unknown "model: async declaration changed"
+  unless (SyntaxMatch.funcEq f lowered.deferred).isSome do unknown "model: async code changed"
   let .obj addr ← readVar unit.env name | unknown "model: expected the linked async declaration"
-  let some (.closure _ closed _) := (← getObj addr).code | unknown "model: expected an async closure"
-  return (name, ⟨addr, closed, part⟩)
+  bindClosure id lowered addr
 
-private def bindCuts (units : List LinkedUnit)
-    (parts : List (Nat × FromESTree.PrimitiveAwaitParts)) : M W (List (Name × Cut)) :=
+private def bindCuts (units : List LinkedUnit) (parts : List (Nat × DeferredAwait)) :
+    M W (List (Name × Cut)) :=
   parts.mapM (fun (id, part) => bindCut id part units)
 
-private def prefixOf (cut : Cut) (args : List Val) (fuel : Nat) : M W Prefix := do
-  let env ← enterFunction cut.parts.scope cut.closed .undef args
-  match ← execStmts fuel env cut.parts.before with
+/-- The staged operand supports a member read through the shared turn
+rule. The callback sees the getter's complete returned turn; only ordinary
+callees are admitted here, so a deferred nested suspension still refuses. -/
+private def operandTurn (env : Env) : Nat → Expr → TurnM W Val
+  | n + 1, .get receiver key =>
+    readProperty (getPropWith TurnM.lift (callFnTurn n))
+      (TurnM.lift (evalExpr n env receiver)) (TurnM.lift (evalExpr n env key))
+  | fuel, expr => TurnM.lift (evalExpr fuel env expr)
+
+private def prefixOf (cut : Cut) (args : List Val) (fuel : Nat) : TurnM W Prefix := do
+  let env ← TurnM.lift (enterFunction cut.lowered.parts.scope cut.closed .undef args)
+  match ← TurnM.lift (execStmts fuel env cut.lowered.parts.before) with
   | .normal =>
     -- Each preceding item uses one layer of execStmts. At the cut
     -- the list and the expression statement each consume one more.
-    let operand ← evalExpr (fuel - cut.parts.before.length - 2) env cut.parts.operand
-    pure (.suspended operand env cut.parts.after)
+    let operand ← operandTurn env (fuel - cut.lowered.parts.before.length - 2) cut.lowered.parts.operand
+    pure (.suspended operand env cut.lowered.parts.after)
   | .ret value => pure (.completed value)
-  | _ => unknown "model: invalid control flow before await"
+  | _ => TurnM.lift (unknown "model: invalid control flow before await")
 
 /-- At the staged boundary the verified ordinal and address choose a cut.
 Ordinary call dispatch still reads the actual closure; only that deferred
@@ -113,8 +143,8 @@ private def invokeCut (fuel : Nat) (cut : Cut) (args : List Val) : TurnM W Val :
   dispatchCallWithDeferred TurnM.lift
     (fun f closed receiver argv => TurnM.lift (runLocalCall (execStmts (fuel - 1)) f closed receiver argv))
     (fun f closed _ argv reason => fun turn =>
-      if f.kind == .asyncFn && f.name == cut.parts.scope.name then
-        match launch promiseProto (prefixOf { cut with closed } argv) fuel turn with
+      if (SyntaxMatch.funcEq f cut.lowered.deferred).isSome && decide (closed = cut.closed) then
+        match launchTurn promiseProto (prefixOf cut argv) fuel turn with
         | .ok promise next => .ok promise next
         | .unknown why stopped => .unknown why stopped
         | .fuel => .fuel
@@ -155,24 +185,17 @@ private def runUnitWithCuts (cuts : List (Name × Cut)) (fuel : Nat) (unit : Lin
       let entered := { turn with state := { turn.state with region := unit.id + 1 } }
       TurnResult.andThen (readVar unit.env name) entered fun callee prepared =>
         if callee != .obj cut.callee then ordinary fuel unit turn else
-        TurnResult.andThen (evalArgs (n + 1) unit.env args) prepared fun argv evaluated =>
-          match invokeCut (n + 1) cut argv evaluated with
-          | .ok promise started =>
-            TurnResult.andThen (finishDirect unit.env target promise) started fun _ done => .ok () done
-          | .throw reason stopped => .throw reason stopped
-          | .unknown why stopped => .unknown why stopped
-          | .fuel => .fuel
+        (do
+          let promise ← directExprCall (fun _ _ argv => invokeCut (n + 1) cut argv)
+            (pure callee) (TurnM.lift (evalArgs (n + 1) unit.env args))
+          TurnM.lift (finishDirect unit.env target promise)) prepared
   | _, _ => ordinary fuel unit turn
 
 private def runUnitsWithCuts (cuts : List (Name × Cut)) (fuel : Nat) :
-    List LinkedUnit → Turn W → Immediate W Unit
-  | [], turn => .ok () turn
-  | unit :: rest, turn =>
-    match runUnitWithCuts cuts fuel unit turn with
-    | .ok () next => runUnitsWithCuts cuts fuel rest next
-    | .throw reason stopped => .throw reason stopped
-    | .unknown why stopped => .unknown why stopped
-    | .fuel => .fuel
+    List LinkedUnit → TurnM W Unit
+  | [] => pure ()
+  | unit :: rest => fun turn =>
+    (runUnitWithCuts cuts fuel unit >>= fun () => runUnitsWithCuts cuts fuel rest) turn
 
 private theorem find_same {us vs : List LinkedUnit} (units : SameUnits us vs) (id : Nat) :
     match us.find? (·.id == id), vs.find? (·.id == id) with
@@ -188,7 +211,7 @@ private theorem find_same {us vs : List LinkedUnit} (units : SameUnits us vs) (i
     · simp only [selected]; exact ih
 
 private theorem bindCut_same {us vs : List LinkedUnit} (units : SameUnits us vs)
-    (id : Nat) (part : FromESTree.PrimitiveAwaitParts) :
+    (id : Nat) (part : DeferredAwait) :
     (bindCut id part us : M W (Name × Cut)) = bindCut id part vs := by
   have h := find_same units id
   unfold bindCut
@@ -203,8 +226,8 @@ private theorem bindCut_same {us vs : List LinkedUnit} (units : SameUnits us vs)
     cases stmt : left.stmt <;> try rfl
     case funDecl f =>
       have names := agree.vars f.name (by simp [stmt, Stmt.free])
-      by_cases ok : (f.kind == .asyncFn && f.name == part.scope.name) = true
-      · have nameEq : f.name = part.scope.name := by
+      by_cases ok : (f.kind == .asyncFn && f.name == part.parts.scope.name) = true
+      · have nameEq : f.name = part.parts.scope.name := by
           have both := ok
           simp at both
           exact both.2
@@ -214,9 +237,9 @@ private theorem bindCut_same {us vs : List LinkedUnit} (units : SameUnits us vs)
         simp [ok, M.bind_apply, unknown]
 
 private theorem bindCuts_same {us vs : List LinkedUnit} (units : SameUnits us vs)
-    (parts : List (Nat × FromESTree.PrimitiveAwaitParts)) :
+    (parts : List (Nat × DeferredAwait)) :
     (bindCuts us parts : M W (List (Name × Cut))) = bindCuts vs parts := by
-  have eq : (fun (p : Nat × FromESTree.PrimitiveAwaitParts) => (bindCut p.1 p.2 us : M W (Name × Cut))) =
+  have eq : (fun (p : Nat × DeferredAwait) => (bindCut p.1 p.2 us : M W (Name × Cut))) =
       (fun p => bindCut p.1 p.2 vs) := by
     funext p
     exact bindCut_same units p.1 p.2
@@ -273,22 +296,25 @@ private theorem runUnitsWithCuts_same (cuts : List (Name × Cut)) (fuel : Nat)
     runUnitsWithCuts cuts fuel us turn = runUnitsWithCuts cuts fuel vs turn := by
   induction units generalizing turn with
   | nil => rfl
-  | cons head tail ih =>
-    simp only [runUnitsWithCuts, runUnitWithCuts_same cuts fuel head turn]
-    split <;> first | exact ih _ | rfl
+  | @cons u v us vs head _ ih =>
+    have step : (runUnitWithCuts cuts fuel u : TurnM W Unit) = runUnitWithCuts cuts fuel v :=
+      funext (runUnitWithCuts_same cuts fuel head)
+    have rest : (runUnitsWithCuts cuts fuel us : TurnM W Unit) = runUnitsWithCuts cuts fuel vs :=
+      funext ih
+    simp only [runUnitsWithCuts, step, rest]
 
 def entryEnv (entry : String) (linked : List (Module × Env)) : Option Env :=
   match linked with
   | [(_, env)] => some env
   | _ => (linked.find? fun (m, _) => m.name == entry).map Prod.snd
 
-private def runLinked (fuel : Nat) (parts : List (Nat × FromESTree.PrimitiveAwaitParts))
+private def runLinked (fuel : Nat) (parts : List (Nat × DeferredAwait))
     (units : List LinkedUnit) (turn : Turn W) : Immediate W Unit :=
   match parts with
   | [] => TurnResult.andThen (runUnits fuel units) turn fun () done => .ok () done
   | parts => TurnResult.andThen (bindCuts units parts) turn fun cuts ready => runUnitsWithCuts cuts fuel units ready
 
-private theorem runLinked_same (fuel : Nat) (parts : List (Nat × FromESTree.PrimitiveAwaitParts))
+private theorem runLinked_same (fuel : Nat) (parts : List (Nat × DeferredAwait))
     {us vs : List LinkedUnit} (units : SameUnits us vs) (turn : Turn W) :
     runLinked fuel parts us turn = runLinked fuel parts vs turn := by
   cases parts with
@@ -329,6 +355,18 @@ theorem runImmediate_same {W : World} {a b : Input} {left right : List (Module �
     cases hb : entryEnv b.program.entry right with
     | none => simp [hb] at bEntry
     | some eb => rw [observed_map, observed_map, cuts, runLinked_same fuel b.cuts units]
+
+/-- On a successfully linked graph with an entry and no authenticated cuts,
+the staged rule returns exactly the ordinary result at the same fuel and
+never introduces jobs. -/
+theorem noCuts_turn {input : Input} {linked : List (Module × Env)} {ready : State W} {env : Env}
+    (cuts : input.cuts = [])
+    (linkedOk : link input.program (initialState W input.program.regions) = .ok linked ready)
+    (entry : entryEnv input.program.entry linked = some env) (fuel : Nat) :
+    (runImmediate W fuel input).observed = TurnResult.withJobs [] (runProgram W fuel input.program) := by
+  simp only [runImmediate, withLinkedTurn, runProgram, M.bind_apply, TurnResult.andThen, runLinked,
+    linkedOk, entry, cuts, observed_map]
+  cases runUnits fuel (unitsOf linked) ready <;> rfl
 
 /-- Once a module has linked, the no-cut path agrees with the shared
 evaluator at every bound. Equality retains object identity and all stateful

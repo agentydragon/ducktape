@@ -22,7 +22,7 @@ private def observed (env : Env) (immediate : Turn World.probe) : Except String 
     throw "the module phase ran a continuation"
   let .ok .paused one := drain 100 1 immediate | throw "expected one continuation left"
   let .str firstJob ← binding env "trace" one | throw "expected a trace after one job"
-  unless firstJob == "ab|A" && isPending one.state second do
+  unless firstJob == duringTurn ++ "A" && isPending one.state second do
     throw "the drain did not run the first job alone"
   let some (.rejected (.obj reason)) := (one.state.objAt first).bind (·.promise) |
     throw "the first job did not reject on the original Promise"

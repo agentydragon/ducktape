@@ -25,9 +25,9 @@ const expected = {
   value: fulfilled.value,
 };
 assert.deepEqual(expected, {
-  atReturn: "a",
-  duringTurn: "ab|",
-  afterDrain: "ab|AB",
+  atReturn: "ag",
+  duringTurn: "agb|",
+  afterDrain: "agb|AB",
   fresh: true,
   rejectionIdentity: true,
   value: 23,
@@ -52,6 +52,16 @@ assert.deepEqual(model("async function f() { await { then() {} }; } f();"), {
   jobs: 0,
 });
 assert.deepEqual(model('async function f() { await 0; } f(); throw "stop";'), { throw: "stop", jobs: 1 });
+
+// A reassigned binding must not lend its original cut to another callee.
+assert.deepEqual(model("async function f() { await 0; } async function g() { await 1; } f = g; f();"), {
+  unknown: "deferred function g: async invocation requires Promise semantics",
+  jobs: 0,
+});
+assert.deepEqual(
+  model("async function f() { await 0; } function g() { return 1; } f = g; f();", { statusOnly: true }),
+  { end: "normal", jobs: 0 }
+);
 
 // Compare against an ordinary statement at the same position. The await
 // operand must not run on fuel that can't reach the ordinary expression.
