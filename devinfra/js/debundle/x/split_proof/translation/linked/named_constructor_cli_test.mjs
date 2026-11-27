@@ -29,7 +29,27 @@ const emitted = await import(pathToFileURL(path.join(out, "entry.mjs")));
 assert.equal(emitted.result, 7);
 assert.equal(run({ checkOutput: true }).status, "certified");
 
+// The same compiled constructor admits logical negation of an earlier binding.
+writeFileSync(source, "const seed = 7; const ready = !seed; export const result = ready;\n");
+const negationPlacement = {
+  entry: "entry.mjs",
+  modules: { "worker.mjs": ["#0", "#1"], "entry.mjs": ["#2"] },
+  order: ["worker.mjs"],
+  sequential: true,
+};
+writeFileSync(spec, JSON.stringify(negationPlacement));
+const negationOut = path.join(root, "negation-out");
+const negation = split({ source, spec, out: negationOut, require: "all-outcomes" });
+assert.equal(negation.status, "certified", negation.log);
+assert.equal(negation.scope, "named-declarations", JSON.stringify(negation));
+assert.equal(negation.guarantee, "all-outcomes");
+assert.equal(negation.verdict.strategy, "compiled-constructor");
+assert.match(readFileSync(path.join(negationOut, "worker.mjs"), "utf8"), /const ready = !seed;/);
+assert.equal((await import(pathToFileURL(path.join(negationOut, "entry.mjs")))).result, false);
+assert.equal(split({ source, spec, out: negationOut, require: "all-outcomes", checkOutput: true }).status, "certified");
+
 // Initialized lexical declarations use the same actual-source constructor.
+writeFileSync(spec, JSON.stringify(placement));
 writeFileSync(source, "let seed = 7; export let result = seed;\n");
 const letOut = path.join(root, "let-out");
 const letResult = split({ source, spec, out: letOut, require: "all-outcomes" });

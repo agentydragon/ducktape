@@ -3,9 +3,10 @@ import EsmSplit.CoreJS.ResolvedPlacement
 
 /-! A construction for actual source modules containing unique `const`
 bindings and initialized lexical `let` bindings. Initializers are primitive
-values or reads of earlier bindings. The supplied sequential placement is used
-unchanged by the existing planner. No assignment statements are admitted, so
-the proof does not cover later mutations or reordered evaluation. -/
+values, reads of earlier bindings, or logical negations of those expressions.
+The supplied sequential placement is used unchanged by the existing planner.
+No assignment statements are admitted, so the proof does not cover later
+mutations or reordered evaluation. -/
 
 namespace CoreJS.NamedDeclarationSplit
 
@@ -19,6 +20,8 @@ inductive EarlierInitializer (earlier : List Name) : Expr → Prop where
   | num (value : Float) : EarlierInitializer earlier (.num value)
   | str (value : String) : EarlierInitializer earlier (.str value)
   | read (name : Name) : name ∈ earlier → EarlierInitializer earlier (.var name)
+  | logicalNot {value : Expr} : EarlierInitializer earlier value →
+      EarlierInitializer earlier (.unary .not value)
 
 /-- The accumulator makes freshness and the earlier-read requirement explicit
 for every declaration, for lists of any length. -/
@@ -40,6 +43,9 @@ private def checkInitializer (earlier : List Name) : (expr : Expr) → Option (P
   | .num value => some ⟨.num value⟩
   | .str value => some ⟨.str value⟩
   | .var name => if h : name ∈ earlier then some ⟨.read name h⟩ else none
+  | .unary .not value => do
+    let ⟨inner⟩ ← checkInitializer earlier value
+    return ⟨.logicalNot inner⟩
   | _ => none
 
 private def initializedValue : Expr → Bool
@@ -106,7 +112,7 @@ def construct (source : Program) (request : EsmSplit.Spec) : Except String (Cons
   match single : source.modules with
   | [module] =>
     let some ⟨admitted⟩ := checkDeclarations [] module.body |
-      throw "expected unique const or initialized let declarations with only primitive initializers or earlier reads"
+      throw "expected unique const or initialized let declarations with primitive initializers, earlier reads, or their logical negations"
     let ⟨normalized, selected, ⟨selection⟩⟩ ← selectionWitness module request
     let .isTrue unique := (inferInstance : Decidable ((selected.map Prod.fst).Nodup)) |
       throw "an original unit is selected more than once"
