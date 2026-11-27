@@ -272,13 +272,7 @@ pub fn run_merge(
                 &post_edit_spec_from_docs(&docs, &BTreeSet::new())?,
             )?;
             let assessment = context
-                .assess(
-                    stderr,
-                    &merge.edit.modules_root,
-                    &docs,
-                    &BTreeSet::new(),
-                    &priority,
-                )
+                .assess(stderr, &modules_root, &docs, &BTreeSet::new(), &priority)
                 .context("candidate effect assessment failed")?;
             (Some(docs), Some(assessment))
         } else {
