@@ -28,6 +28,18 @@ theorem metadataOrderFromItems : ∀ items : List SourceUnit,
       rw [metadataOrdinal selected, metadataOrdinal found]
       exact before other inRest
 
+/-- The actual decoded export rows retain their source order. -/
+theorem metadataRowsOrdered {decoded : LinkedInput.IndexedSource} {bundle : EsmSplit.Bundle}
+    (sequence : Sequence decoded bundle) :
+    decoded.localExports.Pairwise (fun a b => a.ordinal < b.ordinal) := by
+  have itemsOrdered : (sequence.units.map SourceUnit.ordinal).Pairwise (· < ·) := by
+    rw [sequence.ordinals]
+    exact List.pairwise_lt_range
+  have ordered := metadataOrderFromItems sequence.units itemsOrdered
+  rw [sequence.metadataSourceRows] at ordered
+  simpa only [List.pairwise_map] using ordered
+
+#print axioms metadataRowsOrdered
 #print axioms metadataOrderFromItems
 
 end CoreJS.IndexedSourceSchedule

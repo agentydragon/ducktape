@@ -551,7 +551,10 @@ lean_proof_test(
     name = "corejs_source_row_order_axioms_test",
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.SourceRowOrder"],
-    required_theorems = ["CoreJS.IndexedSourceSchedule.metadataOrderFromItems"],
+    required_theorems = [
+        "CoreJS.IndexedSourceSchedule.metadataOrderFromItems",
+        "CoreJS.IndexedSourceSchedule.metadataRowsOrdered",
+    ],
     deps = [":corejs_source_row_order"],
 )
 
