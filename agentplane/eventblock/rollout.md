@@ -42,3 +42,27 @@ and verify that new appends still read back. Check write latency, replication la
 space before increasing the scope. Keep both readers until both inventories show no legacy
 or unreadable blocks, skipped ranges have been accounted for, and a supported backup has
 been restored and read successfully.
+
+### Inventory by format
+
+History's `session_event_block` and Sampler's `sampler_event_block` record the
+versioned `block_format` and `uncompressed_bytes` when a block is written.
+The byte count is the size of the uncompressed codec input, including framing.
+It comes from the block header (APB v1) or the single gzip member's trailer.
+These fields describe the encoding; replay still verifies its contents.
+
+Existing rows initially have NULL metadata. Run [the metadata backfill](backfill_metadata.sql)
+on each primary with psql autocommit enabled. It updates at most 128 blocks per
+transaction and skips locked rows. Rerun until there are no NULL formats.
+The backfill neither re-encodes payloads nor requires an idle writer.
+
+Run this in the History database, substituting `sampler_event_block` for Sampler:
+
+```sql
+SELECT block_format, count(*) AS blocks, sum(uncompressed_bytes) AS uncompressed_bytes
+FROM session_event_block
+GROUP BY block_format;
+```
+
+Only declare the old format gone when there are no NULL, `unknown`, or
+`legacy_gzip` blocks across both stores and every writer emits the new format.

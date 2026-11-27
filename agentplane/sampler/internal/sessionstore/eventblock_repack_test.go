@@ -704,3 +704,19 @@ func TestRepackRetriesOnlyItsOwnDeadline(t *testing.T) {
 		t.Fatalf("caller's deadline: %v", err)
 	}
 }
+
+func TestRepackedBlockInventoryColumns(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	const through = 32
+	appendAPBTestJournalThrough(t, store, session.ID, through)
+	frames := eventFrames(t, store, session.ID, 1, through)
+	size := 4 * len(frames)
+	for _, frame := range frames {
+		size += len(frame)
+	}
+	replaceRowsWithBlock(t, store, session.ID, 1, through, false)
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1 AND block_format='apb_v1' AND uncompressed_bytes=$2`, session.ID, size); got != 1 {
+		t.Fatal("APB block missing from format and size inventory")
+	}
+}
