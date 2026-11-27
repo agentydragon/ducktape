@@ -65,7 +65,7 @@
       import { html, mount } from "../report.js";
 
       const evidenceSha =
-        "d55f5ebacb5d1eea30a5d31a8f229eeb491652ce8177c8f2e421b7a55bc431c4";
+        "c5b5d38800625b26e276891495fa534dc8a36e0ee1f752d81cba0e08b411b1e0";
       const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
@@ -163,11 +163,11 @@
               <${Text} size="lg">
                 Median time to required green rose from 185–244 s (20–23 Nov) to
                 398 s and 421 s (24–25 Nov), then 268 s on 26 Nov. Bazel
-                finished last on 148 of 160 sampled greens. The long paths are
-                deep chains with a fixed cost per step: 26 Lean modules that
-                each pay about 10 s of imports, 26 levels of Debundle crates,
-                and a KubeVirt suite that imports 24 images one by one because
-                its runner is never reused.
+                finished last on 148 of 160 sampled greens. Three things set the
+                long paths: the Lean build rule compiles each library's modules
+                one after another, a 26-crate Debundle dependency chain, and a
+                KubeVirt suite that imports 24 images one by one because its
+                runner is never reused.
               <//>
               <${Text} c="dimmed" mt="sm">
                 PR heads that arrived 20 Nov 00:00 – 27 Nov 05:00 UTC (27 Nov
@@ -356,11 +356,11 @@
               p(
                 "Cold runs also vary threefold: setup 187 vs 657 s, with every phase slower by a similar factor. That points to contention on the worker rather than one stalled step. Over the week, guests on wyrm2 (about 28% of KVM busy time) had the most IO waiting while busy (median 0.18 vs 0.07–0.11 on the OVH hosts) and the highest CPU-wait tail (p90 0.43). The two slowest test_vm runs (1,234 and 1,016 s) ran on the same executor. Spans carry no host identity, so these runs cannot be tied to a host. Add the VM and node name to the test span resource; then decide whether to keep KVM workers off wyrm2.",
               ),
-              sub("2. Debundle Rust: the crate graph is 26 crates deep"),
+              sub("2. Debundle Rust: a 26-crate dependency chain"),
               p(
                 'On 9 of the 29 later Lean/Rust heads, the path ended in building the debundler "for tool" (115–315 s) before any Debundle test could start. In one example trace, ten crate-metadata compiles ran in sequence (8–17 s each, including one-file crates), then the full cli rlib (62 s), the binary link (49 s), graph export (22 s), the editor-spec step (29 s) and the test (30 s). ',
                 inv("b67f9f5b-9cf2-5f62-a778-a16577f09253", "Trace"),
-                ". The debundler depends on 100 crates and the longest chain is 26 deep. Each level costs a metadata compile of 8–17 s, mostly fixed overhead. An edit to a low crate therefore costs minutes before any test runs.",
+                ". The debundler depends on 100 crates; its longest dependency chain is 26 crates, each a direct Bazel dependency of the next (checked edge by edge). Each level costs a metadata compile of 8–17 s, mostly fixed overhead. An edit to a low crate therefore costs minutes before any test runs.",
               ),
               p(
                 "The ongoing crate splits (",
@@ -381,17 +381,25 @@
                 " · ",
                 inv("a98eb4a6-1da3-4241-a22a-85dce99dd70b", "opt-level 1"),
               ),
-              sub("3. Lean: a fixed import cost per module, 26 modules deep"),
+              sub("3. Lean: modules in one library compile one after another"),
               p(
                 pr(20059),
-                " (26 Nov) moved Lean to one cached action per module. Before it, grouped library builds set paths of 313–1,176 s (24–25 Nov, 6 heads). After it, sampled Lean paths took 111–299 s (n = 5). The remaining cost is structural. One core-library edit recompiled 26 modules in a strict import chain, 8–54 s each, 518 s in total. ",
+                " (26 Nov) moved Lean to one cached action per module. Before it, grouped library builds set paths of 313–1,176 s (24–25 Nov, 6 heads). After it, sampled Lean paths took 111–299 s (n = 5). One core-library edit still recompiled 26 modules strictly in sequence, 8–54 s each, 515 s in total. ",
                 inv("eebd453d-7384-500f-a02e-5eade1555aa6", "Trace"),
               ),
               p(
-                "Lean's profiler shows that per-module time is import, not proof work. HiddenRegion (50 lines) reported 7 s of import against 0.4 s of elaboration and 0.2 s of type checking. Remotely each module compile stages 15,500 files (2.7 GB), uses 10–13 CPU-s and peaks at about 450 MiB. Locally the same compile takes 1.3–3.2 s. The chain reaches the large `Lean` package through a few modules: HostProfile and four others import Lean.Data.Json, and the certificate modules import Lean.Elab.*. Every module above them pays that import.",
+                "That sequence is mostly not the import graph: only 7 of its 25 links are real imports. rules_lean compiles the modules of one lean_library in listed order and gives each compile every earlier module of the library as an input (",
+                link(
+                  "https://github.com/martianoff/rules_lean/blob/44fc4e4b299a32fd278865a45df24e0d05eb96a8/lean/private/rules.bzl#L108-L145",
+                  "rules.bzl",
+                ),
+                "). Bazel therefore cannot start a module until all modules listed before it finish. Scheduling each compile on its real imports would cut this edit's Lean path to about 149 s over 7 modules (ObjectFrame → … → LinkedBehaviorExamples). That estimate assumes enough parallel workers and unchanged per-module times.",
               ),
               p(
-                "Proposal: keep the low-level frame modules off the `Lean` package (move the JSON parsing out of HostProfile into a leaf the proofs do not import), and let example and certificate modules import narrower prerequisites, so the chain shortens and branches. Rejected: dropping the per-module C output that rules_lean always emits. Local timing showed no measurable difference with or without it.",
+                "Proposal: give each module only its own imports' outputs as inputs. Either declare one lean_library per module with explicit deps (generated from the import lines), or patch rules_lean to take a per-module import map. This is the largest single Lean lever we found.",
+              ),
+              p(
+                "Each step also has a high fixed cost. Lean's profiler shows per-module time is mostly import, not proof work: HiddenRegion (50 lines) reported 7 s of import against 0.4 s of elaboration. Remotely each module compile stages 15,500 files (2.7 GB) and uses 10–13 CPU-s; locally the same compile takes 1.3–3.2 s. Keeping low-level modules off the `Lean` package (HostProfile pulls in Lean.Data.Json) would lower that floor. Rejected: dropping the per-module C output that rules_lean emits; local timing showed no difference.",
               ),
               sub("4. Smaller items"),
               p(

@@ -1,2516 +1,2529 @@
 {
-  "source_devel_commit": "c1b14d378c1f06cb9c2440521e540558706adbb9",
-  "window_start": "2026-11-20T00:00:00Z",
-  "window_end": "2026-11-27T05:00:00Z",
-  "required_checks": [
-    "bazel-ci / Test & Build",
-    "Build artifacts + imports check",
-    "Pre-commit checks"
-  ],
-  "start_clock": "CDviz PR head event (pull_request opened created_at / synchronize updated_at)",
-  "verdict_sources": {
-    "same_repo": "cdviz.ci_feedback",
-    "fork": "GitHub check runs on the head SHA (filter=all)"
+ "source_devel_commit": "c1b14d378c1f06cb9c2440521e540558706adbb9",
+ "window_start": "2026-11-20T00:00:00Z",
+ "window_end": "2026-11-27T05:00:00Z",
+ "required_checks": [
+  "bazel-ci / Test & Build",
+  "Build artifacts + imports check",
+  "Pre-commit checks"
+ ],
+ "start_clock": "CDviz PR head event (pull_request opened created_at / synchronize updated_at)",
+ "verdict_sources": {
+  "same_repo": "cdviz.ci_feedback",
+  "fork": "GitHub check runs on the head SHA (filter=all)"
+ },
+ "classes": {
+  "same_repo_open": {
+   "n": 1471,
+   "outcomes": {
+    "superseded": 263,
+    "green": 1123,
+    "cancelled": 17,
+    "red": 68
+   },
+   "green": {
+    "n": 1123,
+    "p50": 223.0,
+    "p90": 693.0
+   },
+   "red": {
+    "n": 68,
+    "p50": 259.0,
+    "p90": 842.0
+   }
   },
-  "classes": {
-    "same_repo_open": {
-      "n": 1471,
-      "outcomes": {
-        "superseded": 263,
-        "green": 1123,
-        "cancelled": 17,
-        "red": 68
-      },
-      "green": {
-        "n": 1123,
-        "p50": 223.0,
-        "p90": 693.0
-      },
-      "red": {
-        "n": 68,
-        "p50": 259.0,
-        "p90": 842.0
-      }
-    },
-    "same_repo_update": {
-      "n": 1406,
-      "outcomes": {
-        "red": 136,
-        "superseded": 455,
-        "green": 799,
-        "pending": 4,
-        "cancelled": 12
-      },
-      "green": {
-        "n": 799,
-        "p50": 269.0,
-        "p90": 716.0
-      },
-      "red": {
-        "n": 136,
-        "p50": 349.0,
-        "p90": 810.0
-      }
-    },
-    "fork_open": {
-      "n": 921,
-      "outcomes": {
-        "green": 731,
-        "red": 109,
-        "superseded": 81
-      },
-      "green": {
-        "n": 731,
-        "p50": 216.0,
-        "p90": 570.0
-      },
-      "red": {
-        "n": 109,
-        "p50": 321.0,
-        "p90": 748.0
-      }
-    },
-    "fork_update": {
-      "n": 530,
-      "outcomes": {
-        "green": 339,
-        "superseded": 69,
-        "red": 122
-      },
-      "green": {
-        "n": 339,
-        "p50": 332.0,
-        "p90": 711.0
-      },
-      "red": {
-        "n": 122,
-        "p50": 328.0,
-        "p90": 748.0
-      }
-    }
+  "same_repo_update": {
+   "n": 1406,
+   "outcomes": {
+    "red": 136,
+    "superseded": 455,
+    "green": 799,
+    "pending": 4,
+    "cancelled": 12
+   },
+   "green": {
+    "n": 799,
+    "p50": 269.0,
+    "p90": 716.0
+   },
+   "red": {
+    "n": 136,
+    "p50": 349.0,
+    "p90": 810.0
+   }
   },
-  "daily": [
-    {
-      "day": "2026-11-20",
-      "heads": 856,
-      "green": {
-        "n": 537,
-        "p50": 227.0,
-        "p90": 574.0
-      },
-      "red": {
-        "n": 67,
-        "p50": 192.0,
-        "p90": 809.0
-      },
-      "outcomes": {
-        "red": 67,
-        "superseded": 243,
-        "green": 537,
-        "cancelled": 9
-      }
+  "fork_open": {
+   "n": 921,
+   "outcomes": {
+    "green": 731,
+    "red": 109,
+    "superseded": 81
+   },
+   "green": {
+    "n": 731,
+    "p50": 216.0,
+    "p90": 570.0
+   },
+   "red": {
+    "n": 109,
+    "p50": 321.0,
+    "p90": 748.0
+   }
+  },
+  "fork_update": {
+   "n": 530,
+   "outcomes": {
+    "green": 339,
+    "superseded": 69,
+    "red": 122
+   },
+   "green": {
+    "n": 339,
+    "p50": 332.0,
+    "p90": 711.0
+   },
+   "red": {
+    "n": 122,
+    "p50": 328.0,
+    "p90": 748.0
+   }
+  }
+ },
+ "daily": [
+  {
+   "day": "2026-11-20",
+   "heads": 856,
+   "green": {
+    "n": 537,
+    "p50": 227.0,
+    "p90": 574.0
+   },
+   "red": {
+    "n": 67,
+    "p50": 192.0,
+    "p90": 809.0
+   },
+   "outcomes": {
+    "red": 67,
+    "superseded": 243,
+    "green": 537,
+    "cancelled": 9
+   }
+  },
+  {
+   "day": "2026-11-21",
+   "heads": 616,
+   "green": {
+    "n": 453,
+    "p50": 185.0,
+    "p90": 640.0
+   },
+   "red": {
+    "n": 27,
+    "p50": 211.0,
+    "p90": 838.0
+   },
+   "outcomes": {
+    "green": 453,
+    "superseded": 133,
+    "red": 27,
+    "cancelled": 2,
+    "pending": 1
+   }
+  },
+  {
+   "day": "2026-11-22",
+   "heads": 733,
+   "green": {
+    "n": 526,
+    "p50": 193.0,
+    "p90": 503.0
+   },
+   "red": {
+    "n": 74,
+    "p50": 227.0,
+    "p90": 522.0
+   },
+   "outcomes": {
+    "green": 526,
+    "superseded": 131,
+    "red": 74,
+    "cancelled": 2
+   }
+  },
+  {
+   "day": "2026-11-23",
+   "heads": 604,
+   "green": {
+    "n": 453,
+    "p50": 244.0,
+    "p90": 575.0
+   },
+   "red": {
+    "n": 59,
+    "p50": 421.0,
+    "p90": 709.0
+   },
+   "outcomes": {
+    "green": 453,
+    "superseded": 92,
+    "red": 59
+   }
+  },
+  {
+   "day": "2026-11-24",
+   "heads": 496,
+   "green": {
+    "n": 302,
+    "p50": 398.0,
+    "p90": 770.0
+   },
+   "red": {
+    "n": 63,
+    "p50": 470.0,
+    "p90": 896.0
+   },
+   "outcomes": {
+    "superseded": 122,
+    "green": 302,
+    "red": 63,
+    "cancelled": 7,
+    "pending": 2
+   }
+  },
+  {
+   "day": "2026-11-25",
+   "heads": 312,
+   "green": {
+    "n": 196,
+    "p50": 421.0,
+    "p90": 846.0
+   },
+   "red": {
+    "n": 42,
+    "p50": 488.0,
+    "p90": 912.0
+   },
+   "outcomes": {
+    "red": 42,
+    "green": 196,
+    "superseded": 69,
+    "cancelled": 4,
+    "pending": 1
+   }
+  },
+  {
+   "day": "2026-11-26",
+   "heads": 577,
+   "green": {
+    "n": 416,
+    "p50": 268.0,
+    "p90": 809.0
+   },
+   "red": {
+    "n": 88,
+    "p50": 285.0,
+    "p90": 594.0
+   },
+   "outcomes": {
+    "superseded": 68,
+    "green": 416,
+    "red": 88,
+    "cancelled": 5
+   }
+  },
+  {
+   "day": "2026-11-27",
+   "heads": 134,
+   "green": {
+    "n": 109,
+    "p50": 359.0,
+    "p90": 933.0
+   },
+   "red": {
+    "n": 15,
+    "p50": 417.0,
+    "p90": 1137.0
+   },
+   "outcomes": {
+    "green": 109,
+    "superseded": 10,
+    "red": 15
+   }
+  }
+ ],
+ "critical_path_sample": {
+  "method": "per UTC day, random 12 same-repo + 8 fork green heads (seed 20261127); test invocation critical path from BuildBuddy",
+  "periods": {
+   "20\u201323 Nov": {
+    "n": 80,
+    "green": {
+     "n": 80,
+     "p50": 210.0,
+     "p90": 623.0
     },
-    {
-      "day": "2026-11-21",
-      "heads": 616,
-      "green": {
-        "n": 453,
-        "p50": 185.0,
-        "p90": 640.0
-      },
-      "red": {
-        "n": 27,
-        "p50": 211.0,
-        "p90": 838.0
-      },
-      "outcomes": {
-        "green": 453,
-        "superseded": 133,
-        "red": 27,
-        "cancelled": 2,
-        "pending": 1
-      }
+    "last": {
+     "bazel-ci / Test & Build": 77,
+     "Build artifacts + imports check": 2,
+     "Pre-commit checks": 1
     },
-    {
-      "day": "2026-11-22",
-      "heads": 733,
+    "categories": {
+     "agentplane_system_other": {
+      "n": 5,
       "green": {
-        "n": 526,
-        "p50": 193.0,
-        "p90": 503.0
+       "n": 5,
+       "p50": 531.0,
+       "p90": 662.0
       },
-      "red": {
-        "n": 74,
-        "p50": 227.0,
-        "p90": 522.0
-      },
-      "outcomes": {
-        "green": 526,
-        "superseded": 131,
-        "red": 74,
-        "cancelled": 2
-      }
-    },
-    {
-      "day": "2026-11-23",
-      "heads": 604,
+      "cp_p50": 348.06
+     },
+     "test_vm": {
+      "n": 4,
       "green": {
-        "n": 453,
-        "p50": 244.0,
-        "p90": 575.0
+       "n": 4,
+       "p50": 573.0,
+       "p90": 892.0
       },
-      "red": {
-        "n": 59,
-        "p50": 421.0,
-        "p90": 709.0
-      },
-      "outcomes": {
-        "green": 453,
-        "superseded": 92,
-        "red": 59
-      }
-    },
-    {
-      "day": "2026-11-24",
-      "heads": 496,
+      "cp_p50": 465.89
+     },
+     "other_test": {
+      "n": 14,
       "green": {
-        "n": 302,
-        "p50": 398.0,
-        "p90": 770.0
+       "n": 14,
+       "p50": 197.0,
+       "p90": 274.0
       },
-      "red": {
-        "n": 63,
-        "p50": 470.0,
-        "p90": 896.0
-      },
-      "outcomes": {
-        "superseded": 122,
-        "green": 302,
-        "red": 63,
-        "cancelled": 7,
-        "pending": 2
-      }
-    },
-    {
-      "day": "2026-11-25",
-      "heads": 312,
+      "cp_p50": 36.77
+     },
+     "no_test_invocation": {
+      "n": 8,
       "green": {
-        "n": 196,
-        "p50": 421.0,
-        "p90": 846.0
+       "n": 8,
+       "p50": 128.0,
+       "p90": 157.0
       },
-      "red": {
-        "n": 42,
-        "p50": 488.0,
-        "p90": 912.0
-      },
-      "outcomes": {
-        "red": 42,
-        "green": 196,
-        "superseded": 69,
-        "cancelled": 4,
-        "pending": 1
-      }
-    },
-    {
-      "day": "2026-11-26",
-      "heads": 577,
+      "cp_p50": null
+     },
+     "test_firecracker": {
+      "n": 7,
       "green": {
-        "n": 416,
-        "p50": 268.0,
-        "p90": 809.0
+       "n": 7,
+       "p50": 658.0,
+       "p90": 949.0
       },
-      "red": {
-        "n": 88,
-        "p50": 285.0,
-        "p90": 594.0
-      },
-      "outcomes": {
-        "superseded": 68,
-        "green": 416,
-        "red": 88,
-        "cancelled": 5
-      }
-    },
-    {
-      "day": "2026-11-27",
-      "heads": 134,
+      "cp_p50": 442.9
+     },
+     "other_build": {
+      "n": 22,
       "green": {
-        "n": 109,
-        "p50": 359.0,
-        "p90": 933.0
+       "n": 22,
+       "p50": 165.0,
+       "p90": 260.0
       },
-      "red": {
-        "n": 15,
-        "p50": 417.0,
-        "p90": 1137.0
+      "cp_p50": 16.73
+     },
+     "lean": {
+      "n": 6,
+      "green": {
+       "n": 6,
+       "p50": 171.0,
+       "p90": 366.0
       },
-      "outcomes": {
-        "green": 109,
-        "superseded": 10,
-        "red": 15
-      }
+      "cp_p50": 0.22
+     },
+     "debundle_other_test": {
+      "n": 13,
+      "green": {
+       "n": 13,
+       "p50": 407.0,
+       "p90": 485.0
+      },
+      "cp_p50": 246.24
+     },
+     "rust": {
+      "n": 1,
+      "green": {
+       "n": 1,
+       "p50": 127.0,
+       "p90": 127.0
+      },
+      "cp_p50": 14.13
+     }
     }
-  ],
-  "critical_path_sample": {
-    "method": "per UTC day, random 12 same-repo + 8 fork green heads (seed 20261127); test invocation critical path from BuildBuddy",
-    "periods": {
-      "20\u201323 Nov": {
-        "n": 80,
-        "green": {
-          "n": 80,
-          "p50": 210.0,
-          "p90": 623.0
-        },
-        "last": {
-          "bazel-ci / Test & Build": 77,
-          "Build artifacts + imports check": 2,
-          "Pre-commit checks": 1
-        },
-        "categories": {
-          "agentplane_system_other": {
-            "n": 5,
-            "green": {
-              "n": 5,
-              "p50": 531.0,
-              "p90": 662.0
-            },
-            "cp_p50": 348.06
-          },
-          "test_vm": {
-            "n": 4,
-            "green": {
-              "n": 4,
-              "p50": 573.0,
-              "p90": 892.0
-            },
-            "cp_p50": 465.89
-          },
-          "other_test": {
-            "n": 14,
-            "green": {
-              "n": 14,
-              "p50": 197.0,
-              "p90": 274.0
-            },
-            "cp_p50": 36.77
-          },
-          "no_test_invocation": {
-            "n": 8,
-            "green": {
-              "n": 8,
-              "p50": 128.0,
-              "p90": 157.0
-            },
-            "cp_p50": null
-          },
-          "test_firecracker": {
-            "n": 7,
-            "green": {
-              "n": 7,
-              "p50": 658.0,
-              "p90": 949.0
-            },
-            "cp_p50": 442.9
-          },
-          "other_build": {
-            "n": 22,
-            "green": {
-              "n": 22,
-              "p50": 165.0,
-              "p90": 260.0
-            },
-            "cp_p50": 16.73
-          },
-          "lean": {
-            "n": 6,
-            "green": {
-              "n": 6,
-              "p50": 171.0,
-              "p90": 366.0
-            },
-            "cp_p50": 0.22
-          },
-          "debundle_other_test": {
-            "n": 13,
-            "green": {
-              "n": 13,
-              "p50": 407.0,
-              "p90": 485.0
-            },
-            "cp_p50": 246.24
-          },
-          "rust": {
-            "n": 1,
-            "green": {
-              "n": 1,
-              "p50": 127.0,
-              "p90": 127.0
-            },
-            "cp_p50": 14.13
-          }
-        }
-      },
-      "24\u201327 Nov": {
-        "n": 80,
-        "green": {
-          "n": 80,
-          "p50": 288.0,
-          "p90": 793.0
-        },
-        "last": {
-          "bazel-ci / Test & Build": 71,
-          "Pre-commit checks": 6,
-          "Build artifacts + imports check": 3
-        },
-        "categories": {
-          "rust": {
-            "n": 14,
-            "green": {
-              "n": 14,
-              "p50": 236.0,
-              "p90": 407.0
-            },
-            "cp_p50": 136.16
-          },
-          "debundle_integration_test": {
-            "n": 6,
-            "green": {
-              "n": 6,
-              "p50": 738.0,
-              "p90": 1350.0
-            },
-            "cp_p50": 260.11
-          },
-          "no_test_invocation": {
-            "n": 10,
-            "green": {
-              "n": 10,
-              "p50": 102.0,
-              "p90": 207.0
-            },
-            "cp_p50": null
-          },
-          "debundle_other_test": {
-            "n": 10,
-            "green": {
-              "n": 10,
-              "p50": 289.0,
-              "p90": 427.0
-            },
-            "cp_p50": 152.07
-          },
-          "other_build": {
-            "n": 3,
-            "green": {
-              "n": 3,
-              "p50": 106.0,
-              "p90": 185.0
-            },
-            "cp_p50": 2.1
-          },
-          "other_test": {
-            "n": 8,
-            "green": {
-              "n": 8,
-              "p50": 307.0,
-              "p90": 637.0
-            },
-            "cp_p50": 171.08
-          },
-          "lean": {
-            "n": 15,
-            "green": {
-              "n": 15,
-              "p50": 309.0,
-              "p90": 983.0
-            },
-            "cp_p50": 142.19
-          },
-          "agentplane_system_other": {
-            "n": 7,
-            "green": {
-              "n": 7,
-              "p50": 454.0,
-              "p90": 733.0
-            },
-            "cp_p50": 360.18
-          },
-          "test_vm": {
-            "n": 4,
-            "green": {
-              "n": 4,
-              "p50": 704.0,
-              "p90": 1731.0
-            },
-            "cp_p50": 529.84
-          },
-          "test_firecracker": {
-            "n": 3,
-            "green": {
-              "n": 3,
-              "p50": 995.0,
-              "p90": 15925.0
-            },
-            "cp_p50": 627.24
-          }
-        }
-      }
+   },
+   "24\u201327 Nov": {
+    "n": 80,
+    "green": {
+     "n": 80,
+     "p50": 288.0,
+     "p90": 793.0
     },
-    "rows": [
-      {
-        "sha": "16cd47e0602ca9225e375f1be22e7d4489561919",
-        "o": "fork",
-        "d": "2026-11-20",
-        "green": 531.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 348.06,
-        "cat": "agentplane_system_other",
-        "inv": "79fe66b5-4563-58b1-ae1e-f1b51e176c31",
-        "job": "136472575427"
-      },
-      {
-        "sha": "d56a1f98b6791ee1c0c9619e67a533b82cc97943",
-        "o": "fork",
-        "d": "2026-11-20",
-        "green": 892.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 742.66,
-        "cat": "test_vm",
-        "inv": "ff6cd9fb-057a-5608-ae81-d62fdd8a1588",
-        "job": "136189677049"
-      },
-      {
-        "sha": "8d5f519d77b26caaa4d5de24f9e0a4f68dc517cd",
-        "o": "fork",
-        "d": "2026-11-20",
-        "green": 218.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 62.75,
-        "cat": "other_test",
-        "inv": "accd8f46-e5db-51e1-9320-37c52b1998c0",
-        "job": "136063956658"
-      },
-      {
-        "sha": "8ed775b029b3083d54359d6671f0379081f85721",
-        "o": "fork",
-        "d": "2026-11-20",
-        "green": 135.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "136202612953"
-      },
-      {
-        "sha": "300645f747378316b9b5c9eb27a283d6472fb2dc",
-        "o": "fork",
-        "d": "2026-11-20",
-        "green": 157.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "136483840076"
-      },
-      {
-        "sha": "1a067c69d0714a047dc3cab88bf40bc31aac2e94",
-        "o": "fork",
-        "d": "2026-11-20",
-        "green": 623.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 442.9,
-        "cat": "test_firecracker",
-        "inv": "90acdf78-a513-51a4-849b-c372e415ab79",
-        "job": "136279341083"
-      },
-      {
-        "sha": "b9eea0d0fda0d5412380158b7b00b5dd229f2a51",
-        "o": "fork",
-        "d": "2026-11-20",
-        "green": 581.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 392.05,
-        "cat": "agentplane_system_other",
-        "inv": "6404d917-78f1-5260-ac9e-afba41f2271a",
-        "job": "136414284769"
-      },
-      {
-        "sha": "83740e9505c349e439d4d09f768bbcc573089d7f",
-        "o": "fork",
-        "d": "2026-11-20",
-        "green": 718.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 522.0,
-        "cat": "test_firecracker",
-        "inv": "bd6b883a-04fd-569d-a6ce-bfcbbd970ddc",
-        "job": "136431586983"
-      },
-      {
-        "sha": "71330fb7f742772af00584d604f8d0130fd590ba",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 593.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 433.91,
-        "cat": "test_firecracker",
-        "inv": "7125131b-4e17-5c1c-ae1d-594ca9bb3b79",
-        "job": "136538872749"
-      },
-      {
-        "sha": "8001b72254e6be62fe31da09ab54d607437c700e",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 93.0,
-        "last": "Build artifacts + imports check",
-        "cp": 0.14,
-        "cat": "other_build",
-        "inv": "d2c265d7-3eec-5717-bcf7-a78d5c497a04",
-        "job": "136051291507"
-      },
-      {
-        "sha": "246471a888e01b46f5a2c156ce8285fe4cdbe417",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 392.0,
-        "last": "Pre-commit checks",
-        "cp": 0.74,
-        "cat": "other_build",
-        "inv": "cb67f57d-e5aa-5506-871a-6fad6f92e715",
-        "job": "136123852912"
-      },
-      {
-        "sha": "4f7ccb41ee72ec2eec04414b6ecbec03d681501c",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 187.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 82.72,
-        "cat": "other_test",
-        "inv": "404fe7cd-fad9-5d6f-a57b-05af356d8a44",
-        "job": "136482002143"
-      },
-      {
-        "sha": "ee8a16953d289095b6a6c9b8f36d00218183c576",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 149.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 1.23,
-        "cat": "other_build",
-        "inv": "a2a8a5ab-4420-54e2-aa8b-8e64f0431342",
-        "job": "136181759375"
-      },
-      {
-        "sha": "0e15a997196ee337fc5b538b70135a2e3006fbc5",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 198.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 2.51,
-        "cat": "other_test",
-        "inv": "f292b9bb-a561-5ddb-8edd-b3609b148cd9",
-        "job": "136139731790"
-      },
-      {
-        "sha": "50b625ddcf1662f1eb61bd621a161e941aae7967",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 260.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 1.1,
-        "cat": "other_build",
-        "inv": "7ee3427e-0c5d-567c-a232-a87b0dbb08b3",
-        "job": "136139746043"
-      },
-      {
-        "sha": "63c33e5242a468abd57c7a403879224b6ac5db59",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 207.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 2.01,
-        "cat": "other_build",
-        "inv": "cf925ec3-65e1-5a87-9a8f-b2d0946a526e",
-        "job": "136123989547"
-      },
-      {
-        "sha": "10a662894ad8fbe1e89fe13caccd888c89a36448",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 142.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "136641323631"
-      },
-      {
-        "sha": "fad5e9fca66c0c59381450714479a623a89f91a6",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 193.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 38.01,
-        "cat": "lean",
-        "inv": "d86a91c0-e079-5853-86d1-e1b18e7c3d03",
-        "job": "136032505509"
-      },
-      {
-        "sha": "49c1e815b6a085d9c8df4133b0ac28983ead9667",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 662.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 493.56,
-        "cat": "agentplane_system_other",
-        "inv": "a88e8f1c-470f-5daf-96f4-a104f74f1188",
-        "job": "136535534622"
-      },
-      {
-        "sha": "0a9924fc322cec6850f0cd6765607545bb1581d5",
-        "o": "same_repo",
-        "d": "2026-11-20",
-        "green": 304.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 172.58,
-        "cat": "debundle_other_test",
-        "inv": "a375ca58-1820-55aa-8582-c3ccded612c4",
-        "job": "136232020835"
-      },
-      {
-        "sha": "05a3f66f1b4f3bad2e153b1554b66b20e3e03174",
-        "o": "fork",
-        "d": "2026-11-21",
-        "green": 148.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 0.22,
-        "cat": "lean",
-        "inv": "6e2277d7-7f3b-5c2f-89a2-97cf75db7d70",
-        "job": "136900571776"
-      },
-      {
-        "sha": "9aeb3508d54b2ca35f69767579b27c24a7acf897",
-        "o": "fork",
-        "d": "2026-11-21",
-        "green": 458.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 306.1,
-        "cat": "debundle_other_test",
-        "inv": "9e987ef7-398e-585f-96e4-0708c33ee2fc",
-        "job": "136900116908"
-      },
-      {
-        "sha": "9ea31e2e6c7b090dd1895d148f41d636aa30b417",
-        "o": "fork",
-        "d": "2026-11-21",
-        "green": 460.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 324.54,
-        "cat": "debundle_other_test",
-        "inv": "dd5cdc2c-a723-5c17-ab2d-9a382c099326",
-        "job": "136911617179"
-      },
-      {
-        "sha": "b8c05627f0e337db76d70de513edb91288042e1e",
-        "o": "fork",
-        "d": "2026-11-21",
-        "green": 307.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 165.27,
-        "cat": "debundle_other_test",
-        "inv": "a822db02-50c3-5ae4-820d-c156537acf12",
-        "job": "137028066966"
-      },
-      {
-        "sha": "a540ee17b9cec80b358b2769003f7e15e08f0472",
-        "o": "fork",
-        "d": "2026-11-21",
-        "green": 171.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 0.14,
-        "cat": "lean",
-        "inv": "c625648e-a1f2-5adc-8924-17009d1a444a",
-        "job": "136900813959"
-      },
-      {
-        "sha": "3c4a27a6d7906c6e9338a76dda42bbe6797d3341",
-        "o": "fork",
-        "d": "2026-11-21",
-        "green": 171.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 80.96,
-        "cat": "lean",
-        "inv": "d8475d5c-7609-50df-aa37-ee75383e020b",
-        "job": "136902794262"
-      },
-      {
-        "sha": "9c2d6737d9aece245324bb58089daf3d183b80f0",
-        "o": "fork",
-        "d": "2026-11-21",
-        "green": 201.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 46.09,
-        "cat": "other_test",
-        "inv": "79bf1cc3-2203-5d7f-8333-41589145019c",
-        "job": "137028025049"
-      },
-      {
-        "sha": "f1035ef26d29fb26ebd6341bca5a76a0f5e97e50",
-        "o": "fork",
-        "d": "2026-11-21",
-        "green": 139.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 0.12,
-        "cat": "lean",
-        "inv": "d858e5f7-1565-538f-8e19-054ccbd8e23d",
-        "job": "136891356398"
-      },
-      {
-        "sha": "9f11792c7ce9fc44e55f2258539cc75778f8b2b0",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 288.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 63.02,
-        "cat": "other_build",
-        "inv": "0cce87ab-7f8f-5180-9429-bd3190a01b87",
-        "job": "136723126691"
-      },
-      {
-        "sha": "0aa79f81ca349122ee98e61115805344cf23668e",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 238.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 112.35,
-        "cat": "other_test",
-        "inv": "b7528090-98fe-58da-ab4a-07b117bf554c",
-        "job": "136729483239"
-      },
-      {
-        "sha": "90fa5652f6dfa3966e0588bc60b13689cc232687",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 658.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 396.35,
-        "cat": "test_firecracker",
-        "inv": "cd13b17b-235a-584f-a704-8d0f28a9e7d6",
-        "job": "136836298735"
-      },
-      {
-        "sha": "ef326fe363b004adbcb227689e74876a118120d3",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 127.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "136739039357"
-      },
-      {
-        "sha": "4a12537824f6f59ed51a5c919e7cde6ca6fa29c6",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 147.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 16.85,
-        "cat": "other_build",
-        "inv": "3b8378ef-d24e-54a5-a535-b83d52aa7fe7",
-        "job": "136740071554"
-      },
-      {
-        "sha": "9b90c2e4480553513f485e4ed2b7c4090c0744b0",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 138.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 7.67,
-        "cat": "other_test",
-        "inv": "44c186d7-1247-55d0-9a63-bf7c31bdfe6f",
-        "job": "136869936859"
-      },
-      {
-        "sha": "38238c818067c40d49051d7b9b50ef1dd8bec9bd",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 449.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 316.59,
-        "cat": "agentplane_system_other",
-        "inv": "fbe1e795-eeb0-5b89-9cad-b08c48fc5cac",
-        "job": "136769509417"
-      },
-      {
-        "sha": "790f4d5e464d58635014ceafdb3bc3975a1e49af",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 106.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 0.97,
-        "cat": "other_build",
-        "inv": "476df9bd-22a9-5e94-ad3d-1e3f7dd00a4c",
-        "job": "136841803423"
-      },
-      {
-        "sha": "4f14624db0dc1cc14c76d1d84307b8007167b69b",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 711.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 577.85,
-        "cat": "test_firecracker",
-        "inv": "272efec1-ef1b-56a4-bf71-0e9a2a156810",
-        "job": "136759798353"
-      },
-      {
-        "sha": "fb73c25eb37f837108b6189a9468c459d3d8c87a",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 122.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 2.79,
-        "cat": "other_build",
-        "inv": "059d582a-6d24-5abf-96c4-c87b9180ae45",
-        "job": "136852933162"
-      },
-      {
-        "sha": "35f79e2339e9c74fdb394fe7e686917ab241b88f",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 128.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "136881482003"
-      },
-      {
-        "sha": "55d2cbcc168192d51773083d0597ea30c8e2d3d9",
-        "o": "same_repo",
-        "d": "2026-11-21",
-        "green": 197.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 17.67,
-        "cat": "other_test",
-        "inv": "b35788ed-59b2-5f3f-b54d-8f6a7dace6a3",
-        "job": "136837537445"
-      },
-      {
-        "sha": "9f8bda98d9f6b4e32623b3d072e57797c2972e36",
-        "o": "fork",
-        "d": "2026-11-22",
-        "green": 135.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 13.19,
-        "cat": "other_build",
-        "inv": "0c62b7ae-0c7b-594c-995d-8137ba3c7d0e",
-        "job": "137213788154"
-      },
-      {
-        "sha": "c6c396d51f0c4f5b8bd1496413f09b368255d52e",
-        "o": "fork",
-        "d": "2026-11-22",
-        "green": 200.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 58.82,
-        "cat": "other_build",
-        "inv": "f895cfb4-3bbf-56cf-a553-993f30e5595a",
-        "job": "137063256900"
-      },
-      {
-        "sha": "33c6571059422ce6dcbb98039dfc0a47c438e280",
-        "o": "fork",
-        "d": "2026-11-22",
-        "green": 151.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 16.73,
-        "cat": "other_build",
-        "inv": "7bdd22d0-4556-5001-8fed-416b12ddef53",
-        "job": "137144809539"
-      },
-      {
-        "sha": "b305eb9fe9deb75fd9fbe47d69108661c566efd4",
-        "o": "fork",
-        "d": "2026-11-22",
-        "green": 122.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 0.15,
-        "cat": "other_build",
-        "inv": "82d34e8d-6c19-5706-abd5-e835fae068ac",
-        "job": "137145071274"
-      },
-      {
-        "sha": "f063531ee4e6dc2425db3d85460ca8f14d8dd38c",
-        "o": "fork",
-        "d": "2026-11-22",
-        "green": 210.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 53.65,
-        "cat": "other_build",
-        "inv": "133d14da-df95-5a64-a3af-b555600cef46",
-        "job": "137044821277"
-      },
-      {
-        "sha": "5c9913cb407ad1865ffd0aa6be40aadb623aa2cb",
-        "o": "fork",
-        "d": "2026-11-22",
-        "green": 154.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 23.54,
-        "cat": "other_build",
-        "inv": "1e711609-d69d-53bb-bc54-dcf969ca94cf",
-        "job": "137132354664"
-      },
-      {
-        "sha": "719d94994272cfdecc3f7812c0a97da68cd5d0b4",
-        "o": "fork",
-        "d": "2026-11-22",
-        "green": 187.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 40.3,
-        "cat": "other_build",
-        "inv": "70595040-93e7-5672-bfae-51f16ac71842",
-        "job": "137107497681"
-      },
-      {
-        "sha": "c63bc9c562ab41e20a45fcf95ccd2aca91fa4d08",
-        "o": "fork",
-        "d": "2026-11-22",
-        "green": 340.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 199.28,
-        "cat": "debundle_other_test",
-        "inv": "25b39448-6371-53d5-8f3e-c119789dec61",
-        "job": "137197161594"
-      },
-      {
-        "sha": "b8f653b0e91321c8dfbea78302e60621c4800b39",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 73.0,
-        "last": "Build artifacts + imports check",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "137194188990"
-      },
-      {
-        "sha": "2936c3185d470ddb1c069961479ae75078fa1ad3",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 106.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "137186207207"
-      },
-      {
-        "sha": "ef2786a3375c0b0800d0609335ea579ce930d884",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 165.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 51.79,
-        "cat": "other_build",
-        "inv": "c56fa2d7-e2cf-50cd-888f-3052f4edf568",
-        "job": "137168615324"
-      },
-      {
-        "sha": "fdebbaa2c449c044416166ae672a862ed05e69e0",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 676.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 558.21,
-        "cat": "test_vm",
-        "inv": "3dad2ead-3aab-5636-bed7-1ca48601bd44",
-        "job": "137039235480"
-      },
-      {
-        "sha": "f0ac4ea8f4102f8026f24aa7aee8ab7f3225d2f5",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 562.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 465.89,
-        "cat": "test_vm",
-        "inv": "6a64c3d9-7f0d-5b63-a02a-3bf449833872",
-        "job": "137123242904"
-      },
-      {
-        "sha": "61a8029f7ff65edd7740893f0f4b6858b1c9412c",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 274.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 166.45,
-        "cat": "other_test",
-        "inv": "b8590580-1740-564f-bfa5-e0eefd3cba0c",
-        "job": "137112813741"
-      },
-      {
-        "sha": "21998612434280a5b147025d75ea27c2d518171d",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 949.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 775.29,
-        "cat": "test_firecracker",
-        "inv": "b3e9a07c-d4aa-50a5-848d-058f6cb974a4",
-        "job": "137156986310"
-      },
-      {
-        "sha": "34140766236215fb348e01f4a4c7100b8016fe6e",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 581.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 435.47,
-        "cat": "test_firecracker",
-        "inv": "8bbfd894-6a29-5de1-9364-891e8b6e1263",
-        "job": "137101327299"
-      },
-      {
-        "sha": "76c8d915de74ce6e203326015cd5bac0dbec4ef2",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 168.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 49.34,
-        "cat": "other_build",
-        "inv": "127b0d43-296d-5a94-b082-87b85c2048e0",
-        "job": "137190996365"
-      },
-      {
-        "sha": "f0e8ea35d7a90e56576ff6bb6f71be68ebbf46cc",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 473.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 346.59,
-        "cat": "agentplane_system_other",
-        "inv": "e3a0e467-abd0-52ca-84e3-ad5a0234b258",
-        "job": "137051155185"
-      },
-      {
-        "sha": "1ac6a4c6382dcbadfbdb1189d95fccda4431ac34",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 156.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 50.1,
-        "cat": "other_build",
-        "inv": "d9949811-e24d-517d-a9b8-4e9559d30bcd",
-        "job": "137094942872"
-      },
-      {
-        "sha": "abfcf61f5a04a8325036cd457069e0137350b8f3",
-        "o": "same_repo",
-        "d": "2026-11-22",
-        "green": 330.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 198.17,
-        "cat": "other_test",
-        "inv": "3428f10d-ad7f-59bd-b980-fef855dd2630",
-        "job": "137183351161"
-      },
-      {
-        "sha": "61edf2eec5cb13b1be4ae40ece792691e065a845",
-        "o": "fork",
-        "d": "2026-11-23",
-        "green": 352.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 222.17,
-        "cat": "debundle_other_test",
-        "inv": "ef6b98c8-33ea-55bc-b654-8717815f3867",
-        "job": "137412126154"
-      },
-      {
-        "sha": "39679e82c6e6711327b9eab174f190c4ab5f8a57",
-        "o": "fork",
-        "d": "2026-11-23",
-        "green": 407.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 284.75,
-        "cat": "debundle_other_test",
-        "inv": "ac704a9e-0fa0-52c4-9356-b7337fd2142a",
-        "job": "137406469805"
-      },
-      {
-        "sha": "301ee0b0d914a9f087d3a681af7689108ba915b7",
-        "o": "fork",
-        "d": "2026-11-23",
-        "green": 421.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 246.24,
-        "cat": "debundle_other_test",
-        "inv": "08084e4e-e9c7-52d0-a2ea-c43a0a42dff7",
-        "job": "137576272158"
-      },
-      {
-        "sha": "0f82fd7fc67274c555cbdf367a2b50df38306ecf",
-        "o": "fork",
-        "d": "2026-11-23",
-        "green": 180.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 36.77,
-        "cat": "other_test",
-        "inv": "2579c8dc-2e98-59b0-958e-274d2c49d92f",
-        "job": "137406416906"
-      },
-      {
-        "sha": "184b712a945215ead6cb1a903c88a8214f737533",
-        "o": "fork",
-        "d": "2026-11-23",
-        "green": 485.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 389.49,
-        "cat": "debundle_other_test",
-        "inv": "b687a59e-27bc-5761-ab44-3a90237eedaa",
-        "job": "137571656032"
-      },
-      {
-        "sha": "949c219e372a027363c10f2d0e856e0c29296c64",
-        "o": "fork",
-        "d": "2026-11-23",
-        "green": 397.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 252.05,
-        "cat": "debundle_other_test",
-        "inv": "6b807b21-1312-5e5b-a4e4-a0c4b2eab04d",
-        "job": "137576538228"
-      },
-      {
-        "sha": "75f097908385f9a3943f949611f558b694fb4f1c",
-        "o": "fork",
-        "d": "2026-11-23",
-        "green": 346.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 220.99,
-        "cat": "debundle_other_test",
-        "inv": "bcdf1058-dc5b-565c-987f-a0ab60678360",
-        "job": "137559584951"
-      },
-      {
-        "sha": "8a2f2b6888246c48c20a116a6c041c28aef559d4",
-        "o": "fork",
-        "d": "2026-11-23",
-        "green": 244.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 47.38,
-        "cat": "other_build",
-        "inv": "8f8fe224-529f-5203-ac01-4b3172f70ae5",
-        "job": "137991647579"
-      },
-      {
-        "sha": "8c59cbe6f7c665f9ce8f1e67531f03a3a8ab7676",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 243.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 7.07,
-        "cat": "other_build",
-        "inv": "3d81fc77-f9a3-53c6-b5ba-9587e4e593a0",
-        "job": "137995758939"
-      },
-      {
-        "sha": "ba9d7a2df342f2135e37cb0656d9db53e8a7cf15",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 192.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 50.2,
-        "cat": "other_build",
-        "inv": "66f0a926-aaa5-5a61-bdcb-9280edd80672",
-        "job": "138051762148"
-      },
-      {
-        "sha": "6455ec997c20b12c23271d21a6e24f9f738537a4",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 366.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 122.32,
-        "cat": "lean",
-        "inv": "83dd8717-57ac-5103-b946-0fa4143691f1",
-        "job": "138071017097"
-      },
-      {
-        "sha": "61f9ae47bf05d3729fa1fb6b3df58c0685aea78a",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 573.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 450.22,
-        "cat": "test_vm",
-        "inv": "7a136985-d1fb-513d-a854-37812995a5a8",
-        "job": "137549154344"
-      },
-      {
-        "sha": "078307b368a896d077b57476e63904748e1cee3e",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 262.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 29.57,
-        "cat": "other_test",
-        "inv": "bb263ae4-ec6b-5d56-a238-936867c4038d",
-        "job": "138030904468"
-      },
-      {
-        "sha": "21adf478f32070b521635ff20cea32864ea9b1e5",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 155.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 67.34,
-        "cat": "other_test",
-        "inv": "c146b51c-5eb9-5d08-9051-6b367e5addfd",
-        "job": "137907036424"
-      },
-      {
-        "sha": "fd5bc88ee09baddf1743ddde6e79af3aafb811f0",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 1849.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 28.98,
-        "cat": "debundle_other_test",
-        "inv": "64a100b8-46b3-55ac-8fa4-e4f71aae1c78",
-        "job": "138110887362"
-      },
-      {
-        "sha": "8088765174008e53e118080868ab4dbdadb9dc83",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 154.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "137910732928"
-      },
-      {
-        "sha": "29cd9258cbed1e8b8d873062af74620fbf85a40a",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 127.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 14.13,
-        "cat": "rust",
-        "inv": "7e46acec-b9dd-51c9-81e6-92f28de260f2",
-        "job": "137555201130"
-      },
-      {
-        "sha": "ca8b00e3a3cd07fe6c4282f3fae6257a0214d644",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 409.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 298.74,
-        "cat": "debundle_other_test",
-        "inv": "c7c65a76-b59b-5672-9270-3894db87bee4",
-        "job": "138073818282"
-      },
-      {
-        "sha": "d6e37dd023d9a6f491120b3dd2d481af090b046b",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 186.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 9.97,
-        "cat": "other_test",
-        "inv": "6bcb5ebf-0fe7-51e0-a3dd-badac17d4edd",
-        "job": "138088952568"
-      },
-      {
-        "sha": "d49f42aa4b4392fb5d1c9ed687f067b534f419e9",
-        "o": "same_repo",
-        "d": "2026-11-23",
-        "green": 166.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 15.36,
-        "cat": "other_test",
-        "inv": "06a5f82d-3f12-55d0-b30b-a4c4c15eb68a",
-        "job": "138062971868"
-      },
-      {
-        "sha": "e0cbd0e9616e4626cf4c92596982239f9a671fe2",
-        "o": "fork",
-        "d": "2026-11-24",
-        "green": 284.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 170.49,
-        "cat": "rust",
-        "inv": "398d8374-9380-5664-a560-711df6b36aaa",
-        "job": "138684560707"
-      },
-      {
-        "sha": "8e70c27d90408bcf8b562040bc86f10e6fa80f6d",
-        "o": "fork",
-        "d": "2026-11-24",
-        "green": 365.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 260.11,
-        "cat": "debundle_integration_test",
-        "inv": "a21c0b18-562c-51b8-9c39-3dbdf3bc7934",
-        "job": "138298230489"
-      },
-      {
-        "sha": "542e34e1d8d3690834a8fb52b00de5bd7278f2bd",
-        "o": "fork",
-        "d": "2026-11-24",
-        "green": 102.0,
-        "last": "Pre-commit checks",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "138741844391"
-      },
-      {
-        "sha": "d24707f41e74e1a09a7d539811f4d38009c066b9",
-        "o": "fork",
-        "d": "2026-11-24",
-        "green": 331.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 211.5,
-        "cat": "debundle_other_test",
-        "inv": "d3d5be26-b614-5fcb-b47b-8f386f7521ff",
-        "job": "138220962543"
-      },
-      {
-        "sha": "6bf01bdd1e9762dd5d6b34ca5084acac8335a3c0",
-        "o": "fork",
-        "d": "2026-11-24",
-        "green": 207.0,
-        "last": "Pre-commit checks",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "138306346849"
-      },
-      {
-        "sha": "774d2741cf2d5d11e1dd0cfa10998113ba575eef",
-        "o": "fork",
-        "d": "2026-11-24",
-        "green": 663.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 529.93,
-        "cat": "rust",
-        "inv": "59dca188-89a6-5ba9-944d-56a7f89f9b72",
-        "job": "138851845767"
-      },
-      {
-        "sha": "3c25b436bc45d850f1e9774308e1969faae2c717",
-        "o": "fork",
-        "d": "2026-11-24",
-        "green": 106.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 0.39,
-        "cat": "other_build",
-        "inv": "5d066d79-079a-5caf-b550-2614349b7279",
-        "job": "138673991805"
-      },
-      {
-        "sha": "9988f816bced1d1901f2d4a2135b1b75c25d100c",
-        "o": "fork",
-        "d": "2026-11-24",
-        "green": 274.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 163.33,
-        "cat": "rust",
-        "inv": "9a05f543-34f7-5421-82c9-c72af6fbcddf",
-        "job": "138308709424"
-      },
-      {
-        "sha": "108d7d6bbe1a02ae5ddccc0ee7c58deeda94dde7",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 342.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 248.54,
-        "cat": "debundle_other_test",
-        "inv": "9be1a62a-b35f-57d5-bb8c-bd52f985487f",
-        "job": "138180291568"
-      },
-      {
-        "sha": "f9b2464b5ba1d674ee180dbf3d70cd38cd1c560f",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 738.0,
-        "last": "Pre-commit checks",
-        "cp": 355.42,
-        "cat": "debundle_integration_test",
-        "inv": "d62ce85b-f2a3-5511-a11f-6cd6d7a46b3f",
-        "job": "138804044384"
-      },
-      {
-        "sha": "7997f592df65b4cfbb29ee0e11d6bb09ed8302ca",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 815.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 221.33,
-        "cat": "debundle_integration_test",
-        "inv": "47fed88c-c3ec-571f-a4a9-3f0689fe2baa",
-        "job": "138804261520"
-      },
-      {
-        "sha": "f32a415bef720cd8d3fd84ab4a54da1326664214",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 363.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 276.91,
-        "cat": "other_test",
-        "inv": "bfce34cc-8663-59e6-8273-c4feef473f18",
-        "job": "138158890366"
-      },
-      {
-        "sha": "1f0cc7d211603c3facb48b68278a9d7d6e519933",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 86.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "138169918555"
-      },
-      {
-        "sha": "50dec9cc20f848e0f65a40c66c8f77ea7af420ca",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 409.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 313.43,
-        "cat": "lean",
-        "inv": "2b397065-af4a-5cf3-9aab-4c546695bff2",
-        "job": "138152163683"
-      },
-      {
-        "sha": "14a362441914935cc4a7d4464615abf468f91f61",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 637.0,
-        "last": "Pre-commit checks",
-        "cp": 48.61,
-        "cat": "other_test",
-        "inv": "5a95b39c-daa1-5c07-920b-801c2b5d435e",
-        "job": "138117744895"
-      },
-      {
-        "sha": "e4307cbde29c9dd8117b3267974bdb887c0687be",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 193.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 97.05,
-        "cat": "debundle_integration_test",
-        "inv": "54b1833b-d524-5f04-b6a8-730ae038e859",
-        "job": "138170528519"
-      },
-      {
-        "sha": "5be5dc72e8d115077e9eb0d8548c843e71aa5b43",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 236.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 141.4,
-        "cat": "rust",
-        "inv": "fa91e92b-651d-5462-b1e9-a49817da3f2c",
-        "job": "138738181456"
-      },
-      {
-        "sha": "e992f77cb73bac0660b037b927cb9261d50b6f8a",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 723.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "138803905987"
-      },
-      {
-        "sha": "743f0261dd6508206acdf7ce1881832e64ff68ff",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 793.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 365.82,
-        "cat": "debundle_integration_test",
-        "inv": "1369b0e0-e82b-5afc-a4d6-1102754bde1e",
-        "job": "138804043080"
-      },
-      {
-        "sha": "b58c6aa4155e057c8494828c318b5fd3739d658a",
-        "o": "same_repo",
-        "d": "2026-11-24",
-        "green": 490.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 152.07,
-        "cat": "debundle_other_test",
-        "inv": "00a8f5f4-2895-53a6-9be0-0a230577d0cd",
-        "job": "138792777290"
-      },
-      {
-        "sha": "6e8dc61e53830ebcb0570a94d087bd7eeb07a49a",
-        "o": "fork",
-        "d": "2026-11-25",
-        "green": 1350.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 1112.57,
-        "cat": "debundle_integration_test",
-        "inv": "23a37146-d5fb-52d6-984b-42206427cacd",
-        "job": "139434458364"
-      },
-      {
-        "sha": "167809d3642228700cbe413b1d64896c24403014",
-        "o": "fork",
-        "d": "2026-11-25",
-        "green": 125.0,
-        "last": "Pre-commit checks",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "139125849860"
-      },
-      {
-        "sha": "c1460b5c3cbea268be899136452c14bf6d260004",
-        "o": "fork",
-        "d": "2026-11-25",
-        "green": 983.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 812.2,
-        "cat": "lean",
-        "inv": "0b112497-a7bd-5308-9298-9ef92d824459",
-        "job": "138930412100"
-      },
-      {
-        "sha": "167a4eef6eb162f6f9295c78ddeb76d637fccb1f",
-        "o": "fork",
-        "d": "2026-11-25",
-        "green": 831.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 617.81,
-        "cat": "lean",
-        "inv": "cd4e3b3b-432a-5a04-9641-39e7dbe4ce3c",
-        "job": "138976163456"
-      },
-      {
-        "sha": "663803051cc94b5ed4013fc02a48efe662c8288a",
-        "o": "fork",
-        "d": "2026-11-25",
-        "green": 223.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 107.93,
-        "cat": "other_test",
-        "inv": "5efb7fec-8058-544f-aeeb-4cadb0bdaf0d",
-        "job": "138913826720"
-      },
-      {
-        "sha": "60d8d4097e6e746d25177320a94af479a4ef1f7f",
-        "o": "fork",
-        "d": "2026-11-25",
-        "green": 123.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "139086645973"
-      },
-      {
-        "sha": "eb781581016c93556cd726de908e785ac5bf0b12",
-        "o": "fork",
-        "d": "2026-11-25",
-        "green": 185.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 69.74,
-        "cat": "other_build",
-        "inv": "ccc99566-8fe6-5b5d-845f-1db125818070",
-        "job": "139528628832"
-      },
-      {
-        "sha": "3e686e661874e9a475d6d891b85921e9094a85fd",
-        "o": "fork",
-        "d": "2026-11-25",
-        "green": 255.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 142.19,
-        "cat": "lean",
-        "inv": "fbc40acf-3f32-5b85-85de-00665cf6489c",
-        "job": "139544227473"
-      },
-      {
-        "sha": "5e50bd4e9f4a75cdcdbeeda48005a531d7cdb1cf",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 92.0,
-        "last": "Build artifacts + imports check",
-        "cp": 2.1,
-        "cat": "other_build",
-        "inv": "41ebd2f0-02a9-5b4f-a76e-3e1c189cff28",
-        "job": "138953993646"
-      },
-      {
-        "sha": "f807840ec8a31042da99da62e9f9224ea1a23b59",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 454.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 360.18,
-        "cat": "agentplane_system_other",
-        "inv": "ed17dee5-4469-5121-a85a-7f841a280845",
-        "job": "138894771715"
-      },
-      {
-        "sha": "54f74584192c4453ca8c044296854e6dc826c510",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 197.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 100.38,
-        "cat": "debundle_other_test",
-        "inv": "ce2ff8bd-6dff-57f0-89f5-b2fd48ba3d7c",
-        "job": "138954965642"
-      },
-      {
-        "sha": "233f894abcab69d8976d5f6cb09a9fa751aabf0d",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 288.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 171.08,
-        "cat": "other_test",
-        "inv": "c2c1b3e5-2bd8-52e3-a7a8-73403f0ec19f",
-        "job": "138949992057"
-      },
-      {
-        "sha": "941fc9ecbf042e758894a65373d3dafcf4fc3abf",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 1344.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 1175.58,
-        "cat": "lean",
-        "inv": "a7c0d849-7b7d-56e2-9ff6-18eaea4ea587",
-        "job": "138910964788"
-      },
-      {
-        "sha": "e90b34a441582b4543f6303336248477622e9204",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 105.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "139038017383"
-      },
-      {
-        "sha": "674a459770ded929d21292e390e2bd383f0bf79d",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 106.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 3.78,
-        "cat": "lean",
-        "inv": "42cae15c-be0a-5c83-8ee3-f59bf64d23dd",
-        "job": "138950810086"
-      },
-      {
-        "sha": "974242e71116086a6f0460f8b75965754982c408",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 733.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 621.78,
-        "cat": "agentplane_system_other",
-        "inv": "5bc4a388-14fb-5cbe-ada4-0c5c265ba2c0",
-        "job": "138930243502"
-      },
-      {
-        "sha": "b1dacfea1fc1e34b27df92413c56805c2b28675b",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 537.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 412.93,
-        "cat": "agentplane_system_other",
-        "inv": "7dcf0171-90c8-5bb4-b271-f1026a02cea9",
-        "job": "139077606625"
-      },
-      {
-        "sha": "0469fe726b2941e5f091081c26579e3ec9decf8b",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 339.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 227.31,
-        "cat": "debundle_other_test",
-        "inv": "f515a843-95a7-5859-b51a-5e89dc644369",
-        "job": "138886202096"
-      },
-      {
-        "sha": "62101a78f470e12c3f381624e6208c3c57d1cc09",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 127.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 42.64,
-        "cat": "agentplane_system_other",
-        "inv": "e468e1e7-976a-5748-8fdc-26b7bdef8e78",
-        "job": "138952496469"
-      },
-      {
-        "sha": "2448ebb029944bec39bc9dc44c0c240a3b1f8571",
-        "o": "same_repo",
-        "d": "2026-11-25",
-        "green": 419.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 326.39,
-        "cat": "lean",
-        "inv": "3364b552-9dbf-5cd9-aefc-48fb10873b23",
-        "job": "138956816561"
-      },
-      {
-        "sha": "2dc5f9762c86cd1224236c991360300d82a1c3a8",
-        "o": "fork",
-        "d": "2026-11-26",
-        "green": 90.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "140190857578"
-      },
-      {
-        "sha": "76b6e4b64e5612296fe25daf4c760df28d612cf4",
-        "o": "fork",
-        "d": "2026-11-26",
-        "green": 704.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 596.77,
-        "cat": "test_vm",
-        "inv": "4917784b-b927-510e-97e0-58e6f71ad151",
-        "job": "139670269944"
-      },
-      {
-        "sha": "e13fed66b6580d0ef5667d3118ca7a1dc8da16c7",
-        "o": "fork",
-        "d": "2026-11-26",
-        "green": 178.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 79.93,
-        "cat": "other_test",
-        "inv": "a5b0a216-9bc7-5260-a40b-19c36162c233",
-        "job": "139704264252"
-      },
-      {
-        "sha": "ff0ddb3a28b880a154564ae20be738a4bb528d55",
-        "o": "fork",
-        "d": "2026-11-26",
-        "green": 106.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 1.35,
-        "cat": "lean",
-        "inv": "3679bd98-df48-5b94-8154-709324d0b67d",
-        "job": "140159822501"
-      },
-      {
-        "sha": "8f4ecd9a343e45f32ff333bdad673aac66bad750",
-        "o": "fork",
-        "d": "2026-11-26",
-        "green": 107.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 2.36,
-        "cat": "lean",
-        "inv": "eaa0c543-299f-555c-9a85-c2a35335b865",
-        "job": "140098688009"
-      },
-      {
-        "sha": "2802c0b2728bcab306d533e04d0d74ca861e1e2e",
-        "o": "fork",
-        "d": "2026-11-26",
-        "green": 732.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 529.84,
-        "cat": "test_vm",
-        "inv": "536ced99-94cf-5e90-ac71-c5a5b205422a",
-        "job": "139648833595"
-      },
-      {
-        "sha": "b1ef46e393700b67a4d8eff3c034748cfe57afaf",
-        "o": "fork",
-        "d": "2026-11-26",
-        "green": 229.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 121.22,
-        "cat": "rust",
-        "inv": "e6f0ab48-fc5e-5392-b5f8-3cbda9d4f9a3",
-        "job": "140228059054"
-      },
-      {
-        "sha": "a50b459de089b3414394008e6b9453a83f6e25de",
-        "o": "fork",
-        "d": "2026-11-26",
-        "green": 427.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 271.85,
-        "cat": "debundle_other_test",
-        "inv": "2c788b44-539d-5e04-9ac2-09ba23969c15",
-        "job": "140112989278"
-      },
-      {
-        "sha": "74baf052b3b2c47482f1adf8751b8788821682ac",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 327.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 221.67,
-        "cat": "other_test",
-        "inv": "4fc146a5-077b-5db0-9672-3fd632711546",
-        "job": "139773285130"
-      },
-      {
-        "sha": "6ba58f003a8d82208de363a3d6bc4989b5b07c0b",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 88.0,
-        "last": "Build artifacts + imports check",
-        "cp": 4.27,
-        "cat": "lean",
-        "inv": "d8faf466-5b60-55ba-85ef-6d16f0d801aa",
-        "job": "139762590674"
-      },
-      {
-        "sha": "8635bbfe0f1a93a927943acc7264a37c53370b9c",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 351.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 255.2,
-        "cat": "agentplane_system_other",
-        "inv": "1a0f5219-2e5d-5013-adf0-a53bc4f35685",
-        "job": "139908833355"
-      },
-      {
-        "sha": "c50fd451e189a38901decdcccbfa8287e8a80e5d",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 245.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 130.01,
-        "cat": "rust",
-        "inv": "b8b805ea-11ab-594c-93e7-8b3cecfa7e0c",
-        "job": "139874635847"
-      },
-      {
-        "sha": "823415d02708b09efcbf963d3e764345b7a4b302",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 637.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 524.24,
-        "cat": "test_vm",
-        "inv": "2d200774-d682-52ad-a84c-29853d35e629",
-        "job": "140110874996"
-      },
-      {
-        "sha": "c9c4dc6b74bb45b41f94ee2818d15a8e4f9ba9ae",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 257.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 136.16,
-        "cat": "rust",
-        "inv": "d62ad188-d808-525c-af9d-1cf3dd8ef74c",
-        "job": "139874106159"
-      },
-      {
-        "sha": "af1919a3318d99147b4d865dab473ff70e7049a2",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 225.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 114.56,
-        "cat": "rust",
-        "inv": "3e192763-b43a-5f38-a9c0-62cd23bac1d7",
-        "job": "139885369685"
-      },
-      {
-        "sha": "69982b6076a43ad120b2506e73009c7882263f81",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 207.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 97.63,
-        "cat": "debundle_other_test",
-        "inv": "82c74fec-bd60-5db0-b2ce-2d831a05d5a8",
-        "job": "139951485400"
-      },
-      {
-        "sha": "4c71128714ab46390529949176ced47fde8c3ce1",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 205.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 98.91,
-        "cat": "rust",
-        "inv": "6dfac675-6d18-5384-ae00-41f4e228bbe7",
-        "job": "140213182602"
-      },
-      {
-        "sha": "b48dbc31039103a9de88b98cde4ffb5f813be8b3",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 247.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 140.99,
-        "cat": "rust",
-        "inv": "649df1f7-2a9b-59d9-8345-6ffa83b53f4d",
-        "job": "139838122771"
-      },
-      {
-        "sha": "5ea10c61862db316fc3c185bbc61a6e1cabc0512",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 780.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 576.24,
-        "cat": "test_firecracker",
-        "inv": "3eb9adc1-0f2d-53ac-b92f-fc8ea2029e06",
-        "job": "139823973260"
-      },
-      {
-        "sha": "2518bf355dce5f939c5fb2f4d2dfb5706315c416",
-        "o": "same_repo",
-        "d": "2026-11-26",
-        "green": 87.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "139805456184"
-      },
-      {
-        "sha": "0e24f8972f54a399e9514f5b8c6cfb845a696465",
-        "o": "fork",
-        "d": "2026-11-27",
-        "green": 400.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 281.0,
-        "cat": "lean",
-        "inv": "07b697db-a298-5046-b933-43b751b25766",
-        "job": "140303977415"
-      },
-      {
-        "sha": "ce6eda899f500c70f833db39a1a5e173d155c560",
-        "o": "fork",
-        "d": "2026-11-27",
-        "green": 309.0,
-        "last": "Pre-commit checks",
-        "cp": 1.97,
-        "cat": "lean",
-        "inv": "1a535c0e-9e2e-50a5-8621-fab4e23fad33",
-        "job": "140312984839"
-      },
-      {
-        "sha": "837ce1d4613c03589b4ec535449f6681fc5e7a14",
-        "o": "fork",
-        "d": "2026-11-27",
-        "green": 172.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 72.37,
-        "cat": "rust",
-        "inv": "8c8a45c8-48a6-52d5-ac3e-4f8a8102a7a0",
-        "job": "140232672183"
-      },
-      {
-        "sha": "e8820c6224c8cbefa9af87d8c3b0a3cbc889a62c",
-        "o": "fork",
-        "d": "2026-11-27",
-        "green": 200.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 111.41,
-        "cat": "lean",
-        "inv": "349c5d98-b984-5f24-9510-8a32a33a7600",
-        "job": "140297067606"
-      },
-      {
-        "sha": "4a55f4c7091062e4e88256fc679686b809b1d0da",
-        "o": "fork",
-        "d": "2026-11-27",
-        "green": 233.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 132.84,
-        "cat": "lean",
-        "inv": "d6a9cc72-e08d-5456-89f0-ca42cd8096e8",
-        "job": "140312542996"
-      },
-      {
-        "sha": "87c457a37947f55ec33111017b8641c9c3eab58b",
-        "o": "fork",
-        "d": "2026-11-27",
-        "green": 222.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 103.21,
-        "cat": "debundle_other_test",
-        "inv": "8f8888c8-ca1e-51ad-8ae3-0854d4aed0f9",
-        "job": "140309810170"
-      },
-      {
-        "sha": "dece96f73b68695a41c7d91bc2cd17ee56e923e5",
-        "o": "fork",
-        "d": "2026-11-27",
-        "green": 260.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 136.33,
-        "cat": "debundle_other_test",
-        "inv": "29d7c3ef-d05a-5996-ba24-947e41cdc4b4",
-        "job": "140233431725"
-      },
-      {
-        "sha": "642f75613642912e6eb477503139213a2d9613d2",
-        "o": "fork",
-        "d": "2026-11-27",
-        "green": 289.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 168.63,
-        "cat": "debundle_other_test",
-        "inv": "4c879db1-e0a6-5345-ae66-c3ae6aa6e45f",
-        "job": "140307496133"
-      },
-      {
-        "sha": "47ab62f2467a856bf458b02ee03ff05c459242f9",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 461.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 368.59,
-        "cat": "agentplane_system_other",
-        "inv": "e406dc5c-2d79-5ece-a701-64cf2f68d633",
-        "job": "140244871275"
-      },
-      {
-        "sha": "3f7e0ea0b089c793ad2e82f713b502338291ef8b",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 995.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 890.94,
-        "cat": "test_firecracker",
-        "inv": "6b5b9dbd-270d-5143-862d-81087940e328",
-        "job": "140248145326"
-      },
-      {
-        "sha": "ab208ae24a714e4892293047d81e7cfe4757aa0d",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 380.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 280.56,
-        "cat": "agentplane_system_other",
-        "inv": "8c09c2bd-5978-52b2-b3d3-6aa577051fda",
-        "job": "140244742440"
-      },
-      {
-        "sha": "9d1b14497d76f7807a7c0d7726baf7c34e7b0e9e",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 15925.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 627.24,
-        "cat": "test_firecracker",
-        "inv": "d387b6c3-924e-5995-a325-bf1e30b72316",
-        "job": "140328251913"
-      },
-      {
-        "sha": "0e3689e80d15a983f6226ac3310b228bb200b62f",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 98.0,
-        "last": "Build artifacts + imports check",
-        "cp": null,
-        "cat": "no_test_invocation",
-        "inv": null,
-        "job": "140311783274"
-      },
-      {
-        "sha": "f003e7f61344e05b0c5c6af75df586a2d65830a3",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 307.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 223.74,
-        "cat": "other_test",
-        "inv": "64b3b51d-a801-5ac3-b469-20eb60f550e7",
-        "job": "140251294015"
-      },
-      {
-        "sha": "252f06aab025bad0d64b8d2bc2ce50ff5f02fe1d",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 407.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 314.84,
-        "cat": "rust",
-        "inv": "b67f9f5b-9cf2-5f62-a778-a16577f09253",
-        "job": "140231382884"
-      },
-      {
-        "sha": "be36d50c257d416e35b97b8cba8f226c0ad41e5a",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 236.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 147.5,
-        "cat": "rust",
-        "inv": "ec6819fa-f7fc-5f78-8756-40d7df54ee9a",
-        "job": "140230587985"
-      },
-      {
-        "sha": "0db9b633c79022d8ac07cdfc87a48a420cd83596",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 403.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 309.49,
-        "cat": "other_test",
-        "inv": "50f67f50-9600-5b4b-b4f9-6745dbe3c7b4",
-        "job": "140251465494"
-      },
-      {
-        "sha": "a610b162fdf9a36b7ef61428546bdebe2a430287",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 170.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 96.18,
-        "cat": "rust",
-        "inv": "1573b5fe-cce4-5fa4-b6f7-177f36cc9817",
-        "job": "140229823609"
-      },
-      {
-        "sha": "e85c060f04eafd30271e6a540796ecc7e87095c8",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 410.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 298.65,
-        "cat": "lean",
-        "inv": "5a9b09c8-0ab8-5590-aea9-bcf65a7afc7f",
-        "job": "140316770449"
-      },
-      {
-        "sha": "c74b04819a4af3463186fb6110b8cc121a649b7a",
-        "o": "same_repo",
-        "d": "2026-11-27",
-        "green": 1731.0,
-        "last": "bazel-ci / Test & Build",
-        "cp": 1642.15,
-        "cat": "test_vm",
-        "inv": "fd819f26-f403-55bd-9c6c-b41f85a2f7c3",
-        "job": "140238480012"
-      }
+    "last": {
+     "bazel-ci / Test & Build": 71,
+     "Pre-commit checks": 6,
+     "Build artifacts + imports check": 3
+    },
+    "categories": {
+     "rust": {
+      "n": 14,
+      "green": {
+       "n": 14,
+       "p50": 236.0,
+       "p90": 407.0
+      },
+      "cp_p50": 136.16
+     },
+     "debundle_integration_test": {
+      "n": 6,
+      "green": {
+       "n": 6,
+       "p50": 738.0,
+       "p90": 1350.0
+      },
+      "cp_p50": 260.11
+     },
+     "no_test_invocation": {
+      "n": 10,
+      "green": {
+       "n": 10,
+       "p50": 102.0,
+       "p90": 207.0
+      },
+      "cp_p50": null
+     },
+     "debundle_other_test": {
+      "n": 10,
+      "green": {
+       "n": 10,
+       "p50": 289.0,
+       "p90": 427.0
+      },
+      "cp_p50": 152.07
+     },
+     "other_build": {
+      "n": 3,
+      "green": {
+       "n": 3,
+       "p50": 106.0,
+       "p90": 185.0
+      },
+      "cp_p50": 2.1
+     },
+     "other_test": {
+      "n": 8,
+      "green": {
+       "n": 8,
+       "p50": 307.0,
+       "p90": 637.0
+      },
+      "cp_p50": 171.08
+     },
+     "lean": {
+      "n": 15,
+      "green": {
+       "n": 15,
+       "p50": 309.0,
+       "p90": 983.0
+      },
+      "cp_p50": 142.19
+     },
+     "agentplane_system_other": {
+      "n": 7,
+      "green": {
+       "n": 7,
+       "p50": 454.0,
+       "p90": 733.0
+      },
+      "cp_p50": 360.18
+     },
+     "test_vm": {
+      "n": 4,
+      "green": {
+       "n": 4,
+       "p50": 704.0,
+       "p90": 1731.0
+      },
+      "cp_p50": 529.84
+     },
+     "test_firecracker": {
+      "n": 3,
+      "green": {
+       "n": 3,
+       "p50": 995.0,
+       "p90": 15925.0
+      },
+      "cp_p50": 627.24
+     }
+    }
+   }
+  },
+  "rows": [
+   {
+    "sha": "16cd47e0602ca9225e375f1be22e7d4489561919",
+    "o": "fork",
+    "d": "2026-11-20",
+    "green": 531.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 348.06,
+    "cat": "agentplane_system_other",
+    "inv": "79fe66b5-4563-58b1-ae1e-f1b51e176c31",
+    "job": "136472575427"
+   },
+   {
+    "sha": "d56a1f98b6791ee1c0c9619e67a533b82cc97943",
+    "o": "fork",
+    "d": "2026-11-20",
+    "green": 892.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 742.66,
+    "cat": "test_vm",
+    "inv": "ff6cd9fb-057a-5608-ae81-d62fdd8a1588",
+    "job": "136189677049"
+   },
+   {
+    "sha": "8d5f519d77b26caaa4d5de24f9e0a4f68dc517cd",
+    "o": "fork",
+    "d": "2026-11-20",
+    "green": 218.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 62.75,
+    "cat": "other_test",
+    "inv": "accd8f46-e5db-51e1-9320-37c52b1998c0",
+    "job": "136063956658"
+   },
+   {
+    "sha": "8ed775b029b3083d54359d6671f0379081f85721",
+    "o": "fork",
+    "d": "2026-11-20",
+    "green": 135.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "136202612953"
+   },
+   {
+    "sha": "300645f747378316b9b5c9eb27a283d6472fb2dc",
+    "o": "fork",
+    "d": "2026-11-20",
+    "green": 157.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "136483840076"
+   },
+   {
+    "sha": "1a067c69d0714a047dc3cab88bf40bc31aac2e94",
+    "o": "fork",
+    "d": "2026-11-20",
+    "green": 623.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 442.9,
+    "cat": "test_firecracker",
+    "inv": "90acdf78-a513-51a4-849b-c372e415ab79",
+    "job": "136279341083"
+   },
+   {
+    "sha": "b9eea0d0fda0d5412380158b7b00b5dd229f2a51",
+    "o": "fork",
+    "d": "2026-11-20",
+    "green": 581.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 392.05,
+    "cat": "agentplane_system_other",
+    "inv": "6404d917-78f1-5260-ac9e-afba41f2271a",
+    "job": "136414284769"
+   },
+   {
+    "sha": "83740e9505c349e439d4d09f768bbcc573089d7f",
+    "o": "fork",
+    "d": "2026-11-20",
+    "green": 718.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 522.0,
+    "cat": "test_firecracker",
+    "inv": "bd6b883a-04fd-569d-a6ce-bfcbbd970ddc",
+    "job": "136431586983"
+   },
+   {
+    "sha": "71330fb7f742772af00584d604f8d0130fd590ba",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 593.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 433.91,
+    "cat": "test_firecracker",
+    "inv": "7125131b-4e17-5c1c-ae1d-594ca9bb3b79",
+    "job": "136538872749"
+   },
+   {
+    "sha": "8001b72254e6be62fe31da09ab54d607437c700e",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 93.0,
+    "last": "Build artifacts + imports check",
+    "cp": 0.14,
+    "cat": "other_build",
+    "inv": "d2c265d7-3eec-5717-bcf7-a78d5c497a04",
+    "job": "136051291507"
+   },
+   {
+    "sha": "246471a888e01b46f5a2c156ce8285fe4cdbe417",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 392.0,
+    "last": "Pre-commit checks",
+    "cp": 0.74,
+    "cat": "other_build",
+    "inv": "cb67f57d-e5aa-5506-871a-6fad6f92e715",
+    "job": "136123852912"
+   },
+   {
+    "sha": "4f7ccb41ee72ec2eec04414b6ecbec03d681501c",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 187.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 82.72,
+    "cat": "other_test",
+    "inv": "404fe7cd-fad9-5d6f-a57b-05af356d8a44",
+    "job": "136482002143"
+   },
+   {
+    "sha": "ee8a16953d289095b6a6c9b8f36d00218183c576",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 149.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 1.23,
+    "cat": "other_build",
+    "inv": "a2a8a5ab-4420-54e2-aa8b-8e64f0431342",
+    "job": "136181759375"
+   },
+   {
+    "sha": "0e15a997196ee337fc5b538b70135a2e3006fbc5",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 198.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 2.51,
+    "cat": "other_test",
+    "inv": "f292b9bb-a561-5ddb-8edd-b3609b148cd9",
+    "job": "136139731790"
+   },
+   {
+    "sha": "50b625ddcf1662f1eb61bd621a161e941aae7967",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 260.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 1.1,
+    "cat": "other_build",
+    "inv": "7ee3427e-0c5d-567c-a232-a87b0dbb08b3",
+    "job": "136139746043"
+   },
+   {
+    "sha": "63c33e5242a468abd57c7a403879224b6ac5db59",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 207.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 2.01,
+    "cat": "other_build",
+    "inv": "cf925ec3-65e1-5a87-9a8f-b2d0946a526e",
+    "job": "136123989547"
+   },
+   {
+    "sha": "10a662894ad8fbe1e89fe13caccd888c89a36448",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 142.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "136641323631"
+   },
+   {
+    "sha": "fad5e9fca66c0c59381450714479a623a89f91a6",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 193.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 38.01,
+    "cat": "lean",
+    "inv": "d86a91c0-e079-5853-86d1-e1b18e7c3d03",
+    "job": "136032505509"
+   },
+   {
+    "sha": "49c1e815b6a085d9c8df4133b0ac28983ead9667",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 662.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 493.56,
+    "cat": "agentplane_system_other",
+    "inv": "a88e8f1c-470f-5daf-96f4-a104f74f1188",
+    "job": "136535534622"
+   },
+   {
+    "sha": "0a9924fc322cec6850f0cd6765607545bb1581d5",
+    "o": "same_repo",
+    "d": "2026-11-20",
+    "green": 304.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 172.58,
+    "cat": "debundle_other_test",
+    "inv": "a375ca58-1820-55aa-8582-c3ccded612c4",
+    "job": "136232020835"
+   },
+   {
+    "sha": "05a3f66f1b4f3bad2e153b1554b66b20e3e03174",
+    "o": "fork",
+    "d": "2026-11-21",
+    "green": 148.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 0.22,
+    "cat": "lean",
+    "inv": "6e2277d7-7f3b-5c2f-89a2-97cf75db7d70",
+    "job": "136900571776"
+   },
+   {
+    "sha": "9aeb3508d54b2ca35f69767579b27c24a7acf897",
+    "o": "fork",
+    "d": "2026-11-21",
+    "green": 458.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 306.1,
+    "cat": "debundle_other_test",
+    "inv": "9e987ef7-398e-585f-96e4-0708c33ee2fc",
+    "job": "136900116908"
+   },
+   {
+    "sha": "9ea31e2e6c7b090dd1895d148f41d636aa30b417",
+    "o": "fork",
+    "d": "2026-11-21",
+    "green": 460.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 324.54,
+    "cat": "debundle_other_test",
+    "inv": "dd5cdc2c-a723-5c17-ab2d-9a382c099326",
+    "job": "136911617179"
+   },
+   {
+    "sha": "b8c05627f0e337db76d70de513edb91288042e1e",
+    "o": "fork",
+    "d": "2026-11-21",
+    "green": 307.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 165.27,
+    "cat": "debundle_other_test",
+    "inv": "a822db02-50c3-5ae4-820d-c156537acf12",
+    "job": "137028066966"
+   },
+   {
+    "sha": "a540ee17b9cec80b358b2769003f7e15e08f0472",
+    "o": "fork",
+    "d": "2026-11-21",
+    "green": 171.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 0.14,
+    "cat": "lean",
+    "inv": "c625648e-a1f2-5adc-8924-17009d1a444a",
+    "job": "136900813959"
+   },
+   {
+    "sha": "3c4a27a6d7906c6e9338a76dda42bbe6797d3341",
+    "o": "fork",
+    "d": "2026-11-21",
+    "green": 171.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 80.96,
+    "cat": "lean",
+    "inv": "d8475d5c-7609-50df-aa37-ee75383e020b",
+    "job": "136902794262"
+   },
+   {
+    "sha": "9c2d6737d9aece245324bb58089daf3d183b80f0",
+    "o": "fork",
+    "d": "2026-11-21",
+    "green": 201.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 46.09,
+    "cat": "other_test",
+    "inv": "79bf1cc3-2203-5d7f-8333-41589145019c",
+    "job": "137028025049"
+   },
+   {
+    "sha": "f1035ef26d29fb26ebd6341bca5a76a0f5e97e50",
+    "o": "fork",
+    "d": "2026-11-21",
+    "green": 139.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 0.12,
+    "cat": "lean",
+    "inv": "d858e5f7-1565-538f-8e19-054ccbd8e23d",
+    "job": "136891356398"
+   },
+   {
+    "sha": "9f11792c7ce9fc44e55f2258539cc75778f8b2b0",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 288.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 63.02,
+    "cat": "other_build",
+    "inv": "0cce87ab-7f8f-5180-9429-bd3190a01b87",
+    "job": "136723126691"
+   },
+   {
+    "sha": "0aa79f81ca349122ee98e61115805344cf23668e",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 238.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 112.35,
+    "cat": "other_test",
+    "inv": "b7528090-98fe-58da-ab4a-07b117bf554c",
+    "job": "136729483239"
+   },
+   {
+    "sha": "90fa5652f6dfa3966e0588bc60b13689cc232687",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 658.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 396.35,
+    "cat": "test_firecracker",
+    "inv": "cd13b17b-235a-584f-a704-8d0f28a9e7d6",
+    "job": "136836298735"
+   },
+   {
+    "sha": "ef326fe363b004adbcb227689e74876a118120d3",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 127.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "136739039357"
+   },
+   {
+    "sha": "4a12537824f6f59ed51a5c919e7cde6ca6fa29c6",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 147.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 16.85,
+    "cat": "other_build",
+    "inv": "3b8378ef-d24e-54a5-a535-b83d52aa7fe7",
+    "job": "136740071554"
+   },
+   {
+    "sha": "9b90c2e4480553513f485e4ed2b7c4090c0744b0",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 138.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 7.67,
+    "cat": "other_test",
+    "inv": "44c186d7-1247-55d0-9a63-bf7c31bdfe6f",
+    "job": "136869936859"
+   },
+   {
+    "sha": "38238c818067c40d49051d7b9b50ef1dd8bec9bd",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 449.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 316.59,
+    "cat": "agentplane_system_other",
+    "inv": "fbe1e795-eeb0-5b89-9cad-b08c48fc5cac",
+    "job": "136769509417"
+   },
+   {
+    "sha": "790f4d5e464d58635014ceafdb3bc3975a1e49af",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 106.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 0.97,
+    "cat": "other_build",
+    "inv": "476df9bd-22a9-5e94-ad3d-1e3f7dd00a4c",
+    "job": "136841803423"
+   },
+   {
+    "sha": "4f14624db0dc1cc14c76d1d84307b8007167b69b",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 711.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 577.85,
+    "cat": "test_firecracker",
+    "inv": "272efec1-ef1b-56a4-bf71-0e9a2a156810",
+    "job": "136759798353"
+   },
+   {
+    "sha": "fb73c25eb37f837108b6189a9468c459d3d8c87a",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 122.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 2.79,
+    "cat": "other_build",
+    "inv": "059d582a-6d24-5abf-96c4-c87b9180ae45",
+    "job": "136852933162"
+   },
+   {
+    "sha": "35f79e2339e9c74fdb394fe7e686917ab241b88f",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 128.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "136881482003"
+   },
+   {
+    "sha": "55d2cbcc168192d51773083d0597ea30c8e2d3d9",
+    "o": "same_repo",
+    "d": "2026-11-21",
+    "green": 197.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 17.67,
+    "cat": "other_test",
+    "inv": "b35788ed-59b2-5f3f-b54d-8f6a7dace6a3",
+    "job": "136837537445"
+   },
+   {
+    "sha": "9f8bda98d9f6b4e32623b3d072e57797c2972e36",
+    "o": "fork",
+    "d": "2026-11-22",
+    "green": 135.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 13.19,
+    "cat": "other_build",
+    "inv": "0c62b7ae-0c7b-594c-995d-8137ba3c7d0e",
+    "job": "137213788154"
+   },
+   {
+    "sha": "c6c396d51f0c4f5b8bd1496413f09b368255d52e",
+    "o": "fork",
+    "d": "2026-11-22",
+    "green": 200.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 58.82,
+    "cat": "other_build",
+    "inv": "f895cfb4-3bbf-56cf-a553-993f30e5595a",
+    "job": "137063256900"
+   },
+   {
+    "sha": "33c6571059422ce6dcbb98039dfc0a47c438e280",
+    "o": "fork",
+    "d": "2026-11-22",
+    "green": 151.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 16.73,
+    "cat": "other_build",
+    "inv": "7bdd22d0-4556-5001-8fed-416b12ddef53",
+    "job": "137144809539"
+   },
+   {
+    "sha": "b305eb9fe9deb75fd9fbe47d69108661c566efd4",
+    "o": "fork",
+    "d": "2026-11-22",
+    "green": 122.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 0.15,
+    "cat": "other_build",
+    "inv": "82d34e8d-6c19-5706-abd5-e835fae068ac",
+    "job": "137145071274"
+   },
+   {
+    "sha": "f063531ee4e6dc2425db3d85460ca8f14d8dd38c",
+    "o": "fork",
+    "d": "2026-11-22",
+    "green": 210.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 53.65,
+    "cat": "other_build",
+    "inv": "133d14da-df95-5a64-a3af-b555600cef46",
+    "job": "137044821277"
+   },
+   {
+    "sha": "5c9913cb407ad1865ffd0aa6be40aadb623aa2cb",
+    "o": "fork",
+    "d": "2026-11-22",
+    "green": 154.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 23.54,
+    "cat": "other_build",
+    "inv": "1e711609-d69d-53bb-bc54-dcf969ca94cf",
+    "job": "137132354664"
+   },
+   {
+    "sha": "719d94994272cfdecc3f7812c0a97da68cd5d0b4",
+    "o": "fork",
+    "d": "2026-11-22",
+    "green": 187.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 40.3,
+    "cat": "other_build",
+    "inv": "70595040-93e7-5672-bfae-51f16ac71842",
+    "job": "137107497681"
+   },
+   {
+    "sha": "c63bc9c562ab41e20a45fcf95ccd2aca91fa4d08",
+    "o": "fork",
+    "d": "2026-11-22",
+    "green": 340.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 199.28,
+    "cat": "debundle_other_test",
+    "inv": "25b39448-6371-53d5-8f3e-c119789dec61",
+    "job": "137197161594"
+   },
+   {
+    "sha": "b8f653b0e91321c8dfbea78302e60621c4800b39",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 73.0,
+    "last": "Build artifacts + imports check",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "137194188990"
+   },
+   {
+    "sha": "2936c3185d470ddb1c069961479ae75078fa1ad3",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 106.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "137186207207"
+   },
+   {
+    "sha": "ef2786a3375c0b0800d0609335ea579ce930d884",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 165.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 51.79,
+    "cat": "other_build",
+    "inv": "c56fa2d7-e2cf-50cd-888f-3052f4edf568",
+    "job": "137168615324"
+   },
+   {
+    "sha": "fdebbaa2c449c044416166ae672a862ed05e69e0",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 676.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 558.21,
+    "cat": "test_vm",
+    "inv": "3dad2ead-3aab-5636-bed7-1ca48601bd44",
+    "job": "137039235480"
+   },
+   {
+    "sha": "f0ac4ea8f4102f8026f24aa7aee8ab7f3225d2f5",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 562.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 465.89,
+    "cat": "test_vm",
+    "inv": "6a64c3d9-7f0d-5b63-a02a-3bf449833872",
+    "job": "137123242904"
+   },
+   {
+    "sha": "61a8029f7ff65edd7740893f0f4b6858b1c9412c",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 274.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 166.45,
+    "cat": "other_test",
+    "inv": "b8590580-1740-564f-bfa5-e0eefd3cba0c",
+    "job": "137112813741"
+   },
+   {
+    "sha": "21998612434280a5b147025d75ea27c2d518171d",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 949.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 775.29,
+    "cat": "test_firecracker",
+    "inv": "b3e9a07c-d4aa-50a5-848d-058f6cb974a4",
+    "job": "137156986310"
+   },
+   {
+    "sha": "34140766236215fb348e01f4a4c7100b8016fe6e",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 581.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 435.47,
+    "cat": "test_firecracker",
+    "inv": "8bbfd894-6a29-5de1-9364-891e8b6e1263",
+    "job": "137101327299"
+   },
+   {
+    "sha": "76c8d915de74ce6e203326015cd5bac0dbec4ef2",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 168.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 49.34,
+    "cat": "other_build",
+    "inv": "127b0d43-296d-5a94-b082-87b85c2048e0",
+    "job": "137190996365"
+   },
+   {
+    "sha": "f0e8ea35d7a90e56576ff6bb6f71be68ebbf46cc",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 473.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 346.59,
+    "cat": "agentplane_system_other",
+    "inv": "e3a0e467-abd0-52ca-84e3-ad5a0234b258",
+    "job": "137051155185"
+   },
+   {
+    "sha": "1ac6a4c6382dcbadfbdb1189d95fccda4431ac34",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 156.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 50.1,
+    "cat": "other_build",
+    "inv": "d9949811-e24d-517d-a9b8-4e9559d30bcd",
+    "job": "137094942872"
+   },
+   {
+    "sha": "abfcf61f5a04a8325036cd457069e0137350b8f3",
+    "o": "same_repo",
+    "d": "2026-11-22",
+    "green": 330.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 198.17,
+    "cat": "other_test",
+    "inv": "3428f10d-ad7f-59bd-b980-fef855dd2630",
+    "job": "137183351161"
+   },
+   {
+    "sha": "61edf2eec5cb13b1be4ae40ece792691e065a845",
+    "o": "fork",
+    "d": "2026-11-23",
+    "green": 352.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 222.17,
+    "cat": "debundle_other_test",
+    "inv": "ef6b98c8-33ea-55bc-b654-8717815f3867",
+    "job": "137412126154"
+   },
+   {
+    "sha": "39679e82c6e6711327b9eab174f190c4ab5f8a57",
+    "o": "fork",
+    "d": "2026-11-23",
+    "green": 407.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 284.75,
+    "cat": "debundle_other_test",
+    "inv": "ac704a9e-0fa0-52c4-9356-b7337fd2142a",
+    "job": "137406469805"
+   },
+   {
+    "sha": "301ee0b0d914a9f087d3a681af7689108ba915b7",
+    "o": "fork",
+    "d": "2026-11-23",
+    "green": 421.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 246.24,
+    "cat": "debundle_other_test",
+    "inv": "08084e4e-e9c7-52d0-a2ea-c43a0a42dff7",
+    "job": "137576272158"
+   },
+   {
+    "sha": "0f82fd7fc67274c555cbdf367a2b50df38306ecf",
+    "o": "fork",
+    "d": "2026-11-23",
+    "green": 180.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 36.77,
+    "cat": "other_test",
+    "inv": "2579c8dc-2e98-59b0-958e-274d2c49d92f",
+    "job": "137406416906"
+   },
+   {
+    "sha": "184b712a945215ead6cb1a903c88a8214f737533",
+    "o": "fork",
+    "d": "2026-11-23",
+    "green": 485.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 389.49,
+    "cat": "debundle_other_test",
+    "inv": "b687a59e-27bc-5761-ab44-3a90237eedaa",
+    "job": "137571656032"
+   },
+   {
+    "sha": "949c219e372a027363c10f2d0e856e0c29296c64",
+    "o": "fork",
+    "d": "2026-11-23",
+    "green": 397.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 252.05,
+    "cat": "debundle_other_test",
+    "inv": "6b807b21-1312-5e5b-a4e4-a0c4b2eab04d",
+    "job": "137576538228"
+   },
+   {
+    "sha": "75f097908385f9a3943f949611f558b694fb4f1c",
+    "o": "fork",
+    "d": "2026-11-23",
+    "green": 346.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 220.99,
+    "cat": "debundle_other_test",
+    "inv": "bcdf1058-dc5b-565c-987f-a0ab60678360",
+    "job": "137559584951"
+   },
+   {
+    "sha": "8a2f2b6888246c48c20a116a6c041c28aef559d4",
+    "o": "fork",
+    "d": "2026-11-23",
+    "green": 244.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 47.38,
+    "cat": "other_build",
+    "inv": "8f8fe224-529f-5203-ac01-4b3172f70ae5",
+    "job": "137991647579"
+   },
+   {
+    "sha": "8c59cbe6f7c665f9ce8f1e67531f03a3a8ab7676",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 243.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 7.07,
+    "cat": "other_build",
+    "inv": "3d81fc77-f9a3-53c6-b5ba-9587e4e593a0",
+    "job": "137995758939"
+   },
+   {
+    "sha": "ba9d7a2df342f2135e37cb0656d9db53e8a7cf15",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 192.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 50.2,
+    "cat": "other_build",
+    "inv": "66f0a926-aaa5-5a61-bdcb-9280edd80672",
+    "job": "138051762148"
+   },
+   {
+    "sha": "6455ec997c20b12c23271d21a6e24f9f738537a4",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 366.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 122.32,
+    "cat": "lean",
+    "inv": "83dd8717-57ac-5103-b946-0fa4143691f1",
+    "job": "138071017097"
+   },
+   {
+    "sha": "61f9ae47bf05d3729fa1fb6b3df58c0685aea78a",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 573.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 450.22,
+    "cat": "test_vm",
+    "inv": "7a136985-d1fb-513d-a854-37812995a5a8",
+    "job": "137549154344"
+   },
+   {
+    "sha": "078307b368a896d077b57476e63904748e1cee3e",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 262.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 29.57,
+    "cat": "other_test",
+    "inv": "bb263ae4-ec6b-5d56-a238-936867c4038d",
+    "job": "138030904468"
+   },
+   {
+    "sha": "21adf478f32070b521635ff20cea32864ea9b1e5",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 155.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 67.34,
+    "cat": "other_test",
+    "inv": "c146b51c-5eb9-5d08-9051-6b367e5addfd",
+    "job": "137907036424"
+   },
+   {
+    "sha": "fd5bc88ee09baddf1743ddde6e79af3aafb811f0",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 1849.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 28.98,
+    "cat": "debundle_other_test",
+    "inv": "64a100b8-46b3-55ac-8fa4-e4f71aae1c78",
+    "job": "138110887362"
+   },
+   {
+    "sha": "8088765174008e53e118080868ab4dbdadb9dc83",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 154.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "137910732928"
+   },
+   {
+    "sha": "29cd9258cbed1e8b8d873062af74620fbf85a40a",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 127.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 14.13,
+    "cat": "rust",
+    "inv": "7e46acec-b9dd-51c9-81e6-92f28de260f2",
+    "job": "137555201130"
+   },
+   {
+    "sha": "ca8b00e3a3cd07fe6c4282f3fae6257a0214d644",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 409.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 298.74,
+    "cat": "debundle_other_test",
+    "inv": "c7c65a76-b59b-5672-9270-3894db87bee4",
+    "job": "138073818282"
+   },
+   {
+    "sha": "d6e37dd023d9a6f491120b3dd2d481af090b046b",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 186.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 9.97,
+    "cat": "other_test",
+    "inv": "6bcb5ebf-0fe7-51e0-a3dd-badac17d4edd",
+    "job": "138088952568"
+   },
+   {
+    "sha": "d49f42aa4b4392fb5d1c9ed687f067b534f419e9",
+    "o": "same_repo",
+    "d": "2026-11-23",
+    "green": 166.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 15.36,
+    "cat": "other_test",
+    "inv": "06a5f82d-3f12-55d0-b30b-a4c4c15eb68a",
+    "job": "138062971868"
+   },
+   {
+    "sha": "e0cbd0e9616e4626cf4c92596982239f9a671fe2",
+    "o": "fork",
+    "d": "2026-11-24",
+    "green": 284.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 170.49,
+    "cat": "rust",
+    "inv": "398d8374-9380-5664-a560-711df6b36aaa",
+    "job": "138684560707"
+   },
+   {
+    "sha": "8e70c27d90408bcf8b562040bc86f10e6fa80f6d",
+    "o": "fork",
+    "d": "2026-11-24",
+    "green": 365.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 260.11,
+    "cat": "debundle_integration_test",
+    "inv": "a21c0b18-562c-51b8-9c39-3dbdf3bc7934",
+    "job": "138298230489"
+   },
+   {
+    "sha": "542e34e1d8d3690834a8fb52b00de5bd7278f2bd",
+    "o": "fork",
+    "d": "2026-11-24",
+    "green": 102.0,
+    "last": "Pre-commit checks",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "138741844391"
+   },
+   {
+    "sha": "d24707f41e74e1a09a7d539811f4d38009c066b9",
+    "o": "fork",
+    "d": "2026-11-24",
+    "green": 331.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 211.5,
+    "cat": "debundle_other_test",
+    "inv": "d3d5be26-b614-5fcb-b47b-8f386f7521ff",
+    "job": "138220962543"
+   },
+   {
+    "sha": "6bf01bdd1e9762dd5d6b34ca5084acac8335a3c0",
+    "o": "fork",
+    "d": "2026-11-24",
+    "green": 207.0,
+    "last": "Pre-commit checks",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "138306346849"
+   },
+   {
+    "sha": "774d2741cf2d5d11e1dd0cfa10998113ba575eef",
+    "o": "fork",
+    "d": "2026-11-24",
+    "green": 663.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 529.93,
+    "cat": "rust",
+    "inv": "59dca188-89a6-5ba9-944d-56a7f89f9b72",
+    "job": "138851845767"
+   },
+   {
+    "sha": "3c25b436bc45d850f1e9774308e1969faae2c717",
+    "o": "fork",
+    "d": "2026-11-24",
+    "green": 106.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 0.39,
+    "cat": "other_build",
+    "inv": "5d066d79-079a-5caf-b550-2614349b7279",
+    "job": "138673991805"
+   },
+   {
+    "sha": "9988f816bced1d1901f2d4a2135b1b75c25d100c",
+    "o": "fork",
+    "d": "2026-11-24",
+    "green": 274.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 163.33,
+    "cat": "rust",
+    "inv": "9a05f543-34f7-5421-82c9-c72af6fbcddf",
+    "job": "138308709424"
+   },
+   {
+    "sha": "108d7d6bbe1a02ae5ddccc0ee7c58deeda94dde7",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 342.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 248.54,
+    "cat": "debundle_other_test",
+    "inv": "9be1a62a-b35f-57d5-bb8c-bd52f985487f",
+    "job": "138180291568"
+   },
+   {
+    "sha": "f9b2464b5ba1d674ee180dbf3d70cd38cd1c560f",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 738.0,
+    "last": "Pre-commit checks",
+    "cp": 355.42,
+    "cat": "debundle_integration_test",
+    "inv": "d62ce85b-f2a3-5511-a11f-6cd6d7a46b3f",
+    "job": "138804044384"
+   },
+   {
+    "sha": "7997f592df65b4cfbb29ee0e11d6bb09ed8302ca",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 815.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 221.33,
+    "cat": "debundle_integration_test",
+    "inv": "47fed88c-c3ec-571f-a4a9-3f0689fe2baa",
+    "job": "138804261520"
+   },
+   {
+    "sha": "f32a415bef720cd8d3fd84ab4a54da1326664214",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 363.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 276.91,
+    "cat": "other_test",
+    "inv": "bfce34cc-8663-59e6-8273-c4feef473f18",
+    "job": "138158890366"
+   },
+   {
+    "sha": "1f0cc7d211603c3facb48b68278a9d7d6e519933",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 86.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "138169918555"
+   },
+   {
+    "sha": "50dec9cc20f848e0f65a40c66c8f77ea7af420ca",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 409.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 313.43,
+    "cat": "lean",
+    "inv": "2b397065-af4a-5cf3-9aab-4c546695bff2",
+    "job": "138152163683"
+   },
+   {
+    "sha": "14a362441914935cc4a7d4464615abf468f91f61",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 637.0,
+    "last": "Pre-commit checks",
+    "cp": 48.61,
+    "cat": "other_test",
+    "inv": "5a95b39c-daa1-5c07-920b-801c2b5d435e",
+    "job": "138117744895"
+   },
+   {
+    "sha": "e4307cbde29c9dd8117b3267974bdb887c0687be",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 193.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 97.05,
+    "cat": "debundle_integration_test",
+    "inv": "54b1833b-d524-5f04-b6a8-730ae038e859",
+    "job": "138170528519"
+   },
+   {
+    "sha": "5be5dc72e8d115077e9eb0d8548c843e71aa5b43",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 236.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 141.4,
+    "cat": "rust",
+    "inv": "fa91e92b-651d-5462-b1e9-a49817da3f2c",
+    "job": "138738181456"
+   },
+   {
+    "sha": "e992f77cb73bac0660b037b927cb9261d50b6f8a",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 723.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "138803905987"
+   },
+   {
+    "sha": "743f0261dd6508206acdf7ce1881832e64ff68ff",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 793.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 365.82,
+    "cat": "debundle_integration_test",
+    "inv": "1369b0e0-e82b-5afc-a4d6-1102754bde1e",
+    "job": "138804043080"
+   },
+   {
+    "sha": "b58c6aa4155e057c8494828c318b5fd3739d658a",
+    "o": "same_repo",
+    "d": "2026-11-24",
+    "green": 490.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 152.07,
+    "cat": "debundle_other_test",
+    "inv": "00a8f5f4-2895-53a6-9be0-0a230577d0cd",
+    "job": "138792777290"
+   },
+   {
+    "sha": "6e8dc61e53830ebcb0570a94d087bd7eeb07a49a",
+    "o": "fork",
+    "d": "2026-11-25",
+    "green": 1350.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 1112.57,
+    "cat": "debundle_integration_test",
+    "inv": "23a37146-d5fb-52d6-984b-42206427cacd",
+    "job": "139434458364"
+   },
+   {
+    "sha": "167809d3642228700cbe413b1d64896c24403014",
+    "o": "fork",
+    "d": "2026-11-25",
+    "green": 125.0,
+    "last": "Pre-commit checks",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "139125849860"
+   },
+   {
+    "sha": "c1460b5c3cbea268be899136452c14bf6d260004",
+    "o": "fork",
+    "d": "2026-11-25",
+    "green": 983.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 812.2,
+    "cat": "lean",
+    "inv": "0b112497-a7bd-5308-9298-9ef92d824459",
+    "job": "138930412100"
+   },
+   {
+    "sha": "167a4eef6eb162f6f9295c78ddeb76d637fccb1f",
+    "o": "fork",
+    "d": "2026-11-25",
+    "green": 831.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 617.81,
+    "cat": "lean",
+    "inv": "cd4e3b3b-432a-5a04-9641-39e7dbe4ce3c",
+    "job": "138976163456"
+   },
+   {
+    "sha": "663803051cc94b5ed4013fc02a48efe662c8288a",
+    "o": "fork",
+    "d": "2026-11-25",
+    "green": 223.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 107.93,
+    "cat": "other_test",
+    "inv": "5efb7fec-8058-544f-aeeb-4cadb0bdaf0d",
+    "job": "138913826720"
+   },
+   {
+    "sha": "60d8d4097e6e746d25177320a94af479a4ef1f7f",
+    "o": "fork",
+    "d": "2026-11-25",
+    "green": 123.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "139086645973"
+   },
+   {
+    "sha": "eb781581016c93556cd726de908e785ac5bf0b12",
+    "o": "fork",
+    "d": "2026-11-25",
+    "green": 185.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 69.74,
+    "cat": "other_build",
+    "inv": "ccc99566-8fe6-5b5d-845f-1db125818070",
+    "job": "139528628832"
+   },
+   {
+    "sha": "3e686e661874e9a475d6d891b85921e9094a85fd",
+    "o": "fork",
+    "d": "2026-11-25",
+    "green": 255.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 142.19,
+    "cat": "lean",
+    "inv": "fbc40acf-3f32-5b85-85de-00665cf6489c",
+    "job": "139544227473"
+   },
+   {
+    "sha": "5e50bd4e9f4a75cdcdbeeda48005a531d7cdb1cf",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 92.0,
+    "last": "Build artifacts + imports check",
+    "cp": 2.1,
+    "cat": "other_build",
+    "inv": "41ebd2f0-02a9-5b4f-a76e-3e1c189cff28",
+    "job": "138953993646"
+   },
+   {
+    "sha": "f807840ec8a31042da99da62e9f9224ea1a23b59",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 454.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 360.18,
+    "cat": "agentplane_system_other",
+    "inv": "ed17dee5-4469-5121-a85a-7f841a280845",
+    "job": "138894771715"
+   },
+   {
+    "sha": "54f74584192c4453ca8c044296854e6dc826c510",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 197.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 100.38,
+    "cat": "debundle_other_test",
+    "inv": "ce2ff8bd-6dff-57f0-89f5-b2fd48ba3d7c",
+    "job": "138954965642"
+   },
+   {
+    "sha": "233f894abcab69d8976d5f6cb09a9fa751aabf0d",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 288.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 171.08,
+    "cat": "other_test",
+    "inv": "c2c1b3e5-2bd8-52e3-a7a8-73403f0ec19f",
+    "job": "138949992057"
+   },
+   {
+    "sha": "941fc9ecbf042e758894a65373d3dafcf4fc3abf",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 1344.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 1175.58,
+    "cat": "lean",
+    "inv": "a7c0d849-7b7d-56e2-9ff6-18eaea4ea587",
+    "job": "138910964788"
+   },
+   {
+    "sha": "e90b34a441582b4543f6303336248477622e9204",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 105.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "139038017383"
+   },
+   {
+    "sha": "674a459770ded929d21292e390e2bd383f0bf79d",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 106.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 3.78,
+    "cat": "lean",
+    "inv": "42cae15c-be0a-5c83-8ee3-f59bf64d23dd",
+    "job": "138950810086"
+   },
+   {
+    "sha": "974242e71116086a6f0460f8b75965754982c408",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 733.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 621.78,
+    "cat": "agentplane_system_other",
+    "inv": "5bc4a388-14fb-5cbe-ada4-0c5c265ba2c0",
+    "job": "138930243502"
+   },
+   {
+    "sha": "b1dacfea1fc1e34b27df92413c56805c2b28675b",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 537.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 412.93,
+    "cat": "agentplane_system_other",
+    "inv": "7dcf0171-90c8-5bb4-b271-f1026a02cea9",
+    "job": "139077606625"
+   },
+   {
+    "sha": "0469fe726b2941e5f091081c26579e3ec9decf8b",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 339.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 227.31,
+    "cat": "debundle_other_test",
+    "inv": "f515a843-95a7-5859-b51a-5e89dc644369",
+    "job": "138886202096"
+   },
+   {
+    "sha": "62101a78f470e12c3f381624e6208c3c57d1cc09",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 127.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 42.64,
+    "cat": "agentplane_system_other",
+    "inv": "e468e1e7-976a-5748-8fdc-26b7bdef8e78",
+    "job": "138952496469"
+   },
+   {
+    "sha": "2448ebb029944bec39bc9dc44c0c240a3b1f8571",
+    "o": "same_repo",
+    "d": "2026-11-25",
+    "green": 419.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 326.39,
+    "cat": "lean",
+    "inv": "3364b552-9dbf-5cd9-aefc-48fb10873b23",
+    "job": "138956816561"
+   },
+   {
+    "sha": "2dc5f9762c86cd1224236c991360300d82a1c3a8",
+    "o": "fork",
+    "d": "2026-11-26",
+    "green": 90.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "140190857578"
+   },
+   {
+    "sha": "76b6e4b64e5612296fe25daf4c760df28d612cf4",
+    "o": "fork",
+    "d": "2026-11-26",
+    "green": 704.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 596.77,
+    "cat": "test_vm",
+    "inv": "4917784b-b927-510e-97e0-58e6f71ad151",
+    "job": "139670269944"
+   },
+   {
+    "sha": "e13fed66b6580d0ef5667d3118ca7a1dc8da16c7",
+    "o": "fork",
+    "d": "2026-11-26",
+    "green": 178.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 79.93,
+    "cat": "other_test",
+    "inv": "a5b0a216-9bc7-5260-a40b-19c36162c233",
+    "job": "139704264252"
+   },
+   {
+    "sha": "ff0ddb3a28b880a154564ae20be738a4bb528d55",
+    "o": "fork",
+    "d": "2026-11-26",
+    "green": 106.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 1.35,
+    "cat": "lean",
+    "inv": "3679bd98-df48-5b94-8154-709324d0b67d",
+    "job": "140159822501"
+   },
+   {
+    "sha": "8f4ecd9a343e45f32ff333bdad673aac66bad750",
+    "o": "fork",
+    "d": "2026-11-26",
+    "green": 107.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 2.36,
+    "cat": "lean",
+    "inv": "eaa0c543-299f-555c-9a85-c2a35335b865",
+    "job": "140098688009"
+   },
+   {
+    "sha": "2802c0b2728bcab306d533e04d0d74ca861e1e2e",
+    "o": "fork",
+    "d": "2026-11-26",
+    "green": 732.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 529.84,
+    "cat": "test_vm",
+    "inv": "536ced99-94cf-5e90-ac71-c5a5b205422a",
+    "job": "139648833595"
+   },
+   {
+    "sha": "b1ef46e393700b67a4d8eff3c034748cfe57afaf",
+    "o": "fork",
+    "d": "2026-11-26",
+    "green": 229.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 121.22,
+    "cat": "rust",
+    "inv": "e6f0ab48-fc5e-5392-b5f8-3cbda9d4f9a3",
+    "job": "140228059054"
+   },
+   {
+    "sha": "a50b459de089b3414394008e6b9453a83f6e25de",
+    "o": "fork",
+    "d": "2026-11-26",
+    "green": 427.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 271.85,
+    "cat": "debundle_other_test",
+    "inv": "2c788b44-539d-5e04-9ac2-09ba23969c15",
+    "job": "140112989278"
+   },
+   {
+    "sha": "74baf052b3b2c47482f1adf8751b8788821682ac",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 327.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 221.67,
+    "cat": "other_test",
+    "inv": "4fc146a5-077b-5db0-9672-3fd632711546",
+    "job": "139773285130"
+   },
+   {
+    "sha": "6ba58f003a8d82208de363a3d6bc4989b5b07c0b",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 88.0,
+    "last": "Build artifacts + imports check",
+    "cp": 4.27,
+    "cat": "lean",
+    "inv": "d8faf466-5b60-55ba-85ef-6d16f0d801aa",
+    "job": "139762590674"
+   },
+   {
+    "sha": "8635bbfe0f1a93a927943acc7264a37c53370b9c",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 351.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 255.2,
+    "cat": "agentplane_system_other",
+    "inv": "1a0f5219-2e5d-5013-adf0-a53bc4f35685",
+    "job": "139908833355"
+   },
+   {
+    "sha": "c50fd451e189a38901decdcccbfa8287e8a80e5d",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 245.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 130.01,
+    "cat": "rust",
+    "inv": "b8b805ea-11ab-594c-93e7-8b3cecfa7e0c",
+    "job": "139874635847"
+   },
+   {
+    "sha": "823415d02708b09efcbf963d3e764345b7a4b302",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 637.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 524.24,
+    "cat": "test_vm",
+    "inv": "2d200774-d682-52ad-a84c-29853d35e629",
+    "job": "140110874996"
+   },
+   {
+    "sha": "c9c4dc6b74bb45b41f94ee2818d15a8e4f9ba9ae",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 257.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 136.16,
+    "cat": "rust",
+    "inv": "d62ad188-d808-525c-af9d-1cf3dd8ef74c",
+    "job": "139874106159"
+   },
+   {
+    "sha": "af1919a3318d99147b4d865dab473ff70e7049a2",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 225.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 114.56,
+    "cat": "rust",
+    "inv": "3e192763-b43a-5f38-a9c0-62cd23bac1d7",
+    "job": "139885369685"
+   },
+   {
+    "sha": "69982b6076a43ad120b2506e73009c7882263f81",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 207.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 97.63,
+    "cat": "debundle_other_test",
+    "inv": "82c74fec-bd60-5db0-b2ce-2d831a05d5a8",
+    "job": "139951485400"
+   },
+   {
+    "sha": "4c71128714ab46390529949176ced47fde8c3ce1",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 205.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 98.91,
+    "cat": "rust",
+    "inv": "6dfac675-6d18-5384-ae00-41f4e228bbe7",
+    "job": "140213182602"
+   },
+   {
+    "sha": "b48dbc31039103a9de88b98cde4ffb5f813be8b3",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 247.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 140.99,
+    "cat": "rust",
+    "inv": "649df1f7-2a9b-59d9-8345-6ffa83b53f4d",
+    "job": "139838122771"
+   },
+   {
+    "sha": "5ea10c61862db316fc3c185bbc61a6e1cabc0512",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 780.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 576.24,
+    "cat": "test_firecracker",
+    "inv": "3eb9adc1-0f2d-53ac-b92f-fc8ea2029e06",
+    "job": "139823973260"
+   },
+   {
+    "sha": "2518bf355dce5f939c5fb2f4d2dfb5706315c416",
+    "o": "same_repo",
+    "d": "2026-11-26",
+    "green": 87.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "139805456184"
+   },
+   {
+    "sha": "0e24f8972f54a399e9514f5b8c6cfb845a696465",
+    "o": "fork",
+    "d": "2026-11-27",
+    "green": 400.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 281.0,
+    "cat": "lean",
+    "inv": "07b697db-a298-5046-b933-43b751b25766",
+    "job": "140303977415"
+   },
+   {
+    "sha": "ce6eda899f500c70f833db39a1a5e173d155c560",
+    "o": "fork",
+    "d": "2026-11-27",
+    "green": 309.0,
+    "last": "Pre-commit checks",
+    "cp": 1.97,
+    "cat": "lean",
+    "inv": "1a535c0e-9e2e-50a5-8621-fab4e23fad33",
+    "job": "140312984839"
+   },
+   {
+    "sha": "837ce1d4613c03589b4ec535449f6681fc5e7a14",
+    "o": "fork",
+    "d": "2026-11-27",
+    "green": 172.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 72.37,
+    "cat": "rust",
+    "inv": "8c8a45c8-48a6-52d5-ac3e-4f8a8102a7a0",
+    "job": "140232672183"
+   },
+   {
+    "sha": "e8820c6224c8cbefa9af87d8c3b0a3cbc889a62c",
+    "o": "fork",
+    "d": "2026-11-27",
+    "green": 200.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 111.41,
+    "cat": "lean",
+    "inv": "349c5d98-b984-5f24-9510-8a32a33a7600",
+    "job": "140297067606"
+   },
+   {
+    "sha": "4a55f4c7091062e4e88256fc679686b809b1d0da",
+    "o": "fork",
+    "d": "2026-11-27",
+    "green": 233.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 132.84,
+    "cat": "lean",
+    "inv": "d6a9cc72-e08d-5456-89f0-ca42cd8096e8",
+    "job": "140312542996"
+   },
+   {
+    "sha": "87c457a37947f55ec33111017b8641c9c3eab58b",
+    "o": "fork",
+    "d": "2026-11-27",
+    "green": 222.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 103.21,
+    "cat": "debundle_other_test",
+    "inv": "8f8888c8-ca1e-51ad-8ae3-0854d4aed0f9",
+    "job": "140309810170"
+   },
+   {
+    "sha": "dece96f73b68695a41c7d91bc2cd17ee56e923e5",
+    "o": "fork",
+    "d": "2026-11-27",
+    "green": 260.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 136.33,
+    "cat": "debundle_other_test",
+    "inv": "29d7c3ef-d05a-5996-ba24-947e41cdc4b4",
+    "job": "140233431725"
+   },
+   {
+    "sha": "642f75613642912e6eb477503139213a2d9613d2",
+    "o": "fork",
+    "d": "2026-11-27",
+    "green": 289.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 168.63,
+    "cat": "debundle_other_test",
+    "inv": "4c879db1-e0a6-5345-ae66-c3ae6aa6e45f",
+    "job": "140307496133"
+   },
+   {
+    "sha": "47ab62f2467a856bf458b02ee03ff05c459242f9",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 461.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 368.59,
+    "cat": "agentplane_system_other",
+    "inv": "e406dc5c-2d79-5ece-a701-64cf2f68d633",
+    "job": "140244871275"
+   },
+   {
+    "sha": "3f7e0ea0b089c793ad2e82f713b502338291ef8b",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 995.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 890.94,
+    "cat": "test_firecracker",
+    "inv": "6b5b9dbd-270d-5143-862d-81087940e328",
+    "job": "140248145326"
+   },
+   {
+    "sha": "ab208ae24a714e4892293047d81e7cfe4757aa0d",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 380.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 280.56,
+    "cat": "agentplane_system_other",
+    "inv": "8c09c2bd-5978-52b2-b3d3-6aa577051fda",
+    "job": "140244742440"
+   },
+   {
+    "sha": "9d1b14497d76f7807a7c0d7726baf7c34e7b0e9e",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 15925.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 627.24,
+    "cat": "test_firecracker",
+    "inv": "d387b6c3-924e-5995-a325-bf1e30b72316",
+    "job": "140328251913"
+   },
+   {
+    "sha": "0e3689e80d15a983f6226ac3310b228bb200b62f",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 98.0,
+    "last": "Build artifacts + imports check",
+    "cp": null,
+    "cat": "no_test_invocation",
+    "inv": null,
+    "job": "140311783274"
+   },
+   {
+    "sha": "f003e7f61344e05b0c5c6af75df586a2d65830a3",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 307.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 223.74,
+    "cat": "other_test",
+    "inv": "64b3b51d-a801-5ac3-b469-20eb60f550e7",
+    "job": "140251294015"
+   },
+   {
+    "sha": "252f06aab025bad0d64b8d2bc2ce50ff5f02fe1d",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 407.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 314.84,
+    "cat": "rust",
+    "inv": "b67f9f5b-9cf2-5f62-a778-a16577f09253",
+    "job": "140231382884"
+   },
+   {
+    "sha": "be36d50c257d416e35b97b8cba8f226c0ad41e5a",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 236.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 147.5,
+    "cat": "rust",
+    "inv": "ec6819fa-f7fc-5f78-8756-40d7df54ee9a",
+    "job": "140230587985"
+   },
+   {
+    "sha": "0db9b633c79022d8ac07cdfc87a48a420cd83596",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 403.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 309.49,
+    "cat": "other_test",
+    "inv": "50f67f50-9600-5b4b-b4f9-6745dbe3c7b4",
+    "job": "140251465494"
+   },
+   {
+    "sha": "a610b162fdf9a36b7ef61428546bdebe2a430287",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 170.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 96.18,
+    "cat": "rust",
+    "inv": "1573b5fe-cce4-5fa4-b6f7-177f36cc9817",
+    "job": "140229823609"
+   },
+   {
+    "sha": "e85c060f04eafd30271e6a540796ecc7e87095c8",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 410.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 298.65,
+    "cat": "lean",
+    "inv": "5a9b09c8-0ab8-5590-aea9-bcf65a7afc7f",
+    "job": "140316770449"
+   },
+   {
+    "sha": "c74b04819a4af3463186fb6110b8cc121a649b7a",
+    "o": "same_repo",
+    "d": "2026-11-27",
+    "green": 1731.0,
+    "last": "bazel-ci / Test & Build",
+    "cp": 1642.15,
+    "cat": "test_vm",
+    "inv": "fd819f26-f403-55bd-9c6c-b41f85a2f7c3",
+    "job": "140238480012"
+   }
+  ]
+ },
+ "kvm_recycling": {
+  "runner_pool_cap_bytes": 2147483648,
+  "cap_set_by": "#19002 (2026-11-22)",
+  "runs": [
+   {
+    "suite": "test_vm",
+    "invocation": "6809cbd3-5d14-5817-a20c-396f8386fa73",
+    "recycled": false,
+    "memory_after_reclaim_bytes": 2193117184,
+    "stack_setup_s": 497.32,
+    "pytest_s": 987.17
+   },
+   {
+    "suite": "test_vm",
+    "invocation": "2d200774-d682-52ad-a84c-29853d35e629",
+    "recycled": false,
+    "memory_after_reclaim_bytes": 2292260864,
+    "stack_setup_s": 186.91,
+    "pytest_s": 467.94
+   },
+   {
+    "suite": "test_vm",
+    "invocation": "16fbf564-90e8-544f-b06e-c2ac5b10a504",
+    "recycled": false,
+    "memory_after_reclaim_bytes": 2162450432,
+    "stack_setup_s": 657.12,
+    "pytest_s": 1200.55
+   },
+   {
+    "suite": "test_vm",
+    "invocation": "c31da3aa-8b35-55da-83ac-e73a45919749",
+    "recycled": false,
+    "memory_after_reclaim_bytes": 2166333440,
+    "stack_setup_s": 242.39,
+    "pytest_s": 428.09
+   },
+   {
+    "suite": "test_vm",
+    "invocation": "2a7b18b9-61db-56ce-a2e0-fd208f3f27f4",
+    "recycled": false,
+    "memory_after_reclaim_bytes": 2151747584,
+    "stack_setup_s": 220.0,
+    "pytest_s": 489.51
+   },
+   {
+    "suite": "test_vm",
+    "invocation": "ace6c38c-495e-536c-b09b-e1c74a40eebd",
+    "recycled": false,
+    "memory_after_reclaim_bytes": 2339016704,
+    "stack_setup_s": 303.28,
+    "pytest_s": 564.01
+   },
+   {
+    "suite": "test_firecracker",
+    "invocation": "1060f76a-32f2-5a31-baf8-506e62d13192",
+    "recycled": true,
+    "memory_after_reclaim_bytes": 1416159232,
+    "stack_setup_s": 46.54,
+    "pytest_s": 356.13
+   },
+   {
+    "suite": "test_firecracker",
+    "invocation": "5c45498e-67b2-5096-9de4-b6d417087e48",
+    "recycled": false,
+    "memory_after_reclaim_bytes": 1375358976,
+    "stack_setup_s": 178.9,
+    "pytest_s": 540.91
+   },
+   {
+    "suite": "test_firecracker",
+    "invocation": "00fc62cd-aa30-5e0e-b3b1-7c362182f511",
+    "recycled": true,
+    "memory_after_reclaim_bytes": 1424060416,
+    "stack_setup_s": 40.18,
+    "pytest_s": 406.66
+   },
+   {
+    "suite": "test_firecracker",
+    "invocation": "d7ee11b0-89d6-5683-bd1b-0444a5054fbf",
+    "recycled": false,
+    "memory_after_reclaim_bytes": 1404002304,
+    "stack_setup_s": 125.22,
+    "pytest_s": 422.21
+   }
+  ]
+ },
+ "webhook_delivery_lag_s": {
+  "bazel-ci / Test & Build": {
+   "n": 6763,
+   "p50": 2.87,
+   "p90": 5.74,
+   "p99": 7.38,
+   "max": 2177.8
+  },
+  "Build artifacts + imports check": {
+   "n": 6296,
+   "p50": 2.83,
+   "p90": 5.59,
+   "p99": 7.2
+  },
+  "Pre-commit checks": {
+   "n": 6674,
+   "p50": 2.82,
+   "p90": 5.71,
+   "p99": 7.3
+  }
+ },
+ "cdviz_fork_defect": {
+  "fork_heads": 1451,
+  "cdviz_pending": 745,
+  "same_repo_heads": 2877,
+  "same_repo_pending": 4,
+  "example_head": "30074b8e393dd52d85aee923d757e1df837ccfd5",
+  "example_runs": {
+   "CI (pull_request, skipped)": 44977764735,
+   "Trusted fork PR CI": 44977764600
+  }
+ },
+ "rerun_recovery_leads": {
+  "bazel-ci / Test & Build": {
+   "failed_heads": 532,
+   "later_green_heads": 76
+  },
+  "Build artifacts + imports check": {
+   "failed_heads": 77,
+   "later_green_heads": 1
+  },
+  "Pre-commit checks": {
+   "failed_heads": 41,
+   "later_green_heads": 1
+  }
+ },
+ "test_vm_phases": {
+  "fast": {
+   "invocation": "c31da3aa-8b35-55da-83ac-e73a45919749",
+   "pytest_s": 428,
+   "stack_setup_s": 242,
+   "serial_import_s": 190,
+   "scenario_s": 131,
+   "sandbox_ready_s": [
+    71,
+    66
+   ],
+   "turn_s": [
+    13,
+    15
+   ],
+   "stack_cleanup_s": 42
+  },
+  "slow": {
+   "invocation": "16fbf564-90e8-544f-b06e-c2ac5b10a504",
+   "pytest_s": 1201,
+   "stack_setup_s": 657,
+   "serial_import_s": 572,
+   "scenario_s": [
+    427,
+    447
+   ],
+   "sandbox_ready_s": [
+    220,
+    210
+   ],
+   "stack_cleanup_s": 73
+  }
+ },
+ "kvm_queue": {
+  "actions": 20,
+  "queue_s": "0.1\u20135 (one 87)",
+  "input_fetch_s": "1\u201317 (max 56)"
+ },
+ "kvm_host_pressure_busy": {
+  "window": "2026-11-20..2026-11-27T05Z, 5-min samples while executing",
+  "median_p90": {
+   "ovh-ns1001419": {
+    "samples": 548,
+    "cpu_wait": [
+     0.04,
+     0.21
+    ],
+    "io_wait": [
+     0.11,
+     0.29
     ]
-  },
-  "kvm_recycling": {
-    "runner_pool_cap_bytes": 2147483648,
-    "cap_set_by": "#19002 (2026-11-22)",
-    "runs": [
-      {
-        "suite": "test_vm",
-        "invocation": "6809cbd3-5d14-5817-a20c-396f8386fa73",
-        "recycled": false,
-        "memory_after_reclaim_bytes": 2193117184,
-        "stack_setup_s": 497.32,
-        "pytest_s": 987.17
-      },
-      {
-        "suite": "test_vm",
-        "invocation": "2d200774-d682-52ad-a84c-29853d35e629",
-        "recycled": false,
-        "memory_after_reclaim_bytes": 2292260864,
-        "stack_setup_s": 186.91,
-        "pytest_s": 467.94
-      },
-      {
-        "suite": "test_vm",
-        "invocation": "16fbf564-90e8-544f-b06e-c2ac5b10a504",
-        "recycled": false,
-        "memory_after_reclaim_bytes": 2162450432,
-        "stack_setup_s": 657.12,
-        "pytest_s": 1200.55
-      },
-      {
-        "suite": "test_vm",
-        "invocation": "c31da3aa-8b35-55da-83ac-e73a45919749",
-        "recycled": false,
-        "memory_after_reclaim_bytes": 2166333440,
-        "stack_setup_s": 242.39,
-        "pytest_s": 428.09
-      },
-      {
-        "suite": "test_vm",
-        "invocation": "2a7b18b9-61db-56ce-a2e0-fd208f3f27f4",
-        "recycled": false,
-        "memory_after_reclaim_bytes": 2151747584,
-        "stack_setup_s": 220.0,
-        "pytest_s": 489.51
-      },
-      {
-        "suite": "test_vm",
-        "invocation": "ace6c38c-495e-536c-b09b-e1c74a40eebd",
-        "recycled": false,
-        "memory_after_reclaim_bytes": 2339016704,
-        "stack_setup_s": 303.28,
-        "pytest_s": 564.01
-      },
-      {
-        "suite": "test_firecracker",
-        "invocation": "1060f76a-32f2-5a31-baf8-506e62d13192",
-        "recycled": true,
-        "memory_after_reclaim_bytes": 1416159232,
-        "stack_setup_s": 46.54,
-        "pytest_s": 356.13
-      },
-      {
-        "suite": "test_firecracker",
-        "invocation": "5c45498e-67b2-5096-9de4-b6d417087e48",
-        "recycled": false,
-        "memory_after_reclaim_bytes": 1375358976,
-        "stack_setup_s": 178.9,
-        "pytest_s": 540.91
-      },
-      {
-        "suite": "test_firecracker",
-        "invocation": "00fc62cd-aa30-5e0e-b3b1-7c362182f511",
-        "recycled": true,
-        "memory_after_reclaim_bytes": 1424060416,
-        "stack_setup_s": 40.18,
-        "pytest_s": 406.66
-      },
-      {
-        "suite": "test_firecracker",
-        "invocation": "d7ee11b0-89d6-5683-bd1b-0444a5054fbf",
-        "recycled": false,
-        "memory_after_reclaim_bytes": 1404002304,
-        "stack_setup_s": 125.22,
-        "pytest_s": 422.21
-      }
+   },
+   "ovh-ns104952": {
+    "samples": 484,
+    "cpu_wait": [
+     0.1,
+     0.36
+    ],
+    "io_wait": [
+     0.1,
+     0.2
     ]
+   },
+   "ovh-ns104963": {
+    "samples": 319,
+    "cpu_wait": [
+     0.06,
+     0.25
+    ],
+    "io_wait": [
+     0.07,
+     0.15
+    ]
+   },
+   "wyrm2": {
+    "samples": 532,
+    "cpu_wait": [
+     0.1,
+     0.43
+    ],
+    "io_wait": [
+     0.18,
+     0.35
+    ]
+   }
+  }
+ },
+ "rust": {
+  "crates": 100,
+  "longest_chain": 26,
+  "example_trace": "b67f9f5b-9cf2-5f62-a778-a16577f09253",
+  "exec_opt_level_ab": {
+   "control": "f7d3db0f-0be3-468c-a745-70e6b9cd1ae0",
+   "opt_level_1": "a98eb4a6-1da3-4241-a22a-85dce99dd70b",
+   "seconds": {
+    "cli rlib": [
+     43.4,
+     26.2
+    ],
+    "staged_analysis rlib": [
+     58.2,
+     42.7
+    ],
+    "lowering rlib": [
+     38.6,
+     28.8
+    ],
+    "debundle link": [
+     24.3,
+     29.5
+    ],
+    "DebundleAnalyze": [
+     21.8,
+     34.4
+    ],
+    "DebundleExportGraphs": [
+     22.0,
+     15.6
+    ]
+   },
+   "verdict": "rejected; one pair, different workers"
   },
-  "webhook_delivery_lag_s": {
-    "bazel-ci / Test & Build": {
-      "n": 6763,
-      "p50": 2.87,
-      "p90": 5.74,
-      "p99": 7.38,
-      "max": 2177.8
-    },
-    "Build artifacts + imports check": {
-      "n": 6296,
-      "p50": 2.83,
-      "p90": 5.59,
-      "p99": 7.2
-    },
-    "Pre-commit checks": {
-      "n": 6674,
-      "p50": 2.82,
-      "p90": 5.71,
-      "p99": 7.3
-    }
+  "chain_edges_verified": "25 of 25 direct deps (bazel query)"
+ },
+ "lean": {
+  "example_trace": "eebd453d-7384-500f-a02e-5eade1555aa6",
+  "chain_modules": 26,
+  "chain_s": 518,
+  "remote_per_module": {
+   "input_files": 15500,
+   "input_gb": 2.7,
+   "cpu_s": "10\u201313",
+   "peak_mib": 450,
+   "median_cpu_over_wall": 0.76
   },
-  "cdviz_fork_defect": {
-    "fork_heads": 1451,
-    "cdviz_pending": 745,
-    "same_repo_heads": 2877,
-    "same_repo_pending": 4,
-    "example_head": "30074b8e393dd52d85aee923d757e1df837ccfd5",
-    "example_runs": {
-      "CI (pull_request, skipped)": 44977764735,
-      "Trusted fork PR CI": 44977764600
-    }
+  "local_profile": {
+   "HiddenRegion": {
+    "import_s": 7.0,
+    "elaboration_s": 0.37,
+    "type_check_s": 0.18
+   },
+   "JointStatic": {
+    "import_s": 4.24
+   }
   },
-  "rerun_recovery_leads": {
-    "bazel-ci / Test & Build": {
-      "failed_heads": 532,
-      "later_green_heads": 76
-    },
-    "Build artifacts + imports check": {
-      "failed_heads": 77,
-      "later_green_heads": 1
-    },
-    "Pre-commit checks": {
-      "failed_heads": 41,
-      "later_green_heads": 1
-    }
+  "local_compile_wall_s": {
+   "ObjectFrame": [
+    1.49,
+    1.77
+   ],
+   "StatementFrame": [
+    1.28,
+    1.74
+   ],
+   "LinkedPivotCertificate": [
+    2.82,
+    3.42
+   ]
   },
-  "test_vm_phases": {
-    "fast": {
-      "invocation": "c31da3aa-8b35-55da-83ac-e73a45919749",
-      "pytest_s": 428,
-      "stack_setup_s": 242,
-      "serial_import_s": 190,
-      "scenario_s": 131,
-      "sandbox_ready_s": [
-        71,
-        66
-      ],
-      "turn_s": [
-        13,
-        15
-      ],
-      "stack_cleanup_s": 42
-    },
-    "slow": {
-      "invocation": "16fbf564-90e8-544f-b06e-c2ac5b10a504",
-      "pytest_s": 1201,
-      "stack_setup_s": 657,
-      "serial_import_s": 572,
-      "scenario_s": [
-        427,
-        447
-      ],
-      "sandbox_ready_s": [
-        220,
-        210
-      ],
-      "stack_cleanup_s": 73
-    }
-  },
-  "kvm_queue": {
-    "actions": 20,
-    "queue_s": "0.1\u20135 (one 87)",
-    "input_fetch_s": "1\u201317 (max 56)"
-  },
-  "kvm_host_pressure_busy": {
-    "window": "2026-11-20..2026-11-27T05Z, 5-min samples while executing",
-    "median_p90": {
-      "ovh-ns1001419": {
-        "samples": 548,
-        "cpu_wait": [
-          0.04,
-          0.21
-        ],
-        "io_wait": [
-          0.11,
-          0.29
-        ]
-      },
-      "ovh-ns104952": {
-        "samples": 484,
-        "cpu_wait": [
-          0.1,
-          0.36
-        ],
-        "io_wait": [
-          0.1,
-          0.2
-        ]
-      },
-      "ovh-ns104963": {
-        "samples": 319,
-        "cpu_wait": [
-          0.06,
-          0.25
-        ],
-        "io_wait": [
-          0.07,
-          0.15
-        ]
-      },
-      "wyrm2": {
-        "samples": 532,
-        "cpu_wait": [
-          0.1,
-          0.43
-        ],
-        "io_wait": [
-          0.18,
-          0.35
-        ]
-      }
-    }
-  },
-  "rust": {
-    "crates": 100,
-    "longest_chain": 26,
-    "example_trace": "b67f9f5b-9cf2-5f62-a778-a16577f09253",
-    "exec_opt_level_ab": {
-      "control": "f7d3db0f-0be3-468c-a745-70e6b9cd1ae0",
-      "opt_level_1": "a98eb4a6-1da3-4241-a22a-85dce99dd70b",
-      "seconds": {
-        "cli rlib": [
-          43.4,
-          26.2
-        ],
-        "staged_analysis rlib": [
-          58.2,
-          42.7
-        ],
-        "lowering rlib": [
-          38.6,
-          28.8
-        ],
-        "debundle link": [
-          24.3,
-          29.5
-        ],
-        "DebundleAnalyze": [
-          21.8,
-          34.4
-        ],
-        "DebundleExportGraphs": [
-          22.0,
-          15.6
-        ]
-      },
-      "verdict": "rejected; one pair, different workers"
-    }
-  },
-  "lean": {
-    "example_trace": "eebd453d-7384-500f-a02e-5eade1555aa6",
-    "chain_modules": 26,
-    "chain_s": 518,
-    "remote_per_module": {
-      "input_files": 15500,
-      "input_gb": 2.7,
-      "cpu_s": "10\u201313",
-      "peak_mib": 450,
-      "median_cpu_over_wall": 0.76
-    },
-    "local_profile": {
-      "HiddenRegion": {
-        "import_s": 7.0,
-        "elaboration_s": 0.37,
-        "type_check_s": 0.18
-      },
-      "JointStatic": {
-        "import_s": 4.24
-      }
-    },
-    "local_compile_wall_s": {
-      "ObjectFrame": [
-        1.49,
-        1.77
-      ],
-      "StatementFrame": [
-        1.28,
-        1.74
-      ],
-      "LinkedPivotCertificate": [
-        2.82,
-        3.42
-      ]
-    },
-    "c_output": "no measurable difference; rejected"
-  },
-  "agent_feedback_note": "webhook receipt only; agent read clocks not collected"
+  "c_output": "no measurable difference; rejected",
+  "chain_import_edges": "7 of 25",
+  "serialization_cause": "rules_lean gives each module every earlier module of its lean_library as an input",
+  "import_only_path_s": 149,
+  "import_only_path_modules": [
+   "ObjectFrame",
+   "StatementFrame",
+   "OpaqueClosureFrame",
+   "EvaluatorFrame",
+   "HiddenRegion",
+   "LinkedPivotCertificate",
+   "LinkedBehaviorExamples"
+  ]
+ },
+ "agent_feedback_note": "webhook receipt only; agent read clocks not collected"
 }

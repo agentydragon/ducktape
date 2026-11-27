@@ -10,7 +10,7 @@ report snapshots. The [report index](index.html) links each review and its obser
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with fresh Action and Thread browser costs, devel push controls, and a current dependency graph probe. [Evidence](ci-test-cost/evidence.json) · [Manifest](ci-test-cost/manifest.json)
 
-- **Latency (20–27 November UTC):** [CI feedback latency](latency/index.html). Median required green rose from 185–244 s to about 400 s on 24–25 November. Deep Lean and Debundle crate chains and a KubeVirt suite that never reuses its runner set the long paths; see the [best opportunities](latency/index.html#opportunities). [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
+- **Latency (20–27 November UTC):** [CI feedback latency](latency/index.html). Median required green rose from 185–244 s to about 400 s on 24–25 November. Lean modules compiled one after another by the build rule, a 26-crate Debundle chain and a KubeVirt suite that never reuses its runner set the long paths; see the [best opportunities](latency/index.html#opportunities). [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
 
 - **Reliability (15–21 November UTC; partial 22 November):** [report](reliability/index.html). Thirteen of 168 sampled heads remained red. The separate 22 November sample includes one verified fresh sandbox frontend recovery and four fresh first-attempt VM passes. [Evidence](reliability/evidence.json) · [Manifest](reliability/manifest.json)
 
