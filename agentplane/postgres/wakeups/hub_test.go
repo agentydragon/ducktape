@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -273,5 +274,34 @@ func TestPayloadSubscriptionHandsOffEveryDistinctCommittedKey(t *testing.T) {
 		if !seen[fmt.Sprint(i)] {
 			t.Fatalf("lost key %d", i)
 		}
+	}
+}
+
+func TestChangesNameEachNotifiedKeyOnceAndNoneAcrossAConnectionGap(t *testing.T) {
+	hub := newHub("updates")
+	changes, stop, err := hub.SubscribeChanges("updates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	for _, key := range []string{"a", "b", "a"} {
+		hub.notify("updates", key)
+	}
+	awaitWakeup(t, changes.Wakeups)
+	if keys, known := changes.Take(); !known || !slices.Equal(slices.Sorted(slices.Values(keys)), []string{"a", "b"}) {
+		t.Errorf("Take() = %v, %v; want [a b], true", keys, known)
+	}
+	if keys, known := changes.Take(); !known || len(keys) != 0 {
+		t.Errorf("a second Take() = %v, %v; want none, true", keys, known)
+	}
+	hub.notify("updates", "c")
+	hub.observeConnectionEvent(pq.ListenerEventDisconnected)
+	awaitWakeup(t, changes.Wakeups)
+	if keys, known := changes.Take(); known {
+		t.Errorf("Take() after a gap = %v, true; want unknown", keys)
+	}
+	hub.notify("updates", "d")
+	if keys, known := changes.Take(); !known || !slices.Equal(keys, []string{"d"}) {
+		t.Errorf("Take() after the gap was read = %v, %v; want [d], true", keys, known)
 	}
 }

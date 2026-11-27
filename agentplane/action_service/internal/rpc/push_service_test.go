@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
@@ -274,7 +275,7 @@ func nextPushFrame(t *testing.T, stream pushWatch) *web_push_servicepb.WatchPush
 func TestASubscriptionWatchSendsTheOperatorsSubscriptionsThenEachChange(t *testing.T) {
 	p := servePush(t, serve(t), true)
 	subscriptions := push.NewSubscriptions(p.db)
-	held := snapshotChunk + 1
+	held := streaming.SnapshotChunk + 1
 	for i := range held {
 		if err := subscriptions.Save(t.Context(), operatorPrincipal(p.issuer), push.Registration{
 			Endpoint: fmt.Sprintf("https://push.test/test-held-%03d", i), P256dh: "test-p256dh", Auth: "test-auth",
@@ -301,8 +302,8 @@ func TestASubscriptionWatchSendsTheOperatorsSubscriptionsThenEachChange(t *testi
 			t.Fatalf("a %T frame before snapshot_complete", frame)
 		}
 	}
-	if len(chunks) != 2 || chunks[0] != snapshotChunk || chunks[1] != 1 {
-		t.Errorf("snapshot chunks of %v subscriptions, want %d then 1", chunks, snapshotChunk)
+	if len(chunks) != 2 || chunks[0] != streaming.SnapshotChunk || chunks[1] != 1 {
+		t.Errorf("snapshot chunks of %v subscriptions, want %d then 1", chunks, streaming.SnapshotChunk)
 	}
 
 	// Each change the operator cannot see sends nothing, so the frame after them is the change it can.

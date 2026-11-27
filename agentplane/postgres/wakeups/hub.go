@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -144,6 +146,55 @@ func (h *Hub) SubscribeKey(channel, key string) (<-chan struct{}, func(), error)
 	}, nil
 }
 
+// Changes collects the payloads notified on one channel, for a reader that re-reads only the rows they name.
+type Changes struct {
+	hub *Hub
+	// Wakeups holds a pending wakeup after a notification on the channel, or a gap in the connection.
+	Wakeups    <-chan struct{}
+	mu         sync.Mutex
+	keys       map[string]struct{}
+	generation uint64
+}
+
+// SubscribeChanges subscribes to channel's wakeups and collects its payloads until the returned function is called.
+func (h *Hub) SubscribeChanges(channel string) (*Changes, func(), error) {
+	changes := &Changes{hub: h, keys: map[string]struct{}{}, generation: h.Generation()}
+	stopPayloads, err := h.SubscribePayload(channel, changes.add)
+	if err != nil {
+		return nil, nil, err
+	}
+	wakeups, stopWakeups, err := h.Subscribe(channel)
+	if err != nil {
+		stopPayloads()
+		return nil, nil, err
+	}
+	changes.Wakeups = wakeups
+	return changes, func() {
+		stopWakeups()
+		stopPayloads()
+	}, nil
+}
+
+func (c *Changes) add(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keys[key] = struct{}{}
+}
+
+// Take returns the distinct payloads notified since the subscription or the previous Take. known is false when the
+// connection was lost or re-established since, so a notification may be missing and the reader must read everything.
+func (c *Changes) Take() (keys []string, known bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	keys = slices.Collect(maps.Keys(c.keys))
+	clear(c.keys)
+	if generation := c.hub.Generation(); generation != c.generation {
+		c.generation = generation
+		return nil, false
+	}
+	return keys, true
+}
+
 func (h *Hub) observeConnectionEvent(event pq.ListenerEventType) {
 	switch event {
 	case pq.ListenerEventConnected, pq.ListenerEventReconnected:
@@ -222,10 +273,11 @@ func (h *Hub) notify(channel, key string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if subs := h.channels[channel]; subs != nil {
-		subs.all.wake()
+		// Payloads first: a Changes reader that this notification wakes finds its key.
 		for sub := range subs.payloads {
 			sub.enqueue(key)
 		}
+		subs.all.wake()
 		subs.byKey[key].wake()
 	}
 }

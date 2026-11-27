@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -114,7 +115,7 @@ const pending = action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING
 func TestASetWatchSendsTheFilteredSetInBoundedChunksThenEachChange(t *testing.T) {
 	s := serve(t)
 	want := map[string]bool{}
-	for i := range snapshotChunk + 1 {
+	for i := range streaming.SnapshotChunk + 1 {
 		want[s.submit(t, s.caller, fmt.Sprintf("test-pending-%d", i)).ID.String()] = true
 	}
 	s.decide(t, s.submit(t, s.caller, "test-denied"), store.VerdictDeny)
@@ -122,7 +123,7 @@ func TestASetWatchSendsTheFilteredSetInBoundedChunksThenEachChange(t *testing.T)
 	chunks := snapshot(t, stream)
 	got := map[string]bool{}
 	for _, chunk := range chunks {
-		if len(chunk) > snapshotChunk {
+		if len(chunk) > streaming.SnapshotChunk {
 			t.Errorf("a chunk of %d requests", len(chunk))
 		}
 		for _, request := range chunk {

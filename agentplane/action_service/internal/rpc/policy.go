@@ -8,6 +8,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policyview"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -42,9 +43,9 @@ func (s *Service) GetActionPolicy(ctx context.Context, request *action_servicepb
 // prevents a change between the read and the wait from being lost.
 func (s *Service) WatchActionPolicy(request *action_servicepb.GetActionPolicyRequest, stream grpc.ServerStreamingServer[action_servicepb.GetActionPolicyResponse]) error {
 	ctx := stream.Context()
-	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
+	writeCtx, stopWrites := streaming.WatchWriteContext(ctx, s.gate)
 	defer stopWrites()
-	recheck := time.NewTicker(recheckInterval)
+	recheck := time.NewTicker(streaming.RecheckInterval)
 	defer recheck.Stop()
 	var previous *action_servicepb.GetActionPolicyResponse
 	for {

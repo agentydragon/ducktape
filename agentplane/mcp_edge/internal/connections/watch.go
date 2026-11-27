@@ -1,169 +1,69 @@
 package connections
 
 import (
-	"bytes"
-	"cmp"
 	"context"
-	"slices"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-const (
-	// snapshotChunk bounds the Connections in one snapshot frame.
-	snapshotChunk = 64
-	// recheckInterval is how often a watch with nothing to send checks its bearer again.
-	recheckInterval = 5 * time.Second
-	// watchWriteTimeout bounds waiting for a watch Send to clear transport backpressure.
-	watchWriteTimeout = 5 * time.Second
-)
+// errDraining ends a watch whose write the drain cut short; the client connects again, as after reconnect_required.
+var errDraining = status.Error(codes.Unavailable, "the Connection service is draining")
 
-// WatchConnections sends every Connection, then each one again whenever it changes. A NOTIFY only wakes the watch:
-// it reads every Connection's version, and the Connections whose version differs from the one the client holds. The
-// wakeup that follows a reconnection of the LISTEN connection is one too, so a change made while it was down is sent
-// late, never lost. The bearer is checked again before every frame and every recheckInterval while idle, so the
-// stream ends UNAUTHENTICATED once its bearer expires. An idle stream renews with reconnect_required when the
-// service drains; if drain ends an outstanding write, the stream ends without another frame.
+// WatchConnections sends every Connection, oldest first, then each one again whenever it changes, as a
+// streaming.VersionedSetWatch: the stream ends UNAUTHENTICATED once its bearer expires, and an idle one renews with
+// reconnect_required when the service drains.
 func (s *Service) WatchConnections(_ *pb.WatchConnectionsRequest, stream grpc.ServerStreamingServer[pb.WatchConnectionsResponse]) error {
 	ctx := stream.Context()
-	// Subscribed before the first read, so a commit after it wakes the watch.
 	updates, unsubscribe, err := s.updates.Subscribe(UpdatesChannel)
 	if err != nil {
 		return failure(ctx, err)
 	}
 	defer unsubscribe()
-	writeCtx, stopWrites := context.WithCancel(ctx)
-	stopOnDrain := context.AfterFunc(s.gate.DrainingContext(), stopWrites)
-	defer func() {
-		stopOnDrain()
-		stopWrites()
-	}()
-	w := watch{service: s, ctx: ctx, writeCtx: writeCtx, stream: stream, shown: map[uuid.UUID]int64{}}
-	if err := w.snapshot(); err != nil {
-		return failure(ctx, err)
-	}
-	recheck := time.NewTicker(recheckInterval)
-	defer recheck.Stop()
-	for {
-		select {
-		case <-updates:
-			if err := w.upsertChanges(); err != nil {
-				return failure(ctx, err)
+	watch := streaming.VersionedSetWatch[connection, pb.WatchConnectionsResponse]{
+		Gate:           s.gate,
+		Updates:        updates,
+		Send:           stream.Send,
+		TimeoutMessage: "Connection watch write deadline expired",
+		Draining:       errDraining,
+		List: func(ctx context.Context, after *connection, limit int) ([]connection, error) {
+			if after == nil {
+				return s.store.list(ctx, nil, limit)
 			}
-		case <-s.gate.DrainingContext().Done():
-			// A planned renewal: the client connects again, to a replica that is not going away.
-			return failure(ctx, w.sendReconnect(&pb.WatchConnectionsResponse{
-				Frame: &pb.WatchConnectionsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
-			}))
-		case <-ctx.Done():
-			return failure(ctx, ctx.Err())
-		case <-recheck.C:
-			if err := s.gate.Recheck(ctx); err != nil {
-				return failure(ctx, err)
-			}
-		}
-	}
-}
-
-// watch is one WatchConnections stream.
-type watch struct {
-	service  *Service
-	ctx      context.Context
-	writeCtx context.Context
-	stream   grpc.ServerStreamingServer[pb.WatchConnectionsResponse]
-	// shown is the version of each Connection the client holds.
-	shown map[uuid.UUID]int64
-}
-
-// send checks the bearer again, then sends the frame.
-func (w *watch) send(frame *pb.WatchConnectionsResponse) error {
-	if err := w.service.gate.Recheck(w.ctx); err != nil {
-		return err
-	}
-	return w.sendWithin(w.writeCtx, frame)
-}
-
-func (w *watch) sendReconnect(frame *pb.WatchConnectionsResponse) error {
-	if err := w.service.gate.Recheck(w.ctx); err != nil {
-		return err
-	}
-	return w.sendWithin(w.ctx, frame)
-}
-
-func (w *watch) sendWithin(ctx context.Context, frame *pb.WatchConnectionsResponse) error {
-	return streaming.SendWithinStatus(ctx, watchWriteTimeout, w.stream.Send, frame, "Connection watch write deadline expired")
-}
-
-// snapshot sends every Connection as snapshot frames of at most snapshotChunk, oldest first, then snapshot_complete.
-func (w *watch) snapshot() error {
-	var after *position
-	for {
-		connections, err := w.service.store.list(w.ctx, after, snapshotChunk)
-		if err != nil {
-			return err
-		}
-		if len(connections) > 0 {
+			last := after.position()
+			return s.store.list(ctx, &last, limit)
+		},
+		Versions: s.store.versions,
+		Find:     s.store.find,
+		Key: func(c connection) streaming.Versioned {
+			return streaming.Versioned{ID: c.id, Version: c.version, UpdatedAt: c.updatedAt}
+		},
+		Snapshot: func(connections []connection) (*pb.WatchConnectionsResponse, error) {
 			views, err := connectionViews(connections)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			if err := w.send(&pb.WatchConnectionsResponse{Frame: &pb.WatchConnectionsResponse_Snapshot{
+			return &pb.WatchConnectionsResponse{Frame: &pb.WatchConnectionsResponse_Snapshot{
 				Snapshot: &pb.ConnectionChunk{Connections: views},
-			}}); err != nil {
-				return err
+			}}, nil
+		},
+		SnapshotComplete: &pb.WatchConnectionsResponse{
+			Frame: &pb.WatchConnectionsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}},
+		},
+		Upsert: func(c connection) (*pb.WatchConnectionsResponse, error) {
+			view, err := connectionView(c)
+			if err != nil {
+				return nil, err
 			}
-			for _, c := range connections {
-				w.shown[c.id] = c.version
-			}
-		}
-		if len(connections) < snapshotChunk {
-			break
-		}
-		last := connections[len(connections)-1].position()
-		after = &last
+			return &pb.WatchConnectionsResponse{Frame: &pb.WatchConnectionsResponse_Upsert{Upsert: view}}, nil
+		},
+		ReconnectRequired: &pb.WatchConnectionsResponse{
+			Frame: &pb.WatchConnectionsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
+		},
 	}
-	return w.send(&pb.WatchConnectionsResponse{
-		Frame: &pb.WatchConnectionsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}},
-	})
-}
-
-// upsertChanges sends an upsert of each Connection whose version is not the one the client holds, in the order they
-// changed. Only those are read in full.
-func (w *watch) upsertChanges() error {
-	versions, err := w.service.store.versions(w.ctx)
-	if err != nil {
-		return err
-	}
-	var changed []uuid.UUID
-	for id, version := range versions {
-		if w.shown[id] != version {
-			changed = append(changed, id)
-		}
-	}
-	if len(changed) == 0 {
-		return nil
-	}
-	connections, err := w.service.store.find(w.ctx, changed)
-	if err != nil {
-		return err
-	}
-	slices.SortFunc(connections, func(a, b connection) int {
-		return cmp.Or(a.updatedAt.Compare(b.updatedAt), bytes.Compare(a.id[:], b.id[:]))
-	})
-	for _, c := range connections {
-		view, err := connectionView(c)
-		if err != nil {
-			return err
-		}
-		if err := w.send(&pb.WatchConnectionsResponse{Frame: &pb.WatchConnectionsResponse_Upsert{Upsert: view}}); err != nil {
-			return err
-		}
-		w.shown[c.id] = c.version
-	}
-	return nil
+	return failure(ctx, watch.Run(ctx))
 }

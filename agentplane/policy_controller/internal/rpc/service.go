@@ -16,11 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	recheckInterval = 5 * time.Second
-	writeTimeout    = 5 * time.Second
-	snapshotChunk   = 64
-)
+// cleanupTimeout bounds deleting a grant created for a request that then failed.
+const cleanupTimeout = 5 * time.Second
 
 type Service struct {
 	policypb.UnimplementedPolicyServiceServer
