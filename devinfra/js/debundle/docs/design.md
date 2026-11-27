@@ -51,12 +51,12 @@ validator checks that the author-supplied chunk priority induces an ESM
 evaluation order observationally equivalent to the input. It does not seek
 an alternative priority after rejection.
 
-Each invocation uses one exact spec and one configured input program (possibly
-with several chunks). Selector resolution stays within the spec's declared
-chunk and uses only the structural matching rules in <../SPEC.md>. It does not
-compare versioned specs or infer migrations between source snapshots. When a
-snapshot changes, authors review diagnostics and candidate selectors against the
-new input, then validate the resulting spec against that input.
+Each invocation uses one exact spec and one configured input program, with
+selector resolution confined to the chunk that spec declares and limited to the
+structural rules in <../SPEC.md> § Input and spec scope. Reviewing a new
+snapshot and validating the resulting spec against it is an authoring step
+(<../docs/selectors.md> and <cli.md> § Running the pipeline), not something
+this tool automates.
 
 **Decision: single-version scope.** The exclusion of cross-version reasoning is
 a layering choice, not a judgment that version-to-version matching is unsound.

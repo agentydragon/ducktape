@@ -14,11 +14,13 @@ the validator enforces) before working on the splitting pipeline.
   and commit it: confusing or insufficient output, unproductive investigation
   paths, and missing guidance. Fix small issues directly; preserve larger
   follow-ups with the observed behavior and a concrete next action.
-- Treat each spec as the exact contract for one configured input program. Do not
-  add cross-version reasoning, multi-spec comparison, or automatic promotion or
-  migration commands. For a new upstream snapshot, use the authoring workflow in
-  <README.md>: inspect that source, review diagnostics and candidate selectors,
-  apply only justified edits, validate the exact source/spec pair, and report
+- Treat each spec as the exact contract for one configured input program
+  (<SPEC.md> § Input and spec scope). Do not add cross-version reasoning,
+  multi-spec comparison, or automatic promotion or migration commands. For a new
+  upstream snapshot, follow the task table in <README.md> and
+  <docs/selectors.md> § Bulk conversion loop: inspect that source, review
+  diagnostics and candidate selectors, apply only justified edits, validate the
+  exact source/spec pair (<docs/cli.md> § Running the pipeline), and report
   remaining mismatches.
 - Heuristics produce diagnostics and candidate sets only; the spec author decides.
 - Follow <docs/module_proposals.md> for residual discovery and explicit batches.
