@@ -13,20 +13,31 @@ CONTEXTS = ("bazel-ci / Test & Build", "Pre-commit checks", "Build artifacts + i
 WORKFLOWS = ("CI", "Pre-commit checks", "Nix wheel check")
 
 
+def _write(
+    connection: psycopg.Connection,
+    at: datetime,
+    github: dict,
+    *,
+    predicate: str = "finished",
+    policy: dict | None = None,
+) -> None:
+    payload: dict = {
+        "context": {"timestamp": at.isoformat()},
+        "subject": {"id": str(uuid4())},
+        "customData": {"github": {"repository": {"full_name": REPOSITORY}, **github}},
+    }
+    if policy is not None:
+        payload["customData"]["ci_policy"] = policy
+    connection.execute(
+        "INSERT INTO cdviz.cdevents_lake (timestamp, payload, subject, predicate, context_id) "
+        "VALUES (%s, %s, 'taskrun', %s, %s)",
+        (at, Jsonb(payload), predicate, str(uuid4())),
+    )
+
+
 def seed(connection: psycopg.Connection, now: datetime) -> None:
     def write(at: datetime, github: dict, *, predicate: str = "finished", policy: dict | None = None) -> None:
-        payload: dict = {
-            "context": {"timestamp": at.isoformat()},
-            "subject": {"id": str(uuid4())},
-            "customData": {"github": {"repository": {"full_name": REPOSITORY}, **github}},
-        }
-        if policy is not None:
-            payload["customData"]["ci_policy"] = policy
-        connection.execute(
-            "INSERT INTO cdviz.cdevents_lake (timestamp, payload, subject, predicate, context_id) "
-            "VALUES (%s, %s, 'taskrun', %s, %s)",
-            (at, Jsonb(payload), predicate, str(uuid4())),
-        )
+        _write(connection, at, github, predicate=predicate, policy=policy)
 
     write(
         now - timedelta(hours=4),
@@ -259,3 +270,88 @@ def assert_unknown_histories(connection: psycopg.Connection, now: datetime) -> N
         ).fetchall()
         assert rows == [("unknown", None, None), ("unknown", None, None)]
         assert_equivalent(connection, now)
+
+
+def assert_fork_head(connection: psycopg.Connection, now: datetime) -> None:
+    """A trusted-fork head is green once its skipped `CI` pull_request run completes.
+
+    GitHub starts `CI` for the fork's pull_request event, skips its jobs, and runs the
+    real gates in a separate trusted workflow. The skipped run has the higher run ID.
+    """
+    sha = hashlib.sha256(b"213/0").hexdigest()[:40]
+    at = now - timedelta(minutes=10)
+    trusted, skipped = 2130, 2139
+
+    def run(identifier: int, name: str, event: str, action: str, minute: float, conclusion: str | None) -> None:
+        _write(
+            connection,
+            at + timedelta(minutes=minute),
+            {
+                "action": action,
+                "workflow_run": {
+                    "id": identifier,
+                    "name": name,
+                    "event": event,
+                    "run_attempt": 1,
+                    "head_sha": sha,
+                    "head_branch": "feedback-213",
+                    "created_at": at.isoformat(),
+                    "pull_requests": [],
+                    "conclusion": conclusion,
+                },
+            },
+            predicate="finished" if action == "completed" else "queued",
+        )
+
+    def job(run_id: int, name: str, workflow: str, minute: float, conclusion: str) -> None:
+        _write(
+            connection,
+            at + timedelta(minutes=minute),
+            {
+                "workflow_job": {
+                    "id": run_id * 10 + len(name),
+                    "run_id": run_id,
+                    "run_attempt": 1,
+                    "head_sha": sha,
+                    "name": name,
+                    "workflow_name": workflow,
+                    "started_at": at.isoformat(),
+                    "completed_at": (at + timedelta(minutes=minute)).isoformat(),
+                    "conclusion": conclusion,
+                }
+            },
+        )
+
+    with connection.transaction(force_rollback=True):
+        _write(
+            connection,
+            at,
+            {
+                "action": "opened",
+                "pull_request": {
+                    "number": 213,
+                    "head": {"sha": sha, "ref": "feedback-213"},
+                    "created_at": at.isoformat(),
+                    "updated_at": at.isoformat(),
+                },
+            },
+        )
+        run(trusted, "Trusted PR #213", "pull_request_target", "requested", 0, None)
+        run(skipped, WORKFLOWS[0], "pull_request", "requested", 0, None)
+        job(skipped, "bazel-ci", WORKFLOWS[0], 0.5, "skipped")
+        run(skipped, WORKFLOWS[0], "pull_request", "completed", 1, "skipped")
+        job(trusted, CONTEXTS[0], "Trusted PR #213", 4, "success")
+        for gate in (1, 2):
+            job(2130 + gate, CONTEXTS[gate], WORKFLOWS[gate], 2, "success")
+
+        def state(until: datetime) -> tuple:
+            row = connection.execute(
+                "SELECT state, green_seconds FROM cdviz.ci_feedback(%s, %s) WHERE pr = '213'",
+                (now - timedelta(hours=1), until),
+            ).fetchone()
+            assert row is not None
+            return row
+
+        # Before the skipped run completes it may still produce the gate.
+        assert state(at + timedelta(seconds=30)) == ("pending", None)
+        assert state(now) == ("green", 240)

@@ -433,6 +433,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 owner.execute(baseline)
                 owner.execute(baseline.replace("FUNCTION cdviz.ci_feedback(", "FUNCTION cdviz.ci_feedback_baseline("))
                 owner.execute((source / "002_ci_feedback_optimization.sql").read_text())
+                owner.execute((source / "003_ci_feedback_absent_gates.sql").read_text())
                 grants = (root / "ducktape/cluster/cdk8s/cdviz/grants.sql").read_text()
                 owner.execute(grants)
                 owner.execute("CALL cdviz.apply_retention(INTERVAL '90 days')")
@@ -684,6 +685,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                         feedback_fixture.seed(owner, _FROZEN)
                         feedback_fixture.assert_equivalent(owner, _FROZEN)
                         feedback_fixture.assert_unknown_histories(owner, _FROZEN)
+                        feedback_fixture.assert_fork_head(owner, _FROZEN)
                     with psycopg.connect(reader_url) as reader:
                         feedback_fixture.assert_histories(reader, _FROZEN)
                     feedback = _provision_grafana(
