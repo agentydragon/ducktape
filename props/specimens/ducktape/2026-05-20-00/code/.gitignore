@@ -81,17 +81,13 @@ cluster/.claude/
 # Claude Code sandbox phantom dotfiles
 # Bug: https://github.com/anthropics/claude-code/issues/17258
 .bashrc
-!devinfra/claude/web_env/rootfs/root/.bashrc
 .bash_profile
 .gitconfig
-!devinfra/claude/web_env/rootfs/root/.gitconfig
 .gitmodules
 .profile
-!devinfra/claude/web_env/rootfs/root/.profile
 .ripgreprc
 .zprofile
 .zshrc
-!devinfra/claude/web_env/rootfs/root/.zshrc
 .claude/agents
 
 **/config
@@ -102,7 +98,6 @@ cluster/.claude/
 !x/claude_linter_v2/config
 !augur/model/config
 !**/claude_hooks/config
-!devinfra/claude/web_env/re/environment_manager/src/internal/config
 
 **/refs
 **/objects
@@ -120,9 +115,5 @@ cluster/.claude/
 **/.claude/skills
 !/.claude/settings.json
 !/.claude/skills
-!/devinfra/claude/web_env/rootfs/home/claude/.claude/settings.json
-!/devinfra/claude/web_env/rootfs/home/claude/.claude/skills
-!/devinfra/claude/web_env/rootfs/root/.claude/settings.json
-!/devinfra/claude/web_env/rootfs/root/.claude/skills
 tgarchive/*.session
 tgarchive/backup/

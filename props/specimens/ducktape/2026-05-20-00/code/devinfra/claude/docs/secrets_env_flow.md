@@ -58,8 +58,8 @@ Container starts
 ### Env vars received by each subprocess
 
 The following is based on best-effort RE of the `environment-manager` binary (Build ID
-`495ea204`) — see `web_env/re/environment_manager/src/` for RE source. The RE is a
-reconstruction and may have gaps; the running binary is the ground truth.
+`495ea204`). The RE is a reconstruction and may have gaps; the running binary is
+the ground truth.
 
 **Init script** (`web_setup.sh`, run by environment-manager via `process.ExecuteScript`):
 
