@@ -1,6 +1,6 @@
 import type * as ThreadClientModule from "./client";
 // @vitest-environment happy-dom
-import { toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import { EnvironmentDescriptorSchema } from "../../../environments/v1/environment_service_pb";
 import { readySandbox } from "../testing/sandbox";
 import { act } from "react";
@@ -103,7 +103,7 @@ async function render(): Promise<string[]> {
         watch.send({
           snapshot: {
             summaries: THREADS.filter((row) => ids.includes(row.metadata.threadId)).map((row) =>
-              toJson(SessionSummarySchema, row.summary)
+              toJson(SessionSummarySchema, create(SessionSummarySchema, row.summary))
             ),
           },
         });
