@@ -73,6 +73,52 @@ cases.push({
   },
   expected: /each executable row must be selected exactly once/,
 });
+
+// Sample the source-size-independent proof on real parsed const and let chains.
+// The last binding keeps its exact address, and both graphs agree at zero fuel
+// and on their complete final state (checked by the Lean runner).
+cases.push({
+  kind: "inlineConstructor",
+  input: {
+    source: parse(""),
+    sourceText: "",
+    spec: { entry: "entry.mjs", modules: { "entry.mjs": [] }, order: [], sequential: true },
+  },
+  expected: { entry: "entry.mjs", order: ["entry.mjs"], placements: [] },
+});
+for (const kind of ["const", "let"]) {
+  for (const count of [1, 2, 5, 19, 64]) {
+    const ids = Array.from({ length: count }, (_, i) => i);
+    const cut = Math.floor(count / 2);
+    const sourceText = ids
+      .map((i) => `${i === count - 1 ? "export " : ""}${kind} binding${i} = ${i === 0 ? "7" : `binding${i - 1}`};`)
+      .join("\n");
+    const selector = (i) => (count === 2 ? `binding${i}` : `#${i}`);
+    const cells = [[`binding${count - 1}`, count, 0]];
+    cases.push({
+      kind: "inlineConstructor",
+      input: {
+        source: parse(sourceText),
+        sourceText,
+        spec: {
+          ...inlineLexicalSpec,
+          modules: { "entry.mjs": ids.slice(cut).map(selector), "worker.mjs": ids.slice(0, cut).map(selector) },
+        },
+        checkFuel: 16,
+      },
+      expected: {
+        entry: "entry.mjs",
+        order: ["worker.mjs", "entry.mjs"],
+        placements: [
+          ...ids.slice(cut).map((i) => [i, "entry.mjs"]),
+          ...ids.slice(0, cut).map((i) => [i, "worker.mjs"]),
+        ],
+        sourceCells: cells,
+        outputCells: cells,
+      },
+    });
+  }
+}
 cases.push({
   kind: "singletonPlacement",
   input: linked(),

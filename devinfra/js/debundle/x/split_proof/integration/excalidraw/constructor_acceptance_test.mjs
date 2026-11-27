@@ -38,7 +38,12 @@ const root = process.env.TEST_TMPDIR;
 const spec = path.join(root, "scroll-spec.json");
 const out = path.join(root, "scroll-out");
 writeFileSync(spec, JSON.stringify(placement));
-const request = [{ kind: "namedConstructor", input: { source: dumpParsed(parsed), spec: placement } }];
+const request = [
+  {
+    kind: "inlineConstructor",
+    input: { source: dumpParsed(parsed, { includeOpaqueCaptures: true }), sourceText: code, spec: placement },
+  },
+];
 const probe = spawnSync(process.env.LINKED_INPUT_CHECKER, [], {
   encoding: "utf8",
   input: JSON.stringify(request) + "\n",
