@@ -18,13 +18,13 @@ eslint_test(
 )
 
 # The golden cases of the effect analysis: what each unit of a small bundle touches, and Node's verdict on reorders.
-_TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
+_TRANSLATE = "//devinfra/js/debundle/x/split_proof:translate"
 
 _RUNNER_DATA = [
     "//devinfra/js/debundle/x/split_proof:seeded_random",
     "//devinfra/js/debundle/x/split_proof/translation:pair",
     _TRANSLATE,
-    "//devinfra/js/debundle/x/split_proof/lean:lower",
+    "//devinfra/js/debundle/x/split_proof:lower",
 ]
 
 _GOLDEN_CASES = [
@@ -33,7 +33,7 @@ _GOLDEN_CASES = [
 ]
 
 _EFFECTS_CASES_ENV = {
-    "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+    "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof:lower)",
     "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
 }
 
@@ -102,7 +102,7 @@ js_test(
     entry_point = "run.mjs",
     env = {
         "CASES": "./targeted.mjs",
-        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof:lower)",
         "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
     },
 )

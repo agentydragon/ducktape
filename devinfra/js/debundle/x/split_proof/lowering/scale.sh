@@ -4,7 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 bundles=${BUNDLES_DIR:-bundles}
-lowersplit=${LOWERSPLIT:-../lean/.lake/build/bin/lowersplit}
+lowersplit=${LOWERSPLIT:-../.lake/build/bin/lowersplit}
 work=$(mktemp -d "${T:-${TMPDIR:-/tmp}}/split-proof-scale.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 failed=0
@@ -34,7 +34,7 @@ JS
   local -a command=("$lowersplit" --diagnostic "$deployment" "$dir/out")
   local rejection="rejected; nothing written"
   if [[ $# -eq 4 ]]; then
-    command=("${REPLICATE_PLAN:-../lean/.lake/build/bin/replicate_plan}" "$bundle" "$dir/spec.json" "$copies")
+    command=("${REPLICATE_PLAN:-../.lake/build/bin/replicate_plan}" "$bundle" "$dir/spec.json" "$copies")
     rejection="planner rejected"
   fi
   timeout 240 "${command[@]}" >"$dir/log" 2>&1 || status=$?

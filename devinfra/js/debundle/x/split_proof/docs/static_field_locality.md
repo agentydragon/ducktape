@@ -5,7 +5,7 @@ units. Suppose the first allocates a class in region A, and the second, in
 region B, executes `publicField(Class, "cache", new WeakMap())`. On a
 successful run the class has a new own property. Even if construction and the
 helper have exactly their native behavior, the record at the class address in
-A has changed. [`not_local_of_foreign_object_change`](../lean/EsmSplit/CoreJS/Move.lean)
+A has changed. [`not_local_of_foreign_object_change`](../EsmSplit/CoreJS/Move.lean)
 rules out `Local B R` for every set of readable cells R: a local step may
 replace the object and cell rows of B only.
 

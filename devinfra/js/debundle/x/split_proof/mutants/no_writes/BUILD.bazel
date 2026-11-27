@@ -1,9 +1,9 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library")
 
-_SOURCE = "//devinfra/js/debundle/x/split_proof/lean:EsmSplit/Translate.lean"
+_SOURCE = "//devinfra/js/debundle/x/split_proof:EsmSplit/Translate.lean"
 
-_BASE = "//devinfra/js/debundle/x/split_proof/lean:EsmSplit/TranslateMain.lean"
+_BASE = "//devinfra/js/debundle/x/split_proof:EsmSplit/TranslateMain.lean"
 
 # The checker with every statement's computed write footprint erased. `ast_write_mutation_test` runs the generated
 # AST corpus against it and against the real checker. The genrule fails if the edited line is not present exactly once.
@@ -32,10 +32,10 @@ lean_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
-        "//devinfra/js/debundle/x/split_proof/lean:cli",
-        "//devinfra/js/debundle/x/split_proof/lean:correct",
-        "//devinfra/js/debundle/x/split_proof/lean:effects",
-        "//devinfra/js/debundle/x/split_proof/lean:translate_input",
+        "//devinfra/js/debundle/x/split_proof:cli",
+        "//devinfra/js/debundle/x/split_proof:correct",
+        "//devinfra/js/debundle/x/split_proof:effects",
+        "//devinfra/js/debundle/x/split_proof:translate_input",
     ],
 )
 

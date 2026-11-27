@@ -19,8 +19,8 @@ import { frontBundle, frontTree } from "../translation/frontend.mjs";
 import { pairFiles } from "../translation/pair.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const lower = process.env.LOWER ?? path.join(here, "../lean/.lake/build/bin/lower");
-const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/bin/translate");
+const lower = process.env.LOWER ?? path.join(here, "../.lake/build/bin/lower");
+const translate = process.env.TRANSLATE ?? path.join(here, "../.lake/build/bin/translate");
 const show = process.argv.includes("--show");
 const option = (name, fallback) => {
   const i = process.argv.lastIndexOf(`--${name}`);

@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/bin/translate");
+const translate = process.env.TRANSLATE ?? path.join(here, "../.lake/build/bin/translate");
 const run = (command, args) => spawnSync(command, args, { encoding: "utf8", maxBuffer: 1 << 28 });
 
 let failures = 0;

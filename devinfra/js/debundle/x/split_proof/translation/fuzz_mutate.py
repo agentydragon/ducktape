@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
+ROOT = HERE.parent
 BUNDLE, PLAN, LOWER, TRANSLATE = (
     "EsmSplit/Bundle.lean",
     "EsmSplit/Plan.lean",
@@ -988,13 +988,23 @@ MUTANTS = {
 }
 
 
+def copy_lean_project(dest: pathlib.Path) -> None:
+    dest.mkdir()
+    for name in ("lakefile.toml", "lake-manifest.json", "lean-toolchain"):
+        shutil.copy2(ROOT / name, dest)
+    for source in ROOT.glob("*.lean"):
+        shutil.copy2(source, dest)
+    for name in ("EsmSplit", "Experiments"):
+        shutil.copytree(ROOT / name, dest / name, symlinks=True)
+
+
 def main():
     count = sys.argv[1] if len(sys.argv) > 1 else "150"
     seed = sys.argv[2] if len(sys.argv) > 2 else "2"
     only = sys.argv[3] if len(sys.argv) > 3 else ""
     with tempfile.TemporaryDirectory() as tmp:
         lean = pathlib.Path(tmp) / "lean"
-        shutil.copytree(ROOT / "lean", lean, symlinks=True, ignore=shutil.ignore_patterns("bin"))
+        copy_lean_project(lean)
         # `SHARD=i/n` takes every n-th mutant starting at i, so that n copies can run at once; `START=k` skips the first k
         index, shards = (int(x) for x in os.environ.get("SHARD", "0/1").split("/"))
         start = int(os.environ.get("START", "0"))

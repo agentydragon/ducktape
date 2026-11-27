@@ -6,32 +6,32 @@ load("//devinfra/python:defs.bzl", "py_test")
 # gazelle:exclude browser_smoke_test.py
 
 _DUMP_DATA = [
-    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof:lowersplit",
     "//devinfra/js/debundle/x/split_proof/translation:split_dump",
 ]
 
 _SOURCE_AST_DATA = [
-    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof:lowersplit",
     "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
     "//devinfra/js/debundle/x/split_proof/translation:parser",
     "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
 ]
 
-_LOWERSPLIT_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
+_LOWERSPLIT_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"}
 
 js_test(
     name = "lowering_census",
     data = [
         "//devinfra/js/debundle/e2e:corpus_files",
         "//devinfra/js/debundle/excalidraw:bundle",
+        "//devinfra/js/debundle/x/split_proof:corejs",
         "//devinfra/js/debundle/x/split_proof/integration/library_splits:prepare",
-        "//devinfra/js/debundle/x/split_proof/lean:corejs",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
     ],
     entry_point = "lowering_census.mjs",
     env = {
-        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof:corejs)",
         "CORPUS_MANIFEST": "$(rootpath //devinfra/js/debundle/e2e:corpus_files)",
         "EXCALIDRAW_OUTPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
         "LIBRARY_PREPARE": "$(rootpath //devinfra/js/debundle/x/split_proof/integration/library_splits:prepare)",
@@ -50,14 +50,14 @@ js_test(
     timeout = "long",
     data = _DUMP_DATA + [
         "//devinfra/js/debundle/excalidraw:bundle",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof:lower",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
     entry_point = "run.mjs",
     env = dict(
         _LOWERSPLIT_ENV,
         EXCALIDRAW_OUTPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
-        LOWER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        LOWER = "$(rootpath //devinfra/js/debundle/x/split_proof:lower)",
     ),
     tags = ["manual"],
 )
@@ -129,26 +129,26 @@ _EXCALIDRAW_SCROLL_DATA = [
     "//devinfra/js/debundle/excalidraw:bundle",
     "//devinfra/js/debundle/excalidraw:inputs",
     "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
-    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof:lowersplit",
 ]
 
 _EXCALIDRAW_SCROLL_ENV = {
     "EDITOR_LEAN_SPEC": "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
     "EXCALIDRAW_INPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
     "EXCALIDRAW_OUTPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
-    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
 }
 
 # Compare the production constructor route against the unchanged scroll placement.
 js_test(
     name = "local_export_decode_test",
     data = [
-        "//devinfra/js/debundle/x/split_proof/lean:local_export_decode_test_runner",
+        "//devinfra/js/debundle/x/split_proof:local_export_decode_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation/linked:module_graph_fixture",
     ],
     entry_point = "local_export_decode_test.mjs",
-    env = {"LOCAL_EXPORT_DECODE_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:local_export_decode_test_runner)"},
+    env = {"LOCAL_EXPORT_DECODE_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof:local_export_decode_test_runner)"},
 )
 
 js_test(
@@ -156,13 +156,13 @@ js_test(
     size = "large",
     timeout = "long",
     data = _EXCALIDRAW_SCROLL_DATA + [
-        "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "constructor_acceptance_test.mjs",
     env = dict(
         _EXCALIDRAW_SCROLL_ENV,
-        LINKED_INPUT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)",
+        LINKED_INPUT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
     ),
     tags = ["manual"],
 )
@@ -237,11 +237,11 @@ py_test(
         "test_native_metadata_preset",
     ],
     data = _EXCALIDRAW_BROWSER_DATA + [
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
     ],
     env = dict(
         _EXCALIDRAW_BROWSER_ENV,
-        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof:lowersplit)",
     ),
     main = _EXCALIDRAW_BROWSER_PY,
     deps = _EXCALIDRAW_BROWSER_DEPS,
@@ -256,11 +256,11 @@ py_test(
         "test_bare_import",
     ],
     data = _EXCALIDRAW_BROWSER_DATA + [
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
     ],
     env = dict(
         _EXCALIDRAW_BROWSER_ENV,
-        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof:lowersplit)",
     ),
     main = _EXCALIDRAW_BROWSER_PY,
     deps = _EXCALIDRAW_BROWSER_DEPS,

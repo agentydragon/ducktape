@@ -19,8 +19,8 @@ Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused 
 
 | Task                                                | Command                                                                               |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Audit the shared proofs                             | `bbr test "$p/lean:axioms_test" "$p/lean:corejs_axioms_test"`                         |
-| Compile the extra Lean proofs                       | `bbr test "$p/lean:experiments_test"`                                                 |
+| Audit the shared proofs                             | `bbr test "$p:axioms_test" "$p:corejs_axioms_test"`                                   |
+| Compile the extra Lean proofs                       | `bbr test "$p:experiments_test"`                                                      |
 | Compare module evaluation order across 500 graphs   | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
 | Check translation fixtures and effect cases         | `bbr test "$p/translation:fixtures_test" "$p/effects:effects_cases_test"`             |
 | Run a larger translation fuzz sample                | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
@@ -31,8 +31,8 @@ Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused 
 ## Request a CoreJS guarantee
 
 ```sh
-bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json out
-bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json out --check-output
+bb run //devinfra/js/debundle/x/split_proof:lowersplit -- deployment.json out
+bb run //devinfra/js/debundle/x/split_proof:lowersplit -- deployment.json out --check-output
 ```
 
 Use a single source chunk with an authored, sequential placement. For example, for
@@ -69,7 +69,7 @@ Use `--diagnostic` for plan or conflict reports; it does not write modules.
 The abstract theorem below applies to a plan and its stated footprints. The planner uses its `Valid` checks. For the artifact guarantee of
 the normal splitter, see [CoreJS certification](#request-a-corejs-guarantee).
 
-[`lean/EsmSplit/Correct.lean`](lean/EsmSplit/Correct.lean):
+[`EsmSplit/Correct.lean`](EsmSplit/Correct.lean):
 
 ```lean
 def Correct (B : Bundle) (P : Plan) : Prop :=
@@ -85,7 +85,7 @@ For any statement semantics satisfying `Meaning`, an accepted plan executes
 each statement once, preserves binding resolution, and leaves the same
 top-level values and world state.
 
-`Valid` is a conjunction of decidable checks ([`Plan.lean`](lean/EsmSplit/Plan.lean)):
+`Valid` is a conjunction of decidable checks ([`Plan.lean`](EsmSplit/Plan.lean)):
 
 | Check                       | Says                                                                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -101,7 +101,7 @@ top-level values and world state.
 A statement **binds** the names it declares and the names it may assign (`writes`: reassigned variables, objects whose contents it changes,
 including what the functions it calls change; unknown code lists them all). These named mutable things are _cells_.
 A statement may also read names it does not mention, through a function it calls that it reached through an object (`deps`); they order it like `eager` names do.
-Two statements **conflict** ([`Bundle.lean`](lean/EsmSplit/Bundle.lean)) if both have effects,
+Two statements **conflict** ([`Bundle.lean`](EsmSplit/Bundle.lean)) if both have effects,
 or one reads a name the other binds (either direction), or both bind the same name.
 A hoisted `function` declaration never conflicts: it exists before any code runs.
 Everything else may be reshuffled freely. `assigns` is a different list: where the code that assigns a name physically sits, which decides where it must live (`AssignsHome`).
@@ -110,7 +110,7 @@ The order the split runs in is computed by `Plan.visit`: a model of ES module ev
 It goes depth first over `import`s in source order, runs each module once, and skips a module that is already being entered.
 That last rule cuts import cycles.
 
-[`Semantics.lean`](lean/EsmSplit/Semantics.lean) proves pairwise commutation of
+[`Semantics.lean`](EsmSplit/Semantics.lean) proves pairwise commutation of
 nonconflicting statements (`step_comm`) and lifts it to the plan's execution
 order (`exec_reorder`).
 `lean:axioms_test` checks axiom dependencies;
@@ -119,7 +119,7 @@ order (`exec_reorder`).
 ## What is not proved
 
 The abstract theorem assumes footprint soundness for the supplied program.
-[`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
+[`Lower.lean`](EsmSplit/Lower.lean) scans declarations, eager and deferred
 names, and assignment sites. [The Effects analysis](effects/README.md) supplies
 writes, indirect reads and world effects under its printed premises.
 

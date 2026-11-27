@@ -5,7 +5,7 @@ Line counts are Lean code lines (no comments, no blank lines).
 
 ## 1. Sound plans without a spec
 
-[`EsmSplit/Correct.lean`](../lean/EsmSplit/Correct.lean) defines `Sound` and proves `sound_correct`:
+[`EsmSplit/Correct.lean`](../EsmSplit/Correct.lean) defines `Sound` and proves `sound_correct`:
 if a recovered plan passes the structural and ordering checks, it satisfies `Correct`. The translation
 validator (§ 12) uses those checks on a plan recovered from a bundle and an output tree. Its pairing,
 renaming and JavaScript front end are not covered by that theorem.
@@ -16,11 +16,11 @@ eager read and the translation validator's verdict, and runs the unsafe output i
 
 ## 3. Custom proofs for pairs the syntax check refuses
 
-[`CustomMoveExample.lean`](../lean/CustomMoveExample.lean) starts with two expression statements that evaluate boolean literals. `movesOk` refuses to swap them. The example proves the two steps commute in either order and passes that relation to the production `moves_preserve_run_of_sound` theorem.
+[`CustomMoveExample.lean`](../CustomMoveExample.lean) starts with two expression statements that evaluate boolean literals. `movesOk` refuses to swap them. The example proves the two steps commute in either order and passes that relation to the production `moves_preserve_run_of_sound` theorem.
 
 ## 4. How much does Lean's own automation write?
 
-[`Automation.lean`](../lean/Experiments/Automation.lean), the lemmas that took the most iterations by hand:
+[`Automation.lean`](../Experiments/Automation.lean), the lemmas that took the most iterations by hand:
 
 | Lemma                                         | `grind` unaided | with a little scaffolding                                                    |
 | --------------------------------------------- | --------------- | ---------------------------------------------------------------------------- |
@@ -39,19 +39,19 @@ Times and conditions: [`TIMINGS.md`](TIMINGS.md). Raw output: [`records/`](recor
 
 [Stage the public bundle dumps](#public-bundle-inputs) and keep their absolute
 directory in `out`. From the repository root, use Lake from the Lean release
-pinned in [`lean-toolchain`](../lean/lean-toolchain).
+pinned in [`lean-toolchain`](../lean-toolchain).
 
 ```sh
 p=devinfra/js/debundle/x/split_proof
 (cd "$p/translation" && cp package.json.in package.json && npm ci --no-audit --no-fund)
-(cd "$p/lean" && lake build lowersplit replicate_plan)
+(cd "$p" && lake build lowersplit replicate_plan)
 BUNDLES_DIR="$out" "$p/lowering/scale.sh"
 BUNDLES_DIR="$out" "$p/lowering/scale.sh" replicate
 ```
 
 [`scale.sh`](../lowering/scale.sh) measures diagnostic checks on contiguous
 blocks. It derives unit counts from the staged ASTs and caps each run at 240 s.
-The normal mode includes lodash prefixes. The replication mode runs the [planner benchmark](../lean/Experiments/ReplicatePlan.lean)
+The normal mode includes lodash prefixes. The replication mode runs the [planner benchmark](../Experiments/ReplicatePlan.lean)
 on renamed copies of the original footprints. It does not emit modules. The table distinguishes checker
 refusals, timeouts and execution errors. Override `LOWERSPLIT` or `REPLICATE_PLAN` to select a different binary.
 
@@ -62,7 +62,7 @@ The tables below record the study's inputs and checker revisions.
 **The first version was slow in the wrong places.** The checks were plain statements (`∀ i ∈ range n, …`) and `decide` ran them as written.
 A profile of real bundles found the cost at once: a closure recomputed inside a loop, list scans for membership, and `B.stmt i`, which is a list lookup.
 Each check now has an algorithm over `TreeSet`/`TreeMap` tables and a theorem that it computes the statement
-([`Fast.lean`](../lean/EsmSplit/Fast.lean), [`Bundle.lean`](../lean/EsmSplit/Bundle.lean)). The statements in `Plan.lean` did not change.
+([`Fast.lean`](../EsmSplit/Fast.lean), [`Bundle.lean`](../EsmSplit/Bundle.lean)). The statements in `Plan.lean` did not change.
 The `Decidable` instances run the fast algorithms, compiled and in the kernel. The equivalence proofs are about 450 lines of Lean, more than everything else in the core.
 
 | Check                                 | Before                                                   | Now                                                                                                           |
@@ -126,13 +126,13 @@ bb run //devinfra/js/debundle/x/split_proof/translation:dump_ast -- /path/to/bun
 node devinfra/js/debundle/x/split_proof/translation/dump_ast.mjs /path/to/bundle.mjs > bundle.json
 ```
 
-[`Lower.lean`](../lean/EsmSplit/Lower.lean) (306 lines) reads it as `Lean.Json`, which is untyped, so **every** node type of JavaScript is representable.
+[`Lower.lean`](../EsmSplit/Lower.lean) (306 lines) reads it as `Lean.Json`, which is untyped, so **every** node type of JavaScript is representable.
 It scans what each statement declares, mentions and assigns. The scan is total and sound by construction:
 
 - a name is local only if a _recognized_ binder introduces it;
 - any node type it does not recognize goes through a fallback: every identifier below is a reference. That can add dependencies, never drop one.
 
-Whether a statement touches the world, and which names it may change, is not decided here: [`Effects.lean`](../lean/EsmSplit/Effects.lean) does that (§ 13), and the model uses no other classification.
+Whether a statement touches the world, and which names it may change, is not decided here: [`Effects.lean`](../EsmSplit/Effects.lean) does that (§ 13), and the model uses no other classification.
 
 Adding precision is the only way to get something wrong. So I compared against the oracle on real code
 ([`compare.mjs`](../lowering/compare.mjs)), on four packages bundled by esbuild (readable and minified) and on a hand-written scoping stress file:
@@ -261,7 +261,7 @@ Worth reusing, not done:
 an entered module is skipped (that is how cycles end). `OrderOk` rests on it, and the proof does not cover it.
 
 [`es_order/check.mjs`](../es_order/check.mjs) builds random import graphs (2–8 modules, 0–3 imports each, cycles and unreachable modules included).
-Every module prints its name. The order Node prints must equal `Plan.evalOrder`, which the `evalorder` executable ([`EvalOrder.lean`](../lean/EsmSplit/EvalOrder.lean)) prints.
+Every module prints its name. The order Node prints must equal `Plan.evalOrder`, which the `evalorder` executable ([`EvalOrder.lean`](../EsmSplit/EvalOrder.lean)) prints.
 
 CI compares 40 seeded random graphs and a fixed cycle with an unreachable module. As a negative control,
 reversing the fixed graph's imports in Node alone must change the observed order.
@@ -338,23 +338,23 @@ The obligations are effect-effect pairs the tree runs in the opposite order from
 
 ## 14. An executable model of a core of JavaScript
 
-[`CoreJS`](../lean/EsmSplit/CoreJS/) is the model that footprint rules are to be proved against ([`PLAN.md`](../PLAN.md) § Direction). It is an interpreter: total functions by recursion on a fuel bound, no `partial`, no `sorry`. A program has one right answer, so the model is tested against Node.
+[`CoreJS`](../EsmSplit/CoreJS/) is the model that footprint rules are to be proved against ([`PLAN.md`](../PLAN.md) § Direction). It is an interpreter: total functions by recursion on a fuel bound, no `partial`, no `sorry`. A program has one right answer, so the model is tested against Node.
 
-| File                                                     | Holds                                                                                                                                                                                | Lines |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----: |
-| [`Syntax.lean`](../lean/EsmSplit/CoreJS/Syntax.lean)     | the typed syntax tree, opaque statements, modules, which names a scope declares, and the free names of a piece of code                                                               |   317 |
-| [`Number.lean`](../lean/EsmSplit/CoreJS/Number.lean)     | `Number::toString`, `StringToNumber`, `%`, `ToInt32`, exactly, on the bits of a `Float`                                                                                              |   170 |
-| [`Value.lean`](../lean/EsmSplit/CoreJS/Value.lean)       | values, the heap, bindings, conversions, operators, property operations, the world, its table of functions and its conversation                                                      |   866 |
-| [`Eval.lean`](../lean/EsmSplit/CoreJS/Eval.lean)         | the interpreter: twelve mutually recursive functions, and how a program is linked and run                                                                                            |   635 |
-| [`Fragment.lean`](../lean/EsmSplit/CoreJS/Fragment.lean) | the syntax checks the proofs rest on: `Expr.allocOnly`, `Expr.readsNow`, `Stmt.inert`, `Stmt.allocs`, `mayMove`                                                                      |    77 |
-| [`Frame.lean`](../lean/EsmSplit/CoreJS/Frame.lean)       | the proof of the allocation rule below                                                                                                                                               |   497 |
-| [`Fuel.lean`](../lean/EsmSplit/CoreJS/Fuel.lean)         | more fuel never changes a run that finished                                                                                                                                          |   311 |
-| [`Scope.lean`](../lean/EsmSplit/CoreJS/Scope.lean)       | code sees a scope only through its free names                                                                                                                                        |   630 |
-| [`Split.lean`](../lean/EsmSplit/CoreJS/Split.lean)       | a split that keeps the order ends as the bundle does                                                                                                                                 |   893 |
-| [`Move.lean`](../lean/EsmSplit/CoreJS/Move.lean)         | a split that moves statements that only allocate and function declarations past each other ends as the bundle does                                                                   |   961 |
-| [`Decode.lean`](../lean/EsmSplit/CoreJS/Decode.lean)     | reads a program; [`Run.lean`](../lean/EsmSplit/CoreJS/Run.lean) is the `corejs` executable and its world                                                                             |   706 |
-| [`model/to_core.mjs`](../model/to_core.mjs)              | the front end: acorn's trees to the model's syntax, or a refusal with the node type                                                                                                  |   803 |
-| [`model/differential.mjs`](../model/differential.mjs)    | the test against Node, with [`model/cases.mjs`](../model/cases.mjs), [`model/module_cases.mjs`](../model/module_cases.mjs) and [`model/opaque_cases.mjs`](../model/opaque_cases.mjs) | 1,589 |
+| File                                                  | Holds                                                                                                                                                                                | Lines |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----: |
+| [`Syntax.lean`](../EsmSplit/CoreJS/Syntax.lean)       | the typed syntax tree, opaque statements, modules, which names a scope declares, and the free names of a piece of code                                                               |   317 |
+| [`Number.lean`](../EsmSplit/CoreJS/Number.lean)       | `Number::toString`, `StringToNumber`, `%`, `ToInt32`, exactly, on the bits of a `Float`                                                                                              |   170 |
+| [`Value.lean`](../EsmSplit/CoreJS/Value.lean)         | values, the heap, bindings, conversions, operators, property operations, the world, its table of functions and its conversation                                                      |   866 |
+| [`Eval.lean`](../EsmSplit/CoreJS/Eval.lean)           | the interpreter: twelve mutually recursive functions, and how a program is linked and run                                                                                            |   635 |
+| [`Fragment.lean`](../EsmSplit/CoreJS/Fragment.lean)   | the syntax checks the proofs rest on: `Expr.allocOnly`, `Expr.readsNow`, `Stmt.inert`, `Stmt.allocs`, `mayMove`                                                                      |    77 |
+| [`Frame.lean`](../EsmSplit/CoreJS/Frame.lean)         | the proof of the allocation rule below                                                                                                                                               |   497 |
+| [`Fuel.lean`](../EsmSplit/CoreJS/Fuel.lean)           | more fuel never changes a run that finished                                                                                                                                          |   311 |
+| [`Scope.lean`](../EsmSplit/CoreJS/Scope.lean)         | code sees a scope only through its free names                                                                                                                                        |   630 |
+| [`Split.lean`](../EsmSplit/CoreJS/Split.lean)         | a split that keeps the order ends as the bundle does                                                                                                                                 |   893 |
+| [`Move.lean`](../EsmSplit/CoreJS/Move.lean)           | a split that moves statements that only allocate and function declarations past each other ends as the bundle does                                                                   |   961 |
+| [`Decode.lean`](../EsmSplit/CoreJS/Decode.lean)       | reads a program; [`Run.lean`](../EsmSplit/CoreJS/Run.lean) is the `corejs` executable and its world                                                                                  |   706 |
+| [`model/to_core.mjs`](../model/to_core.mjs)           | the front end: acorn's trees to the model's syntax, or a refusal with the node type                                                                                                  |   803 |
+| [`model/differential.mjs`](../model/differential.mjs) | the test against Node, with [`model/cases.mjs`](../model/cases.mjs), [`model/module_cases.mjs`](../model/module_cases.mjs) and [`model/opaque_cases.mjs`](../model/opaque_cases.mjs) | 1,589 |
 
 **What it covers.** Strict-mode module code. Numbers, strings, booleans, `undefined`, `null`. `var`, `let`, `const` with hoisting and the temporal dead zone. Functions, arrows and methods as closures; calls with `this`, method calls, `new`. Object literals with data properties, getters, setters and `__proto__`; array literals (read only). Classes without `extends`: methods, accessors, instance and static fields. Property read, write, `delete` and `in` along the prototype chain, with getters and setters run on the receiver. `Object.defineProperty` with the specification's validation, `Object.create`, `Object.getPrototypeOf`, `Object.setPrototypeOf`. `throw`, `try`, `catch`, `finally`; `if`, `for`, `while`, `break`, `continue`, `return`. The operators except `**` and `instanceof`; `typeof`; template literals; `console.log` of primitives.
 
@@ -378,7 +378,7 @@ structure World where
 ```
 
 - A world has a state of its own and one deterministic step: the host function `fn`, called with a receiver and arguments, ends with a primitive, a thrown primitive or a thrown error of some kind, and leaves the next state. The state of the model holds the state of the world (`State W`).
-- _Which functions the model asks the world about_ is a table in [`Value.lean`](../lean/EsmSplit/CoreJS/Value.lean) (`worldFunction`), 88 of them: 32 methods of strings, 5 of numbers, 2 of booleans, which take their receiver; the 35 functions of `Math`, 6 of `Number`, 2 of `String`, and `Boolean`, `Number`, `isFinite`, `isNaN`, `parseFloat`, `parseInt`, which do not. The claim for each is: called with a primitive receiver and primitive arguments, it returns a primitive or throws, and it reads and changes nothing the program can reach. Left out on purpose: `match`, `matchAll` and `split`, which return objects.
+- _Which functions the model asks the world about_ is a table in [`Value.lean`](../EsmSplit/CoreJS/Value.lean) (`worldFunction`), 88 of them: 32 methods of strings, 5 of numbers, 2 of booleans, which take their receiver; the 35 functions of `Math`, 6 of `Number`, 2 of `String`, and `Boolean`, `Number`, `isFinite`, `isNaN`, `parseFloat`, `parseInt`, which do not. The claim for each is: called with a primitive receiver and primitive arguments, it returns a primitive or throws, and it reads and changes nothing the program can reach. Left out on purpose: `match`, `matchAll` and `split`, which return objects.
 - _Anything that would hand the host an object_ ends the run as `unknown` in this stage: an object as receiver or argument, and a host function that is not in the table.
 - _How a program gets such a function._ A property that a string, a number or a boolean does not have itself is a member of its prototype, a host value under its real name, when the prototype has that name; otherwise it is looked up on `Object.prototype`, which the program can change, and a getter found there runs with the primitive as `this`. `Math.abs` is a read of a member of a host global. A program that had replaced one of these would have ended as `unknown` at the write.
 - _Strings._ Host recordings preserve well-formed strings, including supplementary characters. A reached return or throw containing an isolated UTF-16 surrogate ends the run as `unknown`.
@@ -396,7 +396,7 @@ structure World where
 
 **Checked against Node** by `corejs_differential_test` in CI and `corejs_differential_sweep_test` on demand. Both sides must print the same lines and end the same way (a thrown primitive by value, an error by its kind). [`model/README.md`](../model/README.md) maps the landed features to manual and generated execution, required reordered splits, and remaining gaps.
 
-**The world of the test is Node, as a recording.** Every program runs in Node first, with the 88 functions wrapped; each call that a file of the program makes with a primitive receiver and primitive arguments is written down with how it ended. The model then runs in the world that answers exactly those calls in that order (`replay` in [`Run.lean`](../lean/EsmSplit/CoreJS/Run.lean)). So the model has to make the calls Node made, the same function with the same receiver and arguments in the same order, and it gets Node's answers. A call that is not the next recorded one fails the test; so does a recorded call the model did not make before it ended, and a listed function that returns an object. `Math.random` needs nothing special: its answers are in the recording.
+**The world of the test is Node, as a recording.** Every program runs in Node first, with the 88 functions wrapped; each call that a file of the program makes with a primitive receiver and primitive arguments is written down with how it ended. The model then runs in the world that answers exactly those calls in that order (`replay` in [`Run.lean`](../EsmSplit/CoreJS/Run.lean)). So the model has to make the calls Node made, the same function with the same receiver and arguments in the same order, and it gets Node's answers. A call that is not the next recorded one fails the test; so does a recorded call the model did not make before it ended, and a listed function that returns an object. `Math.random` needs nothing special: its answers are in the recording.
 
 - 41 hand-written cases for what the generator rarely writes: a getter three prototypes up, a setter that throws, `finally` overriding `return`, `delete` of a missing and of a fixed property, a method with another `this`, closures over a loop variable, `var` hoisting, the dead zone, descriptor validation, a getter put on `Object.prototype`, class fields, number printing; and for the world: methods of strings and numbers, `Math`, the parsing functions, a host function that throws, a property of a string found on `Object.prototype`, a host function stored and called later. Eleven of them must end `unknown`, among them a host function that is handed an object and one that returns a string containing an isolated UTF-16 surrogate.
 - 19 hand-written programs of several modules: a live binding read after the exporter assigned it, a function called before the body of its module ran, the dead zone and `var` across modules, bare imports, a cycle of three, export and import under other names, a module imported twice, a missing export, an assigned import (also in its dead zone), default exports, a module that throws, modules in directories. For each, the order in which the model runs the modules is also compared with `Plan.evalOrder` of the proved checker (the `evalorder` executable): they agree on all 19.
@@ -425,7 +425,7 @@ The low share of generated units is the finding of [`SUPPORT.md`](../SUPPORT.md)
 
 One disagreement was found on the way: `x ** 2` differed from Node in the last bit for one operand. The specification leaves `**` to the implementation, and the C library's `pow` is not V8's. `**` is refused now.
 
-**What is proved** ([`Frame.lean`](../lean/EsmSplit/CoreJS/Frame.lean), on Lean's three standard axioms). The shape `Expr.allocOnly`: a literal, a name, a function, an object literal of named data properties, an array literal, nested.
+**What is proved** ([`Frame.lean`](../EsmSplit/CoreJS/Frame.lean), on Lean's three standard axioms). The shape `Expr.allocOnly`: a literal, a name, a function, an object literal of named data properties, an array literal, nested.
 
 ```lean
 theorem allocOnly_extends {W : World} (h : e.allocOnly = true) (fuel : Nat) (env : Env) (s : State W) :
@@ -436,7 +436,7 @@ theorem decl_allocOnly {W : World} (h : e.allocOnly = true) (fuel : Nat) (env : 
 
 However the expression ends, every object and binding that existed is unchanged, nothing is printed and the world is in the state it was in; what it made is new. A declaration with such an initializer changes no binding but its own. This is the footprint "binds its name, no effect", proved for that shape.
 
-[`Fuel.lean`](../lean/EsmSplit/CoreJS/Fuel.lean) proves that the bound on the depth is only a bound:
+[`Fuel.lean`](../EsmSplit/CoreJS/Fuel.lean) proves that the bound on the depth is only a bound:
 
 ```lean
 theorem fuel_mono {W : World} (h : runProgram W n P = r) (hr : r ≠ .fuel) (hnm : n ≤ m) : runProgram W m P = r
@@ -446,7 +446,7 @@ theorem Ends.unique {W : World} (h : Ends W P r) (h' : Ends W P r') : r = r'
 
 A run that ends with a value, a throw or unknown code ends the same way with any larger bound, so a program ends in at most one way. The proof compares the two runs rule by rule; no rule of the interpreter had to change for it.
 
-[`Scope.lean`](../lean/EsmSplit/CoreJS/Scope.lean) proves that code sees a scope only through the names that are free in it. `Agree N env env'` says that two scopes have the same `this` and give every name of `N` the same binding, or none.
+[`Scope.lean`](../EsmSplit/CoreJS/Scope.lean) proves that code sees a scope only through the names that are free in it. `Agree N env env'` says that two scopes have the same `this` and give every name of `N` the same binding, or none.
 
 ```lean
 theorem same : ∀ n, Same W n
@@ -457,7 +457,7 @@ theorem capture_faithful (n : Nat) (env : Env) (s : Stmt) (N : List Name) (hN : 
 
 `Same W n` is that statement for each of the nine functions of the interpreter that take a scope: with `Agree` on the free names of the code, the two computations are equal, for every bound and every world. They are equal as functions of the state, results and final states included, not related up to something: a closure made on either side keeps the same bindings. `capture_faithful` is the reason closures may keep so little: code runs in the kept bindings as it runs in the scope.
 
-[`Split.lean`](../lean/EsmSplit/CoreJS/Split.lean) proves the first slice of the theorem of [`PLAN.md`](../PLAN.md), a split that keeps the order:
+[`Split.lean`](../EsmSplit/CoreJS/Split.lean) proves the first slice of the theorem of [`PLAN.md`](../PLAN.md), a split that keeps the order:
 
 ```lean
 def ScopesAgree (P P' : Program) : Prop :=
@@ -473,7 +473,7 @@ theorem order_kept_preserves {P P' : Program} (hregions : P.regions = P'.regions
 - **For a plan that `Valid` accepts**, `valid_order_kept_preserves` is the theorem with no further hypotheses than footprints that say what the text says (`FootprintsOfSyntax`). It rests on two facts. `split_holds_statements`: `splitProgram`, the modeled program for a plan, has the bundle's statements when the plan keeps the order; the model's order of evaluation is `Plan.visit` (`split_visit`). `split_scopes_agree`: the scopes of `splitProgram` agree with the bundle's. The second is the substance: an import resolves, through the export it names, to the binding of the one statement that declares the name. It needs the exporting module to declare the name, which `Linkable` asks: the model does not follow an `export` statement that publishes a name its module imports.
 - _What the test adds._ The conclusion, the same final state, holds on every order-kept split the real tool produced in the test (above). It also checks the model against `Valid`: a split the test finds wrong would be a counterexample to `valid_order_kept_preserves` or to `FootprintsOfSyntax`.
 
-**A split that moves code** ([`Move.lean`](../lean/EsmSplit/CoreJS/Move.lean)):
+**A split that moves code** ([`Move.lean`](../EsmSplit/CoreJS/Move.lean)):
 
 ```lean
 theorem moves_preserve (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B)
@@ -482,8 +482,8 @@ theorem moves_preserve (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax
 ```
 
 - _What it says._ For a plan that `Valid` accepts, the bundle ends normally in a state exactly when the split ends normally in the same state, in every world, if every pair of statements the split runs out of bundle order may move past each other.
-- _`MayMove`_ ([`Fragment.lean`](../lean/EsmSplit/CoreJS/Fragment.lean)) is a check on the syntax, not on the footprints: one of the two is a function declaration, a `var` without initializer or an opaque statement that declares only functions (`Stmt.inert`), or both only allocate (`Stmt.allocs`) and neither reads a name the other declares before it returns. A statement that only allocates is a declaration whose initializer only allocates (`Expr.allocOnly`, reading `Expr.readsNow`), or an opaque statement that only makes functions, which reads nothing.
-- _Why it holds._ Statement `i` allocates in its own region. A declaration whose initializer only allocates reads only its own region and the bindings it names, and writes only its own region (`Local`, `decl_local`); an opaque statement that only makes functions reads only its own region (`closures_local`). Two such statements commute when neither reads the other's binding (`local_units_commute`); an inert statement commutes with any statement (`commute_inert`). The reorder argument of [`Semantics.lean`](../lean/EsmSplit/Semantics.lean) (`foldl_reorder`) then carries the commutations through the run, and `split_units_agree` gives each moved statement the scope it had in the bundle.
+- _`MayMove`_ ([`Fragment.lean`](../EsmSplit/CoreJS/Fragment.lean)) is a check on the syntax, not on the footprints: one of the two is a function declaration, a `var` without initializer or an opaque statement that declares only functions (`Stmt.inert`), or both only allocate (`Stmt.allocs`) and neither reads a name the other declares before it returns. A statement that only allocates is a declaration whose initializer only allocates (`Expr.allocOnly`, reading `Expr.readsNow`), or an opaque statement that only makes functions, which reads nothing.
+- _Why it holds._ Statement `i` allocates in its own region. A declaration whose initializer only allocates reads only its own region and the bindings it names, and writes only its own region (`Local`, `decl_local`); an opaque statement that only makes functions reads only its own region (`closures_local`). Two such statements commute when neither reads the other's binding (`local_units_commute`); an inert statement commutes with any statement (`commute_inert`). The reorder argument of [`Semantics.lean`](../EsmSplit/Semantics.lean) (`foldl_reorder`) then carries the commutations through the run, and `split_units_agree` gives each moved statement the scope it had in the bundle.
 - _Only normal endings._ The theorem says nothing about a run that throws or reaches unknown code. That is why it needs no invariant that an allocating expression never ends `unknown`: a run that ends normally ran every statement to its end.
 - _Class boundary:_ fixed-string-key classes may have deferred instance fields and allocation-only static initializers. The proof tracks static initializers' eager binding reads; static blocks, effectful initializers and heritage remain outside `Expr.allocOnly`.
 
@@ -493,7 +493,7 @@ The linked move census reads an annotated AST through the same per-unit lowering
 
 ```sh
 bb run //devinfra/js/debundle/x/split_proof/translation:dump_ast -- /path/to/bundle.mjs --opaque-captures > bundle.json
-bb run //devinfra/js/debundle/x/split_proof/lean:corejs -- --moves-ast bundle.json
+bb run //devinfra/js/debundle/x/split_proof:corejs -- --moves-ast bundle.json
 ```
 
 The JSON report counts executable source units, excluding static imports, export lists, empty statements and `debugger`. It defaults to the production `empty` host profile and does not link providers. For library splits or Excalidraw, pass `--host-contract` with a JSON file containing `{ "profile": "ecmascript" }` or `{ "profile": "browser-page" }` respectively. The stable-intrinsic contracts accepted by `lowersplit` select the same profiles here; their additional premises do not change this syntactic census. For Node comparison programs only, `--node-recording` explicitly selects the recorded host. The report includes `hostProfile`. `inert` and `allocate` are disjoint, `opaque` overlaps them, and `other` means neither rule applies, not that an effect was observed. `refused` counts units neither lowering accepts and remains in the denominator; `problems` contains the first 20 reasons. `may_move` over `may_move_denominator` is the individual candidate share, not the share of pairs that pass `MayMove`: allocation-only units also need disjoint binding reads to commute. This diagnostic is not a split certificate. Its linked lowering and refusal policy differ from the historical census, so compare changes with a baseline from the same tool.
@@ -515,7 +515,7 @@ The JSON report counts executable source units, excluding static imports, export
 
 - _An opaque statement_ is `Stmt.opaque code decls funs free run`: a number for its code, the names it declares (with their kind), the functions it declares (with their `length` and whether they construct), the other names it mentions, and whether the world runs it (`OpaqueRun`). The front end takes all of them from the scope analysis. The statement's free names are these names (`opaqueNames`), so `Same` and `capture_faithful` hold for it with no new argument.
 - _The world names an object only by its position in the list of objects it was handed_ (`Host.handed`, part of the state). An object goes on the list when it is given to the world, as an argument, a `this`, or the answer to a request. A handle that is not on the list ends the run as `unknown`. So the world reaches only what it was handed and what it read from that, by construction.
-- _A run of opaque code is a conversation_ (`World.talk`, `converse` in [`Eval.lean`](../lean/EsmSplit/CoreJS/Eval.lean)). The model tells the world what to run. The world answers with a request, the model carries it out on a smaller bound and tells the world how it ended, until the world ends the code with a value, a throw or `unknown`. The requests: read, write or initialize a binding it was handed (by its position in `opaqueNames`), read, write or delete a property, `in`, the own keys of an object, call or construct a function, make an object or a function, and the model's primitive operations. A request that throws is told to the world as a throw, so opaque code can catch it.
+- _A run of opaque code is a conversation_ (`World.talk`, `converse` in [`Eval.lean`](../EsmSplit/CoreJS/Eval.lean)). The model tells the world what to run. The world answers with a request, the model carries it out on a smaller bound and tells the world how it ended, until the world ends the code with a value, a throw or `unknown`. The requests: read, write or initialize a binding it was handed (by its position in `opaqueNames`), read, write or delete a property, `in`, the own keys of an object, call or construct a function, make an object or a function, and the model's primitive operations. A request that throws is told to the world as a throw, so opaque code can catch it.
 - _Functions of opaque code._ A function the statement declares is made when the program is linked, as for any function declaration. The world can also make one (`newFunction`). Each is a part of the statement's code, closed over the bindings the statement was handed. When the program calls it, the world runs that part with the callee, `this` and the arguments as handles.
 - _Opaque code that only makes functions_ (`OpaqueRun.closures`): a function declaration, or a declaration whose initializer is a function or an arrow, whatever its parameters and body. The world does not run it. A function declaration does nothing when it runs; a declaration gives each name a new function of the next part, with the `name`, `length` and constructibility the front end read from the text, as a declaration with that initializer would. Creating a function runs none of its code (default parameters run at the call), so this is the language's meaning, not an assumption about the world. Gap, as for opaque function declarations: a generator function gets no `prototype` object.
 - _Every proof holds for every world, opaque code included._ `fuel_mono`, `Same`, `order_kept_preserves` and `valid_order_kept_preserves` did not change their statements. The proofs needed one more case each: the conversation is monotone in the bound (`Mono.converse`), and an opaque statement sees the scope only through the bindings of its names (`opaqueCells_agree`).
@@ -523,9 +523,9 @@ The JSON report counts executable source units, excluding static imports, export
 
 **The front end makes opaque statements** when it is given a scope analysis (`toCore(source, { opaque: eslintScope })`; `coreOf` in [`split_dump.mjs`](../translation/split_dump.mjs)). A top-level unit it refuses becomes one opaque statement. Some units it still refuses, because no statement of the model can stand for them: a top-level `await` or `using`, a direct `eval`, `import.meta`, and `import()`, whose meaning depends on the file the unit is in. The option `census` makes these opaque anyway and lists them in `refused`. A name that no statement declares and that is not one of the host globals the model knows is refused in the model's syntax, so the unit is opaque and the world holds that name.
 
-**Checked against Node, with scripts for the world.** The test needs a world that does what the real code does. The hand-written programs in [`model/opaque_cases.mjs`](../model/opaque_cases.mjs) each supply a script for every part of their opaque code. The scripted world (`replay` in [`Run.lean`](../lean/EsmSplit/CoreJS/Run.lean)) answers with those requests in order. Cases cover destructuring, callbacks, throws, binding and property writes, object and function creation, getters, and opaque function initializers. Two cases exercise indirect reachability: opaque code calls a closure through an object without mentioning the captured binding itself. Initializing the binding before that call completes normally; moving the initializer after it throws in the dead zone. The test asserts those endings and agreement with Node. Each program is also offered to `lowersplit` as two consecutive modules; accepted splits must preserve behavior and the model's final state. A wrong script fails the test.
+**Checked against Node, with scripts for the world.** The test needs a world that does what the real code does. The hand-written programs in [`model/opaque_cases.mjs`](../model/opaque_cases.mjs) each supply a script for every part of their opaque code. The scripted world (`replay` in [`Run.lean`](../EsmSplit/CoreJS/Run.lean)) answers with those requests in order. Cases cover destructuring, callbacks, throws, binding and property writes, object and function creation, getters, and opaque function initializers. Two cases exercise indirect reachability: opaque code calls a closure through an object without mentioning the captured binding itself. Initializing the binding before that call completes normally; moving the initializer after it throws in the dead zone. The test asserts those endings and agreement with Node. Each program is also offered to `lowersplit` as two consecutive modules; accepted splits must preserve behavior and the model's final state. A wrong script fails the test.
 
-**Footprints against the syntax.** `corejs --footprints program.json footprints.jsonl` checks `FootprintsOfSyntax` ([`Split.lean`](../lean/EsmSplit/CoreJS/Split.lean)) on a real bundle: for each statement, the names it declares are the footprint's `defs`, and every name it mentions is in `defs`, `eager` or `lazy`. On the large bundle, with its import line blanked and the vendor module as part of the world, it holds for all 9,708 statements. That run took the 41 units with `import()` as opaque too, which is faithful only if the split leaves every module in the directory of the chunk: a specifier then resolves to the same file.
+**Footprints against the syntax.** `corejs --footprints program.json footprints.jsonl` checks `FootprintsOfSyntax` ([`Split.lean`](../EsmSplit/CoreJS/Split.lean)) on a real bundle: for each statement, the names it declares are the footprint's `defs`, and every name it mentions is in `defs`, `eager` or `lazy`. On the large bundle, with its import line blanked and the vendor module as part of the world, it holds for all 9,708 statements. That run took the 41 units with `import()` as opaque too, which is faithful only if the split leaves every module in the directory of the chunk: a specifier then resolves to the same file.
 
 **Source-only model diagnostics (formerly “the verdict names the slice”).** `lowersplit --diagnostic …` lowers the source AST itself through Lean's `FromESTree` before reporting whether the model hypotheses of `valid_order_kept_preserves` hold for the checked plan: `Valid`, `OrderKept` and `FootprintsOfSyntax` (decidable through `footprintsOfSyntax_iff`). It prints a `model diagnostic:`, not a certificate verdict. Unsupported source units produce no model verdict; a supplied JSON program cannot stand in for lowering the source. The old `translation/core_program.mjs` sidecar producer has been deleted. Earlier census and differential runs that supplied it are historical model results, not current source-only verdicts or artifact-verified certifications. The differential test retains its separate direct CoreJS evaluator and Node comparisons.
 
@@ -539,7 +539,7 @@ The JSON report counts executable source units, excluding static imports, export
 
 The front end accepts 98.9 to 99.6% of the units, in the model's syntax or opaque. The refusals are `import()` (41; 179; 183) and `import.meta` (none; 2; 195).
 
-**Conditional framing of opaque code.** [`OpaqueFrame.lean`](../lean/EsmSplit/CoreJS/OpaqueFrame.lean) separates a conversation's orchestration from the operations its requests execute. `Frames` requires a computation to ignore replacement of a protected region and preserve the bindings an allocation reads. It covers normal results, throws and unknown results; checking normal results alone would miss an exception that the world catches. `converse_frames` lifts that condition from each request the world can issue to the actual interpreter conversation; `opaque_world_frames` lifts it to an opaque statement. `decl_opaque_world_commute` then proves both directions of commutation with an allocation-only declaration under that request condition. A concrete world that reads one external binding supplies a nonvacuous instance, with kernel-checked normal and caught-exception executions.
+**Conditional framing of opaque code.** [`OpaqueFrame.lean`](../EsmSplit/CoreJS/OpaqueFrame.lean) separates a conversation's orchestration from the operations its requests execute. `Frames` requires a computation to ignore replacement of a protected region and preserve the bindings an allocation reads. It covers normal results, throws and unknown results; checking normal results alone would miss an exception that the world catches. `converse_frames` lifts that condition from each request the world can issue to the actual interpreter conversation; `opaque_world_frames` lifts it to an opaque statement. `decl_opaque_world_commute` then proves both directions of commutation with an allocation-only declaration under that request condition. A concrete world that reads one external binding supplies a nonvacuous instance, with kernel-checked normal and caught-exception executions.
 
 This does not derive the request condition from JavaScript footprints. The existing move proof's `Commute` quantifies over arbitrary states, including states where the world already holds a closure reaching the protected binding. Even on real program prefixes, disjoint direct names do not exclude a callback through another object (the paired cases above). Extending the slice needs a reachability invariant covering escaped objects, closures, prototypes and accessors, proved through linking and the reordered prefixes. `MayMove` and the tool's verdict remain conservative; these conditional lemmas certify no additional real-bundle pairs yet.
 

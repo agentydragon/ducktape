@@ -1,20 +1,20 @@
 # Footprints by abstract interpretation
 
-[`Effects.lean`](../lean/EsmSplit/Effects.lean) reads the code: it runs the bundle's top level once over abstract values and reports, per unit, whether it touches the world (`effect`), which names it may change (`writes`) and which names it reads through functions it calls (`deps`). [`Lower.lean`](../lean/EsmSplit/Lower.lean) adds what the unit declares, mentions and assigns. `lower`, `translate` and `lowersplit` all use it; there is no other classification of units. The checker's trust is in the interpreter's rules and in the premises below. Both are tested against Node, neither is proved.
+[`Effects.lean`](../EsmSplit/Effects.lean) reads the code: it runs the bundle's top level once over abstract values and reports, per unit, whether it touches the world (`effect`), which names it may change (`writes`) and which names it reads through functions it calls (`deps`). [`Lower.lean`](../EsmSplit/Lower.lean) adds what the unit declares, mentions and assigns. `lower`, `translate` and `lowersplit` all use it; there is no other classification of units. The checker's trust is in the interpreter's rules and in the premises below. Both are tested against Node, neither is proved.
 
 ## Run
 
 ```bash
-cd ../lean && lake build lower translate lowersplit
-cd ../translation && cp package.json.in package.json && npm ci --no-audit --no-fund
+cd .. && lake build lower translate lowersplit
+cd translation && cp package.json.in package.json && npm ci --no-audit --no-fund
 node ../effects/run.mjs [--show]                      # golden cases
 node ../effects/run.mjs --permutations 20 --seed 1    # and random permutations of every case's units
 node fuzz.mjs --count 300 --seed 3                    # tree fuzzer
 node frontend.mjs bundle <bundle.js> --out bundle.json
-../lean/.lake/build/bin/lower bundle.json --premises premises.json              # a footprint per unit, as JSON lines
-../lean/.lake/build/bin/translate bundle.json output.json cert.json --premises premises.json [--table t.json]
+../.lake/build/bin/lower bundle.json --premises premises.json              # a footprint per unit, as JSON lines
+../.lake/build/bin/translate bundle.json output.json cert.json --premises premises.json [--table t.json]
 jq '{entry, chunks:[{path:.entry, source:"ast.json", spec:"spec.json"}]}' spec.json > deployment.json
-../lean/.lake/build/bin/lowersplit --diagnostic deployment.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
+../.lake/build/bin/lowersplit --diagnostic deployment.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
 ```
 
 This is a diagnostic invocation. Plan output and any emitted files are uncertified previews, even when the structural checks pass.
@@ -42,7 +42,7 @@ The list of members the standard objects have comes from the Node that ran [`gen
 ## What it computes
 
 - Values: a set of codes (some primitive, the world, or an allocation site qualified by the call chain that reached it). Objects have constant-key properties, a bucket for other keys, prototypes and the keys with accessors. Variables and function scopes are objects too. Updates only add, so one pass in order summarizes the state before each unit under every valid order.
-- Calls into code it can see are run (inlined; one level of call-site context, a depth cap, a step budget per unit, memoized while the heap is unchanged). Bound functions and the calls a standard function makes count as a level of the call chain. Intrinsics come from the table in [`Intrinsics.lean`](../lean/EsmSplit/Intrinsics.lean) (data, with the reason each row is safe). Any other call is the world.
+- Calls into code it can see are run (inlined; one level of call-site context, a depth cap, a step budget per unit, memoized while the heap is unchanged). Bound functions and the calls a standard function makes count as a level of the call chain. Intrinsics come from the table in [`Intrinsics.lean`](../EsmSplit/Intrinsics.lean) (data, with the reason each row is safe). Any other call is the world.
 - A call into the world makes the unit an effect; every object passed in **escapes**: the world may mutate it and call any function reachable from it. What the world returns is one value, _the world's_. It may be a `Proxy` with a handler of the program, an object of the program that came back with its getters, or an instance the world made of a class of the program, so a read of a property of it, a conversion of it and a query of it (`in`, `instanceof`, `for…in`, a standard function that is given it, `await`) are unknown code; so are a read, a store and a conversion of an object that inherits from it. `typeof`, `===` and a truth test are free. Variables those functions assign are _tainted_ (reads may return anything). A unit that runs code the analysis cannot see writes every name that reaches an escaped object; a unit that only talks to the environment (`console.log`, `addEventListener` with a callback it keeps) writes none.
 - `writes` are names: every module-scope name from which a changed object can be reached. `deps` are names read by code the unit ran but did not mention (closures reached through objects other units filled).
 - Names the bundle exports start out escaped: another module may call an exported function, or read an exported binding, while this one evaluates (a cycle). Lean reads the module’s import and export declarations from its annotated ESTree. In the source-ordinal view used by `lowersplit`, an import occupies a unit and executes as an empty statement. Translation certificates number body units and track imports separately.
@@ -70,4 +70,4 @@ On the large production bundle (private, 9,707 units): 114 s for the analysis, 3
 
 ## Finding what blocks precision
 
-`EFFECTS_WHY=1 ../lean/.lake/build/bin/lower bundle.json --premises p.json` prints, on stderr, how many units touch the world for each first reason (`call of import ./vendor.js#o`, `getter or setter the world made`, `store into env:window`, …) with four unit numbers each. The reasons that name an import are the vendor table's work list.
+`EFFECTS_WHY=1 ../.lake/build/bin/lower bundle.json --premises p.json` prints, on stderr, how many units touch the world for each first reason (`call of import ./vendor.js#o`, `getter or setter the world made`, `store into env:window`, …) with four unit numbers each. The reasons that name an import are the vendor table's work list.

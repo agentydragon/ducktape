@@ -45,8 +45,8 @@ js_binary(
     ],
     entry_point = "module_io.mjs",
     visibility = [
+        "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/lean:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
 )
@@ -73,7 +73,7 @@ eslint_test(
 
 _SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
 
-_TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
+_TRANSLATE = "//devinfra/js/debundle/x/split_proof:translate"
 
 _CHECKER_RUNFILES = [
     ":frontend",
@@ -126,7 +126,7 @@ _NESTED_OUTPUT_DATA = [
     "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ":parser",
     ":scope_metadata",
-    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof:lowersplit",
 ]
 
 js_test(
@@ -134,17 +134,17 @@ js_test(
     size = "medium",
     data = [
         ":parser",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof:lower",
     ],
     entry_point = "lower_exports_test.mjs",
-    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
+    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof:lower)"},
 )
 
 js_test(
     name = "nested_output_paths_test",
     data = _NESTED_OUTPUT_DATA,
     entry_point = "nested_output_paths_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
 )
 
 js_test(
@@ -298,11 +298,11 @@ js_test(
     name = "ast_write_mutation_test",
     data = _CHECKER_RUNFILES + _FUZZ_SOURCES + [
         "fuzz.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:translate",
+        "//devinfra/js/debundle/x/split_proof/mutants/no_writes:translate",
     ],
     entry_point = "ast_write_mutation_test.mjs",
     env = {
-        "NO_WRITES": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:translate)",
+        "NO_WRITES": "$(rootpath //devinfra/js/debundle/x/split_proof/mutants/no_writes:translate)",
         "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
     },
 )
@@ -336,7 +336,7 @@ js_test(
     entry_point = "modern_syntax_test.mjs",
 )
 
-_ANALYSIS_INVENTORY = "//devinfra/js/debundle/x/split_proof/lean:analysis_inventory"
+_ANALYSIS_INVENTORY = "//devinfra/js/debundle/x/split_proof:analysis_inventory"
 
 # Exercise the compiled analyzer and the generator coverage report.
 js_test(
@@ -376,10 +376,10 @@ js_test(
         ":node_modules/eslint-scope",
         ":scope_metadata",
         ":syntax_inventory",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof:lower",
     ],
     entry_point = "footprint_oracle_test.mjs",
-    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
+    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof:lower)"},
 )
 
 # The generator of `testing/gen/`: every program parses, runs to the end, prints the same twice, and keeps its names consistent.
@@ -441,16 +441,16 @@ js_test(
         ":parser",
         ":scope_metadata",
         ":split_dump",
-        "//devinfra/js/debundle/x/split_proof/lean:corejs",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:corejs",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
         "//devinfra/js/debundle/x/split_proof/model:to_core",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
     entry_point = "corejs_ast_lowering_test.mjs",
     env = {
-        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof:corejs)",
         "DUMP_AST": "$(rootpath :dump_ast)",
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
     },
 )
 

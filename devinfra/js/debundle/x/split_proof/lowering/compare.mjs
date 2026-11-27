@@ -9,7 +9,7 @@ import { acorn, eslintScope } from "../translation/parser.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 import { statementShape } from "./statement_shape.mjs";
 
-const LOWER = resolve(process.env.LOWER ?? new URL("../lean/.lake/build/bin/lower", import.meta.url).pathname);
+const LOWER = resolve(process.env.LOWER ?? new URL("../.lake/build/bin/lower", import.meta.url).pathname);
 const files = process.argv.slice(2);
 const set = (a) => new Set(a);
 const missing = (need, have) => [...need].filter((x) => !have.has(x));

@@ -54,14 +54,14 @@ The [selected main replay](https://app.buildbuddy.io/invocation/f827354b-83ae-46
 
 ## What a retained-reader rule must prove
 
-[ModuleLocation.check](../../lean/EsmSplit/CoreJS/ModuleLocation.lean) checks the reader's source ordinal,
-retention in the entry, and effective URL. [LinkedDeployment.check](../../lean/EsmSplit/CoreJS/LinkedDeployment.lean)
+[ModuleLocation.check](../../EsmSplit/CoreJS/ModuleLocation.lean) checks the reader's source ordinal,
+retention in the entry, and effective URL. [LinkedDeployment.check](../../EsmSplit/CoreJS/LinkedDeployment.lean)
 gives an opaque unit extra live **binding cells** for imports reachable through its dynamic targets.
 A checked `import.meta.url` contributes no cell. Neither check supplies the module record's metadata object.
-A [CoreJS closure](../../lean/EsmSplit/CoreJS/Value.lean) retains lexical bindings and its receiver;
+A [CoreJS closure](../../EsmSplit/CoreJS/Value.lean) retains lexical bindings and its receiver;
 an opaque closure retains its code and binding slots. The opaque world can store state, but
 passing the same code ordinal to that world does not prove how a JavaScript metadata read resolves.
-The [stable host read](../../lean/EsmSplit/CoreJS/StableIntrinsic.lean) predicate requires the same result
+The [stable host read](../../EsmSplit/CoreJS/StableIntrinsic.lean) predicate requires the same result
 without effects in every host state. Even a getter that always returns the same value can violate that requirement.
 
 A narrow rule could use a hidden capability for the metadata object:
@@ -84,15 +84,15 @@ calls to exported functions; keep the getter and mutation observations as behavi
 
 ## Receiver-cell experiment
 
-The [Lean prototype](../../lean/EsmSplit/CoreJS/MetadataCell.lean) checks a hidden immutable cell and its current heap object in both scopes. Given a common starting state, its certificate equates the results of the two captured reads for every world and fuel bound sufficient to reach the property expressions. Both reads dispatch through the ordinary evaluator: the outer getter can change state before the inner lookup. The fixture changes a getter's captured binding to a second object and observes its distinct address. A getter that reaches unsupported code produces `unknown` even when the receiver check succeeds.
+The [Lean prototype](../../EsmSplit/CoreJS/MetadataCell.lean) checks a hidden immutable cell and its current heap object in both scopes. Given a common starting state, its certificate equates the results of the two captured reads for every world and fuel bound sufficient to reach the property expressions. Both reads dispatch through the ordinary evaluator: the outer getter can change state before the inner lookup. The fixture changes a getter's captured binding to a second object and observes its distinct address. A getter that reaches unsupported code produces `unknown` even when the receiver check succeeds.
 
-The remaining obligation is to **supply** the root. In `missing_linked_root`, the actual linker succeeds and leaves the hidden cell absent, even though a hoisted opaque function requests it. A loader extension needs a record-to-cell mapping shared across source and candidate, with an immutable binding to the metadata object and world-specific property state. It must account for initialization on first access and for any already reachable references. In particular, [link transport](../../lean/EsmSplit/CoreJS/LinkWorld.lean) currently reuses the probe's heap across worlds. Adding an arbitrary host-supplied metadata heap to the probe is not justified by that theorem. Until the producer and its transport are proved, the prototype does not participate in the splitter's verdict.
+The remaining obligation is to **supply** the root. In `missing_linked_root`, the actual linker succeeds and leaves the hidden cell absent, even though a hoisted opaque function requests it. A loader extension needs a record-to-cell mapping shared across source and candidate, with an immutable binding to the metadata object and world-specific property state. It must account for initialization on first access and for any already reachable references. In particular, [link transport](../../EsmSplit/CoreJS/LinkWorld.lean) currently reuses the probe's heap across worlds. Adding an arbitrary host-supplied metadata heap to the probe is not justified by that theorem. Until the producer and its transport are proved, the prototype does not participate in the splitter's verdict.
 
 The [neutral resolver replay](https://app.buildbuddy.io/invocation/7f4592ee-b421-463a-a1d4-9290aedd27f4) checked the canonical and selected owner maps against original `main.js` SHA-256 `226df77e1ed19405ba8bcdcf9172aa8b2050d25877e2fd472ebd3864f0cd33d9`. The selected owner contains only unit 1486. With the original providers, Lean still refused retained unit 23 before publication.
 
 ## Linking the receiver before hoisting
 
-[MetadataLink.linkRecord](../../lean/EsmSplit/CoreJS/MetadataLink.lean) installs an immutable receiver cell in the entry's actual linked scope after imports resolve and before functions capture bindings. The caller supplies an already provisioned record; no stable-read premise is used. This solves capture for a given world. It also makes the limitation of the production [link transport](../../lean/EsmSplit/CoreJS/LinkWorld.lean) observable.
+[MetadataLink.linkRecord](../../EsmSplit/CoreJS/MetadataLink.lean) installs an immutable receiver cell in the entry's actual linked scope after imports resolve and before functions capture bindings. The caller supplies an already provisioned record; no stable-read premise is used. This solves capture for a given world. It also makes the limitation of the production [link transport](../../EsmSplit/CoreJS/LinkWorld.lean) observable.
 
 A retained function reads `import.meta.env.MODE` before an exported `var pivot = "ready"` initializes. The two layouts have the same entry URL and public names. One host supplies a data property containing `undefined`. The other installs a getter for `MODE` that reads the entry's live `pivot` export. Moving the initializer to an earlier module changes the getter's answer from `undefined` to `"ready"`; the data property's answer stays `undefined`. The [native ESM control](../../translation/linked/metadata_link_worlds_test.mjs) exercises the same two hosts using the module record passed to the loader's metadata hook.
 

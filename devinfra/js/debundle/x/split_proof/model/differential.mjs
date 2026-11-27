@@ -78,7 +78,7 @@ const firstSeed = option("seed", 1) + seedOffset;
 if (process.env.TEST_SHARD_STATUS_FILE) writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
 const show = process.argv.includes("--show");
 const here = path.dirname(fileURLToPath(import.meta.url));
-const built = (name) => path.join(here, "../lean/.lake/build/bin", name);
+const built = (name) => path.join(here, "../.lake/build/bin", name);
 const corejs = process.env.COREJS ?? built("corejs");
 const evalorder = process.env.EVALORDER ?? built("evalorder");
 const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "corejs_differential_"));
