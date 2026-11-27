@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import signal
+import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -37,20 +38,15 @@ async def stopped_container_task(
     so kubelet has seen the deletion and will not restart the killed container. SIGKILL runs on every
     exit. `evidence` gets `evidence_context` plus the task's PID and `/proc` status at each step.
     """
-    inspected = json.loads(
-        await run_host_command(
-            (
-                *crictl_command,
-                "--runtime-endpoint",
-                f"unix://{CONTAINERD_SOCKET}",
-                "--timeout",
-                f"{COMMAND_SECONDS}s",
-                "inspect",
-                container_id,
-            ),
-            timeout_s=COMMAND_SECONDS,
+    # k3s's crictl fails looking for its default config file unless one is named.
+    with tempfile.TemporaryDirectory() as config_dir:
+        crictl_config = Path(config_dir) / "crictl.yaml"
+        crictl_config.write_text(f"runtime-endpoint: unix://{CONTAINERD_SOCKET}\ntimeout: {COMMAND_SECONDS}\n")
+        inspected = json.loads(
+            await run_host_command(
+                (*crictl_command, "--config", str(crictl_config), "inspect", container_id), timeout_s=COMMAND_SECONDS
+            )
         )
-    )
     assert inspected["status"]["id"] == container_id, inspected["status"]
     pid = inspected["info"]["pid"]
     assert isinstance(pid, int), pid
