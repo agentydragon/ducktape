@@ -357,46 +357,25 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
       match ← prepareSliceEligibility profile program providers files P timings with
       | .error refusal => pure (.error refusal.toCertificationRefusal)
       | .ok eligibility => do
+        -- Accessor calls during a property read need their own slice proof.
         let blockers := eligibility.replayBlockers
-        let checkReplay := fun phase => timePhase timings phase fun _ => IO.lazyPure fun _ => eligibility.certifyReplay
-        -- A slice cannot certify a potentially invoking property read unless
-        -- the compiled replay check also handles it.
-        let needsAccessorCheck := blockers.contains .objectAccessor && blockers.contains .propertyRead
-        let accessorReplay ← if needsAccessorCheck then checkReplay "compiled_replay_slice_guard" else pure none
-        let sliceResult ← if needsAccessorCheck && accessorReplay.isNone then
-            pure (.error ({
-              reason := "compiled replay declined a potentially invoking property read"
-              reasonCode := some "slice_replay_guard"
-            } : CertificationRefusal))
-          else timePhase timings "compiled_slice" fun _ =>
-            IO.lazyPure fun _ => certifySlice profile program providers files P B S eligibility
-        match sliceResult with
+        if blockers.contains .objectAccessor && blockers.contains .propertyRead then
+          return .error { reason := "compiled slice does not cover a potentially invoking property read",
+            reasonCode := some "slice_accessor_read" }
+        match ← timePhase timings "compiled_slice" fun _ =>
+            IO.lazyPure fun _ => certifySlice profile program providers files P B S eligibility with
+        | .error refusal => pure (.error refusal)
         | .ok ⟨kind, _statement⟩ =>
           if request == .allOutcomes && kind.level != .allOutcomes then
             pure (.error ({
               reason := s!"the compiled {kind.scope} slice proves only normal-completion"
               reasonCode := some "slice_guarantee"
             } : CertificationRefusal))
-          else pure (.ok (some kind, {}, "compiled-slice"))
-        | .error _refusal =>
-          if request != .normalCompletion then
-            pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
-          else do
-            let replayed ← if needsAccessorCheck then pure accessorReplay else checkReplay "compiled_replay"
-            if replayed.isSome then
-              pure (.ok (none, eligibility.probe.premises, "compiled-replay-premised"))
-            else
-              pure (.error ({
-                reason := "no compiled rule supports this split; no JavaScript was written"
-                reasonCode := some "no_compiled_rule"
-              } : CertificationRefusal))
+          else pure (.ok kind)
     match checked with
-    | .ok (some kind, active, strategy) => do
+    | .ok kind =>
       return ← emitVerdict request.label (.ok kind.level) kind.scope
-        (profileVerdict profile active ++ [("strategy", toJson strategy)])
-    | .ok (none, active, strategy) => do
-      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
-        (profileVerdict profile active ++ [("strategy", toJson strategy)])
+        (profileVerdict profile {} ++ [("strategy", toJson "compiled-slice")])
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 

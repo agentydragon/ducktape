@@ -49,7 +49,7 @@ const original = Buffer.from([0, 19, 127, 255]);
 writeFileSync(sentinel, original);
 const denied = run(source, spec, out, ["--require", "normal-completion", "--host-contract", host]);
 assert.equal(denied.verdict.status, "rejected", denied.stdout + denied.stderr);
-assert.equal(denied.verdict.reason_code, "no_compiled_rule", denied.stdout + denied.stderr);
+assert.equal(denied.verdict.reason_code, "slice_profile", denied.stdout + denied.stderr);
 assert.deepEqual(readdirSync(out), ["sentinel.bin"]);
 assert.deepEqual(readFileSync(sentinel), original);
 
@@ -69,7 +69,7 @@ const deniedReadback = run(source, spec, readbackOut, [
   "--check-output",
 ]);
 assert.equal(deniedReadback.verdict.status, "rejected", deniedReadback.stdout + deniedReadback.stderr);
-assert.equal(deniedReadback.verdict.reason_code, "no_compiled_rule", deniedReadback.stdout + deniedReadback.stderr);
+assert.equal(deniedReadback.verdict.reason_code, "slice_profile", deniedReadback.stdout + deniedReadback.stderr);
 assert.deepEqual(readdirSync(readbackOut), readbackFiles);
 assert.deepEqual(
   readbackFiles.map((file) => readFileSync(path.join(readbackOut, file))),
