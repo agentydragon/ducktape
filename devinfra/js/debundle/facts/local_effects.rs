@@ -8,7 +8,8 @@ use binding_targets::{
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::{ChunkValueFlow, StructuralStatementFacts, metadata_decorate_call};
+use super::statement_facts::StructuralStatementFacts;
+use super::{ChunkValueFlow, metadata_decorate_call};
 use analysis_domain::item_views::{TopLevelItemView, collect_declared_names};
 use analysis_vocabulary::inputs::{KnownEffect, LocalEffectPolicy};
 use purity::{PurityScope, classify_expr_purity};

@@ -52,15 +52,11 @@ for d in 20 21 22; do
 done
 ```
 
-**Gotcha (fork heads):** as of 2026-11-27 the view reports most trusted-fork heads
-`pending` though GitHub shows them green. The skipped `CI` `pull_request` run has a
-higher run ID than the `Trusted fork PR CI` run that produced `bazel-ci / Test &
-Build`. Its `requested`/`in_progress` rows map to that gate through
-`workflow_contexts` and outrank the real result. Same-repo heads are unaffected.
-Until the view is fixed, take fork verdicts from GitHub check runs on the head SHA
-(`commits/$SHA/check-runs?filter=all`) and keep CDviz's arrival clock. Classify
-forks from `workflow_run.head_repository`; every PR triggers the trusted-fork
-workflow, so its presence does not identify a fork.
+**Fork heads:** a fork PR's skipped `CI` `pull_request` run outranked the trusted-fork
+result until migration `003_ci_feedback_absent_gates.sql` (#20523, live 2026-11-27).
+The view recomputes from raw events, so older windows are corrected too. To classify
+forks, use `workflow_run.head_repository`: every PR triggers the trusted-fork workflow,
+so its presence does not identify a fork.
 
 ### Webhook delivery lag
 

@@ -30,9 +30,12 @@ func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummaries
 	if selected != nil && request.RecordedAfter != nil {
 		return status.Error(codes.InvalidArgument, "selected summaries cannot be combined with recorded_after")
 	}
-	fields, err := newSummaryFields(selected.GetFieldMask())
-	if err != nil {
-		return err
+	var fields summaryFields
+	if selected != nil {
+		var err error
+		if fields, err = newSummaryFields(selected.GetFieldMask()); err != nil {
+			return err
+		}
 	}
 	ctx := stream.Context()
 	reader, err := s.scopedReader(ctx)
@@ -124,7 +127,9 @@ func sendWithin[Response any](ctx context.Context, stream interface{ Send(*Respo
 	return streaming.SendWithinStatus(ctx, timeout, stream.Send, response, "history stream write deadline expired")
 }
 
-// sendSelectedSummaries sends a snapshot on the first read and changes on later reads.
+// sendSelectedSummaries sends a snapshot on the first read and changes on later reads. Any summary wakeup rereads
+// every selected row, which the field set does not reduce (it saves frames, not reads); track dirty Sessions
+// per wakeup only if History database load shows the rereads matter.
 func (s *Service) sendSelectedSummaries(
 	ctx context.Context,
 	stream watchStream,

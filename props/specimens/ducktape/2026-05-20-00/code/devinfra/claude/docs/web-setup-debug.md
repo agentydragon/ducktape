@@ -203,17 +203,13 @@ curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/680d78946bf72
 - Ubuntu 24.04 on gVisor (runsc) or Firecracker microVM (current production)
 - Egress proxy: TLS-inspecting, JWT auth in `HTTPS_PROXY` URL
 - Proxy CA at `/usr/local/share/ca-certificates/swp-ca-production.crt`
-- `environment-manager` and `process_api` binaries have been reverse-engineered —
-  see <../web_env/re/environment_manager/README.md> and <../web_env/re/process_api/README.md>
 - **Setup scripts run before Claude Code, as root, on EVERY session** — not just
   new sessions. `environment-manager`'s `Initialize` calls `runInitScript`
   unconditionally (Step 3), regardless of session mode (`new` / `resume` /
   `resume-cached` / `setup-only`). Steps 1 (install languages) and 2 (clone
   sources) _are_ gated on `isNewOrSetup`, which is probably where the "new
-  sessions only" misconception came from. Verified in
-  <../web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
-  Initialize(), line ~361.
-- See <../web_env/re/SETUP_FLAGS_INVENTORY.md> for full binary RE docs
+  sessions only" misconception came from. Verified against the binary's
+  `Initialize()`, Step 3 (line ~361 of the decompiled source).
 
 ## Pin drift on persistent rootfs — 2026-04-14
 

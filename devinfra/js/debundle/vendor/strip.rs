@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::EffectCell;
+use analysis::facts::statement_facts::EffectCell;
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, public_export_name};
 use js_ast::{GlobalUseElisions, ParsedGlobalUses, VarDeclShape};

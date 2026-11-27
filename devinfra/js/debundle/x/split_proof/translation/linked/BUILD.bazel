@@ -129,6 +129,7 @@ _UNSHARDED_TESTS = [
     "arithmetic_test",
     "generator_test",
     "import_cells_test",
+    "logical_test",
     "module_graph_test",
     "module_metadata_test",
     "named_constructor_cli_test",

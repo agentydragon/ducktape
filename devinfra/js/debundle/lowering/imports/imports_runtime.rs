@@ -195,6 +195,7 @@ pub(crate) fn source_chunk_import_for_target(
             // concatenation can yield non-canonical spellings like
             // `".././foo.js"` when `source` itself starts with `./`,
             // so normalize before emitting.
+            // TODO: hand-rolled path math; see TODO.md "Above-chunk-root import paths".
             let depth = std::path::Path::new(dest_target_file)
                 .parent()
                 .map(|parent| parent.iter().count())

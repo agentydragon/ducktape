@@ -1,7 +1,7 @@
 //! Native array operations over an uninterrupted literal's descriptor state.
 
 use crate::effect_coverage::EffectCoverageFragment;
-use analysis::facts::EffectCell;
+use analysis::facts::statement_facts::EffectCell;
 use analysis_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ITERATION_ROWS, IterationResult, IterationRow,
 };

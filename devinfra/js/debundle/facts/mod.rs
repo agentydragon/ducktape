@@ -55,7 +55,7 @@ pub(crate) use purity::{
 pub mod analyze;
 pub mod at_init_fallback;
 pub mod binding_effect_coverage;
-mod cell_overlap;
+pub mod cell_overlap;
 pub mod collector;
 pub mod evaluation_effects;
 pub mod flow_calls;
@@ -73,40 +73,16 @@ pub mod statement_facts;
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
 pub(crate) use at_init_fallback::*;
-pub use cell_overlap::{CellOverlap, CellOverlapIndex, CellOverlapLaw};
-pub use cell_overlap::{first_overlapping, may_conflict, may_overlap};
 pub(crate) use collector::*;
 pub(crate) use global_object::*;
 pub(crate) use local_effect_targets::*;
-pub use purity_classification::CompletedPurity;
-pub use purity_classification::NativeOwnDataReadDiagnostic;
-pub use purity_classification::PreparedPurity;
-pub use purity_classification::StatementPurityContext;
-pub use source_unit_read_closure::SourceUnitReadClosure;
-pub use statement_facts::HeapContentCells;
-pub use statement_facts::LocalRecordFactoryPurityCertificate;
-pub use statement_facts::{
-    CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
-    CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,
-    ReturnedRecordUseFact,
-};
 pub(crate) use statement_facts::{ConstructorFacts, ExportLinkage};
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow};
 
-// Public API: importable at `facts::<item>` exactly as before the split.
-pub use analyze::{
-    ExportReentryPolicy, analyze_chunk_structural, collect_chunk_source_facts,
-    collect_chunk_source_facts_from_items, complete_chunk_structural,
-    complete_chunk_structural_with_flow, complete_chunk_structural_with_inputs,
-    module_has_top_level_await,
-};
-pub use initialization_effects::{
-    InitializationEffectEvidence, InitializationEffects, OwnerInitializationCoverageRefusal,
-    OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptCounts, RootAttemptRewind,
-    UnknownEffectCoverage,
-};
-pub use local_effects::local_namespace_iife_target;
-pub use statement_facts::{
-    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, StatementEffectSummary, StatementFacts,
-    StructuralChunkAnalysis, StructuralChunkSourceFacts, StructuralStatementFacts,
-};
+// CLEANUP(added 2026-11-27): Remove these re-exports and point
+//   `chunk_analysis/mod.rs` and `facts/sync_effects/execution_index/mod.rs`
+//   at the defining modules once the open PRs touching those files
+//   (#20495, #20532, #20539, #20545) land.
+pub use analyze::{ExportReentryPolicy, collect_chunk_source_facts, complete_chunk_structural};
+pub use initialization_effects::OwnerInitializationCoverageRefusalReason;
+pub use statement_facts::{ChunkFactAnalysis, StructuralChunkAnalysis};

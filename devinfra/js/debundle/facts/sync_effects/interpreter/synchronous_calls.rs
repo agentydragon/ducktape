@@ -3,12 +3,12 @@
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
+use analysis::facts::analyze::ExportReentryPolicy;
+use analysis::facts::purity_classification::{NativeOwnDataReadDiagnostic, StatementPurityContext};
 use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
+use analysis::facts::statement_facts::DataflowOpacityCause;
 use analysis::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, HeapContentCells, StatementFacts,
-};
-use analysis::facts::{
-    DataflowOpacityCause, ExportReentryPolicy, NativeOwnDataReadDiagnostic, StatementPurityContext,
 };
 use analysis_domain::integrity::IntrinsicSlot;
 use analysis_domain::item_views::TopLevelItemView;
@@ -809,7 +809,7 @@ pub fn annotate_synchronous_calls(
     export_reentry_policy: &ExportReentryPolicy,
     facts: &mut [StatementFacts],
     metrics: &work_metrics::WorkMetrics,
-) -> Vec<analysis::facts::CompletedPurity> {
+) -> Vec<analysis::facts::purity_classification::CompletedPurity> {
     let index = proofs.index.index;
     record_callback_factory_barriers(&index, flow, facts);
     let (needed, statement_effects) =

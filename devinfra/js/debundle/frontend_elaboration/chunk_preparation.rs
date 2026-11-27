@@ -7,8 +7,8 @@ use super::{FrontendChunk, FrontendChunkInput, MemberClaimProjection};
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast, binding_declaration};
 use crate::source_ast::RuntimeImportKind;
 use analysis_vocabulary::execution_evidence::SourceLocator;
-use anyhow::{Context, Result, bail};
-use artifact::{JsFile, chunk_runtime_entry};
+use anyhow::{Result, bail};
+use artifact::{JsFile, chunk_runtime_entry, chunk_unassigned_mode};
 use rayon::prelude::*;
 use selector_outcome::{Entity, EntityRef, Outcome};
 use selector_resolve::Chunk as SelectorChunk;
@@ -86,9 +86,7 @@ fn prepare_chunk<'a>(
         chunk_id,
         file,
     } = input;
-    let chunk_unassigned_mode = unassigned_mode.get(chunk_id).cloned().with_context(|| {
-        format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
-    })?;
+    let chunk_unassigned_mode = chunk_unassigned_mode(unassigned_mode, chunk_id)?;
     let (chunk_id_interned, runtime_file, runtime_ast) =
         chunk_runtime_entry(artifact, chunk_id, file)?;
     let ast_analysis = analyze_chunk_ast(&runtime_ast.module);
@@ -115,7 +113,7 @@ fn prepare_chunk<'a>(
         }
     }
     let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::collect_chunk_source_facts(
+    let structural_analysis = analysis::facts::analyze::collect_chunk_source_facts(
         &runtime_ast.module,
         Some(SourceLocator {
             source_path: &runtime_file.metadata.source_path,

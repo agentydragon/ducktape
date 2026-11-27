@@ -443,9 +443,7 @@ The request's `field_mask` names the `SessionSummary` fields the reader wants (p
 `last_event_at` or `attached.spec.model`). The service compares and sends rows reduced to those fields
 plus `session_id`, so a change to any other field, such as the cursors that advance with every committed
 event, sends nothing. A frame carries the current value of every requested field and the reader replaces
-those fields. Unknown paths, and paths through a repeated field, are `INVALID_ARGUMENT`. An empty set
-sends whole summaries on every change; this is transitional, tracked by
-`SESSION_SUMMARY_WATCH_FIELD_MASK` in the [task DAG](../plans/task_dag.md).
+those fields. An empty set, unknown paths, and paths through a repeated field are `INVALID_ARGUMENT`.
 
 `WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens

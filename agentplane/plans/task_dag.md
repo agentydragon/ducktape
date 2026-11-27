@@ -2474,7 +2474,7 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
-    SESSION_SUMMARY_WATCH_FIELD_MASK[Agreed design, unscheduled: Session summary watch takes a field mask, in three stages]
+    SESSION_SUMMARY_WATCH_503[Unscheduled: the unfiltered summary watch returns 503 at page load]
 ```
 
 Revisit replacing `ReadSessionEvents` with `FollowSession` and `follow = false` once callers can
@@ -2607,51 +2607,14 @@ watch facade, and build it once against whichever History representation is chos
 first over the fold tables. **Question for review:** build the replacement now over the fold, or
 after the History representation decision, over journal records?
 
-### `SESSION_SUMMARY_WATCH_FIELD_MASK` — the Session summary watch takes a field mask
+### `SESSION_SUMMARY_WATCH_503` — the unfiltered summary watch returns 503 at page load
 
-**Design agreed with the operator, 2026-11-26; implementation unscheduled, to be done in stages.**
-The sidebar's `WatchSessionSummaries` stream resends whole rows on every committed event, though its
-consumers read few fields and the high-level state rarely changes.
-
-- **Measured on staging, 2026-11-26** (21-Session sidebar watch, 30 s): 798 frames, 3.86 MB (about
-  126 KB/s), 4.8 KB per frame, 89% of it the static `attached` block; a 171 KB snapshot at open; one
-  state change (`attached.activeTurnId`). The fields that ticked: `committedCursor` 553 times,
-  `foldedThrough`, `lastEventAt` and `attached.lastCursor` 427 each, `lastModelActivityAt` 317. A
-  quieter 30 s window had 326 frames (53.6 KB/s); a mask without cursors would have kept 192 of them
-  (about 0.9 KB/s, estimated), and a state-only mask none.
-- **The frontend reads** from these rows: label, kind, `attached.spec.model` and placement,
-  `attached.{harnessState, activeTurnId, setupState, launchOutcome}`, `lastTurnStatus`, `feedStatus`,
-  `sandbox`, `idleSince`, `projectionEpoch`, and `lastEventAt` and `lastModelActivityAt` as "x ago"
-  labels. `committedCursor` and `attached.lastCursor` are unread. `foldedThrough` is read once, from the
-  unary `GET .../summary` (`sessions/client.ts`), not from the watch.
-- **Design:** `WatchSessionSummariesRequest` takes a `FieldMask` on `SessionSummary`. The server projects
-  each row onto it and sends a frame only when the projection changes. A frame carries the current
-  values of every masked field, so the client replaces by mask and needs no patch protocol; the
-  snapshot is masked too. A consumer pays only for what it asks for: the sidebar asks for no cursors, and a
-  fencing consumer asks for them on its own watch. One rule, no per-field timers.
-
-**Stages, each its own PR.** Stage 2 starts after stage 1 is deployed, stage 3 after stage 2:
-
-1. **History accepts a mask.** An empty field set means today's full-row behaviour, marked with a
-   `CLEANUP` tombstone (gate: stage 3). A non-empty set is projected as described. Tests: a cursor-only
-   change emits no frame for a set without cursors; a change to a field in the set emits one frame with
-   all fields in the set. No caller changes, so staging behaviour is unchanged.
-2. **Callers pass masks.** `sessions/live.tsx` (sidebar and thread list) and the conversation header
-   request their fields and merge frames by mask. Record the same 30 s staging measurement before and
-   after in the PR.
-3. **Require a non-empty set.** Inventory every caller of the watch first; then reject an empty field set
-   and delete the full-row path and the tombstone.
-
-Rollback: revert the stage's PR. Before stage 3 an empty field set still returns full rows, so older
-readers keep working.
-
-**Not in this node.** Per-session dirty tracking: `watch.go` re-reads every selected row on any summary
-wakeup, which a mask does not reduce; do it only if History database load shows it. A single conflation
-window: only if a consumer that requests `lastEventAt` measures as a problem. A separate check: the
-unfiltered `session-summaries:watch` (`sessions/electric_sync.tsx`) returned 503 on three staging page loads
-and showed no retry within about 8 s; fetched by hand afterwards it streamed. Cause not diagnosed.
-
-**Exit:** stage 3 merged; the staging measurement shows the drop in frames and bytes per second.
+**Observed 2026-11-26; cause not diagnosed.** The notification-mode `session-summaries:watch` (no
+selection; `sessions/electric_sync.tsx`) returned 503 on three staging page loads and showed no retry
+within about 8 s. Fetched by hand afterwards, the same URL streamed normally, and History's logs showed
+nothing, so the 503 may come from the app gateway or from load-time state. That watch is what triggers
+`#scopeChanged` to re-resolve the Thread scope. Check whether `followWatch` retries it and what produced
+the 503. **Exit:** the cause is fixed, or recorded as benign.
 
 ## 13. Delivery boundaries, APIs and harness identity
 

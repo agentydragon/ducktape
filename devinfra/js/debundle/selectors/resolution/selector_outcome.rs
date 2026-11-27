@@ -12,8 +12,8 @@
 
 mod selector_invalid;
 pub use selector_invalid::{
-    AnnotationField, BindingClaimant, ClaimOperation, ClaimValidationError, DuplicateBinding,
-    InvalidSelectorError, InvalidSelectorReport, ProjectionError,
+    BindingClaimant, ClaimOperation, ClaimValidationError, DuplicateBinding, InvalidSelectorError,
+    InvalidSelectorReport, ProjectionError,
 };
 
 use std::cmp::Ordering;

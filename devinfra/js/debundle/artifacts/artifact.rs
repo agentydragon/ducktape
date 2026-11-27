@@ -27,7 +27,8 @@ pub mod runtime_resources;
 mod source_program;
 pub use emission_files::EmissionFiles;
 pub use source_program::{
-    SourceProgram, chunk_runtime_entry, normalized_chunk_ids, prune_artifact_to_chunk_ids,
+    SourceProgram, chunk_runtime_entry, chunk_unassigned_mode,
+    ensure_commuting_statements_materialize, normalized_chunk_ids, prune_artifact_to_chunk_ids,
     selected_static_import_closure,
 };
 

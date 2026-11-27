@@ -1,9 +1,7 @@
 """process_api WebSocket protocol types (from RE of the binary).
 
 These model the messages exchanged over the WebSocket connection to
-process_api (Anthropic's PID 1 binary in Firecracker VMs). See
-devinfra/claude/web_env/re/process_api/ for the full reverse-engineered
-source.
+process_api (Anthropic's PID 1 binary in Firecracker VMs).
 """
 
 from __future__ import annotations

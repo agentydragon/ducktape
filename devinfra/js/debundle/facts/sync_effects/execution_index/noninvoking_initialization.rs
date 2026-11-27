@@ -1,7 +1,7 @@
 //! Whole-source-unit coverage for a small, non-invoking initializer subset.
 
-use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::initialization_effects::CompletedInitialization;
+use analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason;
 use analysis_domain::item_views::{SplitDeclaratorProvenance, TopLevelItemView};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
@@ -735,7 +735,7 @@ impl OriginalInitializer {
 #[cfg(test)]
 mod source_identity_tests {
     use super::{InitializationSourceIdentity, OriginalInitializer};
-    use analysis::facts::OwnerInitializationCoverageRefusalReason;
+    use analysis::facts::initialization_effects::OwnerInitializationCoverageRefusalReason;
     use analysis_domain::item_views::top_level_item_views;
     use source_identity::SourceUnitOrdinal;
     use swc_common::{Spanned, SyntaxContext};
