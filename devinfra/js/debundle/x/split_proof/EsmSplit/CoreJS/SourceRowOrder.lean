@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.IndexedSourceSchedule
 
 namespace CoreJS.IndexedSourceSchedule
@@ -29,7 +30,7 @@ theorem metadataOrderFromItems : ∀ items : List SourceUnit,
       exact before other inRest
 
 /-- The actual decoded export rows retain their source order. -/
-theorem metadataRowsOrdered {decoded : LinkedInput.IndexedSource} {bundle : EsmSplit.Bundle}
+theorem metadataRowsOrdered {decoded : AuthenticatedSource.IndexedSource} {bundle : EsmSplit.Bundle}
     (sequence : Sequence decoded bundle) :
     decoded.localExports.Pairwise (fun a b => a.ordinal < b.ordinal) := by
   have itemsOrdered : (sequence.units.map SourceUnit.ordinal).Pairwise (· < ·) := by

@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.Cli
 import EsmSplit.CoreJS.DynamicImports
 import EsmSplit.CoreJS.IndexedInlineConstructor
@@ -153,7 +154,7 @@ private def indexedInlinePlan (input : Json) : Except String Json := do
   let sourceAst ← input.getObjVal? "source"
   let sourceText ← input.getObjValAs? String "sourceText"
   let request ← EsmSplit.parseSpec (← input.getObjVal? "spec")
-  let decoded ← CoreJS.LinkedInput.decodeIndexedSource sourceAst sourceText request.entry
+  let decoded ← CoreJS.AuthenticatedSource.decodeIndexedSource sourceAst sourceText request.entry
   let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
   let constructed ← CoreJS.IndexedInlineConstructor.construct decoded bundle request
   let output := constructed.program
