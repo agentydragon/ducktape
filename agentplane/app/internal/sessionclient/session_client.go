@@ -37,8 +37,9 @@ func New(dispatcher SessionDispatcher) (*SessionClient, error) {
 }
 
 // CreateSession queues one immutable Session specification. The caller-minted
-// UUID is the dispatcher's idempotency key, so a timeout is returned with that
-// same ID for reconciliation or retry.
+// UUID is the dispatcher's idempotency key: after a DEADLINE_EXCEEDED the caller
+// reconciles or retries with that same ID. Dispatcher errors are returned as
+// their gRPC status.
 func (c *SessionClient) CreateSession(
 	ctx context.Context, sandbox, sandboxUID string, sessionID uuid.UUID, spec *sessionpb.SessionSpec, setupScript *string,
 ) (*dispatcherpb.Session, error) {
@@ -63,10 +64,6 @@ func (c *SessionClient) CreateSession(
 	response, err := c.dispatcher.CreateSession(ctx, request)
 	observability.End(span, err)
 	if err != nil {
-		var timeout *RequestTimeoutError
-		if errors.As(err, &timeout) {
-			return nil, &DispatcherRequestTimeoutError{SessionID: sessionID, Cause: err}
-		}
 		return nil, err
 	}
 	session := response.GetSession()

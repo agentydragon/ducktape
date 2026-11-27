@@ -45,8 +45,7 @@ func (c *SessionDispatcherClient) connection(ctx context.Context, call func(cont
 }
 
 // CreateSession calls the durable, idempotent Session RPC exactly once.
-// A RequestTimeoutError indicates that callers must reconcile or retry with
-// the same Session ID.
+// DEADLINE_EXCEEDED means callers must reconcile or retry with the same Session ID.
 func (c *SessionDispatcherClient) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
 	var response *dispatcherpb.CreateSessionResponse
 	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
@@ -54,7 +53,7 @@ func (c *SessionDispatcherClient) CreateSession(ctx context.Context, request *di
 		response, err = client.CreateSession(ctx, request)
 		return err
 	})
-	return response, translatedRPCError(err)
+	return response, err
 }
 
 // GetSession reads the Dispatcher's current activity projection once for App mutation policy.
