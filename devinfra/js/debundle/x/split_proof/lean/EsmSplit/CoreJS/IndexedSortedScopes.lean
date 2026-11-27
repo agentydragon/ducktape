@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.IndexedUnitsAgree
+import EsmSplit.CoreJS.OrderedRegion
 
 /-! Source and actual indexed plan scopes agree after sorting original unit
 identities for hoist initialization. This says nothing about eager order. -/
@@ -106,8 +107,32 @@ theorem indexed_sorted_scopes {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} 
       exact targetAgree u' ((List.mergeSort_perm _ _).mem_iff.1 hu')
   exact ⟨sourceLinked, targetLinked, sourceScopes, targetScopes, sortedSame⟩
 
+/-- The actual indexed plan links with the source allocation and hoisted
+state. Eager execution and the public surface require separate arguments. -/
+theorem indexed_hoist_link {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (free : IndexedUnitsAgree.FreeFootprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (singleton : sourceProgram.modules = [source]) (sourceImports : source.imports = [])
+    (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) {w : World}
+    (before : CheckedLink sourceProgram w) :
+    ∃ (start : State w) (frames : List (Nat × List (Name × Addr))) (allocated : State w)
+        (after : CheckedLink (splitProgramIndexed body B P) w),
+      checkIdentities sourceProgram.tops (initialState w sourceProgram.regions) = .ok () start ∧
+      declareTops sourceProgram.tops start = .ok frames allocated ∧
+      sourceProgram.scopes frames sourceProgram.loaded = .ok before.linked ∧
+      (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok after.linked ∧
+      before.ready = after.ready := by
+  obtain ⟨tops, regions⟩ :=
+    indexed_tops_regions valid footprints sourceBody singleton sourceImports sourceFind ordered
+  exact OrderedRegion.matching_hoist_link_with_frames regions tops
+    (indexed_sorted_scopes valid footprints free complete sourceBody sourceImports sourceFind ordered) before
+
 #print axioms executable_coverage
 #print axioms indexed_tops_regions
 #print axioms indexed_sorted_scopes
+#print axioms indexed_hoist_link
 
 end CoreJS.IndexedSortedScopes
