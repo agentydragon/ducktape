@@ -14,7 +14,6 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     // The Node probe below is the minimal gate; a browser importmap/load test would
     // be a stronger browser-level proof.
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
-    const CALLER_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "react";
     const JSX_RUNTIME_NAME: &str = "react/jsx-runtime";
     const PACKAGE_VERSION: &str = "18.3.1";
@@ -34,7 +33,7 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
                  export { React as a, jsxRuntime as j };\n",
             ),
             (
-                CALLER_PATH,
+                "static/app.js",
                 "import { a as React, j as jsxRuntime } from \"../megachunk/entry.js\";\n\
                  console.log(`${React.useState()}:${jsxRuntime.jsx()}`);\n",
             ),
@@ -55,10 +54,8 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
          exports.jsx = () => React.dispatcher.current;\n",
     );
 
-    let spec = build_bundled_partial_swap_spec(
-        &ws,
+    let spec = ws.transform_spec(
         json!({MEGACHUNK_PATH: bundled_vendor("React CJS family bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "React", None)), (JSX_RUNTIME_NAME, bundled_package(PACKAGE_VERSION, "jsx-runtime.js", "jsxRuntime", None))], &[("a", swap_symbol(PACKAGE_NAME, PartialSwapKind::Namespace, None, None)), ("j", swap_symbol(JSX_RUNTIME_NAME, PartialSwapKind::Namespace, None, None))])}),
-        None,
     );
     let result = ws.run_spec(
         &spec,
@@ -68,13 +65,11 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
         ],
     );
     assert_success(&result);
-
-    let probe_path = ws.out_root.join("__run_entry.mjs");
-    write_text_file(
-        &probe_path,
+    assert_probe_output(
+        &ws.out_root,
         "await import(\"./app/static/app/entry.js\");\n",
+        "package:package\n",
     );
-    assert_node_output(&probe_path, "package:package\n", "");
 }
 
 #[test]
@@ -88,7 +83,6 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
     // TODO: add a browser/importmap load probe alongside this Node check once
     // the e2e harness has a browser runner.
     const VENDOR_PATH: &str = "static/vendor.js";
-    const APP_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "singleton-kit";
     const CLIENT_NAME: &str = "singleton-kit/client";
     const PACKAGE_VERSION: &str = "1.0.0";
@@ -129,7 +123,7 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
                  export { Hooks as a, Client as h, Component as c };\n",
             ),
             (
-                APP_PATH,
+                "static/app.js",
                 "import { h as Client, c as Component } from \"../vendor/entry.js\";\n\
                  console.log(Client.render(Component));\n",
             ),
@@ -147,23 +141,19 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
         "exports.render = component => component();\n",
     );
 
-    let spec = build_bundled_partial_swap_spec(
-        &ws,
+    let spec = ws.transform_spec(
         json!({VENDOR_PATH: bundled_vendor("singleton runtime mixed-copy fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "Hooks", None)), (CLIENT_NAME, bundled_package(PACKAGE_VERSION, "client.js", "Client", None))], &[("a", swap_symbol(PACKAGE_NAME, PartialSwapKind::Namespace, None, None)), ("h", swap_symbol(CLIENT_NAME, PartialSwapKind::Namespace, None, None))])}),
-        None,
     );
     let result = ws.run_spec(
         &spec,
         &[(PACKAGE_NAME, &package_root), (CLIENT_NAME, &package_root)],
     );
     assert_success(&result);
-
-    let probe_path = ws.out_root.join("__run_entry.mjs");
-    write_text_file(
-        &probe_path,
+    assert_probe_output(
+        &ws.out_root,
         "await import(\"./app/static/app/entry.js\");\n",
+        "package\n",
     );
-    assert_node_output(&probe_path, "package\n", "");
 }
 
 #[test]
@@ -179,7 +169,6 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     // TODO: add a browser/importmap load probe alongside this Node check once
     // the e2e harness has a browser runner.
     const VENDOR_PATH: &str = "static/vendor.js";
-    const APP_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "observer-kit/observer";
     const PACKAGE_VERSION: &str = "1.0.0";
 
@@ -194,14 +183,13 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
                  export { observer as o };\n",
             ),
             (
-                APP_PATH,
+                "static/app.js",
                 "import { o as observe } from \"../../vendor/entry.js\";\n\
                  const observed = observe(\"ok\");\n\
                  export { observed };\n",
             ),
         ],
     );
-    let report_root = ws.out_root.join("reports").join("tree");
     let package_root = ws.write_upstream_package(
         "upstream/observer-kit",
         "observer-kit",
@@ -210,43 +198,24 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
         "export default function observe(value) { return `package:${value}`; }\n",
     );
 
-    let spec = build_bundled_partial_swap_spec(
-        &ws,
+    let spec = ws.transform_spec_with(
         json!({VENDOR_PATH: bundled_vendor("materialized import bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "observer.js", "observe", None))], &[("o", swap_symbol(PACKAGE_NAME, PartialSwapKind::Default, None, None))])}),
-        Some(json!({
-            "logical_modules": {
-                "static/app": {
-                    "helpers/observer": {
-                        "members": [
-                            {
-                                "name": "observed",
-                                "selector": { "binding": { "name": "observed" } },
-                            },
-                        ],
-                    },
-                },
-            },
-            "import_order": { "static/app": ["helpers/observer"] },
-            "unassigned_mode": {
-                "static/app": { "kind": "inline_in_entry" },
-            },
-            "materialize_logical_modules": {
+        materialize_app_modules(
+            &[("helpers/observer", &["observed"])],
+            json!({
                 "prune_other_chunks": false,
-                "report_out_dir": &report_root,
+                "report_out_dir": ws.out_root.join("reports").join("tree"),
                 "target_dir": "modules",
-            },
-        })),
+            }),
+        ),
     );
-    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
-    assert_success(&result);
-
-    let probe_path = ws.out_root.join("__run_materialized.mjs");
-    write_text_file(
-        &probe_path,
+    assert_success(&ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]));
+    assert_probe_output(
+        &ws.out_root,
         "const { observed } = await import(\"./app/static/app/modules/helpers/observer.js\");\n\
          console.log(observed);\n",
+        "package:ok\n",
     );
-    assert_node_output(&probe_path, "package:ok\n", "");
 }
 
 #[test]
@@ -257,7 +226,6 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
     // import binding's same hygiene context must follow it. A no-context import
     // alias would leave bare `toolkitMap` / `toolkitMake` references behind.
     const VENDOR_PATH: &str = "static/vendor.js";
-    const APP_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "toolkit-core";
     const PACKAGE_VERSION: &str = "1.0.0";
 
@@ -276,7 +244,7 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
                  export { map as m, make as k };\n",
             ),
             (
-                APP_PATH,
+                "static/app.js",
                 "import { m as toolkitMap, k as toolkitMake } from \"../../vendor/entry.js\";\n\
                  const direct = toolkitMap(\"top\");\n\
                  const shadowed = ((toolkitMap) => toolkitMap(\"shadow\"))(value => `local:${value}`);\n\
@@ -285,7 +253,6 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
             ),
         ],
     );
-    let report_root = ws.out_root.join("reports").join("tree");
     let package_root = ws.write_upstream_package(
         "upstream/toolkit-core",
         PACKAGE_NAME,
@@ -295,51 +262,24 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
          export const make = target => { target.mark = \"package\"; return target; };\n",
     );
 
-    let spec = build_bundled_partial_swap_spec(
-        &ws,
+    let spec = ws.transform_spec_with(
         json!({VENDOR_PATH: bundled_vendor("materialized named alias bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "Toolkit", Some("Toolkit")))], &[("m", swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("map"), None)), ("k", swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("make"), None))])}),
-        Some(json!({
-            "logical_modules": {
-                "static/app": {
-                    "helpers/toolkit": {
-                        "members": [
-                            {
-                                "name": "direct",
-                                "selector": { "binding": { "name": "direct" } },
-                            },
-                            {
-                                "name": "shadowed",
-                                "selector": { "binding": { "name": "shadowed" } },
-                            },
-                            {
-                                "name": "made",
-                                "selector": { "binding": { "name": "made" } },
-                            },
-                        ],
-                    },
-                },
-            },
-            "import_order": { "static/app": ["helpers/toolkit"] },
-            "unassigned_mode": {
-                "static/app": { "kind": "inline_in_entry" },
-            },
-            "materialize_logical_modules": {
+        materialize_app_modules(
+            &[("helpers/toolkit", &["direct", "shadowed", "made"])],
+            json!({
                 "prune_other_chunks": false,
-                "report_out_dir": &report_root,
+                "report_out_dir": ws.out_root.join("reports").join("tree"),
                 "target_dir": "modules",
-            },
-        })),
+            }),
+        ),
     );
-    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
-    assert_success(&result);
-
-    let probe_path = ws.out_root.join("__run_materialized_named.mjs");
-    write_text_file(
-        &probe_path,
+    assert_success(&ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]));
+    assert_probe_output(
+        &ws.out_root,
         "const { direct, shadowed, made } = await import(\"./app/static/app/modules/helpers/toolkit.js\");\n\
          console.log(`${direct}|${shadowed}|${made.mark}`);\n",
+        "package:top|local:shadow|package\n",
     );
-    assert_node_output(&probe_path, "package:top|local:shadow|package\n", "");
 }
 
 #[test]
@@ -350,7 +290,6 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
     // case: rewrite every residual call to the generated facade and then let
     // the strip pass remove the original helper.
     const VENDOR_PATH: &str = "static/vendor.js";
-    const APP_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "zod";
     const PACKAGE_VERSION: &str = "4.1.12";
 
@@ -368,7 +307,7 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
                  export const keep = `${schema}|${shadowed}`;\n",
             ),
             (
-                APP_PATH,
+                "static/app.js",
                 "import { keep } from \"../vendor/entry.js\";\n\
                  console.log(keep);\n",
             ),
@@ -382,18 +321,13 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
         "const inst = Ctor => `package:${Ctor.name}`;\nexport { inst as instanceof };\n",
     );
 
-    let spec = build_bundled_partial_swap_spec(
-        &ws,
+    let spec = ws.transform_spec(
         json!({VENDOR_PATH: bundled_vendor("local helper bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "Zod", Some("Zod")))], &[("zodInstanceof", swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("instanceof"), Some("nY")))])}),
-        None,
     );
-    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
-    assert_success(&result);
-
-    let probe_path = ws.out_root.join("__run_local_helper.mjs");
-    write_text_file(
-        &probe_path,
+    assert_success(&ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]));
+    assert_probe_output(
+        &ws.out_root,
         "await import(\"./app/static/app/entry.js\");\n",
+        "package:URL|shadow:URL\n",
     );
-    assert_node_output(&probe_path, "package:URL|shadow:URL\n", "");
 }
