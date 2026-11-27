@@ -316,7 +316,7 @@ private def replayStmtBlockers : Stmt → List ReplayBlocker
   | .ite condition yes no =>
     .other "branch-statement" :: replayExprBlockers condition ++ replayStmtBlockers yes ++ replayStmtBlockers no
   | .block statements => .other "block" :: replayStmtListBlockers statements
-  | .loop init test update body =>
+  | .loop init test update body _ =>
     .other "loop" :: replayStmtListBlockers init ++ replayExprBlockers test ++
       replayExprBlockers update ++ replayStmtBlockers body
   | .breakScope body => .other "break-scope" :: replayStmtBlockers body

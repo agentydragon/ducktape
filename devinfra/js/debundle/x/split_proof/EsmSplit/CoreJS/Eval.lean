@@ -754,11 +754,11 @@ def execStmt : Nat → Env → Stmt → M W Flow
     | .ite c t e => do
       if ← lift (toBoolean (← evalExpr n env c)) then execStmt n env t else execStmt n env e
     | .block ss => do execStmts n (← enterBlock env ss) ss
-    | .loop init test update body => do
+    | .loop init test update body postTest => do
       let env ← enterBlock env init
       let _ ← execStmts n env init
       let fresh := (lexDecls init).filterMap fun (x, mutable) => if mutable then some x else none
-      loop n (← copyBindings env fresh) fresh test update body
+      loop n (← copyBindings env fresh) fresh test update body postTest
     | .breakScope body => do
       match ← execStmt n env body with
       | .brk => pure .normal
@@ -824,18 +824,26 @@ def converse : Nat → Nat → List (Option Addr) → Told → M W Val
       let told ← toldOf (← attempt (perform (callFn n) (fun callee args => constructTarget n callee callee args) code cells req))
       converse n code cells told
 
-/-- The turns of a `for` loop. `fresh` are the names of its `let` declaration: every turn gets its own copy. -/
-def loop : Nat → Env → List Name → Expr → Expr → Stmt → M W Flow
-  | 0, _, _, _, _, _ => outOfFuel
-  | n + 1, env, fresh, test, update, body => do
-    if !(← lift (toBoolean (← evalExpr n env test))) then pure .normal else
+/-- Test the condition at its designated phase. At the other phase, proceed
+without evaluating it or changing state. -/
+def loopCondition (evaluate : Bool) (test : M W Val) : M W Bool :=
+  if evaluate then test >>= fun v => lift (toBoolean v) else pure true
+
+/-- A loop turn uses the same sub-fuel for its body and condition. A post-test
+loop reaches its test only after a normal body or an unlabeled continue.
+`fresh` holds the per-iteration `let` bindings of a `for` loop. -/
+def loop : Nat → Env → List Name → Expr → Expr → Stmt → Bool → M W Flow
+  | 0, _, _, _, _, _, _ => outOfFuel
+  | n + 1, env, fresh, test, update, body, postTest => do
+    if !(← loopCondition (!postTest) (evalExpr n env test)) then pure .normal else
     match ← execStmt n env body with
     | .brk => pure .normal
     | .ret v => pure (.ret v)
     | _ => do
+      if !(← loopCondition postTest (evalExpr n env test)) then return .normal
       let env ← copyBindings env fresh
       let _ ← evalExpr n env update
-      loop n env fresh test update body
+      loop n env fresh test update body postTest
 
 end
 

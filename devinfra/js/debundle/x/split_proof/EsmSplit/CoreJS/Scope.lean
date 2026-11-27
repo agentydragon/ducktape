@@ -322,8 +322,8 @@ structure Same (W : World) (n : Nat) : Prop where
     (bindPattern n env kind p v : M W _) = bindPattern n env' kind p v
   stmt : ∀ env env' s, Agree s.free env env' → (execStmt n env s : M W _) = execStmt n env' s
   stmts : ∀ env env' ss, Agree (freeStmts ss) env env' → (execStmts n env ss : M W _) = execStmts n env' ss
-  loop : ∀ env env' fresh test update body, Agree (fresh ++ (test.free ++ (update.free ++ body.free))) env env' →
-    (loop n env fresh test update body : M W _) = loop n env' fresh test update body
+  loop : ∀ env env' fresh test update body postTest, Agree (fresh ++ (test.free ++ (update.free ++ body.free))) env env' →
+    (loop n env fresh test update body postTest : M W _) = loop n env' fresh test update body postTest
 
 /-- `x` is among the free names of the whole, given that it is among those of a part (`hx`). -/
 syntax "free_mem" : tactic
@@ -704,7 +704,7 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
       · exact Or.inr (List.contains_iff_mem.1 hc)
       · exact Or.inl (by simp only [Stmt.free, List.mem_filter]; exact ⟨hx, by simpa using hc⟩)
     · exact free_mem_freeStmts (funDecl_of_mem hf) x (by simp [Stmt.free, hx])
-  | loop init test update body =>
+  | loop init test update body postTest =>
     unfold execStmt
     refine enterBlock_congr (N' := (freeStmts init ++ (test.free ++ (update.free ++ body.free))) ++ lexNames init) init
       hN (fun x hx => ?_) (fun f hf x hx => ?_) fun env1 env1' h1 => ?_
@@ -718,7 +718,7 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
     · refine M.bind_congr (ih.stmts _ _ _ (h1.mono fun x hx => by simp [hx])) fun _ => ?_
       dsimp only
       refine copyBindings_congr _ h1 (fun x hx => List.mem_append_right _ (fresh_lex init x hx))
-        fun env2 env2' h2 => ih.loop _ _ _ _ _ _ (h2.mono fun x hx => ?_)
+        fun env2 env2' h2 => ih.loop _ _ _ _ _ _ postTest (h2.mono fun x hx => ?_)
       rcases List.mem_append.1 hx with hx | hx
       · exact List.mem_append_right _ (fresh_lex init x hx)
       · exact List.mem_append_left _ (List.mem_append_right _ hx)
@@ -790,18 +790,26 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
         hN.vars x (by simp only [Stmt.free, opaqueNames]; exact List.mem_append_left _ hx)]
   | _ => unfold execStmt; same ih hN
 
-theorem Same.loop_succ (env env' : Env) (fresh : List Name) (test update : Expr) (body : Stmt)
+theorem Same.loop_succ (env env' : Env) (fresh : List Name) (test update : Expr) (body : Stmt) (postTest : Bool)
     (hN : Agree (fresh ++ (test.free ++ (update.free ++ body.free))) env env') :
-    (CoreJS.loop (n + 1) env fresh test update body : M W _) = CoreJS.loop (n + 1) env' fresh test update body := by
+    (CoreJS.loop (n + 1) env fresh test update body postTest : M W _) =
+      CoreJS.loop (n + 1) env' fresh test update body postTest := by
+  have tests (phase : Bool) :
+      (loopCondition phase (evalExpr n env test) : M W Bool) = loopCondition phase (evalExpr n env' test) :=
+    congrArg (loopCondition phase) (ih.expr _ _ _ (hN.mono fun x hx => by simp [hx]))
   unfold CoreJS.loop
-  refine M.bind_congr (ih.expr _ _ _ (hN.mono fun x hx => by simp [hx])) fun v => M.bind_congr rfl fun b => ?_
+  refine M.bind_congr (tests _) fun b => ?_
   split
   · rfl
   · refine M.bind_congr (ih.stmt _ _ _ (hN.mono fun x hx => by simp [hx])) fun flow => ?_
     split <;> first
       | rfl
-      | exact copyBindings_congr fresh hN (fun x hx => by simp [hx]) fun env1 env1' h1 =>
-          M.bind_congr (ih.expr _ _ _ (h1.mono fun x hx => by simp [hx])) fun _ => ih.loop _ _ _ _ _ _ h1
+      | refine M.bind_congr (tests _) fun again => ?_
+        split
+        · rfl
+        · exact copyBindings_congr fresh hN (fun x hx => by simp [hx]) fun env1 env1' h1 =>
+            M.bind_congr (ih.expr _ _ _ (h1.mono fun x hx => by simp [hx])) fun _ =>
+              ih.loop _ _ _ _ _ _ postTest h1
 
 end step
 
@@ -810,7 +818,7 @@ and on `this`, run it the same way: the same result in the same state, for every
 theorem same : ∀ n, Same W n
   | 0 => ⟨fun _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ _ => rfl, fun _ _ _ _ _ _ => rfl,
       fun _ _ _ _ _ => rfl, fun _ _ _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ => rfl,
-      fun _ _ _ _ _ _ _ => rfl⟩
+      fun _ _ _ _ _ _ _ _ => rfl⟩
   | n + 1 =>
     have ih := same n
     ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.binding_succ, ih.stmt_succ,

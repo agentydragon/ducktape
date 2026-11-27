@@ -1418,7 +1418,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
   let kind ← field j "type"
   let nested := scope != .module
   if nested || ["BlockStatement", "IfStatement", "TryStatement", "ForStatement", "ForOfStatement", "ForInStatement",
-      "WhileStatement", "SwitchStatement"].contains kind then
+      "WhileStatement", "DoWhileStatement", "SwitchStatement"].contains kind then
     let blockScope := if nested then scope else LinkedScope.moduleBlock
     match kind with
     | "BlockStatement" => return ← linkedBlock profile imports blockScope j
@@ -1438,9 +1438,10 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       -- An unbraced branch can declare vars, which already belong to the enclosing module or function.
       unless (← field j "kind") == "var" do throw "expected a var declaration in statement position"
       return .block (← linkedBlockDeclarations profile imports scope j).toList
-    | "WhileStatement" =>
+    | "WhileStatement" | "DoWhileStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
-      return .loop [] test .undef (← linkedStatement profile imports blockScope (← j.getObjVal? "body"))
+      let body ← linkedStatement profile imports blockScope (← j.getObjVal? "body")
+      return .loop [] test .undef body (kind == "DoWhileStatement")
     | "ForInStatement" =>
       let declaration ← j.getObjVal? "left"
       unless (← field declaration "type") == "VariableDeclaration" do
@@ -1470,7 +1471,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
         .decl .const table (.prim .forInKeys [.var source]),
         .decl .let_ index (.num 0),
         .loop [] (.binary .lt (.var index) (.get (.var table) (.str "length"))) (.update (.var index) true false)
-          (.block [.decl kind name (.get (.var table) (.var index)), body])])
+          (.block [.decl kind name (.get (.var table) (.var index)), body]) false])
     | "ForStatement" =>
       let lower := linkedExpr profile imports true ""
       let init ← j.getObjVal? "init"
@@ -1483,7 +1484,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let test ← if test == .null then pure (.bool true) else lower test
       let update ← j.getObjVal? "update"
       let update ← if update == .null then pure .undef else lower update
-      return .loop initializer test update (← linkedStatement profile imports blockScope (← j.getObjVal? "body"))
+      return .loop initializer test update (← linkedStatement profile imports blockScope (← j.getObjVal? "body")) false
     | "ForOfStatement" =>
       if ← j.getObjValAs? Bool "await" then throw "unsupported for-await-of"
       let lower := linkedExpr profile imports true

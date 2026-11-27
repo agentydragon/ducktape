@@ -592,6 +592,49 @@ export const cases = [
     `,
   },
   {
+    name: "a post-test cursor advances before checking the next character",
+    end: "normal",
+    source: `
+      // Acorn's lookahead advances by the width of the current code point.
+      // The initial code point can be a backslash (not an identifier letter).
+      const points = [92, 97, 0x10400, 0, 33];
+      let next = 0, point = points[next];
+      do { next += point <= 0xffff ? 1 : 2; }
+      while ((point = points[next]) === 97 || point === 0x10400);
+      // A pre-test rewrite sees the backslash first and skips every advance.
+      let before = 0, initial = points[before];
+      while (initial === 97 || initial === 0x10400) {
+        before += initial <= 0xffff ? 1 : 2;
+        initial = points[before];
+      }
+      console.log(next, point, before, initial);
+    `,
+  },
+  {
+    name: "post-test loop control and abrupt completion preserve effects",
+    end: "throw",
+    source: `
+      let trace = "", turns = 0;
+      do {
+        trace += "body";
+        try {
+          if (++turns === 1) continue;
+          break;
+        } finally { trace += "finally"; }
+      } while ((trace += "test", true));
+      function finish() {
+        do { return "return"; } while ((trace += "wrong", true));
+      }
+      try {
+        do { throw "body throw"; } while ((trace += "wrong", true));
+      } catch (error) { trace += error; }
+      function fail() { trace += "condition throw"; throw "stop"; }
+      console.log(trace, finish());
+      try { do { trace += "last body"; } while (fail()); }
+      finally { console.log(trace); }
+    `,
+  },
+  {
     name: "a call of a host function the world does not answer for is unknown code",
     source: `console.log("before"); const r = JSON.stringify(4); console.log("after", r);`,
     allowHost: true,
