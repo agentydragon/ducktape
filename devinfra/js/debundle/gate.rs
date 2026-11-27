@@ -46,9 +46,9 @@ pub use validation::report::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,
     BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport,
 };
+pub use validation::validate_assignment_with_priority;
 #[cfg(test)]
 pub use validation::{validate_assignment, validate_assignment_with_verdict};
-pub use validation::{validate_assignment_with_priority, validate_assignment_with_schedule};
 
 /// A `define_logical_module` member whose `binding.name` did not
 /// resolve to a top-level declaration in the chunk. Collected across chunks
