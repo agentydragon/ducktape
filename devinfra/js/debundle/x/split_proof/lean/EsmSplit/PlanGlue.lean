@@ -144,6 +144,29 @@ theorem mkPlan_no_extra_glue_iff {B : Bundle} {S : Spec} {entry : Module}
   · exact mkPlan_no_extra_glue found
 
 
+/-- In a valid actual plan, an uncovered consumed local forces a genuinely
+new public name: export uniqueness rules out a collision with source names. -/
+theorem uncovered_adds_public_name {B : Bundle} {S : Spec} {entry : Module}
+    (valid : Valid B S (mkPlan B S))
+    (found : (mkPlan B S).find (mkPlan B S).entry = some entry)
+    (uncovered : ¬ EntryCovered B S entry) :
+    ∃ publicName localName, (publicName, localName) ∈ entry.exports ∧
+      publicName ∉ (entry.published B).map Prod.fst := by
+  have nonempty : entry.exports ≠ [] := fun empty =>
+    uncovered ((mkPlan_no_extra_glue_iff found).1 empty)
+  have entryIn : entry ∈ (mkPlan B S).mods := List.mem_of_find?_eq_some found
+  have unique := valid.2.2.2.2.1 entry entryIn
+  unfold Module.publicNames at unique
+  obtain ⟨_, _, disjoint⟩ := List.nodup_append.1 unique
+  cases h : entry.exports with
+  | nil => exact False.elim (nonempty h)
+  | cons pair rest =>
+    refine ⟨pair.1, pair.2, ?_, ?_⟩
+    · simp
+    · intro inSource
+      have inGlue : pair.1 ∈ entry.exports.map Prod.fst := by rw [h]; simp
+      exact disjoint pair.1 inSource pair.1 inGlue rfl
+
 #print axioms published_contains_iff
 #print axioms glue_length
 #print axioms covered_of_glue_empty
@@ -152,5 +175,6 @@ theorem mkPlan_no_extra_glue_iff {B : Bundle} {S : Spec} {entry : Module}
 #print axioms mkPlan_glue_equation
 #print axioms mkPlan_no_extra_glue
 #print axioms mkPlan_no_extra_glue_iff
+#print axioms uncovered_adds_public_name
 
 end EsmSplit.PlanGlue
