@@ -119,6 +119,30 @@ for (const kind of ["const", "let"]) {
     });
   }
 }
+const arraySliceSpec = {
+  entry: "entry.mjs",
+  order: ["worker.mjs"],
+  modules: { "entry.mjs": ["#0", "#1"], "worker.mjs": ["#2"] },
+  sequential: true,
+};
+const arraySlice = {
+  source: parse("const first = [1]; export { first }; const second = [[2], void 0];"),
+  files: {
+    "entry.mjs": parse('import "./worker.mjs"; const first = [1]; export { first };'),
+    "worker.mjs": parse("const second = [[2], void 0];"),
+  },
+  spec: arraySliceSpec,
+};
+cases.push({ kind: "indexedArraySlice", input: arraySlice, expected: ["linked-slice-moves", "normal-completion"] });
+cases.push({
+  kind: "indexedArraySlice",
+  input: {
+    ...arraySlice,
+    files: { ...arraySlice.files, "worker.mjs": parse("const second = [[2], undefined];") },
+  },
+  expected: /worker\.mjs: emitted syntax differs from original unit 2/,
+});
+
 cases.push({
   kind: "singletonPlacement",
   input: linked(),

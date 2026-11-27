@@ -794,7 +794,7 @@ private theorem replay_allocOnly {source target : World} :
         apply replay_bind (ihExpr env operand allocOnly.2 noClassOperand resolvedOperand)
         intro value
         have same : unop (initialState source 0) op value = unop (initialState target 0) op value := by
-          rcases localUnaryOperand_ops allocOnly.1 with h | h <;> cases h <;> simp [unop]
+          rcases localUnaryOperand_ops allocOnly.1 with h | h | h <;> cases h <;> simp [unop]
         rw [same]
         exact replay_lift _
       | obj props =>

@@ -36,12 +36,15 @@ def literalClassMembers : List ClassMember → Bool
 
 
 /-- Logical negation does not coerce objects to primitives. Numeric negation is safe here
-only on a syntactic number literal, whose conversion cannot call user code. -/
+only on a syntactic number literal, whose conversion cannot call user code. `void`
+is included only over primitive literals, where evaluating the operand cannot
+read a binding, throw, or call the host. -/
 def localUnaryOperand (op : UnOp) (operand : Expr) : Bool :=
-  op == .not || (op == .neg && (operand matches .num _))
+  op == .not || (op == .neg && (operand matches .num _)) ||
+    (op == .void && (operand matches .undef | .null | .bool _ | .num _ | .str _))
 
 theorem localUnaryOperand_ops {op : UnOp} {e : Expr} (h : localUnaryOperand op e = true) :
-    op = .not ∨ op = .neg := by
+    op = .void ∨ op = .not ∨ op = .neg := by
   cases op <;> simp_all [localUnaryOperand]
 
 /-- These operators on two Numbers always return a Number, including NaN and infinities. -/

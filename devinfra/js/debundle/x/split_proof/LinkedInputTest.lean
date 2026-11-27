@@ -8,6 +8,7 @@ import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.CoreJS.StateMatch
 import EsmSplit.LowerSplit.Input
+import EsmSplit.LowerSplit.SliceCertificate
 
 open Lean (Json toJson)
 
@@ -191,6 +192,30 @@ private def indexedInlinePlan (input : Json) : Except String Json := do
     toJson (decoded.source.exports.map Prod.fst)
   ]
 
+/-- Replay the internal slice on parsed candidate files without publishing them. -/
+private def indexedArraySlice (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let files ← input.getObjVal? "files"
+  let spec ← EsmSplit.parseSpec (← input.getObjVal? "spec")
+  let sourceText ← source.getObjValAs? String "sourceText"
+  let indexed ← CoreJS.AuthenticatedSource.decodeIndexedSource source sourceText spec.entry
+  let bundle := EsmSplit.LowerSplit.sourceBundle indexed.nodes
+  let plan := EsmSplit.mkPlan bundle spec
+  let providers := Json.mkObj []
+  match decoded : CoreJS.LinkedInput.decodeSingleton source providers files plan with
+  | .error reason => throw reason
+  | .ok deployment =>
+    let ⟨placed⟩ ← CoreJS.checkPlaces deployment.assignment deployment.before deployment.after
+    match probed : CoreJS.LinkedBehavior.probeWitness .empty deployment.before deployment.after with
+    | .error refusal => throw refusal.reason
+    | .ok probe =>
+      let eligible : EsmSplit.LowerSplit.SliceEligibility .empty source providers files plan := {
+        deployment, decodedSingleton := decoded, placed, probe, probeSucceeded := probed
+        checkedLinks := CoreJS.LinkedBehavior.checkProbePair deployment.before deployment.after }
+      let ⟨kind, _⟩ ← (EsmSplit.LowerSplit.certifySlice .empty source providers files plan bundle spec eligible)
+        |>.mapError (·.reason)
+      return toJson (kind.scope, kind.level.label)
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
@@ -204,6 +229,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "singletonSourceShape" => pure (singletonSourceShape (← fixture.getObjVal? "input"))
       | "inlineConstructor" => pure (inlineConstructor (← fixture.getObjVal? "input"))
       | "indexedInlinePlan" => pure (indexedInlinePlan (← fixture.getObjVal? "input"))
+      | "indexedArraySlice" => pure (indexedArraySlice (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"
