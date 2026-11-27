@@ -46,6 +46,7 @@ private def entryExpr : Nat → Expr → Bool
     match expr with
     | .undef | .this | .var _ => true
     | .func f => entryFunc n f
+    | .arr elems => elems.all (entryExpr n)
     | .get a b | .binary _ a b | .logical _ a b => entryExpr n a && entryExpr n b
     | .unary _ e => entryExpr n e
     | .cond test yes no => entryExpr n test && entryExpr n yes && entryExpr n no

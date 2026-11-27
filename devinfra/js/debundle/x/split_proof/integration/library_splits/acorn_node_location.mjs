@@ -81,6 +81,13 @@ function observe(api) {
   assert.deepEqual(positionFields(location), positionFields(parsed.loc.start));
   assert.equal(token.loc.start, location);
   assert.equal(token.loc.end, undefined);
+  const peer = new api.Node({ options, sourceFile: "input.js" }, start, location);
+  assert.deepEqual(token.range, peer.range);
+  assert.notEqual(token.range, peer.range);
+  token.range[1] = parsed.end;
+  assert.deepEqual(peer.range, [start, 0]);
+  assert.deepEqual(new api.Node({ options, sourceFile: "input.js" }, start, location).range, [start, 0]);
+  assert.equal(token.range[1], parsed.end);
   const shifted = token.loc.start.offset(4);
   assert.notEqual(shifted, location);
   assert.equal(Object.getPrototypeOf(shifted), Object.getPrototypeOf(location));
@@ -90,7 +97,7 @@ function observe(api) {
     position: positionFields(token.loc.start),
     shifted: positionFields(shifted),
     type: token.type,
-    range: token.range,
+    range: peer.range,
     sourceFile: token.sourceFile,
     locationSource: token.loc.source,
     newline: api.isNewLine(13),
@@ -185,3 +192,28 @@ for (const [name, moveLocations] of [
   console.log(JSON.stringify(row));
 }
 writeFileSync(path.join(artifacts, "results.json"), JSON.stringify(results, null, 2));
+
+if (process.env.EXPECT_NODE_LOCATION) {
+  assert.equal(results[0].verdict.status, process.env.EXPECT_NODE_LOCATION);
+  assert.equal(results[1].verdict.status, "rejected");
+}
+
+// Spread invokes the iterator protocol, outside this dense array fragment.
+const spreadSource = path.join(tmp, "spread.mjs");
+const spreadSpec = path.join(tmp, "spread-spec.json");
+writeFileSync(
+  spreadSource,
+  "function predicate(n) { return n === 10; }\nfunction copy(items) { return [...items]; }\nexport { predicate, copy };\n"
+);
+writeFileSync(
+  spreadSpec,
+  JSON.stringify({ entry, modules: { [newline]: ["#0"], [entry]: ["#1", "#2"] }, order: [newline], sequential: true })
+);
+const spread = split({
+  source: spreadSource,
+  spec: spreadSpec,
+  out: path.join(tmp, "spread-out"),
+  require: "all-outcomes",
+});
+assert.equal(spread.reasonCode, "no_constructed_rule", spread.log);
+assert.match(spread.reason, /entry unit 1: expected concrete retained code/);
