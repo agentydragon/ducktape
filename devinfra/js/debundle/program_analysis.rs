@@ -910,18 +910,13 @@ impl Visit for ModuleScanVisitor {
         node.visit_children_with(self);
     }
 
-    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        if let ForHead::Pat(pattern) = &node.left {
+    /// A destructuring loop head writes the bindings it names; declarator heads
+    /// bind through their own declarator visits.
+    fn visit_for_head(&mut self, head: &ForHead) {
+        if let ForHead::Pat(pattern) = head {
             record_pat_write(pattern, self);
         }
-        node.visit_children_with(self);
-    }
-
-    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        if let ForHead::Pat(pattern) = &node.left {
-            record_pat_write(pattern, self);
-        }
-        node.visit_children_with(self);
+        head.visit_children_with(self);
     }
 
     fn visit_with_stmt(&mut self, node: &WithStmt) {

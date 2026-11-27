@@ -1083,32 +1083,21 @@ impl Visit for FlowProgramCollector {
         node.visit_children_with(self);
     }
 
-    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        if let ForHead::VarDecl(declaration) = &node.left {
-            for declaration in &declaration.decls {
-                for id in binding_targets::binding_names(&declaration.name) {
+    /// The walk reaches a loop head for both loop forms, so one override covers
+    /// both: each declarator is assigned by the loop, and a destructuring head
+    /// writes through its pattern.
+    fn visit_for_head(&mut self, head: &ForHead) {
+        if let ForHead::VarDecl(declaration) = head {
+            for declarator in &declaration.decls {
+                for id in binding_targets::binding_names(&declarator.name) {
                     self.summary_writes.insert(self.symbols.binding(id));
                 }
             }
         }
-        if let ForHead::Pat(pattern) = &node.left {
+        if let ForHead::Pat(pattern) = head {
             binding_targets::record_pat_write(pattern, self);
         }
-        node.visit_children_with(self);
-    }
-
-    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        if let ForHead::VarDecl(declaration) = &node.left {
-            for declaration in &declaration.decls {
-                for id in binding_targets::binding_names(&declaration.name) {
-                    self.summary_writes.insert(self.symbols.binding(id));
-                }
-            }
-        }
-        if let ForHead::Pat(pattern) = &node.left {
-            binding_targets::record_pat_write(pattern, self);
-        }
-        node.visit_children_with(self);
+        head.visit_children_with(self);
     }
 
     fn visit_object_lit(&mut self, node: &ObjectLit) {
