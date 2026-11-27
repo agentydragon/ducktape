@@ -53,17 +53,21 @@ type watch struct {
 	cancel         context.CancelFunc
 	sandboxUID     string
 	incarnationUID string
-	ready          bool
+}
+
+// incarnation is the Runtime workload incarnation the Sandbox Controller bound. It is bound once per
+// process and never revoked.
+type incarnation struct {
+	sandboxUID     string
+	incarnationUID string
 }
 
 // Authorization is an opaque admission fence for the Controller-bound Runtime
 // incarnation. Observer lifetimes do not revoke it.
 type Authorization struct {
 	server   *Server
-	identity *watch
+	identity *incarnation
 }
-
-func (a *Authorization) Context() context.Context { return a.identity.ctx }
 
 func (a *Authorization) SandboxUID() string { return a.identity.sandboxUID }
 
@@ -78,7 +82,7 @@ type Server struct {
 	adoptionMu          sync.Mutex
 	mu                  sync.RWMutex
 	boundIncarnationUID string
-	identity            *watch
+	identity            *incarnation
 }
 
 func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer, host harnesshostpb.HarnessHostServer) *Server {
@@ -133,7 +137,7 @@ func (s *Server) directWatchContext(req *environmentruntimepb.WatchStateRequest,
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.identity == nil || !s.identity.ready {
+	if s.identity == nil {
 		return nil, status.Error(codes.Unavailable, "Sandbox Controller has not bound the Runtime incarnation")
 	}
 	if req.IncarnationUid != s.boundIncarnationUID {
@@ -171,7 +175,7 @@ func (s *Server) Authorize(ctx context.Context) (*Authorization, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	current := s.identity
-	if current == nil || !current.ready || current.ctx.Err() != nil || current.sandboxUID != sandboxUID ||
+	if current == nil || current.sandboxUID != sandboxUID ||
 		current.incarnationUID != incarnationUID || bootID != s.config.BootID {
 		// A process restart can leave a caller briefly holding the previous boot's
 		// connection. Reject before admission with a retryable status.
@@ -203,7 +207,7 @@ func (s *Server) Admit(ctx context.Context, admit func(*Authorization) error) er
 
 func (s *Server) validateLocked(authorization *Authorization) error {
 	if authorization == nil || authorization.server != s || authorization.identity == nil ||
-		s.identity != authorization.identity || !authorization.identity.ready || authorization.identity.ctx.Err() != nil {
+		s.identity != authorization.identity {
 		return status.Error(codes.Aborted, "control authorization belongs to a stale Runtime incarnation")
 	}
 	return nil
@@ -323,8 +327,7 @@ func (s *Server) bindControllerWatch(current *watch) error {
 	if s.identity == nil {
 		// Observer loss and another Gateway replica do not end identity-bound work.
 		// The caller stream and Runtime lifecycle retain their own cancellation.
-		ctx, cancel := context.WithCancel(context.Background())
-		s.identity = &watch{ctx: ctx, cancel: cancel, sandboxUID: current.sandboxUID, incarnationUID: current.incarnationUID, ready: true}
+		s.identity = &incarnation{sandboxUID: current.sandboxUID, incarnationUID: current.incarnationUID}
 	}
 	s.mu.Unlock()
 	if err := current.ctx.Err(); err != nil {

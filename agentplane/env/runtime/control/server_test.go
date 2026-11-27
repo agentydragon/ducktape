@@ -173,8 +173,8 @@ func TestControllerWatchLossDoesNotRevokeCalls(t *testing.T) {
 			}
 		}
 		synctest.Wait()
-		if err := server.Validate(authorization); err != nil || authorization.Context().Err() != nil {
-			t.Fatalf("passive cancellation changed admitted authorization: validation=%v, context=%v", err, authorization.Context().Err())
+		if err := server.Validate(authorization); err != nil {
+			t.Fatalf("passive cancellation changed admitted authorization: %v", err)
 		}
 		if _, err := server.Authorize(callCtx); err != nil {
 			t.Fatalf("passive cancellation revoked Gateway authorization: %v", err)
@@ -297,8 +297,8 @@ func TestCallsRemainBoundToIncarnationAcrossIndependentGatewayWatches(t *testing
 			t.Fatalf("another Gateway watch canceled its peer: %v", err)
 		default:
 		}
-		if err := server.Validate(admission); err != nil || admission.Context().Err() != nil {
-			t.Fatalf("Gateway watch change ended admission: validation=%v context=%v", err, admission.Context().Err())
+		if err := server.Validate(admission); err != nil {
+			t.Fatalf("Gateway watch change ended admission: %v", err)
 		}
 		for _, key := range []string{SandboxMetadata, IncarnationMetadata, BootMetadata} {
 			for _, values := range [][]string{nil, {""}, {"value", "value"}} {
@@ -312,7 +312,7 @@ func TestCallsRemainBoundToIncarnationAcrossIndependentGatewayWatches(t *testing
 		if _, err := server.directWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: "new-pod"}, t.Context()); status.Code(err) != codes.FailedPrecondition {
 			t.Fatalf("Gateway changed immutable binding = %v", err)
 		}
-		if err := server.Validate(admission); err != nil || admission.Context().Err() != nil {
+		if err := server.Validate(admission); err != nil {
 			t.Fatalf("rejected watch canceled current admission: %v", err)
 		}
 		for _, ctx := range []context.Context{callContext("new-pod", "boot"), callContext("pod", "old-boot")} {
