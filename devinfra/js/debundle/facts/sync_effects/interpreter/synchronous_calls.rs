@@ -40,7 +40,7 @@ use value_flow::values::Values as FlowValues;
 use value_model::WorldScope;
 use value_model::{AbstractValue, CallSite, CaptureInterner, MemberKey, ValueExpr, Values};
 use world::World;
-use world::prefix_values::{PrefixValues, TopBindings};
+use world::prefix_values::{PrefixValues, TopBindingOrdinal, TopBindings};
 
 pub(super) struct TopLevelEffectView<'source> {
     pub(super) reads: Vec<&'source Id>,
@@ -811,6 +811,199 @@ pub fn annotate_synchronous_calls(
     metrics: &work_metrics::WorkMetrics,
 ) -> Vec<analysis::facts::CompletedPurity> {
     let index = proofs.index.index;
+    record_callback_factory_barriers(&index, flow, facts);
+    let (needed, statement_effects) =
+        prefix_needed_bindings(&index, flow, proofs.purity, proofs.graph, facts);
+    let single_writer_bindings = single_writer_bindings(facts);
+    let source_unit_read_closure = SourceUnitReadClosure::new(facts);
+    let prefix_effects: Vec<_> = facts
+        .iter()
+        .map(|fact| {
+            index.owner_callable_prefix_effects[fact.ordinal.0]
+                .as_ref()
+                .filter(|effects| {
+                    !index.dynamic_scope_owners.contains(&fact.ordinal)
+                        && !index
+                            .uncovered_callable_effect_owners
+                            .contains(&fact.ordinal)
+                        && fact.reads.first_order_lazy.is_subset(&effects.reads)
+                        && fact.rebinds.first_order_lazy.is_subset(&effects.rebinds)
+                })
+        })
+        .collect();
+    let synchronous_owner_adjacency = source_unit_read_closure.synchronous_adjacency(
+        facts,
+        &prefix_effects
+            .iter()
+            .map(|effects| effects.map(|effects| &effects.reads))
+            .collect::<Vec<_>>(),
+    );
+    for (fact, effects) in facts.iter_mut().zip(&prefix_effects) {
+        fact.synchronous_prefix_effects =
+            effects.map(|effects| (effects.reads.clone(), effects.rebinds.clone()));
+    }
+    let mut deferred_read_binding = vec![None; facts.len()];
+    for (binding, owner) in flow.lexical_read_guards() {
+        deferred_read_binding[owner.0] = Some(binding.clone());
+    }
+    let (reentry_bindings, reentry_default, exported_owners, initial_export_roots) =
+        export_reentry_roots(&index, export_reentry_policy, &source_unit_read_closure);
+    let top_bindings: FxHashSet<_> = facts
+        .iter()
+        .flat_map(|fact| fact.declared.iter().cloned())
+        .collect();
+    let var_bindings: BTreeSet<_> = facts
+        .iter()
+        .flat_map(|fact| fact.var_declared.iter().cloned())
+        .collect();
+    let changed_member_roots = changed_member_roots(&index, facts);
+    let prefix_bindings = Arc::new(TopBindings::new(
+        top_bindings
+            .iter()
+            .chain(index.hoisted_bindings.keys())
+            .cloned(),
+    ));
+    let mut initial_values = PrefixValues::new(prefix_bindings.clone());
+    let mut initialized_bindings = BTreeSet::new();
+    for (binding, key) in &index.hoisted_bindings {
+        initial_values.insert(
+            binding,
+            Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))]),
+        );
+        initialized_bindings.insert(binding.clone());
+    }
+    let stale_locals = stale_locals(&index, &top_bindings);
+    let untracked_locals = untracked_locals(&index, &top_bindings);
+    let synchronous_owner_top_effects = facts
+        .iter()
+        .zip(&prefix_effects)
+        .map(|(fact, synchronous)| OwnerLazyEffectViews {
+            synchronous: synchronous.map(|effects| {
+                top_level_effect_view(&effects.reads, &effects.rebinds, &top_bindings)
+            }),
+            incomplete: top_level_effect_view(&fact.reads.lazy, &fact.rebinds.lazy, &top_bindings),
+        })
+        .collect();
+    let inputs = ExecutionInputs {
+        metrics: metrics.clone(),
+        index: &index,
+        graph: proofs.graph,
+        facts,
+        statement_effects,
+        flow,
+        set_iterable_proof: proofs.set_iterable,
+        shadowed,
+        imported_values: &hints.imported_values,
+        imported_primitive_reads: &hints.imported_primitive_reads,
+        initializer_call_effect_inputs: &hints.assumptions.initializer_call_effect_inputs,
+        declared_pure_initializers: &hints.assumptions.declared_pure_initializers,
+        callable_heap_contents: proofs.callable_heap_contents,
+        callable_prefix_reads: callable_prefix_reads(&index, &prefix_bindings),
+        prefix_binding_count: prefix_bindings.len(),
+        top_bindings,
+        binding_owner: facts
+            .iter()
+            .flat_map(|fact| fact.declared.iter().cloned().map(|id| (id, fact.ordinal)))
+            .collect(),
+        source_unit_read_closure,
+        synchronous_owner_adjacency,
+        synchronous_effect_closure: std::sync::OnceLock::new(),
+        deferred_read_binding,
+        synchronous_owner_top_effects,
+        synchronous_owner_effects: prefix_effects,
+        exported_owners,
+        reentry_bindings,
+        reentry_default,
+        call_site_owners: call_site_owners(&index),
+        reads_arguments: callables_reading_arguments(&index),
+        class_captured_reads: class_captured_reads(&index),
+        mutable_captures: index
+            .callables
+            .values()
+            .flat_map(|callable| callable.rebinds.iter().cloned())
+            .collect(),
+        stale_locals,
+        untracked_locals,
+        captured_local_bindings: captured_local_bindings(&index),
+        var_bindings,
+        changed_member_roots,
+        export_reentry_enabled: *export_reentry_policy
+            != ExportReentryPolicy::NoStaticImporterReentry,
+        needed_bindings: needed,
+        single_writer_bindings,
+        unknown_callee_owners: unknown_callee_owners(&index, flow),
+        reaches_unknown_callee: std::sync::OnceLock::new(),
+    };
+    let state = initial_execution_state(
+        &index,
+        initial_values,
+        initialized_bindings,
+        initial_export_roots,
+    );
+    let results =
+        super::super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
+    drop(inputs);
+    results
+        .into_iter()
+        .zip(facts.iter_mut())
+        .map(|((calls, purity), fact)| {
+            fact.synchronous_calls = Some(calls);
+            purity
+        })
+        .collect()
+}
+
+/// The export bindings importers may reenter through, whether the default
+/// export is among them, the owners they reach and the hoisted-function
+/// owners among those that seed reachability.
+fn export_reentry_roots(
+    index: &ExecutionIndex,
+    export_reentry_policy: &ExportReentryPolicy,
+    source_unit_read_closure: &SourceUnitReadClosure,
+) -> (
+    BTreeSet<Id>,
+    bool,
+    BTreeSet<SourceUnitOrdinal>,
+    BTreeSet<SourceUnitOrdinal>,
+) {
+    let (reentry_bindings, reentry_default) = match export_reentry_policy {
+        ExportReentryPolicy::Conservative => (index.exported_bindings.clone(), true),
+        ExportReentryPolicy::NoStaticImporterReentry => (BTreeSet::new(), false),
+        ExportReentryPolicy::ReentryThrough(names) => (
+            names
+                .iter()
+                .filter_map(|name| index.exported_names.get(name).cloned())
+                .collect(),
+            names.contains("default"),
+        ),
+    };
+    let mut exported_owners = BTreeSet::new();
+    if *export_reentry_policy == ExportReentryPolicy::Conservative {
+        exported_owners.extend(index.exported_declaration_owners.iter().copied());
+    }
+    if reentry_default {
+        exported_owners.extend(index.default_export_owners.iter().copied());
+    }
+    exported_owners.extend(source_unit_read_closure.source_units_for_bindings(&reentry_bindings));
+    let initial_export_roots = exported_owners
+        .intersection(&index.hoisted_function_owners)
+        .copied()
+        .collect();
+    (
+        reentry_bindings,
+        reentry_default,
+        exported_owners,
+        initial_export_roots,
+    )
+}
+
+/// Records a barrier fact for every applicable overload of each top-level
+/// retained-callback call whose namespace member is not an audited factory.
+fn record_callback_factory_barriers(
+    index: &ExecutionIndex,
+    flow: &ChunkValueFlow,
+    facts: &mut [StatementFacts],
+) {
     for candidate in index.retained_callback_calls.values() {
         if candidate.caller.is_some() {
             continue;
@@ -894,10 +1087,63 @@ pub fn annotate_synchronous_calls(
                 });
         }
     }
-    // Every top-level call is executed by `top_calls`, regardless of whether
-    // its result is retained. Keep an initializer's value only if a later
-    // call may read it, directly or through another initializer/function.
-    // This avoids re-evaluating thousands of unused factory results.
+}
+
+/// The bindings whose prefix values the interpreter retains, with each
+/// statement's effects.
+fn prefix_needed_bindings(
+    index: &ExecutionIndex,
+    flow: &ChunkValueFlow,
+    purity: &StatementPurityContext<'_>,
+    graph: &ChunkCodeGraph,
+    facts: &[StatementFacts],
+) -> (BTreeSet<Id>, Vec<Effects>) {
+    let mut needed = initially_needed_bindings(index);
+    let (dependencies, member_write_receivers) =
+        prefix_binding_dependencies(index, flow, &mut needed);
+    // A coercion resolves against the values of its operand bindings at the
+    // statement's program point.
+    let statement_effects: Vec<Effects> = facts
+        .iter()
+        .map(|fact| purity.statement_effects(fact))
+        .collect();
+    for effects in &statement_effects {
+        effects.coerce_bindings(&mut needed);
+    }
+    // A statement whose reads a global-object alias may reach resolves them
+    // against their settled values.
+    needed.extend(
+        facts
+            .iter()
+            .filter(|fact| {
+                fact.havoc
+                    .contains(&DataflowOpacityCause::GlobalObjectAliasEscape)
+            })
+            .flat_map(|fact| fact.reads.eager.iter())
+            .cloned(),
+    );
+    // Member reads of a `PlainData` binding resolve against its settled
+    // allocations' own properties.
+    needed.extend(
+        facts
+            .iter()
+            .flat_map(|fact| fact.declared.iter())
+            .filter(|binding| graph.is_plain_data(binding.0.as_ref()))
+            .cloned(),
+    );
+    needed = close_prefix_needed_bindings(&needed, &dependencies, &member_write_receivers, flow);
+    // These indexes only build the needed-binding closure. Release them before
+    // retaining the interpreter's prefix state and per-statement outcomes.
+    drop(dependencies);
+    drop(member_write_receivers);
+    (needed, statement_effects)
+}
+
+/// Every top-level call is executed by `top_calls`, regardless of whether
+/// its result is retained. Keep an initializer's value only if a later call
+/// may read it, directly or through another initializer/function. This
+/// avoids re-evaluating thousands of unused factory results.
+fn initially_needed_bindings(index: &ExecutionIndex) -> BTreeSet<Id> {
     let mut needed: BTreeSet<Id> = index
         .callables
         .values()
@@ -940,6 +1186,17 @@ pub fn annotate_synchronous_calls(
             expression.bindings(&mut needed);
         }
     }
+    needed
+}
+
+/// The bindings each top-level assignment and member-value write reads, and
+/// the receiver aliases of each written object. Global-object writes add
+/// their value's bindings to `needed` directly.
+fn prefix_binding_dependencies(
+    index: &ExecutionIndex,
+    flow: &ChunkValueFlow,
+    needed: &mut BTreeSet<Id>,
+) -> (BTreeMap<Id, BTreeSet<Id>>, BTreeMap<Value, BTreeSet<Id>>) {
     let mut dependencies: BTreeMap<Id, BTreeSet<Id>> = BTreeMap::new();
     for assignments in &index.top_assignments {
         for (id, expression) in assignments {
@@ -955,7 +1212,7 @@ pub fn annotate_synchronous_calls(
                 // Global-object writes are potential callback escape roots at
                 // every later opaque call, even when the receiver alias is
                 // not mentioned by a statically visible callee.
-                expression.bindings(&mut needed);
+                expression.bindings(needed);
             } else {
                 expression.bindings(dependencies.entry(receiver.clone()).or_default());
                 // A later call may read an object through a different local
@@ -973,41 +1230,11 @@ pub fn annotate_synchronous_calls(
             }
         }
     }
-    // A coercion resolves against the values of its operand bindings at the
-    // statement's program point.
-    let statement_effects: Vec<Effects> = facts
-        .iter()
-        .map(|fact| proofs.purity.statement_effects(fact))
-        .collect();
-    for effects in &statement_effects {
-        effects.coerce_bindings(&mut needed);
-    }
-    // A statement whose reads a global-object alias may reach resolves them
-    // against their settled values.
-    needed.extend(
-        facts
-            .iter()
-            .filter(|fact| {
-                fact.havoc
-                    .contains(&DataflowOpacityCause::GlobalObjectAliasEscape)
-            })
-            .flat_map(|fact| fact.reads.eager.iter())
-            .cloned(),
-    );
-    // Member reads of a `PlainData` binding resolve against its settled
-    // allocations' own properties.
-    needed.extend(
-        facts
-            .iter()
-            .flat_map(|fact| fact.declared.iter())
-            .filter(|binding| proofs.graph.is_plain_data(binding.0.as_ref()))
-            .cloned(),
-    );
-    needed = close_prefix_needed_bindings(&needed, &dependencies, &member_write_receivers, flow);
-    // These indexes only build the needed-binding closure. Release them before
-    // retaining the interpreter's prefix state and per-statement outcomes.
-    drop(dependencies);
-    drop(member_write_receivers);
+    (dependencies, member_write_receivers)
+}
+
+/// Bindings declared or rebound by exactly one top-level statement.
+fn single_writer_bindings(facts: &[StatementFacts]) -> BTreeSet<Id> {
     let mut writers = BTreeMap::<&Id, BTreeSet<SourceUnitOrdinal>>::new();
     for fact in facts.iter() {
         for binding in fact
@@ -1019,74 +1246,17 @@ pub fn annotate_synchronous_calls(
             writers.entry(binding).or_default().insert(fact.ordinal);
         }
     }
-    let single_writer_bindings: BTreeSet<Id> = writers
+    writers
         .into_iter()
         .filter(|(_, owners)| owners.len() == 1)
         .map(|(binding, _)| binding.clone())
-        .collect();
-    let source_unit_read_closure = SourceUnitReadClosure::new(facts);
-    let prefix_effects: Vec<_> = facts
-        .iter()
-        .map(|fact| {
-            index.owner_callable_prefix_effects[fact.ordinal.0]
-                .as_ref()
-                .filter(|effects| {
-                    !index.dynamic_scope_owners.contains(&fact.ordinal)
-                        && !index
-                            .uncovered_callable_effect_owners
-                            .contains(&fact.ordinal)
-                        && fact.reads.first_order_lazy.is_subset(&effects.reads)
-                        && fact.rebinds.first_order_lazy.is_subset(&effects.rebinds)
-                })
-        })
-        .collect();
-    let synchronous_owner_adjacency = source_unit_read_closure.synchronous_adjacency(
-        facts,
-        &prefix_effects
-            .iter()
-            .map(|effects| effects.map(|effects| &effects.reads))
-            .collect::<Vec<_>>(),
-    );
-    for (fact, effects) in facts.iter_mut().zip(&prefix_effects) {
-        fact.synchronous_prefix_effects =
-            effects.map(|effects| (effects.reads.clone(), effects.rebinds.clone()));
-    }
-    let mut deferred_read_binding = vec![None; facts.len()];
-    for (binding, owner) in flow.lexical_read_guards() {
-        deferred_read_binding[owner.0] = Some(binding.clone());
-    }
-    let (reentry_bindings, reentry_default) = match export_reentry_policy {
-        ExportReentryPolicy::Conservative => (index.exported_bindings.clone(), true),
-        ExportReentryPolicy::NoStaticImporterReentry => (BTreeSet::new(), false),
-        ExportReentryPolicy::ReentryThrough(names) => (
-            names
-                .iter()
-                .filter_map(|name| index.exported_names.get(name).cloned())
-                .collect(),
-            names.contains("default"),
-        ),
-    };
-    let mut exported_owners = BTreeSet::new();
-    if *export_reentry_policy == ExportReentryPolicy::Conservative {
-        exported_owners.extend(index.exported_declaration_owners.iter().copied());
-    }
-    if reentry_default {
-        exported_owners.extend(index.default_export_owners.iter().copied());
-    }
-    exported_owners.extend(source_unit_read_closure.source_units_for_bindings(&reentry_bindings));
-    let initial_export_roots = exported_owners
-        .intersection(&index.hoisted_function_owners)
-        .copied()
-        .collect();
-    let top_bindings: FxHashSet<_> = facts
-        .iter()
-        .flat_map(|fact| fact.declared.iter().cloned())
-        .collect();
-    let var_bindings: BTreeSet<_> = facts
-        .iter()
-        .flat_map(|fact| fact.var_declared.iter().cloned())
-        .collect();
-    let changed_member_roots: BTreeSet<_> = if index.top_metadata_decorations.iter().any(|call| {
+        .collect()
+}
+
+/// Member-write roots and rebound bindings, when any metadata decoration
+/// decorates a member; otherwise empty.
+fn changed_member_roots(index: &ExecutionIndex, facts: &[StatementFacts]) -> BTreeSet<Id> {
+    if index.top_metadata_decorations.iter().any(|call| {
         call.as_ref()
             .is_some_and(|call| !call.member_decorators.is_empty())
     }) {
@@ -1102,23 +1272,13 @@ pub fn annotate_synchronous_calls(
             .collect()
     } else {
         BTreeSet::new()
-    };
-    let prefix_bindings = Arc::new(TopBindings::new(
-        top_bindings
-            .iter()
-            .chain(index.hoisted_bindings.keys())
-            .cloned(),
-    ));
-    let mut initial_values = PrefixValues::new(prefix_bindings.clone());
-    let mut initialized_bindings = BTreeSet::new();
-    for (binding, key) in &index.hoisted_bindings {
-        initial_values.insert(
-            binding,
-            Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))]),
-        );
-        initialized_bindings.insert(binding.clone());
     }
-    let stale_locals: BTreeSet<Id> = index
+}
+
+/// Non-top-level bindings a callable writes from a capture or reads before
+/// assigning.
+fn stale_locals(index: &ExecutionIndex, top_bindings: &FxHashSet<Id>) -> BTreeSet<Id> {
+    index
         .callables
         .values()
         .flat_map(|callable| {
@@ -1131,144 +1291,121 @@ pub fn annotate_synchronous_calls(
                 .collect::<Vec<_>>()
         })
         .filter(|binding| !top_bindings.contains(binding))
+        .collect()
+}
+
+/// Non-top-level bindings written through captures, captured while some
+/// callable rebinds them, or used as a source before assignment.
+fn untracked_locals(index: &ExecutionIndex, top_bindings: &FxHashSet<Id>) -> BTreeSet<Id> {
+    let rebound: BTreeSet<&Id> = index
+        .callables
+        .values()
+        .flat_map(|callable| &callable.rebinds)
         .collect();
-    let untracked_locals: BTreeSet<Id> = {
-        let rebound: BTreeSet<&Id> = index
-            .callables
-            .values()
-            .flat_map(|callable| &callable.rebinds)
-            .collect();
-        index
-            .callables
-            .values()
-            .flat_map(|callable| {
-                let (_, sources) = callable.reads_before_assignment();
-                callable
-                    .captured_writes()
-                    .into_iter()
-                    .cloned()
-                    .chain(
-                        callable
-                            .captured_reads()
-                            .into_iter()
-                            .filter(|binding| rebound.contains(binding))
-                            .cloned(),
-                    )
-                    .chain(sources)
-                    .collect::<Vec<_>>()
-            })
-            .filter(|binding| !top_bindings.contains(binding))
-            .collect()
-    };
-    let synchronous_owner_top_effects = facts
-        .iter()
-        .zip(&prefix_effects)
-        .map(|(fact, synchronous)| OwnerLazyEffectViews {
-            synchronous: synchronous.map(|effects| {
-                top_level_effect_view(&effects.reads, &effects.rebinds, &top_bindings)
-            }),
-            incomplete: top_level_effect_view(&fact.reads.lazy, &fact.rebinds.lazy, &top_bindings),
-        })
-        .collect();
-    let inputs = ExecutionInputs {
-        metrics: metrics.clone(),
-        index: &index,
-        graph: proofs.graph,
-        facts,
-        statement_effects,
-        flow,
-        set_iterable_proof: proofs.set_iterable,
-        shadowed,
-        imported_values: &hints.imported_values,
-        imported_primitive_reads: &hints.imported_primitive_reads,
-        initializer_call_effect_inputs: &hints.assumptions.initializer_call_effect_inputs,
-        declared_pure_initializers: &hints.assumptions.declared_pure_initializers,
-        callable_heap_contents: proofs.callable_heap_contents,
-        callable_prefix_reads: index
-            .callables
-            .iter()
-            .map(|(key, callable)| {
-                (
-                    *key,
+    index
+        .callables
+        .values()
+        .flat_map(|callable| {
+            let (_, sources) = callable.reads_before_assignment();
+            callable
+                .captured_writes()
+                .into_iter()
+                .cloned()
+                .chain(
                     callable
-                        .reads
-                        .iter()
-                        .filter_map(|binding| prefix_bindings.ordinal(binding))
-                        .collect(),
+                        .captured_reads()
+                        .into_iter()
+                        .filter(|binding| rebound.contains(binding))
+                        .cloned(),
                 )
-            })
-            .collect(),
-        prefix_binding_count: prefix_bindings.len(),
-        top_bindings,
-        binding_owner: facts
-            .iter()
-            .flat_map(|fact| fact.declared.iter().cloned().map(|id| (id, fact.ordinal)))
-            .collect(),
-        source_unit_read_closure,
-        synchronous_owner_adjacency,
-        synchronous_effect_closure: std::sync::OnceLock::new(),
-        deferred_read_binding,
-        synchronous_owner_top_effects,
-        synchronous_owner_effects: prefix_effects,
-        exported_owners,
-        reentry_bindings,
-        reentry_default,
-        call_site_owners: index
-            .top_calls
-            .iter()
-            .flatten()
-            .chain(
-                index
-                    .callables
-                    .values()
-                    .flat_map(|callable| callable.calls.iter()),
-            )
-            .map(|call| (CallSite::from(call.span), (call.owner, call.span)))
-            .collect(),
-        reads_arguments: index
-            .callable_spans
-            .iter()
-            .filter(|(_, span)| {
-                index.callable_spans.iter().any(|(inner, inner_span)| {
-                    span.contains(*inner_span)
-                        && index.callables.get(inner).is_some_and(|callable| {
-                            callable.reads.iter().any(|id| id.0 == "arguments")
-                        })
-                })
-            })
-            .map(|(key, _)| *key)
-            .collect(),
-        class_captured_reads: index
-            .class_spans
-            .iter()
-            .map(|(class, span)| {
-                let reads = index
-                    .callable_spans
+                .chain(sources)
+                .collect::<Vec<_>>()
+        })
+        .filter(|binding| !top_bindings.contains(binding))
+        .collect()
+}
+
+/// Each callable's reads of prefix bindings, by prefix ordinal.
+fn callable_prefix_reads(
+    index: &ExecutionIndex,
+    prefix_bindings: &TopBindings,
+) -> FxHashMap<u32, Vec<TopBindingOrdinal>> {
+    index
+        .callables
+        .iter()
+        .map(|(key, callable)| {
+            (
+                *key,
+                callable
+                    .reads
                     .iter()
-                    .filter(|(_, callable)| span.contains(**callable))
-                    .filter_map(|(key, _)| index.callables.get(key))
-                    .flat_map(|callable| callable.captured_reads().into_iter().cloned())
-                    .collect();
-                (*class, reads)
+                    .filter_map(|binding| prefix_bindings.ordinal(binding))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// The owner and span of every top-level and callable call site.
+fn call_site_owners(index: &ExecutionIndex) -> BTreeMap<CallSite, (SourceUnitOrdinal, Span)> {
+    index
+        .top_calls
+        .iter()
+        .flatten()
+        .chain(
+            index
+                .callables
+                .values()
+                .flat_map(|callable| callable.calls.iter()),
+        )
+        .map(|call| (CallSite::from(call.span), (call.owner, call.span)))
+        .collect()
+}
+
+/// Callables that read `arguments` themselves or through a nested callable.
+fn callables_reading_arguments(index: &ExecutionIndex) -> BTreeSet<u32> {
+    index
+        .callable_spans
+        .iter()
+        .filter(|(_, span)| {
+            index.callable_spans.iter().any(|(inner, inner_span)| {
+                span.contains(*inner_span)
+                    && index
+                        .callables
+                        .get(inner)
+                        .is_some_and(|callable| callable.reads.iter().any(|id| id.0 == "arguments"))
             })
-            .collect(),
-        mutable_captures: index
-            .callables
-            .values()
-            .flat_map(|callable| callable.rebinds.iter().cloned())
-            .collect(),
-        stale_locals,
-        untracked_locals,
-        captured_local_bindings: captured_local_bindings(&index),
-        var_bindings,
-        changed_member_roots,
-        export_reentry_enabled: *export_reentry_policy
-            != ExportReentryPolicy::NoStaticImporterReentry,
-        needed_bindings: needed,
-        single_writer_bindings,
-        unknown_callee_owners: unknown_callee_owners(&index, flow),
-        reaches_unknown_callee: std::sync::OnceLock::new(),
-    };
+        })
+        .map(|(key, _)| *key)
+        .collect()
+}
+
+/// The captured reads of every callable inside each class.
+fn class_captured_reads(index: &ExecutionIndex) -> BTreeMap<u32, BTreeSet<Id>> {
+    index
+        .class_spans
+        .iter()
+        .map(|(class, span)| {
+            let reads = index
+                .callable_spans
+                .iter()
+                .filter(|(_, callable)| span.contains(**callable))
+                .filter_map(|(key, _)| index.callables.get(key))
+                .flat_map(|callable| callable.captured_reads().into_iter().cloned())
+                .collect();
+            (*class, reads)
+        })
+        .collect()
+}
+
+/// The application world with hoisted prefix values and exported hoisted
+/// functions, and an execution state rooted at the initial export roots.
+fn initial_execution_state(
+    index: &ExecutionIndex,
+    initial_values: PrefixValues,
+    initialized_bindings: BTreeSet<Id>,
+    initial_export_roots: BTreeSet<SourceUnitOrdinal>,
+) -> ExecutionState {
     let mut world = World::new(WorldScope::Application);
     world.module.prefix_values = initial_values;
     world.module.initialized_bindings = initialized_bindings;
@@ -1278,7 +1415,7 @@ pub fn annotate_synchronous_calls(
         .copied()
         .map(|key| AbstractValue::Value(Value::Alloc(Kind::Function, key)))
         .collect();
-    let state = ExecutionState {
+    ExecutionState {
         world: Arc::new(world),
         native_point_effects: index.initial_native_point_effects.clone(),
         activated_native_effects: BTreeSet::new(),
@@ -1310,16 +1447,5 @@ pub fn annotate_synchronous_calls(
         active: BTreeSet::new(),
         invocation_memos: OrdMap::new(),
         export_callback_memos: ExportCallbackMemos::default(),
-    };
-    let results =
-        super::super::runtime_inference::infer_synchronous_execution(&inputs, state, facts.len());
-    drop(inputs);
-    results
-        .into_iter()
-        .zip(facts.iter_mut())
-        .map(|((calls, purity), fact)| {
-            fact.synchronous_calls = Some(calls);
-            purity
-        })
-        .collect()
+    }
 }
