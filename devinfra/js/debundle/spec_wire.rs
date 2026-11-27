@@ -17,8 +17,8 @@ use contracts::{
     encode_value_input_contract,
 };
 use selectors::{
-    decode_binding_annotation_map, decode_binding_selector, decode_logical_module,
-    encode_binding_annotation_map, encode_binding_selector, encode_logical_module,
+    decode_binding_annotation, decode_binding_selector, decode_logical_module,
+    encode_binding_annotation, encode_binding_selector, encode_logical_module,
 };
 use spec_wire_proto::debundle::spec as pb;
 use std::collections::{BTreeMap, BTreeSet};
@@ -71,6 +71,58 @@ pub fn unique_set<T: Ord>(items: impl IntoIterator<Item = Result<T>>) -> Result<
     Ok(result)
 }
 
+/// Wire messages carry keyed maps, and moving one across the wire is one step
+/// repeated per entry: keep the key, run the entry codec on the value. Both sides
+/// stay generic over the containers the message uses, so no map type is fixed
+/// here; `encode` and `decode` are the entry codecs.
+pub fn encode_map<Key, Value, Wire, Input, Output>(
+    values: &Input,
+    encode: impl Fn(&Value) -> Wire,
+) -> Output
+where
+    for<'a> &'a Input: IntoIterator<Item = (&'a Key, &'a Value)>,
+    Key: Clone,
+    Output: FromIterator<(Key, Wire)>,
+{
+    values
+        .into_iter()
+        .map(|(key, value)| (key.clone(), encode(value)))
+        .collect()
+}
+
+/// `encode_map` for messages whose entry codec can refuse, which is how
+/// analysis-input codecs report an out-of-domain value.
+pub fn try_encode_map<Key, Value, Wire, Input, Output>(
+    values: &Input,
+    encode: impl Fn(&Value) -> Result<Wire>,
+) -> Result<Output>
+where
+    for<'a> &'a Input: IntoIterator<Item = (&'a Key, &'a Value)>,
+    Key: Clone,
+    Output: FromIterator<(Key, Wire)>,
+{
+    values
+        .into_iter()
+        .map(|(key, value)| Ok((key.clone(), encode(value)?)))
+        .collect()
+}
+
+/// The decode side of `encode_map`: the wire map is consumed, so keys move
+/// instead of cloning, and an entry codec can refuse.
+pub fn decode_map<Key, Value, Wire, Input, Output>(
+    values: Input,
+    decode: impl Fn(Wire) -> Result<Value>,
+) -> Result<Output>
+where
+    Input: IntoIterator<Item = (Key, Wire)>,
+    Output: FromIterator<(Key, Value)>,
+{
+    values
+        .into_iter()
+        .map(|(key, value)| Ok((key, decode(value)?)))
+        .collect()
+}
+
 pub fn global_names_to_proto(
     value: &BTreeMap<spec::BuiltinGlobalRoot, BTreeSet<String>>,
 ) -> Vec<pb::GlobalNames> {
@@ -97,146 +149,72 @@ pub fn global_names_from_proto(
 pub fn member_names_to_proto(
     value: &BTreeMap<String, BTreeSet<String>>,
 ) -> BTreeMap<String, pb::MemberNames> {
-    value
-        .iter()
-        .map(|(key, names)| {
-            (
-                key.clone(),
-                pb::MemberNames {
-                    names: names.iter().cloned().collect(),
-                },
-            )
-        })
-        .collect()
+    encode_map(value, |names| pb::MemberNames {
+        names: names.iter().cloned().collect(),
+    })
 }
 
 pub fn member_names_from_proto(
     value: BTreeMap<String, pb::MemberNames>,
 ) -> Result<BTreeMap<String, BTreeSet<String>>> {
-    value
-        .into_iter()
-        .map(|(key, value)| Ok((key, unique_set(value.names.into_iter().map(Ok))?)))
-        .collect()
+    decode_map(value, |entry| unique_set(entry.names.into_iter().map(Ok)))
 }
 
 pub fn callback_overloads_to_proto(
     value: &BTreeMap<String, Vec<spec::RetainedCallbackSignature>>,
 ) -> BTreeMap<String, pb::CallbackOverloads> {
-    value
-        .iter()
-        .map(|(key, signatures)| {
-            (
-                key.clone(),
-                pb::CallbackOverloads {
-                    signatures: signatures
-                        .iter()
-                        .map(encode_retained_callback_signature)
-                        .collect(),
-                },
-            )
-        })
-        .collect()
+    encode_map(value, |signatures| pb::CallbackOverloads {
+        signatures: signatures
+            .iter()
+            .map(encode_retained_callback_signature)
+            .collect(),
+    })
 }
 
 pub fn callback_overloads_from_proto(
     value: BTreeMap<String, pb::CallbackOverloads>,
 ) -> Result<BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
-    value
-        .into_iter()
-        .map(|(key, value)| {
-            Ok((
-                key,
-                value
-                    .signatures
-                    .into_iter()
-                    .map(decode_retained_callback_signature)
-                    .collect::<Result<_>>()?,
-            ))
-        })
-        .collect()
+    decode_map(value, |entry| {
+        entry
+            .signatures
+            .into_iter()
+            .map(decode_retained_callback_signature)
+            .collect::<Result<Vec<_>>>()
+    })
 }
 
 pub fn member_callback_overloads_to_proto(
     value: &BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
 ) -> BTreeMap<String, pb::MemberCallbackOverloads> {
-    value
-        .iter()
-        .map(|(key, members)| {
-            (
-                key.clone(),
-                pb::MemberCallbackOverloads {
-                    members: callback_overloads_to_proto(members),
-                },
-            )
-        })
-        .collect()
+    encode_map(value, |members| pb::MemberCallbackOverloads {
+        members: callback_overloads_to_proto(members),
+    })
 }
 
 pub fn member_callback_overloads_from_proto(
     value: BTreeMap<String, pb::MemberCallbackOverloads>,
 ) -> Result<BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>> {
-    value
-        .into_iter()
-        .map(|(key, value)| Ok((key, callback_overloads_from_proto(value.members)?)))
-        .collect()
+    decode_map(value, |entry| callback_overloads_from_proto(entry.members))
 }
 pub fn encode_transform_spec(value: &spec::TransformSpec) -> pb::TransformSpec {
     pb::TransformSpec {
         inputs: Some(encode_load_js_chunks_args(&value.inputs)),
         host_behavior: Some(encode_host_behavior(&value.host_behavior)),
         program_premises: Some(encode_program_premises(&value.program_premises)),
-        vendor: value
-            .vendor
-            .iter()
-            .map(|(key, mark)| (key.clone(), encode_vendor_mark(mark)))
-            .collect(),
-        logical_modules: value
-            .logical_modules
-            .iter()
-            .map(|(key, modules)| {
-                (
-                    key.clone(),
-                    pb::LogicalModules {
-                        modules: modules
-                            .iter()
-                            .map(|(key, module)| (key.clone(), encode_logical_module(module)))
-                            .collect(),
-                    },
-                )
-            })
-            .collect(),
-        import_order: value
-            .import_order
-            .iter()
-            .map(|(chunk, paths)| {
-                (
-                    chunk.clone(),
-                    pb::ModulePaths {
-                        paths: paths.iter().map(ToString::to_string).collect(),
-                    },
-                )
-            })
-            .collect(),
-        chunk_renames: value
-            .chunk_renames
-            .iter()
-            .map(|(key, renames)| (key.clone(), encode_chunk_renames(renames)))
-            .collect(),
-        unassigned_mode: value
-            .unassigned_mode
-            .iter()
-            .map(|(key, mode)| (key.clone(), encode_unassigned_mode(mode)))
-            .collect(),
-        chunk_analysis_options: value
-            .chunk_analysis_options
-            .iter()
-            .map(|(key, options)| (key.clone(), encode_dependency_graph_options(options)))
-            .collect(),
-        chunk_export_purity: value
-            .chunk_export_purity
-            .iter()
-            .map(|(key, purity)| (key.clone(), encode_chunk_export_purity(purity)))
-            .collect(),
+        vendor: encode_map(&value.vendor, encode_vendor_mark),
+        logical_modules: encode_map(&value.logical_modules, |modules| pb::LogicalModules {
+            modules: encode_map(modules, encode_logical_module),
+        }),
+        import_order: encode_map(&value.import_order, |paths| pb::ModulePaths {
+            paths: paths.iter().map(ToString::to_string).collect(),
+        }),
+        chunk_renames: encode_map(&value.chunk_renames, encode_chunk_renames),
+        unassigned_mode: encode_map(&value.unassigned_mode, encode_unassigned_mode),
+        chunk_analysis_options: encode_map(
+            &value.chunk_analysis_options,
+            encode_dependency_graph_options,
+        ),
+        chunk_export_purity: encode_map(&value.chunk_export_purity, encode_chunk_export_purity),
         swap_vendor_chunks: Some(encode_swap_vendor_chunks_config(&value.swap_vendor_chunks)),
         materialize_logical_modules: Some(encode_materialize_logical_modules_config(
             &value.materialize_logical_modules,
@@ -257,25 +235,10 @@ pub fn decode_transform_spec(v: pb::TransformSpec) -> Result<spec::TransformSpec
         inputs: decode_load_js_chunks_args(required(v.inputs)?)?,
         host_behavior: decode_host_behavior(required(v.host_behavior)?)?,
         program_premises: decode_program_premises(required(v.program_premises)?)?,
-        vendor: v
-            .vendor
-            .into_iter()
-            .map(|(key, mark)| Ok((key, decode_vendor_mark(mark)?)))
-            .collect::<Result<_>>()?,
-        logical_modules: v
-            .logical_modules
-            .into_iter()
-            .map(|(key, value)| {
-                Ok((
-                    key,
-                    value
-                        .modules
-                        .into_iter()
-                        .map(|(key, module)| Ok((key, decode_logical_module(module)?)))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?,
+        vendor: decode_map(v.vendor, decode_vendor_mark)?,
+        logical_modules: decode_map(v.logical_modules, |entry| {
+            decode_map(entry.modules, decode_logical_module)
+        })?,
         import_order: v
             .import_order
             .into_iter()
@@ -296,26 +259,13 @@ pub fn decode_transform_spec(v: pb::TransformSpec) -> Result<spec::TransformSpec
                 ))
             })
             .collect::<Result<_>>()?,
-        chunk_renames: v
-            .chunk_renames
-            .into_iter()
-            .map(|(key, value)| Ok((key, decode_chunk_renames(value)?)))
-            .collect::<Result<_>>()?,
-        unassigned_mode: v
-            .unassigned_mode
-            .into_iter()
-            .map(|(key, value)| Ok((key, decode_unassigned_mode(value)?)))
-            .collect::<Result<_>>()?,
-        chunk_analysis_options: v
-            .chunk_analysis_options
-            .into_iter()
-            .map(|(key, value)| Ok((key, decode_dependency_graph_options(value)?)))
-            .collect::<Result<_>>()?,
-        chunk_export_purity: v
-            .chunk_export_purity
-            .into_iter()
-            .map(|(key, value)| Ok((key, decode_chunk_export_purity(value)?)))
-            .collect::<Result<_>>()?,
+        chunk_renames: decode_map(v.chunk_renames, decode_chunk_renames)?,
+        unassigned_mode: decode_map(v.unassigned_mode, decode_unassigned_mode)?,
+        chunk_analysis_options: decode_map(
+            v.chunk_analysis_options,
+            decode_dependency_graph_options,
+        )?,
+        chunk_export_purity: decode_map(v.chunk_export_purity, decode_chunk_export_purity)?,
         swap_vendor_chunks: decode_swap_vendor_chunks_config(required(v.swap_vendor_chunks)?)?,
         materialize_logical_modules: decode_materialize_logical_modules_config(required(
             v.materialize_logical_modules,
@@ -508,7 +458,7 @@ pub fn encode_chunk_renames(value: &spec::ChunkRenames) -> pb::ChunkRenames {
             .iter()
             .map(encode_chunk_rename_member)
             .collect(),
-        annotations: encode_binding_annotation_map(&value.annotations),
+        annotations: encode_map(&value.annotations, encode_binding_annotation),
     }
 }
 
@@ -519,7 +469,7 @@ pub fn decode_chunk_renames(v: pb::ChunkRenames) -> Result<spec::ChunkRenames> {
             .into_iter()
             .map(decode_chunk_rename_member)
             .collect::<Result<_>>()?,
-        annotations: decode_binding_annotation_map(v.annotations)?,
+        annotations: decode_map(v.annotations, decode_binding_annotation)?,
     })
 }
 
@@ -713,21 +663,15 @@ pub fn encode_chunk_export_purity(value: &spec::ChunkExportPurity) -> pb::ChunkE
         retained_callback_factory_exports: callback_overloads_to_proto(
             &value.retained_callback_factory_exports,
         ),
-        descriptor_copy_factory_exports: value
-            .descriptor_copy_factory_exports
-            .iter()
-            .map(|(key, signatures)| {
-                (
-                    key.clone(),
-                    pb::DescriptorCopyOverloads {
-                        signatures: signatures
-                            .iter()
-                            .map(encode_descriptor_copy_factory_signature)
-                            .collect(),
-                    },
-                )
-            })
-            .collect(),
+        descriptor_copy_factory_exports: encode_map(
+            &value.descriptor_copy_factory_exports,
+            |signatures| pb::DescriptorCopyOverloads {
+                signatures: signatures
+                    .iter()
+                    .map(encode_descriptor_copy_factory_signature)
+                    .collect(),
+            },
+        ),
         retained_callback_factory_members: member_callback_overloads_to_proto(
             &value.retained_callback_factory_members,
         ),
@@ -760,20 +704,13 @@ pub fn decode_chunk_export_purity(v: pb::ChunkExportPurity) -> Result<spec::Chun
         retained_callback_factory_exports: callback_overloads_from_proto(
             v.retained_callback_factory_exports,
         )?,
-        descriptor_copy_factory_exports: v
-            .descriptor_copy_factory_exports
-            .into_iter()
-            .map(|(key, value)| {
-                Ok((
-                    key,
-                    value
-                        .signatures
-                        .into_iter()
-                        .map(decode_descriptor_copy_factory_signature)
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?,
+        descriptor_copy_factory_exports: decode_map(v.descriptor_copy_factory_exports, |entry| {
+            entry
+                .signatures
+                .into_iter()
+                .map(decode_descriptor_copy_factory_signature)
+                .collect::<Result<Vec<_>>>()
+        })?,
         retained_callback_factory_members: member_callback_overloads_from_proto(
             v.retained_callback_factory_members,
         )?,

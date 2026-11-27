@@ -1,4 +1,4 @@
-use super::{decode_path, encode_path, required};
+use super::{decode_map, decode_path, encode_map, encode_path, required};
 use anyhow::{Context, Result};
 use spec_wire_proto::debundle::spec as pb;
 
@@ -71,16 +71,8 @@ pub fn encode_partial_swap_mark(
     value: &spec::vendor_marks::PartialSwapMark,
 ) -> pb::PartialSwapMark {
     pb::PartialSwapMark {
-        packages: value
-            .packages
-            .iter()
-            .map(|(key, package)| (key.clone(), encode_partial_swap_package(package)))
-            .collect(),
-        symbols: value
-            .symbols
-            .iter()
-            .map(|(key, symbol)| (key.clone(), encode_partial_swap_symbol(symbol)))
-            .collect(),
+        packages: encode_map(&value.packages, encode_partial_swap_package),
+        symbols: encode_map(&value.symbols, encode_partial_swap_symbol),
     }
 }
 
@@ -88,16 +80,8 @@ pub fn decode_partial_swap_mark(
     v: pb::PartialSwapMark,
 ) -> Result<spec::vendor_marks::PartialSwapMark> {
     Ok(spec::vendor_marks::PartialSwapMark {
-        packages: v
-            .packages
-            .into_iter()
-            .map(|(key, package)| Ok((key, decode_partial_swap_package(package)?)))
-            .collect::<Result<_>>()?,
-        symbols: v
-            .symbols
-            .into_iter()
-            .map(|(key, symbol)| Ok((key, decode_partial_swap_symbol(symbol)?)))
-            .collect::<Result<_>>()?,
+        packages: decode_map(v.packages, decode_partial_swap_package)?,
+        symbols: decode_map(v.symbols, decode_partial_swap_symbol)?,
     })
 }
 
@@ -148,16 +132,8 @@ pub fn encode_bundled_partial_swap_mark(
 ) -> pb::BundledPartialSwapMark {
     pb::BundledPartialSwapMark {
         bundle: Some(encode_bundled_partial_swap_bundle(&value.bundle)),
-        packages: value
-            .packages
-            .iter()
-            .map(|(key, package)| (key.clone(), encode_bundled_partial_swap_package(package)))
-            .collect(),
-        symbols: value
-            .symbols
-            .iter()
-            .map(|(key, symbol)| (key.clone(), encode_partial_swap_symbol(symbol)))
-            .collect(),
+        packages: encode_map(&value.packages, encode_bundled_partial_swap_package),
+        symbols: encode_map(&value.symbols, encode_partial_swap_symbol),
     }
 }
 
@@ -166,16 +142,8 @@ pub fn decode_bundled_partial_swap_mark(
 ) -> Result<spec::vendor_marks::BundledPartialSwapMark> {
     Ok(spec::vendor_marks::BundledPartialSwapMark {
         bundle: decode_bundled_partial_swap_bundle(required(v.bundle)?)?,
-        packages: v
-            .packages
-            .into_iter()
-            .map(|(key, package)| Ok((key, decode_bundled_partial_swap_package(package)?)))
-            .collect::<Result<_>>()?,
-        symbols: v
-            .symbols
-            .into_iter()
-            .map(|(key, symbol)| Ok((key, decode_partial_swap_symbol(symbol)?)))
-            .collect::<Result<_>>()?,
+        packages: decode_map(v.packages, decode_bundled_partial_swap_package)?,
+        symbols: decode_map(v.symbols, decode_partial_swap_symbol)?,
     })
 }
 
