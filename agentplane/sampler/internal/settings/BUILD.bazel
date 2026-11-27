@@ -16,6 +16,7 @@ go_library(
         "//agentplane/eventblock",
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
+        "//agentplane/observability",
         "//agentplane/sampler/protocol",
         "//agentplane/sampler/providers/anthropic",
         "//agentplane/sampler/providers/chatcompletions",

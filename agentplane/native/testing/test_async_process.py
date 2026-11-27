@@ -59,24 +59,23 @@ async def test_waiting_for_a_frame_reports_reader_failure(tmp_path) -> None:
             await process.frames().next()
 
 
-SPLIT_STDERR_CHARACTER = """
+STDERR_BYTES = """
 import sys
 sys.stderr.buffer.write(b"a\\xc3")
 sys.stderr.buffer.flush()
 print('{"partial": true}', flush=True)
 sys.stdin.readline()
-sys.stderr.buffer.write(b"\\xa9b")
+sys.stderr.buffer.write(b"\\xa9b\\xff\\xfe")
 sys.stderr.buffer.flush()
 """
 
 
-async def test_stderr_records_a_character_split_across_reads(tmp_path) -> None:
-    async with _python(tmp_path, SPLIT_STDERR_CHARACTER) as process:
-        # The child holds the rest of the character until stdin, so the reader sees the first byte alone.
+async def test_stderr_log_keeps_the_exact_bytes(tmp_path) -> None:
+    async with _python(tmp_path, STDERR_BYTES) as process:
+        # A multibyte character split across writes, then bytes that are not UTF-8 at all.
         assert await process.frames().next() == {"partial": True}
         await process.send(Trigger(trigger="go"))
-    records = (tmp_path / "stderr.jsonl").read_text().splitlines()
-    assert [json.loads(line)["text"] for line in records] == ["a", "\u00e9b"]
+    assert (tmp_path / "stderr.log").read_bytes() == b"a\xc3\xa9b\xff\xfe"
 
 
 HUNG_TREE = """

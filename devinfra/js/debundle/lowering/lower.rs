@@ -19,10 +19,10 @@ use super::imports::import_emit::{
     relative_source,
 };
 
+use super::declaration_split::remaining_item_after_selection;
 use super::scope_names::{
     collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
 };
-use super::util::remaining_item_after_selection;
 use crate::exports::{
     ExportGrowthFacts, auto_grown_residual_exports, entry_exports_for_moved_bindings,
     export_named_for_bindings, trim_dead_named_specifiers,

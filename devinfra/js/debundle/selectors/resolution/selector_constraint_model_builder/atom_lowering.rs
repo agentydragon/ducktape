@@ -313,6 +313,18 @@ fn restrict_string_variable_to_candidates<'a>(
         .map_err(Into::into)
 }
 
+/// Restrict one variable to an interned support domain. The model reports its
+/// own error type and every caller here works in build errors.
+fn restrict_variable_to_domain(
+    model: &mut CompiledSelectorProblemBuilder,
+    variable: ConstraintVariableId,
+    domain_id: SharedVariableDomainId,
+) -> Result<(), CompiledSelectorProblemBuildError> {
+    model
+        .restrict_variable_to_shared_sparse_domain(variable, domain_id)
+        .map_err(Into::into)
+}
+
 fn cached_source_unit_domain(
     model: &mut CompiledSelectorProblemBuilder,
     support_cache: &mut EncodedSupportCache,
@@ -389,9 +401,7 @@ fn add_cached_source_unit_string_indexed_allowed_tuples(
                         .insert(key, domain_id);
                     domain_id
                 };
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
+            restrict_variable_to_domain(model, variable, domain_id)
         }
         (SourceUnitTerm::Const { source_unit }, StringTerm::Var { id }) => {
             let variable = model_variable(variables, *id)?;
@@ -453,9 +463,7 @@ fn add_cached_source_unit_string_allowed_tuples(
                     (fact_value == value).then_some(*fact_source_unit)
                 }),
             )?;
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
+            restrict_variable_to_domain(model, variable, domain_id)
         }
         (SourceUnitTerm::Const { source_unit }, StringTerm::Var { id }) => {
             let variable = model_variable(variables, *id)?;
@@ -467,9 +475,7 @@ fn add_cached_source_unit_string_allowed_tuples(
                     (fact_source_unit == source_unit).then_some(fact_value.as_str())
                 }),
             )?;
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
+            restrict_variable_to_domain(model, variable, domain_id)
         }
         (SourceUnitTerm::Var { id: source_unit_id }, StringTerm::Var { id: string_id }) => {
             add_source_unit_string_rows(
@@ -537,9 +543,7 @@ fn add_cached_source_unit_allowed_tuples(
                 relation_key,
                 facts.iter().copied(),
             )?;
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
+            restrict_variable_to_domain(model, variable, domain_id)
         }
     }
 }
@@ -575,9 +579,7 @@ fn add_cached_source_unit_pair_allowed_tuples(
                     (fact_right == right).then_some(*fact_left)
                 }),
             )?;
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
+            restrict_variable_to_domain(model, variable, domain_id)
         }
         (SourceUnitTerm::Const { source_unit: left }, SourceUnitTerm::Var { id }) => {
             let variable = model_variable(variables, *id)?;
@@ -589,9 +591,7 @@ fn add_cached_source_unit_pair_allowed_tuples(
                     (fact_left == left).then_some(*fact_right)
                 }),
             )?;
-            model
-                .restrict_variable_to_shared_sparse_domain(variable, domain_id)
-                .map_err(Into::into)
+            restrict_variable_to_domain(model, variable, domain_id)
         }
         (SourceUnitTerm::Var { id: left_id }, SourceUnitTerm::Var { id: right_id }) => {
             let constraint_variables = [

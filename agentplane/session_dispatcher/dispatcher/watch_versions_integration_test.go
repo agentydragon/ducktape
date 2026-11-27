@@ -342,20 +342,43 @@ func TestVersionWatchReplicasReadTerminalReceiptsFromHubWakeup(t *testing.T) {
 	}
 }
 
-func TestVersionWatchAdvancesCheckpointForUnrelatedChanges(t *testing.T) {
+func TestVersionWatchIgnoresUnrelatedChangesUntilResumed(t *testing.T) {
 	ctx := admitted(t)
 	queueStore := testStore(t, 5)
-	watch := startVersionWatch(t, ctx, queueStore, testWatchHub(t, queueStore), testSessionDispatchFilter("test-empty-scope"), "")
+	hub := testWatchHub(t, queueStore)
+	filter := testSessionDispatchFilter("test-own-scope")
+	// Opening the Session notifies its key, so it exists before the watch starts.
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-own-sandbox", sandboxUID, input("test-own-first", "test-input"), nil); err != nil {
+		t.Fatal(err)
+	}
+	watch := startVersionWatch(t, ctx, queueStore, hub, filter, "")
+	if watch.next(t).GetDispatch().GetCommandId() != "test-own-first" {
+		t.Fatal("snapshot missed own command")
+	}
 	before := watch.next(t)
 	if before.GetCaughtUp() == nil {
-		t.Fatal("empty snapshot has no checkpoint")
+		t.Fatal("snapshot has no checkpoint")
 	}
 	if _, err := enqueueWithSession(t, queueStore, ctx, "test-other-scope", "test-other-sandbox", sandboxUID, input("test-other-command", "test-input"), nil); err != nil {
 		t.Fatal(err)
 	}
-	after := watch.next(t)
-	if after.GetCaughtUp() == nil || after.GetResumeToken() == before.GetResumeToken() {
-		t.Fatalf("unrelated change replayed a receipt or failed to advance checkpoint: %v", after)
+	if _, err := enqueueWithSession(t, queueStore, ctx, filter.GetSessionId(), "test-own-sandbox", sandboxUID, input("test-own-command", "test-input"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if frame := watch.next(t); frame.GetDispatch().GetCommandId() != "test-own-command" {
+		t.Fatalf("unrelated change woke the Session watch: %v", frame)
+	}
+	if watch.next(t).GetCaughtUp() == nil {
+		t.Fatal("own change has no checkpoint")
 	}
 	watch.stop(t)
+	// A resumed stream still checkpoints past unrelated changes, which keeps quiet tokens inside retention.
+	resumed := startVersionWatch(t, ctx, queueStore, hub, filter, before.GetResumeToken())
+	if resumed.next(t).GetDispatch().GetCommandId() != "test-own-command" {
+		t.Fatal("resume missed own change")
+	}
+	if after := resumed.next(t); after.GetCaughtUp() == nil || after.GetResumeToken() == before.GetResumeToken() {
+		t.Fatalf("resume did not advance checkpoint: %v", after)
+	}
+	resumed.stop(t)
 }

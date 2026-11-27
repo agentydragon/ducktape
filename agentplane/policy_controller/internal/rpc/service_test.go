@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,6 +50,13 @@ type serviceTestClient struct {
 	deletePreconditions *metav1.Preconditions
 	forceDeleteConflict bool
 	beforeCreate        func() error
+	// lists counts List calls, which the informers make from their own goroutines.
+	lists atomic.Int64
+}
+
+func (c *serviceTestClient) List(ctx context.Context, list client.ObjectList, options ...client.ListOption) error {
+	c.lists.Add(1)
+	return c.WithWatch.List(ctx, list, options...)
 }
 
 func (c *serviceTestClient) Create(ctx context.Context, object client.Object, options ...client.CreateOption) error {
@@ -101,6 +109,7 @@ func newTestService(t *testing.T, readers, writers []string, objects ...client.O
 	if err != nil {
 		t.Fatal(err)
 	}
+	startInformers(t, service)
 	methods, err := service.Methods()
 	if err != nil {
 		t.Fatal(err)
@@ -564,6 +573,41 @@ func TestSetWatchFollowsPolicySetRemoval(t *testing.T) {
 	}
 	if frame.GetRemoved().GetUid() != "uid-base" {
 		t.Fatalf("removed = %v", frame)
+	}
+}
+
+// The load property ACTIONS-2 fixed: a change reaches every open stream without an API List per stream.
+func TestBindingChangesReachOpenStreamsWithoutListing(t *testing.T) {
+	api, kube := fixture(t, binding("first", "alice", "base"))
+	request := &policypb.WatchPolicyBindingsRequest{Selector: &policypb.WatchPolicyBindingsRequest_Subject{Subject: &identitypb.ServiceAccount{Namespace: "tools", Name: "alice"}}}
+	var streams []grpc.ServerStreamingClient[policypb.WatchPolicyBindingsResponse]
+	for range 3 {
+		stream, err := api["app"].WatchPolicyBindings(testContext(t), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"snapshot", "complete"} {
+			if frame, err := stream.Recv(); err != nil || (want == "snapshot") != (frame.GetSnapshot() != nil) {
+				t.Fatalf("%s frame = %v, %v", want, frame, err)
+			}
+		}
+		streams = append(streams, stream)
+	}
+	listed := kube.lists.Load()
+	for _, name := range []string{"second", "third"} {
+		created := binding(name, "alice", "base")
+		created.ResourceVersion = ""
+		if err := kube.Create(context.Background(), created); err != nil {
+			t.Fatal(err)
+		}
+		for _, stream := range streams {
+			if frame, err := stream.Recv(); err != nil || frame.GetUpsert().GetIdentity().GetName() != name {
+				t.Fatalf("upsert of %s = %v, %v", name, frame, err)
+			}
+		}
+	}
+	if got := kube.lists.Load() - listed; got != 0 {
+		t.Fatalf("Lists after the snapshots = %d, want 0", got)
 	}
 }
 
@@ -1139,4 +1183,13 @@ func TestGrantIdentityPolicyBindingWithoutAKeyCreatesABindingPerCall(t *testing.
 	if grants := identityGrants(t, kube, identity); len(grants) != 2 {
 		t.Fatalf("Identity grants = %v, want two", grants)
 	}
+}
+
+// startInformers runs service's Watch informers for the rest of the test.
+func startInformers(t *testing.T, service *Service) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+	go func() { _ = service.Start(ctx); close(stopped) }()
+	t.Cleanup(func() { cancel(); <-stopped })
 }

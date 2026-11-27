@@ -13,7 +13,7 @@ mod residual_scc;
 
 use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{ProgramGraphOutput, write_chunk_report_json};
-use super::util::target_file_for_request;
+use super::target_paths::target_file_for_request;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
 use crate::lower::{
     LowerChunkAst, LowerChunkContext, LowerChunkInputs, LowerChunkPlan, LowerChunkSpecFacts,
@@ -721,8 +721,7 @@ fn requested_logical_module_reports(requests: &[LogicalRequest]) -> Vec<Requeste
     requests
         .iter()
         .map(|request| RequestedLogicalModule {
-            target_path: spec::ModulePath::parse(&request.target_path, "")
-                .expect("request target_path is a canonical module path"),
+            target_path: spec::ModulePath::from_pipeline_target(&request.target_path),
             residual: request.residual,
         })
         .collect()

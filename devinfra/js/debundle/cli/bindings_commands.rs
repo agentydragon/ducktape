@@ -1,18 +1,18 @@
 //! `bindings` command arguments, dispatch, and presentation. Spec edits live
 //! in `binding`; this module adapts the CLI to that shared editing API.
-use crate::binding::{
+use crate::emit_report;
+use anyhow::{Context, Result};
+use binding::{
     BindingsListFilters, Move, Rename, parse_batch_json, parse_move_triple, rename_binding,
     rename_bindings, run_bindings_assign, run_bindings_list, run_bindings_unassign,
 };
-use crate::candidate_assessment::CandidateEffectAssessmentArgs;
-use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
-use crate::edit_gate::GraphEditArgs;
-use crate::emit_report;
-use crate::outcome::{MutationOutcome, MutationVerb, emit_gate_rejection_json};
-use anyhow::{Context, Result};
+use candidate_assessment::CandidateEffectAssessmentArgs;
 use clap::{Args as ClapArgs, Subcommand};
 use command_output::infallible;
+use comment::{BindingCommentArgs, run_binding_comment_cmd};
+use edit_gate::GraphEditArgs;
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
+use outcome::{MutationOutcome, MutationVerb, emit_gate_rejection_json};
 use peel::OutputFormat;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -231,7 +231,7 @@ fn run_bindings_list_cmd(args: BindingsListNsArgs, output: &mut dyn std::io::Wri
     )
 }
 
-fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &mut String) {
+fn render_bindings_list_text(report: &binding::BindingsListReport, out: &mut String) {
     out.push_str(&format!("{} binding(s)\n", report.bindings.len()));
     for entry in &report.bindings {
         let mut flags = Vec::new();

@@ -127,8 +127,7 @@ impl ChunkConstrainingEdgeSet {
 }
 
 /// Toposort of the constraining `(from, to)` pairs (the canonical edge
-/// set's [`pairs`](ChunkConstrainingEdgeSet::pairs), or the overlay
-/// realizability path's `IncrementalQuotient` pairs), deepest
+/// set's [`pairs`](ChunkConstrainingEdgeSet::pairs)), deepest
 /// dependency first. The returned `Vec<ModuleId>` is the canonical
 /// "linker order": element 0 is the deepest dependency (must evaluate
 /// before everything else); the last element is the most-dependent

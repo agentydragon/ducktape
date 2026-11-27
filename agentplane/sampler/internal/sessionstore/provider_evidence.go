@@ -66,6 +66,11 @@ func (e *ResponseEvidence) Record(ctx context.Context, payload protocol.Provider
 		if err != nil {
 			return err
 		}
+		if conversation.Pending.Kind == PendingIntentSampling {
+			if err := recordSamplingStartedItems(ctx, tx, e.IntentID, sources, observations); err != nil {
+				return err
+			}
+		}
 		for _, observation := range observations {
 			if observation == nil {
 				continue

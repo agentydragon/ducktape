@@ -32,7 +32,6 @@ const (
 	refusedCaller      Refusal = "Identity is missing or no longer current"
 	refusedGrant       Refusal = "grant is not authorized"
 	refusedUnbound     Refusal = "Connection requires an Identity binding"
-	refusedLegacy      Refusal = "legacy ServiceAccount binding requires operator Identity rebind"
 )
 
 // enrollmentWindow is how long an authorization has for consent, the upstream sign-in and the code exchange.
@@ -118,7 +117,6 @@ func (s *Store) Activate(ctx context.Context, tx *sql.Tx, id uuid.UUID, approver
 				g.revision = c.grants[len(c.grants)-1].revision + 1
 			}
 			c.boundIdentity = g.identity
-			c.identityBindingRequired = false
 			return true, insertGrant(ctx, tx, g)
 		})
 	case newConnection:
@@ -142,9 +140,8 @@ func createConnection(ctx context.Context, tx *sql.Tx, g grant, displayName stri
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO external_connection (id, display_name, bound_identity, identity_binding_required, binding_version,
-			version, created_at, updated_at)
-		VALUES ($1, $2, $3::jsonb, false, 0, 1, $4, $4)`, g.connectionID, displayName, bound, g.createdAt); err != nil {
+		INSERT INTO external_connection (id, display_name, bound_identity, binding_version, version, created_at, updated_at)
+		VALUES ($1, $2, $3::jsonb, 0, 1, $4, $4)`, g.connectionID, displayName, bound, g.createdAt); err != nil {
 		return err
 	}
 	if err := insertGrant(ctx, tx, g); err != nil {
@@ -177,20 +174,18 @@ type ResolvedGrant struct {
 	Identity     auth.Identity
 }
 
-// ResolveGrant resolves an active OAuth grant to its Connection's live Identity. Legacy ServiceAccount bindings are
-// retained for operator review but can never be returned as an effective caller.
+// ResolveGrant resolves an active OAuth grant to its Connection's live Identity.
 func (s *Store) ResolveGrant(ctx context.Context, tx *sql.Tx, id uuid.UUID, issuer, clientID string) (ResolvedGrant, error) {
 	var status grantStatus
 	var grantIssuer, grantClientID string
 	var connectionID uuid.UUID
 	var bound []byte
-	var identityBindingRequired bool
 	err := tx.QueryRowContext(
 		ctx, `
-		SELECT g.status, g.issuer, g.client_id, g.connection_id, c.bound_identity, c.identity_binding_required
+		SELECT g.status, g.issuer, g.client_id, g.connection_id, c.bound_identity
 		FROM external_connection_grant g JOIN external_connection c ON c.id = g.connection_id
 		WHERE g.id = $1`, id,
-	).Scan(&status, &grantIssuer, &grantClientID, &connectionID, &bound, &identityBindingRequired)
+	).Scan(&status, &grantIssuer, &grantClientID, &connectionID, &bound)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return ResolvedGrant{}, refusedGrant
@@ -199,9 +194,6 @@ func (s *Store) ResolveGrant(ctx context.Context, tx *sql.Tx, id uuid.UUID, issu
 	case status != grantActive || grantIssuer != issuer || grantClientID != clientID:
 		return ResolvedGrant{}, refusedGrant
 	case bound == nil:
-		if identityBindingRequired {
-			return ResolvedGrant{}, refusedLegacy
-		}
 		return ResolvedGrant{}, refusedUnbound
 	}
 	identity, err := decodeIdentity(bound)

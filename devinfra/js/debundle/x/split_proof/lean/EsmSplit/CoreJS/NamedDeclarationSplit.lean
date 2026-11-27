@@ -1,46 +1,30 @@
 import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.ResolvedPlacement
+import EsmSplit.CoreJS.PrimitiveRhs
 
 /-! A construction for actual source modules containing unique `const`
-bindings and initialized lexical `let` bindings. Initializers are primitive
-values or reads of earlier bindings. The supplied sequential placement is used
-unchanged by the existing planner. No assignment statements are admitted, so
-the proof does not cover later mutations or reordered evaluation. -/
+bindings and initialized lexical `let` bindings. Initializers are recursively
+formed from primitive values, reads of earlier bindings, and source unary and
+binary expressions. The supplied sequential placement is used unchanged by the
+existing planner. No assignment statements are admitted, so the proof does not
+cover later mutations or reordered evaluation. -/
 
 namespace CoreJS.NamedDeclarationSplit
 
 open LinkedBehavior
-
-/-- A supported initializer has no free bindings other than an earlier name. -/
-inductive EarlierInitializer (earlier : List Name) : Expr → Prop where
-  | undef : EarlierInitializer earlier .undef
-  | null : EarlierInitializer earlier .null
-  | bool (value : Bool) : EarlierInitializer earlier (.bool value)
-  | num (value : Float) : EarlierInitializer earlier (.num value)
-  | str (value : String) : EarlierInitializer earlier (.str value)
-  | read (name : Name) : name ∈ earlier → EarlierInitializer earlier (.var name)
 
 /-- The accumulator makes freshness and the earlier-read requirement explicit
 for every declaration, for lists of any length. -/
 inductive Declarations : List Name → List (Nat × Stmt) → Prop where
   | nil (earlier) : Declarations earlier []
   | const {earlier id name value rest} :
-      name ∉ earlier → EarlierInitializer earlier value →
+      name ∉ earlier → PrimitiveRhs.Rhs earlier.contains value →
       Declarations (name :: earlier) rest →
       Declarations earlier ((id, .decl .const name value) :: rest)
   | initializedLet {earlier id name value rest} :
-      name ∉ earlier → value ≠ .undef → EarlierInitializer earlier value →
+      name ∉ earlier → value ≠ .undef → PrimitiveRhs.Rhs earlier.contains value →
       Declarations (name :: earlier) rest →
       Declarations earlier ((id, .decl .let_ name value) :: rest)
-
-private def checkInitializer (earlier : List Name) : (expr : Expr) → Option (PLift (EarlierInitializer earlier expr))
-  | .undef => some ⟨.undef⟩
-  | .null => some ⟨.null⟩
-  | .bool value => some ⟨.bool value⟩
-  | .num value => some ⟨.num value⟩
-  | .str value => some ⟨.str value⟩
-  | .var name => if h : name ∈ earlier then some ⟨.read name h⟩ else none
-  | _ => none
 
 private def initializedValue : Expr → Bool
   | .undef => false
@@ -59,14 +43,14 @@ def checkDeclarations : (earlier : List Name) → (units : List (Nat × Stmt)) �
   | earlier, [] => some ⟨.nil earlier⟩
   | earlier, (_, .decl .const name value) :: rest => do
     if fresh : name ∉ earlier then
-      let ⟨init⟩ ← checkInitializer earlier value
+      let ⟨init⟩ ← PrimitiveRhs.check earlier.contains value
       let ⟨tail⟩ ← checkDeclarations (name :: earlier) rest
       return ⟨.const fresh init tail⟩
     else none
   | earlier, (_, .decl .let_ name value) :: rest => do
     if initialized : initializedValue value = true then
       if fresh : name ∉ earlier then
-        let ⟨init⟩ ← checkInitializer earlier value
+        let ⟨init⟩ ← PrimitiveRhs.check earlier.contains value
         let ⟨tail⟩ ← checkDeclarations (name :: earlier) rest
         return ⟨.initializedLet fresh (initializedValue_ne_undef initialized) init tail⟩
       else none
@@ -106,7 +90,7 @@ def construct (source : Program) (request : EsmSplit.Spec) : Except String (Cons
   match single : source.modules with
   | [module] =>
     let some ⟨admitted⟩ := checkDeclarations [] module.body |
-      throw "expected unique const or initialized let declarations with only primitive initializers or earlier reads"
+      throw "expected unique const or initialized let declarations with primitive initializers or source unary/binary expressions over earlier reads"
     let ⟨normalized, selected, ⟨selection⟩⟩ ← selectionWitness module request
     let .isTrue unique := (inferInstance : Decidable ((selected.map Prod.fst).Nodup)) |
       throw "an original unit is selected more than once"

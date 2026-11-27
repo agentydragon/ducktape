@@ -8,16 +8,6 @@ namespace CoreJS.LinkedBehavior
 
 variable {w : World}
 
-/-- The units of a list execute in order, propagating any abrupt result from the prefix. -/
-theorem runUnits_append (fuel : Nat) (pre suffix : List LinkedUnit) :
-    (runUnits fuel (pre ++ suffix) : M w Unit) =
-      (runUnits fuel pre >>= fun _ => runUnits fuel suffix) := by
-  induction pre with
-  | nil => rfl
-  | cons unit rest ih =>
-    obtain ⟨id, stmt, env⟩ := unit
-    simp only [List.cons_append, runUnits, ih, M.bind_assoc]
-
 /-- The provider loads first, exactly once, and its actual units are the prefix. -/
 def ProviderPrefix (name : String) (linked : List (Module × Env)) (pre : List LinkedUnit) : Prop :=
   ∃ m env, linked.head? = some (m, env) ∧ m.name = name ∧ m.imports = [] ∧

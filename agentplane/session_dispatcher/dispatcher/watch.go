@@ -94,7 +94,8 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	resuming := request.GetResumeToken() != ""
-	changed, unsubscribe, err := s.subscribeDispatches("")
+	// Notifications carry the Session ID; only Sandbox scope needs every key.
+	changed, unsubscribe, err := s.subscribeDispatches(filter.GetSessionId())
 	if err != nil {
 		return err
 	}

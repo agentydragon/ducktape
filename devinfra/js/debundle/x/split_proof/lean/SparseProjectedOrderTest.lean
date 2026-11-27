@@ -32,6 +32,13 @@ private def sourceProgram : Program := {
   modules := [{ name := "entry.mjs", imports := [], body := sourceRows, exports := [("exposed", "seed")] }]
 }
 
+/-- The same source-row contract applies to the existing interior #1 case. -/
+example : CoreJS.InteriorExportNames.SourceRow
+    ⟨"entry.mjs", [], sourceRows, [("exposed", "seed")]⟩ ⟨1, [("exposed", "seed")]⟩ := by
+  constructor
+  · rfl
+  · decide
+
 private theorem samplePlanValid : EsmSplit.Valid bundle request plan := by decide
 
 private theorem sampleProjection : OrderKept sourceRows plan := by decide

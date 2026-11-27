@@ -49,10 +49,7 @@ pub(super) fn from_entries_mapped_proof(
     call: &CallExpr,
     plain_array_bindings: &BTreeSet<String>,
 ) -> Option<FromEntriesMappedProof> {
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(from_entries) = callee.unwrap_parens() else {
+    let Some(Expr::Member(from_entries)) = js_ast::callee_expr(call) else {
         return None;
     };
     if !matches!(from_entries.obj.unwrap_parens(), Expr::Ident(object) if object.sym == "Object")

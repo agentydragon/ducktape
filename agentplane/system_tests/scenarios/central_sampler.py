@@ -3,7 +3,6 @@
 import asyncio
 import json
 import re
-import signal
 from collections.abc import AsyncIterator
 from contextlib import aclosing, asynccontextmanager
 from pathlib import Path
@@ -32,6 +31,7 @@ from agentplane.system_tests.driver.central_sampler import (
     central_stack,
 )
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.containerd_task import stopped_container_task
 from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.native_sandbox import wait_until_running
@@ -537,93 +537,14 @@ async def _stopped_runtime_proxy_process(
     container_id = container["containerID"].removeprefix("containerd://")
     assert container_id, container
     assert container_id != container["containerID"], container
-    process = await asyncio.create_subprocess_exec(
-        *crictl_command,
-        "--runtime-endpoint",
-        "unix:///run/k3s/containerd/containerd.sock",
-        "inspect",
+    async with stopped_container_task(
+        crictl_command,
         container_id,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
-    if process.returncode:
-        raise RuntimeError(f"crictl inspect exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}")
-    inspected = json.loads(stdout)
-    assert inspected["status"]["id"] == container_id, inspected["status"]
-    pid = inspected["info"]["pid"]
-    assert isinstance(pid, int), pid
-    assert pid > 1, pid
-    ctr_command = (crictl_command[0], "ctr", "--address", "/run/k3s/containerd/containerd.sock", "-n", "k8s.io")
-    tasks = await asyncio.create_subprocess_exec(
-        *ctr_command, "tasks", "ls", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await asyncio.wait_for(tasks.communicate(), timeout=15)
-    if tasks.returncode:
-        raise RuntimeError(f"ctr tasks ls exited {tasks.returncode}: {stderr.decode(errors='replace')[-2000:]}")
-    matching = [line.split() for line in stdout.decode().splitlines()[1:] if line.split()[:1] == [container_id]]
-    assert matching == [[container_id, str(pid), "RUNNING"]], matching
-    executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
-    assert executable.name == "sandbox-controller", executable
-
-    async def signal_proxy(name: str) -> None:
-        process = await asyncio.create_subprocess_exec(
-            *ctr_command,
-            "tasks",
-            "kill",
-            "--signal",
-            name,
-            container_id,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
-        if process.returncode:
-            raise RuntimeError(
-                f"ctr tasks kill {name} exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}"
-            )
-
-    # Keep this proc file open: reads fail if the captured task dies, even if its PID
-    # is reused. A fresh /proc lookup could observe another process with that PID.
-    with await asyncio.to_thread(Path(f"/proc/{pid}/status").open) as process_status:
-
-        def read_status() -> str:
-            process_status.seek(0)
-            return process_status.read()
-
-        diagnostic: dict[str, object] = {
-            "pod": metadata,
-            "container": container,
-            "container_id": container_id,
-            "pid": pid,
-        }
-        output = undeclared_outputs_dir() / "runtime-proxy-crash-process.json"
-        try:
-            await signal_proxy("SIGSTOP")
-            async with asyncio.timeout(5):
-                while True:
-                    status = await asyncio.to_thread(read_status)
-                    if re.search(r"^State:\s+T ", status, re.MULTILINE):
-                        break
-                    await asyncio.sleep(0.01)
-            diagnostic["stopped_status"] = status
-            output.write_text(json.dumps(diagnostic, indent=2) + "\n")
-            yield
-            # The API deletion timestamp alone does not show that kubelet saw it.
-            # Wait for kubelet's SIGTERM while SIGSTOP prevents the handler running.
-            async with asyncio.timeout(15):
-                while True:
-                    status = await asyncio.to_thread(read_status)
-                    assert re.search(r"^State:\s+T ", status, re.MULTILINE), status
-                    pending = re.findall(r"^(?:SigPnd|ShdPnd):\s+([0-9a-f]+)", status, re.MULTILINE)
-                    if any(int(mask, 16) & (1 << (signal.SIGTERM - 1)) for mask in pending):
-                        break
-                    await asyncio.sleep(0.01)
-            diagnostic["pending_sigterm_status"] = status
-            output.write_text(json.dumps(diagnostic, indent=2) + "\n")
-        finally:
-            # This must run even if scaling, the deletion wait or diagnostics fail.
-            await signal_proxy("SIGKILL")
+        executable="sandbox-controller",
+        evidence=undeclared_outputs_dir() / "runtime-proxy-crash-process.json",
+        evidence_context={"pod": metadata, "container": container},
+    ):
+        yield
 
 
 async def _roll_runtime_proxy_for_central_session(

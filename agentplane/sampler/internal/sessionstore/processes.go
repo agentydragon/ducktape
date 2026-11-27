@@ -470,6 +470,11 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 			if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1`, pendingID, wire); err != nil {
 				return err
 			}
+			if intent.Kind == IntentSampling {
+				if err := deleteSamplingRecoveryProjection(ctx, tx, pendingID); err != nil {
+					return err
+				}
+			}
 			if cleanupComplete {
 				conversation.Pending = nil
 			}
@@ -494,30 +499,39 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 			}); err != nil {
 				return err
 			}
-			rows, err := tx.QueryContext(ctx, `SELECT id::text FROM sampler_intent WHERE conversation_id=$1 AND generation=$2 AND result IS NULL`, conversation.ID, owner.Generation)
+			rows, err := tx.QueryContext(ctx, `SELECT id::text,request->>'kind' FROM sampler_intent WHERE conversation_id=$1 AND generation=$2 AND result IS NULL`, conversation.ID, owner.Generation)
 			if err != nil {
 				return err
 			}
-			var unresolved []string
+			type unresolvedIntent struct {
+				id   string
+				kind string
+			}
+			var unresolved []unresolvedIntent
 			for rows.Next() {
-				var id string
-				if err := rows.Scan(&id); err != nil {
+				var intent unresolvedIntent
+				if err := rows.Scan(&intent.id, &intent.kind); err != nil {
 					rows.Close()
 					return err
 				}
-				if conversation.Pending != nil && id == conversation.Pending.ID {
+				if conversation.Pending != nil && intent.id == conversation.Pending.ID {
 					continue
 				}
-				unresolved = append(unresolved, id)
+				unresolved = append(unresolved, intent)
 			}
 			rowsErr := rows.Err()
 			rows.Close()
 			if rowsErr != nil {
 				return rowsErr
 			}
-			for _, id := range unresolved {
-				if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result='{"status":"interrupted","partial_effects_possible":true}'::jsonb WHERE id=$1`, id); err != nil {
+			for _, intent := range unresolved {
+				if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result='{"status":"interrupted","partial_effects_possible":true}'::jsonb WHERE id=$1`, intent.id); err != nil {
 					return err
+				}
+				if intent.kind == string(IntentSampling) {
+					if err := deleteSamplingRecoveryProjection(ctx, tx, intent.id); err != nil {
+						return err
+					}
 				}
 			}
 		}

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use readoff_render::kept_spans_for_anchor_set;
 use swc_common::Spanned;
 use swc_ecma_ast::*;
@@ -11,6 +11,7 @@ use swc_ecma_ast::*;
 use super::{extend_anchor_cover, finish_minimized_selector, push_candidate, render_var_slots};
 use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
 use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use crate::minimize::body_item;
 use crate::proof::{match_single_member_selector, prove_synthesized_selector};
 use selector_render::{AnchorSpan, node_holds_anchor, span_key};
 
@@ -129,11 +130,7 @@ pub(crate) fn try_object_read_off_candidates(
         render_var_slots(var, &only_target, &export_for, kept, &no_regex)
     };
 
-    let item = index
-        .module
-        .body
-        .get(decl.body_idx)
-        .context("read-off body index no longer in module")?;
+    let item = body_item(index, decl)?;
     let kept_in_slot = |anchor_set: &shape_index::AnchorSet| -> BTreeSet<AnchorSpan> {
         kept_spans_for_anchor_set(item, anchor_set)
             .into_iter()

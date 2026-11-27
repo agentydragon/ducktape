@@ -79,7 +79,8 @@ Concurrent testcase durations can sum to more than the suite's wall time.
 
 The common [`conftest.py`](conftest.py) owns shared tracing, harness selection and scripted-model
 fixtures. App-backed tests explicitly load [`app_fixtures.py`](app_fixtures.py) for App clients,
-model discovery and warmup, per-scenario resources and App Sandbox ownership; MCP OAuth tests load
+model discovery and warmup, per-scenario resources and App Sandbox ownership;
+[`suites/mcp/conftest.py`](suites/mcp/conftest.py) registers the MCP OAuth
 [`operator_fixtures.py`](suites/mcp/operator_fixtures.py). The neutral [`sandbox.py`](driver/sandbox.py)
 contains shared template constants and the descriptor callable type. App lifecycle behavior lives in
 [`app_sandbox.py`](driver/app_sandbox.py), with its focused tests in

@@ -33,7 +33,7 @@ use super::build::PremiseVerdict;
 ///   imports) are fully evaluated before the call returns; the
 ///   manufactured `R -> target-module` constraint is redundant with
 ///   the already-recorded `R -> callee-module` edge. The gate
-///   (`check_realizability`, `IncrementalQuotient`) keeps these for
+///   (`chunk_constraining_module_edges`) keeps these for
 ///   soundness: the emitter's phantom side-effect importer can reorder
 ///   ESM's link DFS so the target evaluates while the caller is still
 ///   on the stack, closing a TDZ cycle the lenient view would hide.

@@ -3,7 +3,7 @@
 //! `debundle modules delete --force` verb removes a non-empty module.
 //!
 //! Both verbs run the unified realizability gate through
-//! [`crate::edit_gate::Gate::check`] against the
+//! [`edit_gate::Gate::check`] against the
 //! **post-edit** assignment before touching the filesystem. The gate
 //! borrows the chunk's canonical topology from a `DependencyGraphInput`,
 //! builds the post-edit `ModuleAssignment`
@@ -37,10 +37,13 @@ use spec_modules::{
 };
 use yaml_edit::write_yaml_atomic;
 
-use crate::binding::load_module_docs;
-use crate::candidate_assessment::CandidateEffectAssessmentArgs;
-use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
-use crate::outcome::{MutationAction, MutationOutcome, MutationVerb, emit_gate_rejection_json};
+use candidate_assessment::CandidateEffectAssessmentArgs;
+use edit_gate::{
+    GraphEditArgs, PostEditSpec, load_module_docs, post_delete_spec, post_edit_spec_from_docs,
+};
+use outcome::{
+    GateOutcome, MutationAction, MutationOutcome, MutationVerb, emit_gate_rejection_json,
+};
 
 #[derive(Debug, ClapArgs)]
 pub struct MergeArgs {
@@ -210,9 +213,9 @@ impl DeleteSummary {
 /// Validation contract (per docs/cli.md § "Validate-by-default"):
 ///
 /// * Default: run the realizability gate against the post-merge
-///   assignment. Accept and splice if `Verdict::Realizable`; reject
-///   and exit non-zero with the same `render_cycle_summary`
-///   diagnostic the pipeline prints if `Verdict::Unrealizable`.
+///   assignment. Accept and splice if `RealizabilityVerdict::is_realizable`;
+///   otherwise reject and exit non-zero with the same `render_cycle_summary`
+///   diagnostic the pipeline prints.
 /// * `--dry-run`: run the gate but do not modify any file.
 /// * `--no-verify`: skip the gate for a single merge; rejected with `--batch`.
 pub fn run_merge(
@@ -318,7 +321,7 @@ pub fn run_merge(
     let outcome = MutationOutcome::ownership_edit(
         MutationVerb::Merge,
         action,
-        gate.outcome(),
+        GateOutcome::from(&gate),
         effect_relocation_assessment.as_ref(),
         files_written,
         plans
@@ -818,7 +821,7 @@ pub fn run_delete(
         let checked_order = validation.map_err(|err| {
             emit_gate_rejection_json(output, MutationVerb::Delete, args.edit.format, err)
         })?;
-        (gate.outcome(), checked_order)
+        (GateOutcome::from(&gate), checked_order)
     };
 
     let summary = delete_modules(delete_paths, args.edit.dry_run)?;

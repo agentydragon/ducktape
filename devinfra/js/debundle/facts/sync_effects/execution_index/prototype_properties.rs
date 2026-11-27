@@ -152,7 +152,7 @@ fn contained_roots(
             }
         }
         ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
-            let options = value.result_alternatives().expect("alternative expression");
+            let options = value.branching_alternatives();
             for option in options {
                 roots.extend(contained_roots(
                     option,

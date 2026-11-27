@@ -1,6 +1,5 @@
 import { Alert, Button, Group, Select, Stack, Table, Text } from "@mantine/core";
 import "./management.css";
-import { type StreamConnection } from "../transport/stream_reader";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import { displayableError, HttpError } from "../transport/client";
@@ -13,11 +12,21 @@ import {
   unbindConnection,
 } from "./connection_service_client";
 
+import {
+  useWatchCollection,
+  type CollectionConfig,
+  type CollectionFrame,
+  type CollectionWatchHandlers,
+} from "../transport/watch_collection";
 import { followWatch } from "../transport/watch_stream";
 
 import { CallerGrants } from "./caller_grants";
 import { InlineName } from "../ui/inline_name";
-import { GrantStatus, type Connection } from "../../../mcp_edge/api/connection/connection_service_pb";
+import {
+  GrantStatus,
+  type Connection,
+  type ConnectionChunk,
+} from "../../../mcp_edge/api/connection/connection_service_pb";
 import { Code } from "../../../proto/google/rpc/code_pb";
 import type { Identity } from "../../../proto/identity_pb";
 
@@ -35,11 +44,23 @@ function currentGrant(connection: Connection): Grant | undefined {
   );
 }
 
+const CONNECTIONS: CollectionConfig<Connection, never> = { kind: "Connection", key: (row) => row.id };
+
+function followConnections(
+  handlers: CollectionWatchHandlers<CollectionFrame<Connection, ConnectionChunk, never>>
+): () => void {
+  return followWatch("/upstream/connections/v1/operator/connections:watch", {
+    ...handlers,
+    onFrame: (value) => handlers.onFrame(readConnectionWatchFrame(value).frame),
+  });
+}
+
+const connectionChunk = (chunk: ConnectionChunk): Connection[] => chunk.connections;
+
 export function Connections(): JSX.Element {
-  const [snapshot, setRows] = useState<Connection[] | null>(null);
-  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
-  const rows = snapshot ?? [];
-  const loaded = snapshot !== null;
+  const { items, connection, replace, reset } = useWatchCollection(CONNECTIONS, followConnections, connectionChunk);
+  const rows = items ?? [];
+  const loaded = items !== null;
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,50 +68,11 @@ export function Connections(): JSX.Element {
   const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
   const [rebinding, setRebinding] = useState<{ row: Connection; target: string; confirm: boolean } | null>(null);
 
-  useEffect(() => {
-    let snapshot: Connection[] = [];
-    let readingSnapshot = false;
-    return followWatch("/upstream/connections/v1/operator/connections:watch", {
-      onOpen: () => {
-        snapshot = [];
-        readingSnapshot = true;
-      },
-      onFrame: (value) => {
-        const { frame } = readConnectionWatchFrame(value);
-        switch (frame.case) {
-          case "snapshot":
-            if (!readingSnapshot) throw new Error("ConnectionService sent a snapshot outside its initial replay");
-            snapshot.push(...frame.value.connections);
-            return;
-          case "snapshotComplete":
-            if (!readingSnapshot) throw new Error("ConnectionService completed a snapshot that was not open");
-            readingSnapshot = false;
-            setRows(snapshot);
-            return;
-          case "upsert":
-            if (readingSnapshot) throw new Error("ConnectionService sent an update before completing its snapshot");
-            setRows((current) => {
-              if (current === null) return [frame.value];
-              const found = current.some((row) => row.id === frame.value.id);
-              return found
-                ? current.map((row) => (row.id === frame.value.id ? frame.value : row))
-                : [...current, frame.value];
-            });
-            return;
-          case "reconnectRequired":
-            // The frame is followed by EOF; followWatch reopens with a fresh snapshot.
-            return;
-        }
-      },
-      onConnection: setConnection,
-    });
-  }, [setRows]);
-
   const load = useCallback(async (): Promise<void> => {
     const [connections, liveIdentities] = await Promise.all([listConnections(), connectionIdentities()]);
-    setRows(connections);
+    reset(connections);
     setIdentities(liveIdentities);
-  }, [setRows]);
+  }, [reset]);
 
   const refresh = useCallback(async (): Promise<void> => {
     setBusy(true);
@@ -129,7 +111,7 @@ export function Connections(): JSX.Element {
     setBusy(true);
     try {
       const updated = await mutate();
-      setRows((current) => current?.map((row) => (row.id === updated.id ? updated : row)) ?? null);
+      replace(updated);
       dismissConfirmation?.();
       setError(null);
     } catch (failure) {
@@ -224,19 +206,7 @@ export function Connections(): JSX.Element {
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      {row.identityBindingRequired && (
-                        <Alert color="orange" title="Identity binding required">
-                          <Text size="sm">
-                            This legacy Connection is paused. Its ServiceAccount binding is retained only as historical
-                            attribution
-                            {row.legacyBoundCaller
-                              ? ` (${row.legacyBoundCaller.namespace}/${row.legacyBoundCaller.name})`
-                              : ""}
-                            . Choose a live Identity and confirm the rebind to resume its existing grants.
-                          </Text>
-                        </Alert>
-                      )}
-                      {row.boundIdentity || row.identityBindingRequired ? (
+                      {row.boundIdentity ? (
                         <Stack gap={2}>
                           <Text className="agentplane-connection-mobile-label" size="xs" fw={600}>
                             Identity
@@ -282,22 +252,20 @@ export function Connections(): JSX.Element {
                               {expandedGrants === row.id ? "Hide grants" : "View grants"}
                             </Button>
                           )}
-                          {rebinding?.row.id === row.id &&
-                            (rebinding.target !== currentKey || row.identityBindingRequired) &&
-                            !rebinding.confirm && (
-                              <Group gap="xs">
-                                <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
-                                  Cancel
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  disabled={busy}
-                                  onClick={() => setRebinding({ ...rebinding, confirm: true })}
-                                >
-                                  Apply
-                                </Button>
-                              </Group>
-                            )}
+                          {rebinding?.row.id === row.id && rebinding.target !== currentKey && !rebinding.confirm && (
+                            <Group gap="xs">
+                              <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
+                                Cancel
+                              </Button>
+                              <Button
+                                size="xs"
+                                disabled={busy}
+                                onClick={() => setRebinding({ ...rebinding, confirm: true })}
+                              >
+                                Apply
+                              </Button>
+                            </Group>
+                          )}
                           {rebinding?.confirm && rebinding.row.id === row.id && (
                             <Alert color="orange" title={`Change ${row.displayName}'s Identity?`}>
                               <Text size="sm">

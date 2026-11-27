@@ -6,12 +6,12 @@ import EsmSplit.CoreJS.StateMatch
 import EsmSplit.CoreJS.SyntaxMatch
 
 /-! A concrete, checked CoreJS link boundary for one closed, unchanged provider
-and one importing source entry. The checker starts from an already decoded
-deployment and one already checked pair of real links. It checks the decoded
-module labels and live cells; it does not establish that relative path spelling
-resolves to those labels. Source parsing, authored placement, and emitted-file
-correspondence stay at their existing decoder boundary. This module adds no
-module-loader rules. -/
+and one importing source entry. The checker starts from a source/candidate pair
+and checked link witnesses. A publication caller can pass the result of a
+source/placement constructor as the candidate; construction and equality with
+the independently decoded files remain separate obligations. This module checks
+CoreJS module labels and live cells, not whether relative path spelling resolves
+to those labels. It adds no module-loader rules. -/
 
 namespace CoreJS.StaticProviderLinking
 
@@ -43,6 +43,17 @@ private def oneProviderEntry (source candidate : Program) (providerName : String
     candidate.modules.any (·.name == candidate.entry) &&
     !source.modules.any (·.name == ":corejs:template-objects") &&
     !candidate.modules.any (·.name == ":corejs:template-objects")
+
+private structure UniqueModule (modules : List Module) (name : String) where
+  declaration : Module
+  occurrences : modules.filter (fun module => module.name == name) = [declaration]
+
+private def findUniqueModule (modules : List Module) (name : String) :
+    Except String (UniqueModule modules name) := do
+  match h : modules.filter (fun module => module.name == name) with
+  | [] => throw s!"module {name} is not declared"
+  | [declaration] => return ⟨declaration, h⟩
+  | _ :: _ :: _ => throw s!"module {name} is declared more than once"
 
 private def sameModule (left right : Module) : Option (PLift (left = right)) := do
   let ⟨programsEqual⟩ ← SyntaxMatch.programEq
@@ -110,6 +121,12 @@ structure ProviderLinkCertificate (source candidate : Program) where
   providerLocal : Name
   provider : Module
   providerAddress : Addr
+  sourceEntry : Module
+  sourceEntryUnique : source.modules.filter (fun module => module.name == source.entry) = [sourceEntry]
+  candidateEntry : Module
+  candidateEntryUnique : candidate.modules.filter (fun module => module.name == candidate.entry) = [candidateEntry]
+  sourceProviderUnique : source.modules.filter (fun module => module.name == providerName) = [provider]
+  candidateProviderUnique : candidate.modules.filter (fun module => module.name == providerName) = [provider]
   beforeProviderEnv : Env
   afterProviderEnv : Env
   beforeHead : before.linked.head? = some (provider, beforeProviderEnv)
@@ -154,24 +171,70 @@ theorem ProviderLinkCertificate.after_aliases_resolve
   have all := List.all_eq_true.mp certificate.afterAliasesResolve alias member
   simpa [importsResolveTo, Bool.and_eq_true, beq_iff_eq] using all
 
-/-- Build typed witnesses from the exact pair already produced by `decodeSingleton`.
+theorem ProviderLinkCertificate.provider_export_is_the_same_live_cell
+    {source candidate : Program} (certificate : ProviderLinkCertificate source candidate) :
+    certificate.provider.exports.lookup certificate.providerExport = some certificate.providerLocal ∧
+      certificate.beforeProviderEnv.vars.lookup certificate.providerLocal = some certificate.providerAddress ∧
+      certificate.afterProviderEnv.vars.lookup certificate.providerLocal = some certificate.providerAddress :=
+  ⟨certificate.providerExported, certificate.providerAddressBefore, certificate.providerAddressAfter⟩
+
+theorem ProviderLinkCertificate.imported_bindings_share_provider_live_cell
+    {source candidate : Program} (certificate : ProviderLinkCertificate source candidate) :
+    (∀ alias ∈ certificate.beforeAliases,
+      alias.exported = certificate.providerExport ∧ alias.address = some certificate.providerAddress) ∧
+    (∀ alias ∈ certificate.afterAliases,
+      alias.exported = certificate.providerExport ∧ alias.address = some certificate.providerAddress) ∧
+    certificate.provider.exports.lookup certificate.providerExport = some certificate.providerLocal ∧
+    certificate.beforeProviderEnv.vars.lookup certificate.providerLocal = some certificate.providerAddress ∧
+    certificate.afterProviderEnv.vars.lookup certificate.providerLocal = some certificate.providerAddress := by
+  refine ⟨?_, ?_, certificate.provider_export_is_the_same_live_cell.1,
+    certificate.provider_export_is_the_same_live_cell.2.1,
+    certificate.provider_export_is_the_same_live_cell.2.2⟩
+  · intro alias member
+    exact certificate.before_aliases_resolve alias member
+  · intro alias member
+    exact certificate.after_aliases_resolve alias member
+
+theorem ProviderLinkCertificate.provider_is_unique_in_both_module_lists
+    {source candidate : Program} (certificate : ProviderLinkCertificate source candidate) :
+    source.modules.filter (fun module => module.name == certificate.providerName) = [certificate.provider] ∧
+      candidate.modules.filter (fun module => module.name == certificate.providerName) = [certificate.provider] :=
+  ⟨certificate.sourceProviderUnique, certificate.candidateProviderUnique⟩
+
+theorem ProviderLinkCertificate.entry_is_unique_in_both_module_lists
+    {source candidate : Program} (certificate : ProviderLinkCertificate source candidate) :
+    source.modules.filter (fun module => module.name == source.entry) = [certificate.sourceEntry] ∧
+      candidate.modules.filter (fun module => module.name == candidate.entry) = [certificate.candidateEntry] :=
+  ⟨certificate.sourceEntryUnique, certificate.candidateEntryUnique⟩
+
+/-- Build typed link witnesses for one source/candidate pair. The candidate may
+be a constructor result; this function does not establish where it came from.
 The source graph must contain one importing entry and one provider. The provider
-must be closed, unchanged, first, and unique in each real linked schedule. Every
-named import of the selected export must resolve to the provider cell. Its
-before/after units, the tails, and the linked ready equality are exposed for the
-generic schedule theorem. The entry's public exports must resolve to matching
-live cells. -/
+must be closed, unchanged, and unique in each module list and real linked
+schedule. Every named import of the selected export must resolve to the provider
+cell. Its before/after units, the tails, and the linked ready equality are
+exposed for a separate schedule theorem. The entry's public exports must resolve
+to matching live cells. -/
 def certify (source candidate : Program) (pair : CheckedProbePair source candidate)
     (providerName : String) (providerExport : Name) :
     Except String (ProviderLinkCertificate source candidate) := do
   unless oneProviderEntry source candidate providerName do
     throw "expected one importing entry and one provider without template objects"
+  let sourceEntry ← findUniqueModule source.modules source.entry
+  let candidateEntry ← findUniqueModule candidate.modules candidate.entry
+  let sourceProvider ← findUniqueModule source.modules providerName
+  let candidateProvider ← findUniqueModule candidate.modules providerName
   let beforeOccurrence ← findProvider pair.before.linked providerName
   let afterOccurrence ← findProvider pair.after.linked providerName
+  let some ⟨sourceProviderEqual⟩ := sameModule sourceProvider.declaration beforeOccurrence.provider
+    | throw "the linked provider is not the decoded source provider"
+  let some ⟨candidateProviderEqual⟩ := sameModule candidateProvider.declaration afterOccurrence.provider
+    | throw "the linked provider is not the decoded candidate provider"
   let some ⟨providerEqual⟩ := sameModule beforeOccurrence.provider afterOccurrence.provider
     | throw "provider CoreJS module changed"
   let provider := beforeOccurrence.provider
   let afterProviderEqual := providerEqual.symm
+  let candidateProviderIsShared := candidateProviderEqual.trans afterProviderEqual
   let providerUnitsBefore := unitsOf [(provider, beforeOccurrence.env)]
   let providerUnitsAfter := unitsOf [(provider, afterOccurrence.env)]
   let some ⟨providerPrefixSame⟩ := sameUnits? providerUnitsBefore providerUnitsAfter
@@ -237,6 +300,14 @@ def certify (source candidate : Program) (pair : CheckedProbePair source candida
       providerLocal := beforeCell.localName
       provider := provider
       providerAddress := beforeCell.address
+      sourceEntry := sourceEntry.declaration
+      sourceEntryUnique := sourceEntry.occurrences
+      candidateEntry := candidateEntry.declaration
+      candidateEntryUnique := candidateEntry.occurrences
+      sourceProviderUnique := sourceProvider.occurrences.trans
+        (congrArg (fun module : Module => [module]) sourceProviderEqual)
+      candidateProviderUnique := candidateProvider.occurrences.trans
+        (congrArg (fun module : Module => [module]) candidateProviderIsShared)
       beforeProviderEnv := beforeOccurrence.env
       afterProviderEnv := afterOccurrence.env
       beforeHead := beforeOccurrence.first
@@ -282,9 +353,11 @@ structure DecodedProviderCertificate {profile : HostProfile} {source providers f
     {P : EsmSplit.Plan} (input : DecodedProviderInput profile source providers files P) where
   links : ProviderLinkCertificate input.deployment.before input.deployment.after
 
-/-- Certify the exact checked link pair for a successful decoding of the supplied
-source, providers, emitted files, authored plan, and profile. The checker does
-not decode or link again. -/
+/-- Bind link evidence to the exact pair decoded from the supplied source,
+providers, emitted files, authored plan, and profile. This is link evidence
+about that pair, not a publication constructor: callers must separately prove
+that their source/placement constructor returns the candidate and that reread
+files equal it. The checker does not decode or link again. -/
 def certifyDecoded {profile : HostProfile} {source providers files : Lean.Json} {P : EsmSplit.Plan}
     (input : DecodedProviderInput profile source providers files P)
     (pair : CheckedProbePair input.deployment.before input.deployment.after) (providerName : String)
@@ -308,6 +381,10 @@ theorem certifyDecoded_sameExports {profile : HostProfile} {source providers fil
 
 #print axioms ProviderLinkCertificate.before_aliases_resolve
 #print axioms ProviderLinkCertificate.after_aliases_resolve
+#print axioms ProviderLinkCertificate.provider_export_is_the_same_live_cell
+#print axioms ProviderLinkCertificate.imported_bindings_share_provider_live_cell
+#print axioms ProviderLinkCertificate.provider_is_unique_in_both_module_lists
+#print axioms ProviderLinkCertificate.entry_is_unique_in_both_module_lists
 #print axioms DecodedProviderCertificate.sameExports
 #print axioms certifyDecoded_sameExports
 

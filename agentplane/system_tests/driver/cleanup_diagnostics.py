@@ -15,13 +15,4 @@ async def capture_without_masking(error: Exception, capture: Callable[[], Awaita
 
 async def cleanup_without_masking(error: BaseException | None, cleanup: Callable[[], Awaitable[None]]) -> None:
     """Keep a scenario failure primary while allowing cleanup-only failures to fail the test."""
-    result = await finish_cleanup(cleanup())
-    if result.failure is not None:
-        if error is not None:
-            error.add_note(f"Sandbox cleanup also failed ({type(result.failure).__name__}).")
-        elif result.cancellation is not None:
-            raise result.cancellation from result.failure
-        else:
-            raise result.failure
-    if error is None and result.cancellation is not None:
-        raise result.cancellation
+    (await finish_cleanup(cleanup())).propagate(error, note="Sandbox cleanup also failed")

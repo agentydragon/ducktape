@@ -126,6 +126,10 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
+	// Its Watch informers; the gRPC listener's streams wait for their first sync.
+	if err := mgr.Add(api); err != nil {
+		return err
+	}
 	methods, err := api.Methods()
 	if err != nil {
 		return err

@@ -23,7 +23,9 @@ structure Construction (input : Program × List EsmSplit.LocalExportUnit)
   ordered : ProjectedOrder.Kept (checked.terminal.source.body.map Prod.snd) (EsmSplit.mkPlan B S)
   entry : EsmSplit.Module
   found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry
-  units : entry.stmts = [checked.terminal.row.ordinal]
+  prior : List Nat
+  units : entry.stmts = prior ++ [checked.terminal.row.ordinal]
+  unpublished : ∀ i ∈ prior, (B.stmt i).exports = []
   glue : entry.exports = []
   rowFootprint : checked.terminal.row.FootprintMatches (B.stmt checked.terminal.row.ordinal)
   sourceDefs : MetadataCells.RowLocalsDefined (checked.terminal.source.body.map Prod.snd) B checked.terminal.row
@@ -63,11 +65,14 @@ def construct (input : Program × List EsmSplit.LocalExportUnit) (B : EsmSplit.B
   match found : plan.find plan.entry with
   | none => throw "terminal plan has no entry"
   | some entry =>
-    if units : entry.stmts = [checked.terminal.row.ordinal] then
-      if glue : entry.exports = [] then
-        return ⟨checked, placement, matching, complete, evaluationOrder, valid, footprints, ordered, entry, found, units, glue, rowFootprint, sourceDefs⟩
-      else throw "terminal entry has generated glue exports"
-    else throw "terminal entry must contain only the original export row"
+    let prior := entry.stmts.dropLast
+    if units : entry.stmts = prior ++ [checked.terminal.row.ordinal] then
+      if unpublished : ∀ i ∈ prior, (B.stmt i).exports = [] then
+        if glue : entry.exports = [] then
+          return ⟨checked, placement, matching, complete, evaluationOrder, valid, footprints, ordered, entry, found, prior, units, unpublished, glue, rowFootprint, sourceDefs⟩
+        else throw "terminal entry has generated glue exports"
+      else throw "terminal entry has another public export unit"
+    else throw "terminal entry must end with the original export row"
 
 /-- Every accepted output preserves live exports and complete runs in every
 modeled world and at every fuel. -/
@@ -75,7 +80,7 @@ theorem sound {input B S} (result : Construction input B S) :
     LinkedBehavior.SameExports input.1 result.program ∧
       ∀ w fuel, runProgram w fuel input.1 = runProgram w fuel result.program :=
   TerminalConstructorInput.planned_family result.checked B S result.entry result.valid result.footprints
-    result.ordered result.found result.units result.glue result.rowFootprint result.sourceDefs
+    result.ordered result.found result.units result.unpublished result.glue result.rowFootprint result.sourceDefs
 
 
 /-- The exact executable owner labels and the terminal metadata owner are
@@ -93,19 +98,20 @@ theorem selected_owners {input B S} (result : Construction input B S) :
       List.range (result.checked.terminal.source.body.map Prod.snd).length := by
     simpa using result.checked.terminal.terminal.1
   exact TerminalPlanSelection.selected_owners result.checked.terminal.row terminal result.complete result.valid
-    result.entry result.found result.units ⟨result.checked.terminal.source, result.checked.terminal.row.ordinal⟩
+    result.entry result.found (by rw [result.units]; simp) ⟨result.checked.terminal.source, result.checked.terminal.row.ordinal⟩
     rfl ids result.placement result.matching
 
-/-- Every original source ordinal is either one executable unit or the single
-terminal metadata unit; metadata creates no executable entry body. -/
+/-- Every original source ordinal is executable or the unique terminal row;
+that row emits no executable entry statement. -/
 theorem original_units {input B S} (result : Construction input B S) :
     (∀ i, i < B.length → i < (result.checked.terminal.source.body.map Prod.snd).length ∨
       i = result.checked.terminal.row.ordinal) ∧
-    (moduleOf (result.checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S) result.entry).body = [] := by
+    ∀ stmt, (result.checked.terminal.row.ordinal, stmt) ∉
+      (moduleOf (result.checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S) result.entry).body := by
   have terminal : result.checked.terminal.row.ordinal = (result.checked.terminal.source.body.map Prod.snd).length := by
     simpa using result.checked.terminal.terminal.2
   have all := TerminalPlanOwnership.all_original_owners result.checked.terminal.row terminal result.complete
-    result.valid result.entry result.found result.units
+    result.valid result.entry result.found (by rw [result.units]; simp)
   exact ⟨all.1, all.2.2.2.2⟩
 
 #print axioms Construction.program

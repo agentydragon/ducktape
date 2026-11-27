@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.DeploymentPlacement
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.SingleModule
 import EsmSplit.CoreJS.SyntaxMatch
+import EsmSplit.CoreJS.PrimitiveRhs
 import EsmSplit.Split
 
 /-! Construct a CoreJS split for an order-preserving placement of simple
@@ -22,11 +23,12 @@ private def initializedValue : Expr → Bool
 private def supportedUnit : Stmt → Bool
   | .funDecl (.mk _ .normal false [] [.ret value]) => simpleValue value
   | .decl .const _ (.call (.var _) []) => true
-  | .decl .const _ value => simpleValue value
-  | .decl .let_ _ value => simpleValue value && initializedValue value
+  | .decl .const _ value => (PrimitiveRhs.check (fun _ => true) value).isSome
+  | .decl .let_ _ value => (PrimitiveRhs.check (fun _ => true) value).isSome && initializedValue value
   | _ => false
 
-private def summarize (source : Program) : EsmSplit.Bundle :=
+/-- The source-derived bundle used by the checked constructor. -/
+def summarize (source : Program) : EsmSplit.Bundle :=
   match source.modules with
   | [m] => m.body.map fun (_, stmt) =>
     let defs := stmt.bindings.map Prod.fst
@@ -90,8 +92,8 @@ def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarante
     throw "source must be an import-free entry with consecutive unit identities starting at zero"
   if spec.sequential then
     unless m.body.all (fun (_, stmt) => match stmt with
-        | .decl .const _ value => simpleValue value
-        | .decl .let_ _ value => simpleValue value && initializedValue value
+        | .decl .const _ value => (PrimitiveRhs.check (fun _ => true) value).isSome
+        | .decl .let_ _ value => (PrimitiveRhs.check (fun _ => true) value).isSome && initializedValue value
         | _ => false) do
       throw "explicit sequential placement supports only simple const or initialized let declarations"
   for (id, stmt) in m.body do

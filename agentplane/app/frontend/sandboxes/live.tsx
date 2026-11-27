@@ -26,11 +26,13 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
   const [ready, setReady] = useState(false);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
-    const collection = new WatchCollection<EnvironmentDescriptor, EnvironmentTarget>(
-      "Environment inventory",
-      (sandbox) => sandbox.target,
-      (target) => (target.namespace && target.name ? `${target.namespace}\0${target.name}` : undefined)
-    );
+    const targetKey = (target: EnvironmentTarget | undefined): string | undefined =>
+      target?.uid && target.namespace && target.name ? `${target.namespace}\0${target.name}` : undefined;
+    const collection = new WatchCollection<EnvironmentDescriptor, EnvironmentTarget>({
+      kind: "Environment inventory",
+      key: (sandbox) => targetKey(sandbox.target),
+      removal: { key: targetKey, matches: (held, target) => held.target?.uid === target.uid },
+    });
     return followWatch(liveSandboxesUrl(), {
       onOpen: () => {
         collection.beginSnapshot();

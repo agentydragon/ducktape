@@ -255,7 +255,7 @@ retained `SequencedCause` plus the endpoints' composed premise effect summaries
 (`graph/build/commuting.rs::premise_verdict`): a cell relation, a shared `var`, a shared
 written cell, or a binding timeline, shared-`var` access or uninitialized
 observation between two observed effects contradicts the premise and fails the
-build; a pair with no inertable edge after preservation is unused and fails the build. Each
+build; a pair with no inertable edge after preservation is unused, a warning that leaves the graph unchanged. Each
 premise summary adds source-known callee heap reads and writes only when the
 invocation path is non-assumed. The interpreter retains all callee heap cells
 for conservative ordering, including opaque callback and fallback paths; each
@@ -688,13 +688,10 @@ checked after those roots are explicitly relocated. A second read of one input
 during analysis must return the same digest. Final-output-only inputs, such as
 browser harness assets, are outside the dependency-graph contract.
 
-Any command combining a saved graph with current spec or source first checks
-the graph's input inventory and exact selected chunk scope. The check runs
-before an edit is written. An edit then evaluates its candidate assignment on
-the saved dependency graph through the normal shared gates; the candidate YAML
-is intentionally different from the graph's **pre-edit** baseline. A successful
-edit leaves the saved graph as a pre-edit snapshot. Another graph-backed edit
-requires regenerating the graph against the new spec.
+Commands combining a saved graph with current spec or source check this
+inventory first; edits are evaluated on the saved graph, which stays the
+**pre-edit** snapshot until regenerated:
+[SPEC § Querying a saved graph](../SPEC.md#querying-a-saved-graph).
 
 The emitted module graph is a **quotient** of this graph: choose a
 destination function `dest(source_unit)` from spec assignments (defaulting
@@ -929,20 +926,15 @@ globalThis`) marks the bindings it flows into (transitively,
   callee, argument evaluation, or unrelated operations in that statement.
   Deferred methods, callbacks and getters retain their later-use obligations.
 
-  The legacy own-syntax opacity bit can also be omitted when the statement
-  carries a `CompletedInitialization` receipt for that exact source owner. The
-  shared interpreter creates this receipt for the matching root initializer
-  through either its restricted non-invoking source proof or normal completion
-  with covered `GeneralHeap`, global-property and host-effect domains. The source
-  proof admits checked allocation-only expressions, lazy functions, inert classes,
-  RegExp literals and exact supported native constructor forms. It also requires
-  complete execution without unknown calls, precision losses or uninitialized
-  reads; neither a generic value nor an empty ledger supplies this proof.
+  The legacy own-syntax opacity bit can also be omitted for a same-owner
+  `CompletedInitialization` receipt; its two issuing routes, admitted forms and
+  retained barriers: [SPEC § Captured ordinary-object values](../SPEC.md#captured-ordinary-object-values).
+  The non-invoking source proof also requires complete execution without
+  unknown calls, precision losses or uninitialized reads; neither a generic
+  value nor an empty ledger supplies this proof.
   `StatementFacts::own_heap_content_summary`
   supplies the same receipt and own-opacity projection to the initialization
-  effect and heap-frontier consumers. It preserves explicit heap-cell reads,
-  writes, allocations, and receipt dependencies; callee heap opacity and
-  incomplete synchronous execution continue to emit their own barriers.
+  effect and heap-frontier consumers.
   Purity and synchronous-call completeness alone do not discharge the bit.
 
   Canonical primitive-literal evaluation and checked deferred callable creation
@@ -1031,12 +1023,14 @@ returned. Graph-only inventory cannot be presented as an executable plan.
 
 ### Quotient updates
 
-An ownership batch can add and remove quotient edges simultaneously. Indexed
-projection visits the union of incident source edges once under the final map,
-maintains parallel counts and emits final pair zero crossings. Structural SCC
-maintenance can restrict affected graph work, but does not decide the existence
-of a valid import order. Local/touching diagnostics cannot certify a complete
-assignment: changed topology can invalidate finish constraints elsewhere.
+The gate reprojects the complete assignment; there is no incremental quotient
+index (the test-only `RealizabilityIndex` was removed). A future one must
+handle batches that add and remove quotient edges simultaneously: visit the
+union of incident source edges once under the final map, keep parallel counts
+and emit final pair zero crossings. Structural SCC maintenance can restrict
+affected graph work, but does not decide the existence of a valid import order.
+Local/touching diagnostics cannot certify a complete assignment: changed
+topology can invalidate finish constraints elsewhere.
 Do not project or certify the full source graph separately for each inventory
 seed. The shared full verifier certifies the one selected result.
 
@@ -1908,34 +1902,13 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   assert a named binding has a specific side-effect contract the
   static classifier will not re-derive.
 
-  `purity: "pure"` asserts that calls to the bound function value
-  have no observable side effects. The validator does not re-verify
-  the function body — the annotation is an explicit author override
-  that wins over both the inferred classification and A8's
-  shadowing fallback. Used when the function body is too dynamic
-  for static analysis (dynamic dispatch, dynamic property access)
-  but the author knows by construction that the binding is pure.
-
-  `purity: "pure_new"` asserts the analogous constructor contract:
-  `new BoundClass(...)` has no observable side effects beyond
-  evaluating its constructor arguments. The analyzer still classifies
-  every argument expression normally; impure arguments keep the
-  surrounding `new` expression side-effecting. The annotation does
-  not make plain `BoundClass(...)` calls pure.
-
-  `initializer_purity: "pure"` applies only to one selected, simple,
-  top-level variable initializer. It asserts that evaluating the full
-  initializer has no observable effects and cannot throw, but it does not
-  make calls or construction of the resulting value pure. The author must
-  audit any synchronous callback behavior. Direct eager reads and
-  callback-body read dependencies remain in the dependency graph, so this
-  annotation does not suppress their initialization-order constraints.
-  Imports, functions, classes, destructuring, uninitialized declarations,
-  and ambiguous repeated initialized declarations are rejected.
-
-  An incorrect annotation can produce a buggy debundle the same way
-  an incorrect spec selector can — soundness shifts to the spec
-  author. See <purity_soundness.md> "Declared purity".
+  `purity: "pure"`, `purity: "pure_new"` and `initializer_purity: "pure"`
+  (what each admits, what stays classified, rejected declarations):
+  [purity_soundness.md § Declared purity](purity_soundness.md#declared-purity--spec-trust-contracts).
+  The validator does not re-verify the body; an incorrect annotation
+  produces a buggy debundle, so soundness shifts to the spec author.
+  Under `initializer_purity`, direct eager reads and callback-body read
+  dependencies remain in the dependency graph.
 
   `chunk_export_purity.<chunk>.pure_exports` is the cross-module form
   of the same contract, addressed to the **defining** chunk rather than
@@ -1974,11 +1947,8 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   selectable. Selector resolution runs before the cross-module purity
   oracle for this reason.
 
-  Binding-level `pure_members: [forwardRef, memo]` admits the listed static
-  calls through a selected binding such as an imported namespace. Each
-  importing chunk supplies its own binding annotation; the assertion does
-  not propagate through exports. Arguments retain their ordinary purity
-  checks, and callback timing requires its separate contract.
+  Binding-level `pure_members` (per-chunk, not propagated through exports):
+  [SPEC § Binding-level member purity](../SPEC.md#binding-level-member-purity).
 
   `chunk_export_purity.<chunk>.fluent_exports` is the **deep** form, for
   builder/fluent APIs whose chain receivers are call _results_ rather
@@ -3152,20 +3122,15 @@ wrong code while the spec still validated. Holes widen what a template matches,
 but an unintended match must still be the only one to be taken; otherwise it
 surfaces as `ambiguous` at validation time.
 
-An anonymous `source_match.match` may include preceding top-level context
-statements. It matches a contiguous window under one set of alpha/free-identifier
-bindings and claims only the final statement. A context declaration may be
-claimed separately by a member selector; it neither overlaps this anonymous
-claim nor enters `all_different` through it. The final statement must be
-anonymous in this context form, and repeated identical windows remain ambiguous.
+Context windows (preceding statements that constrain the match, final
+anonymous statement the only claim, no top-level `STMT_LIST`, bare `match:` one
+statement): [SPEC § Matching](../SPEC.md#matching). A context declaration claimed
+by a member selector neither overlaps this anonymous claim nor enters
+`all_different` through it; repeated identical windows remain ambiguous.
 
 ### Constraints on the selector source
 
 - The `match` source must parse as JS through the same parser the chunk used.
-- An entry claims exactly one top-level statement. Bare `match:` must contain
-  one statement; `source_match.match` may include contiguous preceding context
-  statements and must end in the anonymous statement to claim. A top-level
-  `STMT_LIST` hole cannot appear in the context.
 
 ### Why shape rather than line/column
 
@@ -3372,7 +3337,7 @@ per-prefix facts live in one `IterativeInference` context
   nothing at a source prefix refines them.
 - `PreparedPurity(n)` retains the current classifier exactly, including enum
   initialization recognition, prefix-resolved coercions and whole-chunk heap
-  facts. Five current-owner preparatory proofs consume this fact.
+  facts. Three current-owner preparatory proofs consume this fact.
 - `CompletedPurity(n)` is published after final assignment/export evaluation,
   exact certificate/dependency minting and callee heap aggregation. Existing
   certificates discharge only their matching call effect; every residual
@@ -3595,7 +3560,7 @@ excluded chunk are **intentionally left unchanged** in the plain
 package mapping. The emitted tree is therefore not directly runnable
 under bare Node when a full swap is configured. Pinned by
 `full_swap_with_caller_preserves_import_for_removed_chunk` in
-<../e2e/vendor_swap_test.rs>.
+<../e2e/vendor_swap/full_swap.rs>.
 
 ### Partial swap: consumer rewrites and the consumer gates
 
@@ -3661,13 +3626,9 @@ that is not an ESM leaf, still blocks export reentry.
 
 ### Deliberate split-brain bypasses in the strip pass
 
-Vendor package ownership follows source reads and rebinds, including those
-inside callback bodies, plus the items that mutate a referenced local value.
-The general effect analyzer also infers possible call targets, but those
-targets are not ownership edges: a target supplied to another call of the
-same helper does not belong to this package. The strip pass still checks
-retained reads, local mutation writers, and observable writes before dropping
-an item.
+How the strip pass assigns package ownership (source reads and rebinds, not
+inferred call targets) and what it checks before dropping an item:
+[SPEC § Partial vendor-swap ownership](../SPEC.md#partial-vendor-swap-ownership).
 
 The strip pass bails on "split-brain" items — top-level items
 reachable both from the residual chunk's exports and from a swapped

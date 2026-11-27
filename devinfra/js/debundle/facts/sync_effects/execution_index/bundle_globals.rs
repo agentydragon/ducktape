@@ -116,8 +116,7 @@ impl<Inputs: IntrinsicRootRead> BundleGlobalContext<'_, Inputs> {
             | ValueExpr::NonCallable(_) => Ownership::Any,
             ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
                 value
-                    .result_alternatives()
-                    .expect("alternative expression")
+                    .branching_alternatives()
                     .iter()
                     .fold(Ownership::Any, |current, option| {
                         current.meet(self.ownership(option))

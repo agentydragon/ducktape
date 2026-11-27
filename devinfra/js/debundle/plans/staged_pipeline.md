@@ -67,9 +67,9 @@ Keep each step independently reviewable and land it only after its own evidence:
    source edit, a provider or import-edge edit, a premise/vendor edit, and a
    module-layout-only edit. Do not add ad hoc timing code or claim a speedup
    from a synthetic workload or cache-hit count alone.
-2. Extract explicit local-fact and program-join boundaries without persistent
-   reuse. Compare the staged path with fresh analysis for facts, diagnostics,
-   gate verdicts, emitted JavaScript, and requested reports/graphs.
+2. Without persistent reuse, compare the staged path with fresh analysis for
+   facts, diagnostics, gate verdicts, emitted JavaScript, and requested
+   reports/graphs.
 3. Add versioned reuse for chunk-local facts. Exercise additions, removals,
    source edits, changed loaders/packages, and engine/schema changes; verify
    each produces a miss for every affected fact and preserves hits for
@@ -82,5 +82,5 @@ Keep each step independently reviewable and land it only after its own evidence:
    repeatable end-to-end benefit for the observed edit mix justifies the
    measured cold-build, lookup, encoding, storage, and memory costs.
 
-Per-chunk S3 actions and a separate vendor-strip action remain deferred until
+Per-chunk analysis actions and a separate vendor-strip action remain deferred until
 these measurements show that their added action and artifact costs pay back.

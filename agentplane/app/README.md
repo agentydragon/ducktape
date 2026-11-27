@@ -16,7 +16,8 @@ selected rows and content to the browser through authenticated Electric endpoint
 Actions, operator decisions and Connection consent. The staging instance lives in
 `cluster/k8s/agentplane-staging/`.
 
-Diagnostics use the `environment_service` target and pin `spiffe://agentplane/sandbox-controller`.
+EnvironmentService calls, diagnostics included, use the required `environment_service` peer and pin
+`spiffe://agentplane/sandbox-controller`.
 The separate `session_dispatcher_tls` pin remains `spiffe://agentplane/session-dispatcher`.
 
 The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
@@ -71,7 +72,8 @@ The app is a client of each service for its distinct operation. The browser's pu
 use the generated ProtoJSON HTTP surface under `/upstream/history/v1/`; the app forwards them to
 History over gRPC using its App service SVID. History grants that exact SVID its configured read
 scope, while browser-session authorization stays at the App boundary. These reads do not require an
-app Thread row. The app's Thread metadata and Electric routes have their own checks.
+app Thread row. The app's Thread metadata and Electric routes have their own checks. History watches and
+Electric live shapes end when the app drains and, for a browser session, when it logs out.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
 sessions and its `thread` table: each Thread, keyed by its Session's ID, with the name and archive
 state an operator sets; like any state the app holds, these are candidates to move into a dedicated
@@ -308,7 +310,7 @@ live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Un
 retained items are labelled incomplete rather than actively streaming. Environments
 owns Runtime attachment; loading a thread never rebuilds its history.
 
-`test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
+`browser/test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
 processes, PostgreSQL and Electric through a real HTTP/2 ingress. Only the runner source,
 Kubernetes and authentication boundaries are controlled. Its cases are split across Bazel
 shards. Traces and screenshots are test artifacts; inspect the images as well as results.

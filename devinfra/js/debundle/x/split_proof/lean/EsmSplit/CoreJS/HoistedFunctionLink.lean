@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.LinkedBehavior
+import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.Split
 import EsmSplit.Split
@@ -17,6 +18,20 @@ evaluate. -/
 def primitiveConstValue : Expr → Prop
   | .undef | .null | .bool _ | .num _ | .str _ => True
   | _ => False
+
+/-- Executable decision procedure for the primitive initializer side condition. -/
+def primitiveConstValue_decidable : (value : Expr) → Decidable (primitiveConstValue value)
+  | .undef => isTrue trivial
+  | .null => isTrue trivial
+  | .bool _ => isTrue trivial
+  | .num _ => isTrue trivial
+  | .str _ => isTrue trivial
+  | .regexp _ | .var _ | .host _ | .this | .func _ | .obj _ | .arr _ | .spreadArg _ |
+    .cls .. | .derived .. | .get .. | .getSuper _ | .getOptional .. | .hasProp .. |
+    .delete .. | .assign .. | .assignOp .. | .assignLogical .. | .update .. |
+    .call .. | .callMethod .. | .callSuper .. | .callOptionalReceiver .. |
+    .callOptionalCallee .. | .new .. | .prim .. | .unary .. | .binary .. |
+    .logical .. | .cond .. | .seq .. => isFalse (by simp [primitiveConstValue])
 
 /-- A function declaration's execution step is inert even at a zero fuel
 bound: at zero both sides of any nonempty schedule return `.fuel`; with
@@ -88,15 +103,6 @@ private theorem runUnits_inert_adjacent (fuel : Nat) (pivot other : LinkedUnit)
         exact runUnits_nonempty_region (fuel + 1) other suffix s 0
       _ = runUnits (fuel + 1) (other :: pivot :: suffix) s := hRun.symm
 
-private theorem runUnits_append_local (fuel : Nat) (pre suffix : List LinkedUnit) :
-    (runUnits fuel (pre ++ suffix) : M w Unit) =
-      (runUnits fuel pre >>= fun _ => runUnits fuel suffix) := by
-  induction pre with
-  | nil => rfl
-  | cons unit rest ih =>
-    obtain ⟨id, stmt, env⟩ := unit
-    simp only [List.cons_append, runUnits, ih, M.bind_assoc]
-
 /-- Move one inert execution step across a block, keeping every intermediate
 result and state. The proof deliberately makes no normal-completion assumption. -/
 private theorem runUnits_move_inert (fuel : Nat) (pivot : LinkedUnit)
@@ -113,7 +119,7 @@ private theorem runUnits_move_inert (fuel : Nat) (pivot : LinkedUnit)
         pre ++ (pivot :: other :: (crossed ++ suffix)) := by simp [List.append_assoc]
     have rightList : pre ++ (other :: crossed) ++ [pivot] ++ suffix =
         pre ++ (other :: (crossed ++ [pivot] ++ suffix)) := by simp [List.append_assoc]
-    rw [leftList, rightList, runUnits_append_local, runUnits_append_local]
+    rw [leftList, rightList, runUnits_append, runUnits_append]
     cases hpre : runUnits fuel pre s with
     | ok _ state =>
       simp only [M.bind_apply, hpre]
@@ -376,39 +382,46 @@ private theorem capture_lookup_of_mem {env : Env} {names : List Name} {name : Na
     (member : name ∈ names) : (env.capture names).vars.lookup name = env.vars.lookup name := by
   simp [Env.capture, lookup_filterMap, List.mem_eraseDups, member]
 
-/-- If `mkPlan` moves one ordinary function declaration across one earlier
+/-- If `mkPlan` moves one ordinary function declaration across an independent
 primitive const, actual source and planned links preserve every bounded result.
-The function's exact statement and declaration cell, and the live addresses in
-its closure, are established from the real links. -/
-theorem planned_primitive_closure_crossing
+The function closes over a different earlier const. One checked link of the
+actual source is transported to every world; the candidate link, original
+function cell and captured live address are derived from the plan's frames. -/
+theorem planned_independent_primitive_closure_crossing
     {ss : List Stmt} {bundle : EsmSplit.Bundle} {spec : EsmSplit.Spec}
     (valid : EsmSplit.Valid bundle spec (EsmSplit.mkPlan bundle spec))
     (footprints : FootprintsOfSyntax ss bundle)
-    (links : ∀ w : World, CheckedLink (Program.single ss) w)
-    (preOrder suffix : List Nat) (literalId functionId : Nat) (name : Name)
-    (value : Expr) (_primitive : primitiveConstValue value) (f : Func)
-    (literal : ss[literalId]? = some (.decl .const name value))
+    (sourceLink : CheckedLink (Program.single ss) World.probe)
+    (preOrder suffix : List Nat) (captureId literalId functionId : Nat)
+    (captureName literalName : Name) (captureValue literalValue : Expr)
+    (f : Func)
+    (_captureEarlier : captureId ∈ preOrder)
+    (capture : ss[captureId]? = some (.decl .const captureName captureValue))
+    (crossed : ss[literalId]? = some (.decl .const literalName literalValue))
+    (_primitive : primitiveConstValue literalValue)
     (function : ss[functionId]? = some (.funDecl f))
     (_ordinary : f.kind = .normal) (_nonSelf : f.self = false)
     (_notOpaque : f.opaqueBody = none)
-    (capturesEarlier : name ∈ f.free)
+    (capturesEarlier : captureName ∈ f.free)
+    (_independent : literalName ∉ f.free)
     (sourceOrder : List.range ss.length = preOrder ++ [literalId, functionId] ++ suffix)
     (plannedOrder : (EsmSplit.mkPlan bundle spec).execOrder = preOrder ++ [functionId, literalId] ++ suffix) :
     ∀ w fuel,
       runProgram w fuel (Program.single ss) =
         runProgram w fuel (splitProgram ss bundle (EsmSplit.mkPlan bundle spec)) ∧
       ∃ after : CheckedLink (splitProgram ss bundle (EsmSplit.mkPlan bundle spec)) w,
-        (links w).ready = after.ready ∧
+        (sourceLink.forWorld w).ready = after.ready ∧
         ∃ sourceEnv candidateEnv functionCell capturedCell,
-          (functionId, .funDecl f, sourceEnv) ∈ unitsOf (links w).linked ∧
+          (functionId, .funDecl f, sourceEnv) ∈ unitsOf (sourceLink.forWorld w).linked ∧
           (functionId, .funDecl f, candidateEnv) ∈ unitsOf after.linked ∧
           sourceEnv.vars.lookup f.name = some functionCell ∧
           candidateEnv.vars.lookup f.name = some functionCell ∧
+          (sourceLink.forWorld w).ready.cellAt functionCell = after.ready.cellAt functionCell ∧
           sourceEnv.capture f.free = candidateEnv.capture f.free ∧
-          (sourceEnv.capture f.free).vars.lookup name = some capturedCell ∧
-          (candidateEnv.capture f.free).vars.lookup name = some capturedCell := by
+          (sourceEnv.capture f.free).vars.lookup captureName = some capturedCell ∧
+          (candidateEnv.capture f.free).vars.lookup captureName = some capturedCell := by
   intro w fuel
-  let before := links w
+  let before := sourceLink.forWorld w
   obtain ⟨after, readyEq, frames, sourceLinked, candidateLinked, hFrames,
       sourceScope, candidateScope, sourceLinkedEq, candidateLinkedEq, candidateKeys,
       candidateAgreement⟩ := planned_linked_pair valid footprints w before
@@ -453,19 +466,19 @@ theorem planned_primitive_closure_crossing
       exact hu)
     rw [bundleOrderUnits_env hu']
     exact ⟨agree.this.symm, agree.home.symm, fun x hx => (agree.vars x hx).symm⟩
-  let literalUnit : LinkedUnit := (literalId, .decl .const name value, bundleEnv ss frames)
+  let literalUnit : LinkedUnit := (literalId, .decl .const literalName literalValue, bundleEnv ss frames)
   let functionUnit : LinkedUnit := (functionId, .funDecl f, bundleEnv ss frames)
   have sourceSchedule : bundleOrderUnits ss frames (List.range ss.length) =
       bundleOrderUnits ss frames preOrder ++ [literalUnit, functionUnit] ++
         bundleOrderUnits ss frames suffix := by
     rw [sourceOrder]
-    simp [bundleOrderUnits, literal, function, numbered, literalUnit, functionUnit,
+    simp [bundleOrderUnits, crossed, function, numbered, literalUnit, functionUnit,
       List.filterMap_append, List.map_append, List.append_assoc]
   have plannedSchedule : bundleOrderUnits ss frames (EsmSplit.mkPlan bundle spec).execOrder =
       bundleOrderUnits ss frames preOrder ++ [functionUnit, literalUnit] ++
         bundleOrderUnits ss frames suffix := by
     rw [plannedOrder]
-    simp [bundleOrderUnits, literal, function, numbered, literalUnit, functionUnit,
+    simp [bundleOrderUnits, crossed, function, numbered, literalUnit, functionUnit,
       List.filterMap_append, List.map_append, List.append_assoc]
   have moved := runUnits_move_inert fuel functionUnit (by simp [functionUnit, Stmt.inert])
     (bundleOrderUnits ss frames preOrder) [literalUnit] (bundleOrderUnits ss frames suffix) before.ready
@@ -501,44 +514,51 @@ theorem planned_primitive_closure_crossing
     exact agreeStatement.mono (by
       intro x hx
       simp [Stmt.free, hx])
-  have literalIndex : literalId < ss.length := (List.getElem?_eq_some_iff.1 literal).1
-  have literalTop : (literalId, .decl .const name value) ∈
+  have captureIndex : captureId < ss.length := by
+    have member : captureId ∈ List.range ss.length := by
+      rw [sourceOrder]
+      exact List.mem_append_left _ (List.mem_append_left _ _captureEarlier)
+    exact List.mem_range.1 member
+  have captureTop : (captureId, .decl .const captureName captureValue) ∈
       (List.range ss.length).zip ss := by
     rw [← filterMap_numbered_range]
-    exact (mem_numbered ss).2 ⟨List.mem_range.2 literalIndex, literal⟩
-  have literalMain : ∃ p ∈ (bundleModule ss).body, p.1 = literalId :=
-    ⟨(literalId, .decl .const name value), by simpa [bundleModule] using literalTop, rfl⟩
-  have literalNameBinding : name ∈
-      (Stmt.decl DeclKind.const name value).bindings.map Prod.fst := by
+    exact (mem_numbered ss).2 ⟨List.mem_range.2 captureIndex, capture⟩
+  have captureMain : ∃ p ∈ (bundleModule ss).body, p.1 = captureId :=
+    ⟨(captureId, .decl .const captureName captureValue), by simpa [bundleModule] using captureTop, rfl⟩
+  have captureNameBinding : captureName ∈
+      (Stmt.decl DeclKind.const captureName captureValue).bindings.map Prod.fst := by
     simp [Stmt.bindings, Stmt.varNames, varNamesOf, lexDecls]
-  have literalNameDef : name ∈ (bundle.stmt literalId).defs :=
-    (footprints.2 literalId _ literal).1 name |>.2 literalNameBinding
-  have frameKey := (frame_keys footprints hFrames).2 ⟨literalIndex, literalNameDef⟩
-  have frameCell : ∃ cell, (frameAt frames literalId).lookup name = some cell :=
+  have captureNameDef : captureName ∈ (bundle.stmt captureId).defs :=
+    (footprints.2 captureId _ capture).1 captureName |>.2 captureNameBinding
+  have frameKey := (frame_keys footprints hFrames).2 ⟨captureIndex, captureNameDef⟩
+  have frameCell : ∃ cell, (frameAt frames captureId).lookup captureName = some cell :=
     Option.ne_none_iff_exists'.1 fun none =>
       (lookup_none_iff_not_mem_keys.mp none) frameKey
   obtain ⟨capturedCell, frameCell⟩ := frameCell
-  have sourceLiteralCell : (bundleEnv ss frames).vars.lookup name = some capturedCell := by
-    show ((bundleModule ss).scope frames ++ []).lookup name = some capturedCell
+  have sourceCapturedNameCell : (bundleEnv ss frames).vars.lookup captureName = some capturedCell := by
+    show ((bundleModule ss).scope frames ++ []).lookup captureName = some capturedCell
     rw [List.append_nil,
-      scope_lookup_decl footprints hFrames valid.1 literalMain literalIndex literalNameDef]
+      scope_lookup_decl footprints hFrames valid.1 captureMain captureIndex captureNameDef]
     exact frameCell
-  have candidateLiteralCell : candidateEnv'.vars.lookup name = some capturedCell := by
-    exact (agreeCandidate.vars name capturesEarlier).symm.trans sourceLiteralCell
-  have sourceCapturedCell : (sourceEnv'.capture f.free).vars.lookup name = some capturedCell := by
+  have candidateCapturedNameCell : candidateEnv'.vars.lookup captureName = some capturedCell := by
+    exact (agreeCandidate.vars captureName capturesEarlier).symm.trans sourceCapturedNameCell
+  have sourceCapturedCell : (sourceEnv'.capture f.free).vars.lookup captureName = some capturedCell := by
     rw [capture_lookup_of_mem capturesEarlier, sourceEnvEq]
-    exact sourceLiteralCell
-  have candidateCapturedCell : (candidateEnv'.capture f.free).vars.lookup name = some capturedCell := by
+    exact sourceCapturedNameCell
+  have candidateCapturedCell : (candidateEnv'.capture f.free).vars.lookup captureName = some capturedCell := by
     rw [capture_lookup_of_mem capturesEarlier]
-    exact candidateLiteralCell
+    exact candidateCapturedNameCell
+  have functionCellState : before.ready.cellAt functionCell = after.ready.cellAt functionCell := by
+    rw [readyEq]
   refine ⟨executions, after, readyEq, sourceEnv', candidateEnv', functionCell, capturedCell,
-    sourceFunctionMem, ?_, sourceCell, candidateCell, captures, sourceCapturedCell, candidateCapturedCell⟩
+    sourceFunctionMem, ?_, sourceCell, candidateCell, functionCellState, captures,
+    sourceCapturedCell, candidateCapturedCell⟩
   rw [← linkResultEq.1]
   exact candidateMem
 
 
 #print axioms matching_sorted
 #print axioms planned_function
-#print axioms planned_primitive_closure_crossing
+#print axioms planned_independent_primitive_closure_crossing
 
 end CoreJS.HoistedFunctionLink

@@ -23,8 +23,8 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures",)
+# gazelle:include_dep //agentplane/app/testing:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.integration_fixtures",)
 
 WATCH = "/upstream/dispatcher/v1/dispatches:watch"
 # gazelle:include_dep @pypi//protobuf
@@ -306,7 +306,10 @@ async def test_notice_acknowledgements_follow_only_the_same_operator_across_logi
     # Adjacent int64 values past JavaScript's maximum exact integer must stay distinct.
     older = {"commandId": "shared-command", "receiptVersion": "40000000000000001"}
     newer = {"commandId": "shared-command", "receiptVersion": "40000000000000002"}
+    execution = {"commandId": "shared-command", "outcomeCursor": "40000000000000001"}
+    later_execution = {"commandId": "shared-command", "outcomeCursor": "40000000000000002"}
     assert (await http.post(path, json={"notice": older})).status_code == 200
+    assert (await http.post(path, json={"notice": execution})).status_code == 200
     # Sign in again with the same issuer and subject, obtaining an independent browser login.
     await app.authenticate()
     assert app.cookies != http.cookies
@@ -327,6 +330,8 @@ async def test_notice_acknowledgements_follow_only_the_same_operator_across_logi
         (first_ack,) = response.json()["acknowledgements"]
         assert first_ack["notice"] == older
         assert first_ack["acknowledgedAt"]
+        execution_acks = await other.post(path + ":batchGet", json={"notices": [execution, later_execution]})
+        assert [item["notice"] for item in execution_acks.raise_for_status().json()["acknowledgements"]] == [execution]
         other_session = await other.post(other_path + ":batchGet", json={"notices": [older]})
         assert other_session.json()["acknowledgements"] == []
         assert (await other.post(path, json={"notice": newer})).status_code == 200
@@ -338,7 +343,7 @@ async def test_notice_acknowledgements_follow_only_the_same_operator_across_logi
         assert next_page["acknowledgements"] == [first_ack]
         assert not (await unrelated.get(path)).raise_for_status().json().get("acknowledgements")
         assert (
-            not (await unrelated.post(path + ":batchGet", json={"notices": [older, newer]}))
+            not (await unrelated.post(path + ":batchGet", json={"notices": [older, newer, execution]}))
             .raise_for_status()
             .json()
             .get("acknowledgements")
@@ -351,7 +356,8 @@ async def test_notice_acknowledgements_follow_only_the_same_operator_across_logi
         assert "nextPageToken" not in next_page
         assert (await other.get(other_path, params={"pageToken": history["nextPageToken"]})).status_code == 422
         assert (await http.get(path, params={"pageSize": 101})).status_code == 422
-        for notices in ([], [newer] * 101, [{"commandId": "shared-command"}]):
+        both_revisions = {**older, **execution}
+        for notices in ([], [newer] * 101, [{"commandId": "shared-command"}], [both_revisions]):
             assert (await other.post(path + ":batchGet", json={"notices": notices})).status_code == 422
 
 

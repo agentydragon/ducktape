@@ -860,10 +860,7 @@ impl ChunkValueFlow {
     /// allocated record with the listed own data fields. Call evaluation and
     /// the function body's effects remain outside this value-shape fact.
     pub fn fresh_returned_record_keys(&self, call: &CallExpr) -> Option<&BTreeSet<String>> {
-        let Callee::Expr(callee) = &call.callee else {
-            return None;
-        };
-        let Expr::Ident(ident) = callee.unwrap_parens() else {
+        let Some(Expr::Ident(ident)) = js_ast::callee_expr(call) else {
             return None;
         };
         if call.args.iter().any(|arg| arg.spread.is_some()) {

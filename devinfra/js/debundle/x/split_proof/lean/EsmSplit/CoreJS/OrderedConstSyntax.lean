@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.OrderedRegion
+import EsmSplit.CoreJS.PrimitiveRhs
 
 /-! Source-defined primitive const initializers for ordered CoreJS plans.
 The source check does not establish parser, printer, or JavaScript observation
@@ -6,56 +7,11 @@ faithfulness; the stricter consumer must check those separately. -/
 
 namespace CoreJS.OrderedConstSyntax
 
-/-- The unary operators represented directly by JavaScript source syntax.
-The internal coercion operation `.toString` is not itself a unary token. -/
-def sourceUnary : UnOp → Bool
-  | .toString => false
-  | _ => true
-
-/-- Closed, primitive-expression syntax. Reads are restricted to bindings
-declared in this source; a forward or self read is retained, including its
-modeled temporal-dead-zone result. Binary operators are CoreJS's source
-binary operators; `in` and `instanceof` use different constructors. -/
-inductive Rhs (names : List Name) : Expr → Prop where
-  | undef : Rhs names .undef
-  | null : Rhs names .null
-  | bool (b : Bool) : Rhs names (.bool b)
-  | num (n : Float) : Rhs names (.num n)
-  | str (s : String) : Rhs names (.str s)
-  | read (name : Name) : name ∈ names → Rhs names (.var name)
-  | unary {op : UnOp} {arg : Expr} : sourceUnary op = true → Rhs names arg → Rhs names (.unary op arg)
-  | binary {op : BinOp} {left right : Expr} : Rhs names left → Rhs names right → Rhs names (.binary op left right)
-
-/-- Check the source syntax without evaluating it or examining a candidate. -/
-def checkRhs (names : List Name) : (expr : Expr) → Option (PLift (Rhs names expr))
-  | .undef => some ⟨.undef⟩
-  | .null => some ⟨.null⟩
-  | .bool b => some ⟨.bool b⟩
-  | .num n => some ⟨.num n⟩
-  | .str s => some ⟨.str s⟩
-  | .var name => if h : name ∈ names then some ⟨.read name h⟩ else none
-  | .unary op arg => do
-    if h : sourceUnary op = true then
-      let ⟨argument⟩ ← checkRhs names arg
-      return ⟨.unary h argument⟩
-    else none
-  | .binary _op left right => do
-    let ⟨lhs⟩ ← checkRhs names left
-    let ⟨rhs⟩ ← checkRhs names right
-    return ⟨.binary lhs rhs⟩
-  | _ => none
-
-/-- Every free binding in an admitted initializer belongs to this source. -/
-theorem rhs_free {names : List Name} {expr : Expr} (rhs : Rhs names expr) :
+/-- Every free identifier satisfies this source's declared-name policy. -/
+theorem rhs_free {names : List Name} {expr : Expr} (rhs : PrimitiveRhs.Rhs names.contains expr) :
     ∀ name ∈ expr.free, name ∈ names := by
-  induction rhs with
-  | undef | null | bool _ | num _ | str _ => simp [Expr.free]
-  | read name member => simpa [Expr.free] using member
-  | unary _ _ ih => simpa [Expr.free] using ih
-  | binary _ _ left right =>
-    intro name member
-    simp only [Expr.free, List.mem_append] at member
-    exact member.elim (left name) (right name)
+  intro name member
+  exact List.contains_iff_mem.mp (PrimitiveRhs.free_allowed rhs name member)
 
 /-- Names are taken from the actual source statements, not the output or a
 second inferred bundle. Unsupported statements are refused by `checkBody`. -/
@@ -66,7 +22,7 @@ def sourceNames (body : List (Nat × Stmt)) : List Name :=
 inductive Declarations (names : List Name) : List Name → List (Nat × Stmt) → Prop where
   | nil (earlier) : Declarations names earlier []
   | cons {earlier id name value rest} :
-      name ∉ earlier → Rhs names value → Declarations names (name :: earlier) rest →
+      name ∉ earlier → PrimitiveRhs.Rhs names.contains value → Declarations names (name :: earlier) rest →
       Declarations names earlier ((id, .decl .const name value) :: rest)
 
 def checkDeclarations (names : List Name) : (earlier : List Name) → (body : List (Nat × Stmt)) →
@@ -74,7 +30,7 @@ def checkDeclarations (names : List Name) : (earlier : List Name) → (body : Li
   | earlier, [] => some ⟨.nil earlier⟩
   | earlier, (_, .decl .const name value) :: rest => do
     if fresh : name ∉ earlier then
-      let ⟨rhs⟩ ← checkRhs names value
+      let ⟨rhs⟩ ← PrimitiveRhs.check names.contains value
       let ⟨tail⟩ ← checkDeclarations names (name :: earlier) rest
       return ⟨.cons fresh rhs tail⟩
     else none
@@ -143,7 +99,6 @@ example : (checkEarlierReads [] [(0, .decl .const "a" (.var "b")),
 
 example : (checkBody [(0, .decl .const "a" (.host "console"))]).isSome = false := by decide
 
-#print axioms checkRhs
 #print axioms rhs_free
 #print axioms checkBody
 #print axioms all_const

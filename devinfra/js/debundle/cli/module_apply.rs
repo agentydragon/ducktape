@@ -11,11 +11,11 @@ use peel::assignment::{AssignmentPlan, SourceUnitAssignment};
 use serde_json::from_slice;
 use spec::ModulePath;
 
-use crate::candidate_assessment::{
+use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
+use candidate_assessment::{
     CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
 };
-use crate::outcome::{MutationVerb, emit_gate_rejection_json};
-use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
+use outcome::{MutationVerb, emit_gate_rejection_json};
 
 #[derive(Debug, Args)]
 pub struct ModulesApplyArgs {

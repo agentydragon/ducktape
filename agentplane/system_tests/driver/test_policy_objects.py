@@ -83,9 +83,7 @@ async def test_policy_scope_preserves_primary_failure_when_cleanup_fails(monkeyp
         await scenario()
 
     assert raised.value is original_error
-    assert raised.value.__notes__ == [
-        "Policy resource cleanup also failed (1 resource(s)); cleanup details are suppressed to preserve the original failure."
-    ]
+    assert raised.value.__notes__ == ["Policy resource cleanup also failed (ExceptionGroup of 1)."]
     assert "sensitive cleanup details" not in str(raised.value.__notes__)
 
 

@@ -8,7 +8,7 @@ use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
 use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
 use crate::plans::ModulePlan;
-use crate::util::target_file_for_request;
+use crate::target_paths::target_file_for_request;
 use analysis::{
     BindingCatalogue, BindingKind, EntryDestination, ImportedSourceTarget, ModuleId, ModuleRole,
     top_level_id,
@@ -425,8 +425,9 @@ impl ChunkPlanBuilder {
                         );
                         self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
                             chunk_id: ctx.chunk_id.to_string(),
-                            module_path: spec::ModulePath::parse(&request.target_path, "")
-                                .expect("request target_path is a canonical module path"),
+                            module_path: spec::ModulePath::from_pipeline_target(
+                                &request.target_path,
+                            ),
                             binding_name: member.binding.clone(),
                             export_name: member.export_name.clone(),
                         });
@@ -490,8 +491,7 @@ impl ChunkPlanBuilder {
                 // resolve, so the missing claim is a no-op here).
                 self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
                     chunk_id: ctx.chunk_id.to_string(),
-                    module_path: spec::ModulePath::parse(&request.target_path, "")
-                        .expect("request target_path is a canonical module path"),
+                    module_path: spec::ModulePath::from_pipeline_target(&request.target_path),
                     binding_name: binding.clone(),
                     export_name: export_name.clone(),
                 });
@@ -816,8 +816,7 @@ impl ChunkPlanBuilder {
             // end with the full list, rather than half-claiming it here.
             self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
                 chunk_id: chunk_id.to_string(),
-                module_path: spec::ModulePath::parse(&request.target_path, "")
-                    .expect("request target_path is a canonical module path"),
+                module_path: spec::ModulePath::from_pipeline_target(&request.target_path),
                 binding_name: binding.to_string(),
                 export_name: member.export_name.clone(),
             });

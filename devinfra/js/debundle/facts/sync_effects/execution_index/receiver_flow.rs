@@ -323,7 +323,7 @@ pub(super) fn evaluate_receiver_value(
             }
         }
         ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
-            let options = value.result_alternatives().expect("alternative expression");
+            let options = value.branching_alternatives();
             result.fact.safe = true;
             result.fact.complete = true;
             for option in options {

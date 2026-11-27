@@ -144,11 +144,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		}
 		var cancel context.CancelFunc
 		streamCtx, cancel = context.WithCancel(stream.Context())
-		stopIdentity := context.AfterFunc(authorization.Context(), cancel)
-		finish = r.registerExecutionCallLocked(func() {
-			stopIdentity()
-			cancel()
-		}, false)
+		finish = r.registerExecutionCallLocked(cancel, false)
 		return nil
 	})
 	if err != nil {

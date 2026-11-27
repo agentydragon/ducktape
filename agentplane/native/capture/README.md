@@ -35,13 +35,13 @@ Codex's run `codex_hook.py` as a shell command. What each harness offers: <../..
 metadata.json          # provider, scenario, model
 stdin.jsonl            # ordered native frames written to the process
 stdout.jsonl           # ordered native frames read from the process
-stderr.jsonl           # bounded diagnostics
+stderr.log             # harness stderr, raw bytes
 llm-requests.jsonl     # ordered upstream request bodies
 llm-responses.jsonl    # ordered upstream response chunks and loss markers
 hooks.jsonl            # hooks scenarios with Codex: the input each hook command received
 ```
 
-Payloads are stored as UTF-8 wire text. The recording boundary excludes HTTP headers, cookies,
+JSONL payloads are stored as UTF-8 wire text. The recording boundary excludes HTTP headers, cookies,
 environment variables, OAuth state, credentials, and private user data. The output is investigation
 evidence: keep it outside Git. It carries the full system prompt and tool schemas on every request,
 volatile ids, and the credential-bearing session, and nothing consumes it mechanically.

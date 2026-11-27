@@ -1,4 +1,3 @@
-import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.CoreJS.TerminalSource
 import EsmSplit.CoreJS.SingleModule
@@ -15,27 +14,27 @@ source-only decoder. Nothing here proves a candidate split or its exports. -/
 structure Checked (input : Program × List EsmSplit.LocalExportUnit) where
   terminal : TerminalSource.Checked input
   noImports : terminal.source.imports = []
-  declarations : NamedDeclarationSplit.Declarations [] terminal.source.body
-  consts : OrderedConstSyntax.Declarations (OrderedConstSyntax.sourceNames terminal.source.body) [] terminal.source.body
+  grammar : OrderedConstSyntax.Declarations (OrderedConstSyntax.sourceNames terminal.source.body) [] terminal.source.body
+  earlier : OrderedConstSyntax.EarlierReads [] terminal.source.body
 
-/-- The general declaration check also accepts initialized `let`; the terminal
-link theorem additionally needs an explicit const-only source witness. A
-`Program` supplied directly must also establish the absence of imports. -/
+/-- Refuse unless the actual source meets both the terminal metadata guard
+and the source-defined primitive RHS and earlier-read checks. A `Program` supplied directly must also
+establish the absence of imports. -/
 def check (input : Program × List EsmSplit.LocalExportUnit) : Except String (Checked input) := do
   let terminal ← TerminalSource.check input
   if noImports : terminal.source.imports = [] then
-    let some ⟨decls⟩ := NamedDeclarationSplit.checkDeclarations [] terminal.source.body |
-      throw "expected unique const declarations with only primitive initializers or earlier reads"
-    let some ⟨consts⟩ := OrderedConstSyntax.checkBody terminal.source.body |
-      throw "expected unique const declarations with only primitive initializers or earlier reads"
-    return ⟨terminal, noImports, decls, consts⟩
+    let some ⟨grammar⟩ := OrderedConstSyntax.checkBody terminal.source.body |
+      throw "expected unique const declarations with closed primitive initializers"
+    let some ⟨earlier⟩ := OrderedConstSyntax.checkEarlierReads [] terminal.source.body |
+      throw "initializer reads a binding before its declaration"
+    return ⟨terminal, noImports, grammar, earlier⟩
   else throw "terminal source must not import modules"
 
 /-- The checked source meets the exact constant premise for
 `link_singleModuleConst`. -/
 theorem all_const {input : Program × List EsmSplit.LocalExportUnit} (checked : Checked input) :
     ∀ s ∈ checked.terminal.source.body.map Prod.snd, ∃ name value, s = .decl .const name value :=
-  OrderedConstSyntax.all_const checked.consts
+  OrderedConstSyntax.all_const checked.grammar
 
 /-- The decoded program is the very singleton source expected by the source
 link theorem. Executable ordinals are not reindexed: the terminal guard proves
@@ -77,14 +76,15 @@ theorem planned_family {input : Program × List EsmSplit.LocalExportUnit} (check
     (footprints : MetadataCells.Footprints (checked.terminal.source.body.map Prod.snd) B)
     (ordered : ProjectedOrder.Kept (checked.terminal.source.body.map Prod.snd) (EsmSplit.mkPlan B S))
     (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
-    (units : entry.stmts = [checked.terminal.row.ordinal]) (glue : entry.exports = [])
+    {prior : List Nat} (units : entry.stmts = prior ++ [checked.terminal.row.ordinal])
+    (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : entry.exports = [])
     (rowFootprint : checked.terminal.row.FootprintMatches (B.stmt checked.terminal.row.ordinal))
     (sourceDefs : MetadataCells.RowLocalsDefined (checked.terminal.source.body.map Prod.snd) B checked.terminal.row) :
     LinkedBehavior.SameExports input.1 (splitProgram (checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S)) ∧
       ∀ w fuel, runProgram w fuel input.1 =
         runProgram w fuel (splitProgram (checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S)) := by
   have result := TerminalPlanFamily.family (all_const checked) valid footprints ordered
-    checked.terminal.source.name checked.terminal.row entry found units glue rowFootprint sourceDefs
+    checked.terminal.source.name checked.terminal.row entry found units unpublished glue rowFootprint sourceDefs
   have shape := source_shape checked
   rw [checked.terminal.fullTable] at shape
   change input.1 = TerminalPlanLink.source checked.terminal.source.name checked.terminal.row.names

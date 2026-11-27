@@ -188,6 +188,19 @@ pub enum ExecutionPrecisionLossReason {
     },
 }
 
+impl ExecutionPrecisionLossReason {
+    /// Execution fell back because the operation cannot be modelled further.
+    /// A refusal that does apply is written at the site with the full variant,
+    /// never through this constructor.
+    pub fn unsupported_operation(operation: ExecutionOperation) -> Self {
+        Self::UnsupportedOperation {
+            operation,
+            ordered_field_read_refusal: None,
+            ordered_call_admission_refusal: None,
+        }
+    }
+}
+
 /// What the code a precision loss may run can reach, classified per
 /// SPEC.md § Synchronous execution diagnostics. A report only: the conservative
 /// path promotes the same effects for both.

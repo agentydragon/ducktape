@@ -307,8 +307,9 @@ contains up to 25 rows and the maximum is 100.
 
 The first page fixes membership for later admissions. Receipt updates read at each page's snapshot
 do not change the order. The continuation token binds the position and deletion frontier to the
-Session and read scope. A physical Dispatch deletion anywhere after that frontier, including one
-whose tombstone was subsequently pruned, can return `OUT_OF_RANGE`. Discard the traversal and
+Session and read scope. A physical deletion of one of this Session's Dispatch rows after that
+frontier returns `OUT_OF_RANGE`. So does pruning any tombstone newer than the frontier, which
+happens only once the traversal is older than tombstone retention. Discard the traversal and
 restart on that status. An empty `next_page_token` completes the retained-row enumeration.
 `coverage=RETAINED_DISPATCH_ROWS` excludes legacy tombstones, which can be read by known ID through
 `BatchGetDispatches` or observed through `WatchDispatches` until expiry. Absence cannot establish that a command was never accepted.
@@ -339,8 +340,9 @@ ID is reused. A retained receipt may include original command content; its retai
 ownership and read scope. A bounded pruner removes tombstones after 24 hours and advances a durable,
 global pruned-through version.
 
-`WatchDispatches` uses payload-free notifications from `postgres/wakeups.Hub` to wake versioned database
-reads. A fresh snapshot includes matching current Dispatch rows and retained tombstones, ordered by version.
+`WatchDispatches` uses notifications from `postgres/wakeups.Hub` to wake versioned database reads. Each
+notification carries the Session ID; a Session-scoped watch wakes only for its own Session, a Sandbox-scoped
+watch for every Session. A fresh snapshot includes matching current Dispatch rows and retained tombstones, ordered by version.
 Incremental reads return records with a version greater than the cursor. Both apply the existing Session
 read scope; a tombstone has no Sandbox name or UID to filter on directly. Token encoding and decoding use
 the shared `dispatcher/internal/resumetoken` package; wakeups use `postgres/wakeups.Hub`.
@@ -355,7 +357,9 @@ require a fresh snapshot even when the filtered scope had no deleted rows in the
 
 `CaughtUp` marks the checkpoint after the initial snapshot and each incremental read; it can appear more
 than once. Its token carries the read frontier even when changes at that frontier did not match the filter.
-This lets unrelated writes advance a watch without causing repeated reads of the same range.
+This lets unrelated writes advance a watch without causing repeated reads of the same range. A quiet
+Session-scoped watch is not woken by them; its next read, at the latest when the watch lease ends and the
+client resumes, advances the token past them, which keeps it within tombstone retention.
 
 The App retains the cursor with its locally applied command receipts and effective filter. Reconnects
 resume from that cursor; recurring or resumed `CaughtUp` frames do not imply any unchanged command is

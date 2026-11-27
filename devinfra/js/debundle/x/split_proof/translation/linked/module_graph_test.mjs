@@ -13,12 +13,12 @@ const { names, expected, source, entry, order, spec } = moduleGraphFixture(count
 const dir = path.join(root, "module-graph");
 const files = prepare(dir, { source, provider: "", spec });
 const out = path.join(dir, "out");
-const { verdict, log } = lower(files.sourceFile, files.specFile, out, [], "terminal-declarations");
+const { verdict, log } = lower(files.sourceFile, files.specFile, out, [], "indexed-local-exports");
 assertCertified(verdict, log);
 assert.equal(verdict.guarantee, "all-outcomes", log);
 assert.equal(verdict.strategy, "compiled-constructor", log);
 assert.deepEqual(
-  lower(files.sourceFile, files.specFile, out, ["--check-output"], "terminal-declarations").verdict,
+  lower(files.sourceFile, files.specFile, out, ["--check-output"], "indexed-local-exports").verdict,
   verdict
 );
 assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);

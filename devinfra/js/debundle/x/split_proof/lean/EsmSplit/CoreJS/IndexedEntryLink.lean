@@ -1,6 +1,7 @@
 import EsmSplit.CoreJS.IndexedAllocatedCells
 import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.ProjectedOrder
+import EsmSplit.CoreJS.SingleModule
 
 /-! Structural facts for the actual CoreJS scope and entry-linking operations.
 No source/candidate execution comparison is used. -/
@@ -9,39 +10,23 @@ namespace CoreJS.IndexedEntryLink
 
 variable {W : World}
 
-/-- Declaration statements do not perform the linker's function-hoisting
-step, regardless of their initializer or module environment. -/
-theorem initFunctions_consts (units : List LinkedUnit)
-    (allConst : ∀ u ∈ units, ∃ name init, u.stmt = .decl .const name init) :
-    (initFunctions units : M W Unit) = pure () := by
-  induction units with
-  | nil => rfl
-  | cons u rest ih =>
-    obtain ⟨name, init, shape⟩ := allConst u (by simp)
-    have tail : ∀ v ∈ rest, ∃ name init, v.stmt = .decl .const name init :=
-      fun v member => allConst v (List.mem_cons_of_mem _ member)
-    rcases u with ⟨id, stmt, env⟩
-    change stmt = .decl .const name init at shape
-    subst stmt
-    simp only [initFunctions, initFunction, ih tail, M.pure_bind]
-
-/-- The same fact holds for the linker’s identity-sorted unit list. -/
-theorem sorted_initFunctions_consts (linked : List (Module × Env))
-    (allConst : ∀ u ∈ unitsOf linked, ∃ name init, u.stmt = .decl .const name init) :
+/-- The linker's identity-sorted declaration units perform no function
+hoists, independently of declaration kind or initializer. -/
+theorem sorted_initFunctions_declarations (linked : List (Module × Env))
+    (allDecl : ∀ u ∈ unitsOf linked, ∃ kind name init, u.stmt = .decl kind name init) :
     (initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
-  apply initFunctions_consts
+  apply initFunctions_declarations
   intro u member
-  exact allConst u ((List.mergeSort_perm _ _).mem_iff.1 member)
+  exact allDecl u ((List.mergeSort_perm _ _).mem_iff.1 member)
 
-/-- Actual scopes built for the indexed constructor contain only original
-source statements. Thus a const-only source has no link-time function hoists
-in the constructed program, including after the linker sorts its units. -/
-theorem indexed_initFunctions_consts {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+/-- Actual indexed scopes contain only original source statements, so
+mixed declaration kinds have no link-time function hoists. -/
+theorem indexed_initFunctions_declarations {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     {frames : List (Nat × List (Name × Addr))} {linked : List (Module × Env)}
     (scopeResult : (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok linked)
-    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init) :
+    (decls : ∀ p ∈ body, ∃ kind name init, p.2 = .decl kind name init) :
     (initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
-  apply sorted_initFunctions_consts
+  apply sorted_initFunctions_declarations
   intro unit member
   obtain ⟨pair, pairIn, inBody, _⟩ := mem_unitsOf member
   have modules := ProjectedOrder.scopes_modules (splitProgramIndexed body B P) frames
@@ -53,8 +38,37 @@ theorem indexed_initFunctions_consts {body : List (Nat × Stmt)} {B : EsmSplit.B
     List.mem_flatMap.mpr ⟨pair.1, loaded, inBody⟩
   have found := SparseProjectedOrder.loaded_row_lookup flat
   have inSource : body.lookup unit.1 = some unit.2.1 := by simpa [indexedNumbered] using found
-  exact sourceConsts (unit.1, unit.2.1) (lookup_mem inSource)
+  exact decls (unit.1, unit.2.1) (lookup_mem inSource)
 
+/-- Existing const-only callers use the shared declaration proof. -/
+theorem indexed_initFunctions_consts {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    {frames : List (Nat × List (Name × Addr))} {linked : List (Module × Env)}
+    (scopeResult : (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok linked)
+    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init) :
+    (initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
+  apply indexed_initFunctions_declarations scopeResult
+  intro p member
+  obtain ⟨name, init, shape⟩ := sourceConsts p member
+  exact ⟨.const, name, init, shape⟩
+
+theorem initFunctions_consts (units : List LinkedUnit)
+    (allConst : ∀ u ∈ units, ∃ name init, u.stmt = .decl .const name init) :
+    (initFunctions units : M W Unit) = pure () := by
+  apply initFunctions_declarations
+  intro u member
+  obtain ⟨name, init, shape⟩ := allConst u member
+  exact ⟨.const, name, init, shape⟩
+
+/-- Const-only source scopes use the same declaration-hoist argument. -/
+theorem sorted_initFunctions_consts (linked : List (Module × Env))
+    (allConst : ∀ u ∈ unitsOf linked, ∃ name init, u.stmt = .decl .const name init) :
+    (initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
+  apply sorted_initFunctions_declarations
+  intro u member
+  obtain ⟨name, init, shape⟩ := allConst u member
+  exact ⟨.const, name, init, shape⟩
+
+#print axioms indexed_initFunctions_declarations
 #print axioms indexed_initFunctions_consts
 
 /-- The indexed constructor's real linker constructs scopes for every loaded
@@ -180,19 +194,30 @@ theorem singleton_source_regions {program : Program} {source : Module}
 #print axioms entry_in_evalOrder
 #print axioms loaded_entry_find
 
-/-- An import-free source with const-only body has no link-time function
+/-- An import-free source with declaration-only body has no link-time function
 hoists in its actual singleton scope list. -/
-theorem source_const_init {source : Module} {frames : List (Nat × List (Name × Addr))}
-    (sourceConsts : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init) :
+theorem source_decl_init {source : Module} {frames : List (Nat × List (Name × Addr))}
+    (sourceDecls : ∀ p ∈ source.body, ∃ kind name init, p.2 = .decl kind name init) :
     (initFunctions ((unitsOf [(source, { vars := source.scope frames, this := .undef })]).mergeSort
       fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
-  apply sorted_initFunctions_consts
+  apply sorted_initFunctions_declarations
   intro unit member
   obtain ⟨pair, pairIn, inBody, _⟩ := mem_unitsOf member
   have pairEq : pair = (source, { vars := source.scope frames, this := .undef }) := by simpa using pairIn
   subst pair
-  exact sourceConsts (unit.1, unit.2.1) inBody
+  exact sourceDecls (unit.1, unit.2.1) inBody
 
+/-- Const-only source initialization uses the shared declaration proof. -/
+theorem source_const_init {source : Module} {frames : List (Nat × List (Name × Addr))}
+    (sourceConsts : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init) :
+    (initFunctions ((unitsOf [(source, { vars := source.scope frames, this := .undef })]).mergeSort
+      fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
+  apply source_decl_init
+  intro p member
+  obtain ⟨name, init, shape⟩ := sourceConsts p member
+  exact ⟨.const, name, init, shape⟩
+
+#print axioms source_decl_init
 #print axioms source_const_init
 
 /-- The actual linker returns the constructed scope list in the post-allocation
@@ -403,7 +428,7 @@ theorem row_resolved_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle}
 /-- Under structural equality of the candidate's top-level identities and
 region count, a successful source allocation produces actual source and split
 links with the same ready state and the same ordered entry export table. This
-step admits const-only executable source rows; allocation failure and execution
+step admits declaration-only executable source rows; allocation failure and execution
 outcomes require separate composition. -/
 theorem row_actual_links_from_allocation {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
@@ -411,7 +436,7 @@ theorem row_actual_links_from_allocation {body : List (Nat × Stmt)} {B : EsmSpl
     {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
     (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
     (ordered : body.Pairwise (fun a b => a.1 ≤ b.1))
-    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init)
+    (sourceDecls : ∀ p ∈ body, ∃ kind name init, p.2 = .decl kind name init)
     (candidateTops : (splitProgramIndexed body B P).tops = body)
     (candidateRegions : (splitProgramIndexed body B P).regions = sourceProgram.regions)
     {ready : State W} {frames : List (Nat × List (Name × Addr))}
@@ -434,18 +459,18 @@ theorem row_actual_links_from_allocation {body : List (Nat × Stmt)} {B : EsmSpl
       ∀ pair ∈ row.names, ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ ready.cellAt a = some b := by
   have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by rw [sourceBody]; exact ordered
   have sourceTops : sourceProgram.tops = body := (import_free_source_tops sourceFind sourceImports sourceOrdered).trans sourceBody
-  have sourceShape : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init := by
+  have sourceShape : ∀ p ∈ source.body, ∃ kind name init, p.2 = .decl kind name init := by
     rw [sourceBody]
-    exact sourceConsts
+    exact sourceDecls
   have sourceLink := link_after_const_allocation sourceTops footprints.uniqueIds allocated
-    (import_free_entry_scopes sourceFind sourceImports frames) (source_const_init sourceShape)
+    (import_free_entry_scopes sourceFind sourceImports frames) (source_decl_init sourceShape)
   obtain ⟨targetLinked, table, targetScopes, owned, before, after, present⟩ :=
     row_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind sourceRow
       rowFootprint ownerIn rowWithin planEntry authored unitsUnique glue onlyRow sourceDefs
   have targetAllocation : declareTops body (initialState W (splitProgramIndexed body B P).regions) = .ok frames ready := by
     rw [candidateRegions]
     exact allocated
-  have targetInit := indexed_initFunctions_consts (W := W) targetScopes sourceConsts
+  have targetInit := indexed_initFunctions_declarations (W := W) targetScopes sourceDecls
   have targetLink := link_after_const_allocation candidateTops footprints.uniqueIds targetAllocation targetScopes targetInit
   exact ⟨targetLinked, table, sourceLink, targetLink, owned, before, after, present⟩
 
@@ -472,7 +497,7 @@ theorem row_link_outcomes_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bu
     {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
     (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
     (ordered : body.Pairwise (fun a b => a.1 ≤ b.1))
-    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init)
+    (sourceDecls : ∀ p ∈ body, ∃ kind name init, p.2 = .decl kind name init)
     (candidateTops : (splitProgramIndexed body B P).tops = body)
     (candidateRegions : (splitProgramIndexed body B P).regions = sourceProgram.regions)
     {row : EsmSplit.LocalExportUnit} (sourceRow : InteriorExportNames.SourceRow source row)
@@ -491,7 +516,7 @@ theorem row_link_outcomes_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bu
   | ok frames ready =>
     obtain ⟨targetLinked, table, sourceLink, targetLink, _, sourceTable, targetTable, _⟩ :=
       row_actual_links_from_allocation valid footprints complete sourceBody sourceImports sourceFind ordered
-        sourceConsts candidateTops candidateRegions allocation sourceRow rowFootprint ownerIn rowWithin planEntry
+        sourceDecls candidateTops candidateRegions allocation sourceRow rowFootprint ownerIn rowWithin planEntry
         authored unitsUnique glue onlyRow sourceDefs
     unfold EntryLinkOutcomesAgree
     rw [sourceLink, targetLink]

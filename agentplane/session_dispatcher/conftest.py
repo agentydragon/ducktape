@@ -9,17 +9,9 @@ from agentplane.app.testing.gateway_fixtures import (
     sandbox_control,
     session_dispatcher,
 )
-from agentplane.app.testing.runtime_fixtures import (
-    config,
-    endpoint,
-    harness,
-    model,
-    pytest_runtest_makereport,
-    runner,
-    runner_gateway,
-    spec,
-    workspace,
-)
+from agentplane.app.testing.runtime_fixtures import runner
+from agentplane.env.e2e.testing.failure_journal import pytest_runtest_makereport
+from agentplane.env.e2e.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
 from agentplane.history_service.testing.fixtures import (
     history_service,
     service_database_template,

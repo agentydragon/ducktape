@@ -92,10 +92,7 @@ type connection struct {
 	version              int64
 	createdAt, updatedAt time.Time
 	grants               []grant
-	// legacyBoundCaller is historical attribution only and is never an active authentication fallback.
-	legacyBoundCaller       *auth.Account
-	boundIdentity           *auth.Identity
-	identityBindingRequired bool
+	boundIdentity        *auth.Identity
 }
 
 // position is a Connection's place in the oldest-first order.
@@ -157,8 +154,7 @@ func decodeIdentity(document []byte) (auth.Identity, error) {
 	return auth.Identity{Name: identity.Name, UID: identity.UID}, nil
 }
 
-const connectionColumns = `id, display_name, version, created_at, updated_at, legacy_bound_caller, bound_identity,
-	identity_binding_required`
+const connectionColumns = `id, display_name, version, created_at, updated_at, bound_identity`
 
 func scanConnections(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]connection, error) {
 	rows, err := tx.QueryContext(ctx, query, args...)
@@ -169,17 +165,9 @@ func scanConnections(ctx context.Context, tx *sql.Tx, query string, args ...any)
 	var connections []connection
 	for rows.Next() {
 		var c connection
-		var legacyCaller, boundIdentity []byte
-		if err := rows.Scan(&c.id, &c.displayName, &c.version, &c.createdAt, &c.updatedAt, &legacyCaller, &boundIdentity,
-			&c.identityBindingRequired); err != nil {
+		var boundIdentity []byte
+		if err := rows.Scan(&c.id, &c.displayName, &c.version, &c.createdAt, &c.updatedAt, &boundIdentity); err != nil {
 			return nil, err
-		}
-		if legacyCaller != nil {
-			account, err := decodeAccount(legacyCaller)
-			if err != nil {
-				return nil, err
-			}
-			c.legacyBoundCaller = &account
 		}
 		if boundIdentity != nil {
 			identity, err := decodeIdentity(boundIdentity)
@@ -346,7 +334,7 @@ func changeConnection(
 	}
 	changed.version++
 	changed.updatedAt = now()
-	// NULL while the Connection is unbound. Historical ServiceAccount attribution is never overwritten.
+	// NULL while the Connection is unbound.
 	var bound any
 	if changed.boundIdentity != nil {
 		document, err := encodeIdentity(*changed.boundIdentity)
@@ -356,10 +344,8 @@ func changeConnection(
 		bound = document
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE external_connection SET display_name = $2, bound_identity = $3::jsonb,
-			identity_binding_required = $4, version = $5, updated_at = $6
-		WHERE id = $1`, changed.id, changed.displayName, bound, changed.identityBindingRequired,
-		changed.version, changed.updatedAt); err != nil {
+		UPDATE external_connection SET display_name = $2, bound_identity = $3::jsonb, version = $4, updated_at = $5
+		WHERE id = $1`, changed.id, changed.displayName, bound, changed.version, changed.updatedAt); err != nil {
 		return changed, err
 	}
 	return changed, notify(ctx, tx)
@@ -403,11 +389,10 @@ func (s *Store) rebind(ctx context.Context, id uuid.UUID, expectedVersion int64,
 		if !live {
 			return false, status.Error(codes.FailedPrecondition, refusedCaller.Error())
 		}
-		if c.boundIdentity != nil && *c.boundIdentity == identity && !c.identityBindingRequired {
+		if c.boundIdentity != nil && *c.boundIdentity == identity {
 			return false, nil
 		}
 		c.boundIdentity = &identity
-		c.identityBindingRequired = false
 		return true, nil
 	})
 }
@@ -429,7 +414,6 @@ func (s *Store) unbind(ctx context.Context, id uuid.UUID, expectedVersion int64)
 			}
 		}
 		c.boundIdentity = nil
-		c.identityBindingRequired = false
 		_, err := tx.ExecContext(ctx, `
 			UPDATE external_connection_grant SET status = $2, revoked_at = $3 WHERE connection_id = $1 AND status <> $2`,
 			c.id, grantRevoked, revokedAt)

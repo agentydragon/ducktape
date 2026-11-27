@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -610,17 +611,22 @@ func validateJournalRepackCoverage(entries []repackEntry, outputs []repackStorag
 }
 
 func (s *Store) applyJournalRepack(ctx context.Context, sessionID string, previous journalRepackState, plan repackPlan) (time.Duration, error) {
-	return s.withJournalSessionLock(ctx, sessionID, func(tx *sql.Tx, cursor uint64) error {
+	return s.withJournalSessionLock(ctx, sessionID, func(txCtx context.Context, tx *sql.Tx, cursor uint64) error {
 		if cursor < previous.opening {
 			return errors.New("sampler Session cursor regressed below repack opening watermark")
 		}
-		if err := compareJournalSources(ctx, tx, sessionID, previous, plan.sources); err != nil {
+		if err := compareJournalSources(txCtx, tx, sessionID, previous, plan.sources); err != nil {
 			return err
 		}
 		if slices.EqualFunc(plan.sources, plan.outputs, repackStorage.equal) {
 			return nil
 		}
-		return replaceJournalStorage(ctx, tx, sessionID, plan.sources, plan.outputs)
+		// Standalone rows reinserted here preserve existing frames, including the
+		// suffix of a split block. They are not new sampling evidence.
+		if err := markIndexedRecoveryWriter(txCtx, tx); err != nil {
+			return err
+		}
+		return replaceJournalStorage(txCtx, tx, sessionID, plan.sources, plan.outputs)
 	})
 }
 
@@ -760,7 +766,7 @@ func insertRepackOutputs(ctx context.Context, tx *sql.Tx, sessionID string, outp
 	return nil
 }
 
-func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, apply func(*sql.Tx, uint64) error) (time.Duration, error) {
+func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, apply func(context.Context, *sql.Tx, uint64) error) (time.Duration, error) {
 	transactionCtx, cancel := context.WithTimeout(ctx, journalLockWait+journalLockHold)
 	defer cancel()
 	var holdTimer *time.Timer
@@ -783,7 +789,7 @@ func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, ap
 			holdExceeded.Store(true)
 			cancel()
 		})
-		return apply(tx, uint64(cursor))
+		return apply(transactionCtx, tx, uint64(cursor))
 	})
 	if holdTimer != nil {
 		holdTimer.Stop()
@@ -792,11 +798,25 @@ func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, ap
 	if !lockStarted.IsZero() {
 		hold = time.Since(lockStarted)
 	}
-	if holdExceeded.Load() {
-		err = fmt.Errorf("%w: lock hold exceeded %s", ErrJournalBusy, journalLockHold)
-	}
 	var pgErr *pq.Error
-	if errors.As(err, &pgErr) && pgErr.Code == "55P03" {
+	isPGError := errors.As(err, &pgErr)
+	// database/sql and lib/pq can report the same local budget as a
+	// cancelled statement, a closed transaction, or a discarded connection.
+	// Only the batch's own timer makes such errors retryable. Preserve an
+	// operator cancellation or a database error unrelated to that timer.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, sql.ErrTxDone) || errors.Is(err, driver.ErrBadConn) ||
+		(isPGError && pgErr.Code == "57014") {
+		switch {
+		case ctx.Err() != nil:
+			return hold, ctx.Err()
+		case holdExceeded.Load():
+			return hold, fmt.Errorf("%w: lock hold exceeded %s: %w", ErrJournalBusy, journalLockHold, err)
+		case transactionCtx.Err() == context.DeadlineExceeded:
+			return hold, fmt.Errorf("%w: transaction deadline: %w", ErrJournalBusy, err)
+		}
+	}
+	if isPGError && pgErr.Code == "55P03" {
 		err = fmt.Errorf("%w: session row lock timeout", ErrJournalBusy)
 	}
 	if err == nil && hold > journalLockHold {

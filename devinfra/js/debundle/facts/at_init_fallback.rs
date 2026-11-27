@@ -47,10 +47,7 @@ fn object_from_entries_plain_array_chain_root(
     if call.args.len() != 1 || call.args[0].spread.is_some() || shadowed.contains("Object") {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
+    let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
         return None;
     };
     if !matches!(
@@ -131,10 +128,7 @@ fn receiver_stage(call: &CallExpr, method: &[&str], graph: &PlainArrays<'_>) -> 
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
+    let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
         return None;
     };
     if !matches!(&member.prop, MemberProp::Ident(prop) if method.contains(&prop.sym.as_ref()))
@@ -495,10 +489,8 @@ impl Visit for SyncInvocationFinder {
 /// call site in [`assemble_statement_facts`] for the soundness
 /// rationale.
 struct OpaqueAtInitCallFinder<'a> {
-    shadowed: &'a BTreeSet<&'static str>,
-    hints: &'a AnalysisInputs,
+    scope: PurityScope<'a>,
     native_facts: &'a ValidatedNativeOperationFacts,
-    graph: &'a ChunkCodeGraph,
     found: bool,
     position: LazyPosition,
 }
@@ -525,14 +517,7 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
                 {
                     false
                 }
-                Expr::Call(_) | Expr::New(_) => !classify_expr_purity(
-                    expr,
-                    self.shadowed,
-                    &BTreeSet::new(),
-                    &self.hints.assumptions.declared_pure,
-                    self.graph,
-                )
-                .is_pure(),
+                Expr::Call(_) | Expr::New(_) => !classify_expr_purity(expr, &self.scope).is_pure(),
                 // Tagged templates invoke the tag function; the
                 // classifier has no pure tag whitelist.
                 Expr::TaggedTpl(_) => true,
@@ -558,10 +543,10 @@ pub fn has_opaque_at_init_call(
     graph: &ChunkCodeGraph,
 ) -> bool {
     let mut finder = OpaqueAtInitCallFinder {
-        shadowed,
-        hints,
+        // The finder walks statement-level expressions, where no name is
+        // lexically shadowed.
+        scope: PurityScope::chunk_top(shadowed, &hints.assumptions.declared_pure, graph),
         native_facts,
-        graph,
         found: false,
         position: LazyPosition::default(),
     };

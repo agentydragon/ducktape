@@ -381,6 +381,7 @@ py_library(
     data = [":runner_data_archive_bin"],
     deps = [
         ":cluster",
+        ":host_command",
         ":sandbox",
         ":tracing",
         "//devinfra/testing:undeclared_outputs",
@@ -761,6 +762,7 @@ py_library(
     name = "environment_transport",
     srcs = ["environment_transport.py"],
     deps = [
+        "//agentplane/environments/testing:environment_inventory",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/environments/v1:environment_service_pb2_grpc",
         "//agentplane/grpc:calls",
@@ -971,5 +973,28 @@ py_library(
     deps = [
         "//agentplane/proto:session_pb2",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "containerd_task",
+    srcs = ["containerd_task.py"],
+    deps = [":host_command"],
+)
+
+py_library(
+    name = "host_command",
+    srcs = ["host_command.py"],
+)
+
+py_test(
+    name = "test_host_command",
+    srcs = ["test_host_command.py"],
+    deps = [
+        ":host_command",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

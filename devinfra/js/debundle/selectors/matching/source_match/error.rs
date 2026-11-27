@@ -223,6 +223,22 @@ pub enum MatcherInvariant {
 }
 
 impl SourceMatchError {
+    /// The selector matched a holed projection rather than a pinned
+    /// declaration, so it has nothing to bind.
+    pub fn matched_hole(
+        request: &str,
+        selector: &spec::annotations::AnonymousStatementSelector,
+        target: &str,
+        hole: ProjectionHole,
+    ) -> Self {
+        Self::binding(
+            request,
+            selector,
+            target,
+            BindingProblem::MatchedHole { hole },
+        )
+    }
+
     pub fn binding(
         request: &str,
         selector: &spec::annotations::AnonymousStatementSelector,

@@ -4,7 +4,10 @@ package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
 
 rust_library(
     name = "source_match",
-    srcs = glob(["*.rs"]),
+    srcs = glob([
+        "*.rs",
+        "chunk_resolver/*.rs",
+    ]),
     crate_root = "mod.rs",
     edition = "2024",
     deps = [

@@ -14,8 +14,7 @@ use graph_provenance::VerifiedGraphSourceContext;
 use pipeline::AnalysisArtifactInput;
 use transform_inputs::TransformRequest;
 
-use crate::binding::ModuleDocs;
-use crate::edit_gate::GraphEditArgs;
+use edit_gate::{GraphEditArgs, ModuleDocs};
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "snake_case")]

@@ -18,6 +18,9 @@ func appFacadesForTest(t *testing.T, address string, config settings.Config) str
 	config.SessionDispatcherTarget = address
 	config.PolicyServiceTarget = address
 	config.HistoryServiceTarget = address
+	if config.EnvironmentService == nil {
+		config.EnvironmentService = &settings.EnvironmentServicePeer{Target: address}
+	}
 	var streams streamhttp.Dependencies
 	if err := configureFacades(t.Context(), config, &streams); err != nil {
 		t.Fatal(err)

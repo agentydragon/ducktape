@@ -1,7 +1,6 @@
 # gazelle:resolve py agentplane.policy.v1.policy_service_pb2 //agentplane/policy/v1:policy_service_pb2
 # gazelle:resolve py agentplane.policy.v1.policy_service_pb2_grpc //agentplane/policy/v1:policy_service_pb2_grpc
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
-load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_DIGEST", "NGINX_UNPRIVILEGED_DIGEST", "POSTGRES_18_DIGEST", "RYUK_DIGEST")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
@@ -15,17 +14,6 @@ package(default_visibility = [
     "//agentplane/app:__subpackages__",
     "//agentplane/system_tests:__subpackages__",
 ])
-
-# Both browser suites load this image family, so either can seed the shared snapshot.
-# Frontend images change independently and use the normal digest-checked loader.
-_BROWSER_IMAGE_EXEC_PROPERTIES = {
-    "test.runner-recycling-key": "thread-browser-images-v1-" + "-".join([
-        POSTGRES_18_DIGEST,
-        ELECTRIC_1_8_1_DIGEST,
-        RYUK_DIGEST,
-        NGINX_UNPRIVILEGED_DIGEST,
-    ]),
-}
 
 proto_library(
     name = "app_service_proto",
@@ -99,8 +87,8 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/action_service/api/contracts:action_service_pb2",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:fake_action_service",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_process",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/testing:kubernetes_apiserver",
@@ -122,7 +110,7 @@ py_test(
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
-        "//agentplane/app:integration_fixtures",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_process",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/net/peertls:config",
@@ -146,7 +134,7 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_process",
         "//agentplane/harness_host:harness_host_pb2",
         "//agentplane/history_service/testing:go_service",
@@ -194,10 +182,10 @@ py_test(
     ],
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:history_reads",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:pytest_logfile",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:runtime_fixtures",
@@ -285,9 +273,9 @@ py_test(
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:egress_proxy",
         "//agentplane/app/testing:history",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/egress/api/admin:egress_admin_pb2",
@@ -312,93 +300,14 @@ py_test(
 )
 
 py_test(
-    name = "test_environment_identity_browser",
-    size = "medium",
-    srcs = ["test_environment_identity_browser.py"],
-    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        "//:conftest",
-        "//agentplane/app:integration_fixtures",
-        "//agentplane/app/testing:browser_certificate",
-        "//agentplane/app/testing:history",
-        "//agentplane/app/testing:http2_proxy",
-        "//agentplane/app/testing:replication_process",
-        "//agentplane/app/testing:thread_browser",
-        "//agentplane/app/testing:thread_browser_backends",
-        "//agentplane/history_service/testing:electric_service",
-        "//agentplane/net/peertls:config",
-        "//agentplane/policy/v1:policy_service_pb2",
-        "//agentplane/policy/v1:policy_service_pb2_grpc",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/testing:tls",
-        "//testing/frontend_visual:capture",
-        "@pypi//grpcio",
-        "@pypi//playwright",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-        "@pypi//types_grpcio",  # keep: mypy follows the generated PolicyService gRPC servicer
-    ],
-)
-
-py_test(
-    name = "test_thread_browser",
-    size = "medium",
-    srcs = ["test_thread_browser.py"],
-    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    shard_count = 16,
-    tags = ["visual"],
-    deps = [
-        "//:conftest",
-        "//agentplane/app:integration_fixtures",
-        "//agentplane/app/frontend/testing:history_interactions",
-        "//agentplane/app/testing:browser_certificate",
-        "//agentplane/app/testing:history",
-        "//agentplane/app/testing:http2_proxy",
-        "//agentplane/app/testing:replication_process",
-        "//agentplane/app/testing:replication_source",
-        "//agentplane/app/testing:thread_browser",
-        "//agentplane/app/testing:thread_browser_backends",
-        "//agentplane/app/testing:thread_test_support",
-        "//agentplane/app/testing:thread_view_marks",
-        "//agentplane/history_service:channels",
-        "//agentplane/history_service/api/history:history_service_pb2",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/testing:electric_service",
-        "//agentplane/history_service/testing:go_service",
-        "//agentplane/history_service/testing:history",
-        "//agentplane/history_service/testing:protojson",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/session_dispatcher:client",
-        "//agentplane/session_dispatcher/dispatcher:testing_client",
-        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
-        "//agentplane/session_dispatcher/testing:gateway_process",
-        "//devinfra/testing:undeclared_outputs",
-        "//testing/frontend_visual:capture",
-        "//testing/frontend_visual:viewports",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//playwright",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_electric_wal_recovery",
     size = "medium",
     srcs = ["test_electric_wal_recovery.py"],
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:history",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_source",
         "//agentplane/history_service/testing:electric_service",
         "//agentplane/history_service/testing:history",
@@ -419,8 +328,8 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:history",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
         "//agentplane/app/testing:thread_test_support",
@@ -441,8 +350,8 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:history",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
         "//agentplane/history_service/api/history:history_service_pb2",
@@ -459,41 +368,14 @@ py_test(
 )
 
 py_test(
-    name = "test_thread_window_browser",
-    size = "medium",
-    srcs = ["test_thread_window_browser.py"],
-    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        "//:conftest",
-        "//agentplane/app:integration_fixtures",
-        "//agentplane/app/frontend/testing:history_interactions",
-        "//agentplane/app/testing:replication_source",
-        "//agentplane/app/testing:thread_browser",
-        "//agentplane/app/testing:thread_view_marks",
-        "//agentplane/history_service/api/history:history_service_pb2",
-        "//agentplane/history_service/testing:electric_service",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//devinfra/testing:undeclared_outputs",
-        "@pypi//playwright",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_electric_subset_window",
     size = "medium",
     srcs = ["test_electric_subset_window.py"],
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:history",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_source",
         "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/history_service/fold:models",
@@ -515,8 +397,8 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:history",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
         "//agentplane/app/testing:thread_test_support",
@@ -611,8 +493,8 @@ py_test(
     ],
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:history",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:runtime_fixtures",
         "//agentplane/env/e2e/testing:launches",
         "//agentplane/env/e2e/testing:process",
@@ -644,7 +526,7 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:notifications",
         "//agentplane/app/testing:replication_process",
         "//agentplane/grpc:serving",
@@ -669,7 +551,7 @@ py_test(
     ],
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:replication_source",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/testing:electric_service",
@@ -681,41 +563,6 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "integration_fixtures",
-    testonly = True,
-    srcs = ["integration_fixtures.py"],
-    data = ["//agentplane/app/cmd:agentplane-app"],  # keep: subprocess fixture migration
-    deps = [
-        "//agentplane:subjects",
-        "//agentplane/app/testing:gateway_fixtures",
-        "//agentplane/app/testing:history",
-        "//agentplane/app/testing:replication_process",
-        "//agentplane/app/testing:thread_test_support",
-        "//agentplane/history_service/testing:fixtures",
-        "//agentplane/history_service/testing:go_service",
-        "//agentplane/history_service/testing:history",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/sandboxes/testing:sandbox_namespace",
-        "//agentplane/session_dispatcher/testing:gateway_process",
-        "//agentplane/testing:electric_role",
-        "//agentplane/testing:kubernetes_apiserver",
-        "//agentplane/testing:kubernetes_apiserver_fixtures",
-        "//testing:postgres",
-        "//testing:postgres_fixtures",
-        "//testing:sqlalchemy_engines",
-        "//util:db_url",
-        "//util:net",
-        "@pypi//asyncpg",
-        "@pypi//httpx",
-        "@pypi//protobuf",
-        "@pypi//psycopg",
-        "@pypi//pytest",
-        "@pypi//sqlalchemy",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -737,8 +584,8 @@ py_test(
     ],
     deps = [
         "//:conftest",
-        "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:client",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:runtime_fixtures",
         "//agentplane/env/e2e/testing:process",
         "//agentplane/proto:session_pb2",

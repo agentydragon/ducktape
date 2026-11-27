@@ -2,7 +2,7 @@
 
 The synchronous interpreter reports `HavocReach`, but the report is not yet an
 authority for graph construction. `HavocReach` is documented as diagnostic-only
-in `analysis_vocabulary/report_schema.rs`; the conservative graph fallback still promotes the
+in `analysis_vocabulary/execution_evidence.rs`; the conservative graph fallback still promotes the
 read closure for incomplete at-init calls.
 
 Binding effects have a separate authority path. An exact ordered root
@@ -68,6 +68,6 @@ must keep conservative promotion where their effects are not proved;
 uninitialized observations must retain their separate ordering constraint.
 
 The current reach classifier and precision-loss report are in
-`facts/sync_effects/interpreter.rs` and `e2e/synchronous_precision_report_test.rs`;
+`facts/sync_effects/interpreter.rs` and `e2e/synchronous_precision_report/`;
 the remaining promotion fallback is in `graph/build/at_init.rs`. See
 <abstract_interpreter.md> for the broader effect-domain migration.

@@ -225,7 +225,6 @@ def test_app_environment_peer_matches_receiver_and_mounted_service_identity(
 ) -> None:
     settings = AppSettings.model_validate(config_map_yaml(staging_manifests, "app-config", "config.yaml"))
     peer = settings.environment_service
-    assert peer is not None
     assert peer.target == _environments_grpc_target(staging_manifests)
     certificate = find_resource(staging_manifests, "Certificate", f"{sandbox_controller.NAME}-client-workload")
     assert certificate["spec"]["uris"] == [peer.tls.server_uri]

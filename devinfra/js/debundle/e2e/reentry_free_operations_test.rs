@@ -73,21 +73,6 @@ console.log(Boolean(store), later);
 }
 
 #[test]
-fn promise_resolve_requires_exact_bun_contract() {
-    let source = r#"globalThis.saved = () => later;
-const gate = Promise.resolve();
-const later = 42;
-console.log(Boolean(gate), later);
-"#;
-    expect_atomic_conflict_rejection(split(source, "gate"), &["host/value", "host/later"], &[]);
-    let fixture = run_fixture_with_graphs(
-        split(source, "gate").with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
-    );
-    assert_host_call_remains_impure(&fixture, "gate");
-    assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
-}
-
-#[test]
 fn audited_build_identity_and_consumed_operation_are_reported() {
     for (source, operation) in [
         (

@@ -1271,6 +1271,16 @@ impl ModulePath {
         Ok(Self(trimmed))
     }
 
+    /// A module path the pipeline carries onward - a logical request target,
+    /// an emission plan's module, a lowering report's module - was
+    /// canonicalized when the spec tree was loaded, so parsing it cannot
+    /// fail here. A panic means a target reached lowering without passing
+    /// through that canonicalization.
+    pub fn from_pipeline_target(raw: &str) -> Self {
+        Self::parse(raw, "")
+            .unwrap_or_else(|error| panic!("canonical pipeline module path expected: {error}"))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

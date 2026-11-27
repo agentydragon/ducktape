@@ -16,10 +16,7 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kuberne
 from agentplane.testing.tls import issue_workload_leaf, make_ca, workload_uri
 from testing.postgres import create_temporary_database
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep @pypi//protobuf
-
-pytest_plugins = ("testing.postgres_fixtures",)
 
 
 @pytest.fixture

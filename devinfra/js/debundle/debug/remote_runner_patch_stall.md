@@ -2,7 +2,8 @@
 
 On 2026-11-02, bounded native-operation CLI tests through `bbr` stalled before
 Bazel started. The runner log stopped during `git apply --verbose` on a patch
-that added neutral fixtures to `e2e/native_operation_input_test.rs`. The first
+that added neutral fixtures to `e2e/native_operation_input_test.rs` (now split
+into `e2e/native_operation_input/`). The first
 attempt stopped while checking that file; the next checked all files and
 stopped after applying preceding documentation files. API execution status
 remained `EXECUTING`; `bb view` showed the same last output as the observer.

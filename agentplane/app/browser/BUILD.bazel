@@ -1,0 +1,127 @@
+load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_DIGEST", "NGINX_UNPRIVILEGED_DIGEST", "POSTGRES_18_DIGEST", "RYUK_DIGEST")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# Both browser suites load this image family, so either can seed the shared snapshot.
+# Frontend images change independently and use the normal digest-checked loader.
+_BROWSER_IMAGE_EXEC_PROPERTIES = {
+    "test.runner-recycling-key": "thread-browser-images-v1-" + "-".join([
+        POSTGRES_18_DIGEST,
+        ELECTRIC_1_8_1_DIGEST,
+        RYUK_DIGEST,
+        NGINX_UNPRIVILEGED_DIGEST,
+    ]),
+}
+
+py_test(
+    name = "test_environment_identity_browser",
+    size = "medium",
+    srcs = ["test_environment_identity_browser.py"],
+    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:browser_certificate",
+        "//agentplane/app/testing:history",
+        "//agentplane/app/testing:http2_proxy",
+        "//agentplane/app/testing:replication_process",
+        "//agentplane/history_service/testing:electric_service",
+        "//agentplane/net/peertls:config",
+        "//agentplane/policy/v1:policy_service_pb2",
+        "//agentplane/policy/v1:policy_service_pb2_grpc",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:tls",
+        "//testing/frontend_visual:capture",
+        "@pypi//grpcio",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//types_grpcio",  # keep: mypy follows the generated PolicyService gRPC servicer
+    ],
+)
+
+py_test(
+    name = "test_thread_browser",
+    size = "medium",
+    srcs = ["test_thread_browser.py"],
+    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
+    requires_docker = True,
+    shard_count = 16,
+    tags = ["visual"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/frontend/testing:history_interactions",
+        "//agentplane/app/testing:browser_certificate",
+        "//agentplane/app/testing:history",
+        "//agentplane/app/testing:http2_proxy",
+        "//agentplane/app/testing:replication_process",
+        "//agentplane/app/testing:replication_source",
+        "//agentplane/app/testing:thread_browser",
+        "//agentplane/app/testing:thread_test_support",
+        "//agentplane/app/testing:thread_view_marks",
+        "//agentplane/history_service:channels",
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/history_service/fold:models",
+        "//agentplane/history_service/testing:electric_service",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/history_service/testing:history",
+        "//agentplane/history_service/testing:protojson",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/session_dispatcher:client",
+        "//agentplane/session_dispatcher/dispatcher:testing_client",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/session_dispatcher/testing:gateway_process",
+        "//devinfra/testing:undeclared_outputs",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:viewports",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_thread_window_browser",
+    size = "medium",
+    srcs = ["test_thread_window_browser.py"],
+    exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/frontend/testing:history_interactions",
+        "//agentplane/app/testing:thread_browser",
+        "//agentplane/app/testing:thread_view_marks",
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/app/testing:gateway_fixtures",
+        "//agentplane/app/testing:integration_fixtures",
+        "//agentplane/app/testing:thread_browser",
+        "//agentplane/app/testing:thread_browser_backends",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//testing:postgres_fixtures",
+    ],
+)

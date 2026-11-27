@@ -4,10 +4,9 @@ use debundle_e2e_support::run_rejection_fixture_with_args;
 use debundle_e2e_support::saved_analysis::{path, rejected_split};
 use debundle_e2e_support::{
     FixtureOpts, Member, analyzer_path, assert_entry_output, logical_module, process,
-    projector_path, run_fixture, run_fixture_with_args, write_validate_fixture_spec,
+    projector_path, read_jsonl, run_fixture, run_fixture_with_args, write_validate_fixture_spec,
 };
 use serde_json::Value;
-use std::fs;
 use std::process::{Command, Output};
 
 fn fixture_opts() -> FixtureOpts<'static> {
@@ -23,14 +22,6 @@ fn metric_names(rows: &[Value]) -> Vec<String> {
         .flat_map(|resource| resource["scopeMetrics"].as_array().into_iter().flatten())
         .flat_map(|scope| scope["metrics"].as_array().into_iter().flatten())
         .filter_map(|metric| metric["name"].as_str().map(str::to_owned))
-        .collect()
-}
-
-fn read_metrics(path: &std::path::Path) -> Vec<Value> {
-    fs::read_to_string(path)
-        .expect("metrics file written")
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).expect("metrics line is JSON"))
         .collect()
 }
 
@@ -101,7 +92,7 @@ fn standalone_project_analysis_and_analyze_export_metrics_with_standard_resource
         projection_metrics.is_file(),
         "project-analysis created the requested metrics stream"
     );
-    let projection_rows = read_metrics(&projection_metrics);
+    let projection_rows = read_jsonl(&projection_metrics);
     assert!(
         !projection_rows.is_empty(),
         "project-analysis exported metrics"
@@ -144,7 +135,7 @@ fn standalone_project_analysis_and_analyze_export_metrics_with_standard_resource
     );
     process::assert_success(&analysis_result);
     assert!(analysis.is_file(), "analyze wrote its artifact");
-    let analysis_rows = read_metrics(&analysis_metrics);
+    let analysis_rows = read_jsonl(&analysis_metrics);
     assert!(!analysis_rows.is_empty(), "analyze exported metric records");
     assert!(
         metric_names(&analysis_rows)
@@ -172,7 +163,7 @@ fn run_exports_metrics_jsonl_and_preserves_emitted_output() {
     let fixture = run_fixture_with_args(fixture_opts(), &["--metrics-file", &metrics_arg]);
 
     assert_entry_output(&fixture, "42\n");
-    let rows = read_metrics(&metrics_file);
+    let rows = read_jsonl(&metrics_file);
     assert!(
         !rows.is_empty(),
         "metrics export contained no measurement rows"
@@ -202,7 +193,7 @@ fn metrics_do_not_turn_a_rejected_run_into_success() {
 
     assert!(rejected.report_path("cycles.json").is_file());
     assert!(!rejected.app_root().exists());
-    let rows = read_metrics(&metrics_file);
+    let rows = read_jsonl(&metrics_file);
     assert!(
         !rows.is_empty(),
         "the rejected operation still flushes its metrics"
@@ -252,7 +243,7 @@ fn precision_loss_counters_separate_recursive_and_unknown_callee_fallbacks() {
         &["--metrics-file", &metrics_arg],
     );
     assert_entry_output(&fixture, "7\n");
-    let rows = read_metrics(&metrics_file);
+    let rows = read_jsonl(&metrics_file);
     for attributes in [
         vec![("reason", "recursive_invocation"), ("reach", "bounded")],
         vec![
@@ -288,7 +279,7 @@ fn counters_distinguish_missing_dynamic_properties_and_unsupported_coercion() {
         &["--metrics-file", &metrics_arg],
     );
     assert_entry_output(&fixture, "3\n");
-    let rows = read_metrics(&metrics_file);
+    let rows = read_jsonl(&metrics_file);
     for cause in [
         "missing_property",
         "dynamic_property",

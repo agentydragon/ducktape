@@ -6,41 +6,137 @@ use debundle_e2e_support::*;
 
 const PROVIDER: &str =
     "export function factory(callback, compare) { return { invoke: callback, compare }; }\n";
+const NAMESPACE_PROVIDER: &str =
+    "export const api = { make(callback) { return { invoke: callback }; } };\n";
+const CONSUMER: &str = "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n";
+
+fn retained_factory(
+    argument_count: usize,
+    positions: &[usize],
+) -> (&'static str, ChunkExportPurity) {
+    ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_factory("factory", argument_count, positions)
+        .build()
+}
+
+fn namespace_make_contract() -> (&'static str, ChunkExportPurity) {
+    ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_factory_member("api", "make", 1, &[0])
+        .with_namespace_independent_members("api", &["make"])
+        .build()
+}
 
 fn gate_diagnose_json(
     fixture: &RejectedFixture,
     binding: &str,
     extra: &[&str],
 ) -> serde_json::Value {
-    let graph = fixture
-        .dependency_graph_path()
-        .to_string_lossy()
-        .into_owned();
-    let modules = fixture.modules_root.to_string_lossy().into_owned();
-    let source_root = fixture.source_root.to_string_lossy().into_owned();
+    let graph = fixture.dependency_graph_path();
     let mut args = vec![
-        "gate".to_string(),
-        "diagnose".to_string(),
-        binding.to_string(),
-        "--graph".to_string(),
-        graph,
-        "--modules".to_string(),
-        modules,
-        "--source-root".to_string(),
-        source_root,
-        "--format".to_string(),
-        "json".to_string(),
+        "gate",
+        "diagnose",
+        binding,
+        "--graph",
+        graph.to_str().unwrap(),
+        "--modules",
+        fixture.modules_root.to_str().unwrap(),
+        "--source-root",
+        fixture.source_root.to_str().unwrap(),
+        "--format",
+        "json",
     ];
-    args.extend(extra.iter().map(|arg| (*arg).to_string()));
-    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    args.extend(extra);
     let output = run_debundle(&args);
-    assert!(
-        output.status.success(),
-        "gate diagnose failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
+    process::assert_success(&output);
     parse_stdout_json(&output)
+}
+
+/// Runs a witness's generated `inspection_command` and asserts that it shows
+/// `snippet` in the witness source unit.
+fn assert_inspection_shows(witness: &serde_json::Value, snippet: &str) {
+    let command = witness["inspection_command"].as_str().unwrap();
+    let inspected = process::output(std::process::Command::new("/bin/sh").arg("-c").arg(command))
+        .unwrap_or_else(|err| panic!("{err}"));
+    process::assert_success(&inspected);
+    let statements = parse_stdout_json(&inspected)["files"][0]["statements"].clone();
+    assert!(
+        statements.as_array().unwrap().iter().any(|statement| {
+            statement["source_unit_ids"]
+                .as_array()
+                .unwrap()
+                .contains(&witness["source_unit"])
+                && statement["source"].as_str().unwrap().contains(snippet)
+        }),
+        "{command} shows no {snippet:?} in {}: {statements}",
+        witness["source_unit"]
+    );
+}
+
+fn assert_eager_read(fixture: &Fixture, source: &str, target: &str) {
+    let graph = fixture.dependency_graph();
+    let source = source_unit_for_binding(&graph, source);
+    let target = source_unit_for_binding(&graph, target);
+    assert!(graph.edges.iter().any(|edge| edge.source == source
+        && edge.target == target
+        && edge.edge_kind == DepKind::EagerUse
+        && edge.constrains_init_order));
+}
+
+/// A program that runs correctly in one module but whose split between
+/// `callbacks/wrapped` and `values/later` must be rejected.
+#[derive(Clone, Copy, Default)]
+struct SplitCase<'a> {
+    name: &'a str,
+    source: &'a str,
+    chunks: &'a [(&'a str, &'a str)],
+    contracts: &'a [(&'a str, ChunkExportPurity)],
+    callbacks: &'a [&'static str],
+    callback_writes: &'a [&'a str],
+    values: &'a [&'static str],
+    value_writes: &'a [&'a str],
+    output: &'a str,
+    /// `(reader, binding)` pairs the colocated graph must record as eager reads.
+    eager_reads: &'a [(&'a str, &'a str)],
+}
+
+/// Asserts the colocated output and eager reads, rejects the split, and
+/// returns the colocated fixture.
+fn assert_split_rejected(case: SplitCase<'_>) -> Fixture {
+    eprintln!("case: {}", case.name);
+    let members =
+        |names: &[&'static str]| names.iter().copied().map(Member::new).collect::<Vec<_>>();
+    let all = members(&[case.callbacks, case.values].concat());
+    let writes = [case.callback_writes, case.value_writes].concat();
+    let colocated = run_fixture_with_graphs(
+        FixtureOpts::new(
+            case.source,
+            vec![logical_module_with_anon("all", &all, &writes)],
+        )
+        .with_extra_chunks(case.chunks)
+        .with_chunk_export_purity(case.contracts),
+    );
+    assert_preserved_entry_output(&colocated, case.output);
+    for (reader, binding) in case.eager_reads {
+        assert_eager_read(&colocated, reader, binding);
+    }
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            case.source,
+            vec![
+                logical_module_with_anon(
+                    "callbacks/wrapped",
+                    &members(case.callbacks),
+                    case.callback_writes,
+                ),
+                logical_module_with_anon("values/later", &members(case.values), case.value_writes),
+            ],
+        )
+        .with_extra_chunks(case.chunks)
+        .with_chunk_export_purity(case.contracts),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+    colocated
 }
 
 #[test]
@@ -59,9 +155,7 @@ fn named_local_callback_can_remain_lazy_under_explicit_retention_contract() {
             ],
         )
         .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory("factory", 1, &[0])
-            .build()]),
+        .with_chunk_export_purity(&[retained_factory(1, &[0])]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
     assert_module_exports(
@@ -99,19 +193,27 @@ fn namespace_factory_retains_both_named_and_inline_callback_arguments() {
 
 #[test]
 fn named_declarations_aliases_and_multiple_inline_callbacks_are_admitted() {
-    for (declarations, call, names) in [
+    for (name, declarations, call, names) in [
         (
+            "function declaration and alias",
             "function callback() { return later; }\nconst alias = callback;\n",
             "make(alias, () => later)",
             vec!["callback", "alias"],
         ),
         (
+            "two named arrows",
             "const callback = () => later;\nconst compare = () => later;\n",
             "make(callback, compare)",
             vec!["callback", "compare"],
         ),
-        ("", "make(() => later, () => later)", vec![]),
+        (
+            "two inline arrows",
+            "",
+            "make(() => later, () => later)",
+            vec![],
+        ),
     ] {
+        eprintln!("case: {name}");
         let source = format!(
             "import {{ factory as make }} from './peer.js';\n{declarations}const wrapped = {call};\nconst later = 42;\nconsole.log(wrapped.invoke(), wrapped.compare());\n"
         );
@@ -126,9 +228,7 @@ fn named_declarations_aliases_and_multiple_inline_callbacks_are_admitted() {
                 ],
             )
             .with_extra_chunks(&[("static/peer", PROVIDER)])
-            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                .with_retained_callback_factory("factory", 2, &[0, 1])
-                .build()]),
+            .with_chunk_export_purity(&[retained_factory(2, &[0, 1])]),
         );
         assert_preserved_entry_output(&fixture, "42 42\n");
     }
@@ -158,6 +258,7 @@ fn exposed_or_mutated_factory_results_do_not_certify_later_factory_inputs() {
         "inner.read = { get value() { return getter(); } };",
         "inner.__proto__ = { get read() { return { value: getter() }; } };",
     ] {
+        eprintln!("case: {mutation}");
         let source = format!(
             "import {{ factory, outer, install }} from './peer.js';\n\
              const getter = () => {{ try {{ return later; }} catch (error) {{ return error.name; }} }};\n\
@@ -204,12 +305,11 @@ fn invalid_signature_positions_report_spec_errors() {
         (1, vec![], "must list at least one callback argument"),
         (1, vec![1], "position must be less than argument_count"),
     ] {
+        eprintln!("case: {message}");
         expect_rejection_containing_all(
             FixtureOpts::new("console.log(0);\n", vec![])
                 .with_extra_chunks(&[("static/peer", PROVIDER)])
-                .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                    .with_retained_callback_factory("factory", count, &positions)
-                    .build()]),
+                .with_chunk_export_purity(&[retained_factory(count, &positions)]),
             &[message],
         );
     }
@@ -217,56 +317,65 @@ fn invalid_signature_positions_report_spec_errors() {
 
 #[test]
 fn unsupported_argument_and_callee_shapes_keep_conservative_timing() {
-    for (declarations, call, names, statements) in [
+    for (name, declarations, call, names, statements) in [
         (
+            "void argument",
             "const callback = () => later;\n",
             "make(callback, void 0)",
             vec!["callback"],
             vec![],
         ),
         (
+            "spread arguments",
             "const callback = () => later;\n",
             "make(...[callback, () => later])",
             vec!["callback"],
             vec![],
         ),
         (
+            "construct call",
             "const callback = () => later;\n",
             "new make(callback, () => later)",
             vec!["callback"],
             vec![],
         ),
         (
+            "local callee alias",
             "const callback = () => later;\nconst alias = make;\n",
             "alias(callback, () => later)",
             vec!["callback", "alias"],
             vec![],
         ),
         (
+            "reassigned callback",
             "let callback = () => later;\ncallback = () => later;\n",
             "make(callback, () => later)",
             vec!["callback"],
             vec!["callback = () => later;"],
         ),
         (
+            "member callback",
             "const callback = () => later;\nconst object = { callback };\n",
             "make(object.callback, () => later)",
             vec!["callback", "object"],
             vec![],
         ),
         (
+            "class callback",
             "class Callback {}\n",
             "make(Callback, () => later)",
             vec!["Callback"],
             vec![],
         ),
         (
+            "non-callback extra argument",
             "const callback = () => later;\nconst option = {};\n",
             "make(callback, () => later, option)",
             vec!["callback", "option"],
             vec![],
         ),
     ] {
+        eprintln!("case: {name}");
         let source = format!(
             "import {{ factory as make }} from './peer.js';\n{declarations}const wrapped = {call};\nconst later = 42;\nconsole.log(wrapped.invoke());\n"
         );
@@ -292,78 +401,85 @@ fn unsupported_argument_and_callee_shapes_keep_conservative_timing() {
 }
 
 #[test]
-fn extracting_and_invoking_either_returned_callback_keeps_all_reads() {
-    for projection in ["invoke", "compare"] {
+fn retained_factory_results_that_reach_callbacks_keep_their_reads() {
+    let contracts = [retained_factory(2, &[0, 1])];
+    let peer = [("static/peer", PROVIDER)];
+    let both_values = SplitCase {
+        chunks: &peer,
+        contracts: &contracts,
+        values: &["later", "other"],
+        value_writes: &["later = 42;", "other = 7;"],
+        output: "0 42 7\n",
+        eager_reads: &[("observed", "later"), ("observed", "other")],
+        ..Default::default()
+    };
+    for (name, projection) in [
+        ("extract and invoke first callback", "invoke"),
+        ("extract and invoke second callback", "compare"),
+    ] {
         let source = format!(
             "import {{ factory }} from './peer.js';\nlet later = 0;\nlet other = 0;\nconst callback = () => later;\nconst wrapped = factory(callback, () => other);\nconst extracted = wrapped.{projection};\nconst observed = extracted();\nlater = 42;\nother = 7;\nconsole.log(observed, later, other);\n"
         );
-        let contracts = [ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory("factory", 2, &[0, 1])
-            .build()];
-        let callbacks = [
-            Member::new("callback"),
-            Member::new("wrapped"),
-            Member::new("extracted"),
-            Member::new("observed"),
-        ];
-        let all: Vec<_> = [
-            "callback",
-            "wrapped",
-            "extracted",
-            "observed",
-            "later",
-            "other",
-        ]
-        .into_iter()
-        .map(Member::new)
-        .collect();
-        let colocated = run_fixture_with_graphs(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module_with_anon(
-                    "all",
-                    &all,
-                    &["later = 42;", "other = 7;"],
-                )],
-            )
-            .with_extra_chunks(&[("static/peer", PROVIDER)])
-            .with_chunk_export_purity(&contracts),
-        );
-        assert_preserved_entry_output(&colocated, "0 42 7\n");
-        assert_eager_read(&colocated, "observed", "later");
-        assert_eager_read(&colocated, "observed", "other");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module("callbacks/wrapped", &callbacks),
-                    logical_module_with_anon(
-                        "values/later",
-                        &binding_members(["later", "other"]),
-                        &["later = 42;", "other = 7;"],
-                    ),
-                ],
-            )
-            .with_extra_chunks(&[("static/peer", PROVIDER)])
-            .with_chunk_export_purity(&contracts),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
+        assert_split_rejected(SplitCase {
+            name,
+            source: &source,
+            callbacks: &["callback", "wrapped", "extracted", "observed"],
+            ..both_values
+        });
     }
+    assert_split_rejected(SplitCase {
+        name: "publishing returned graph exposes both callback positions",
+        source: "import { factory } from './peer.js';\nimport { consume } from './host.js';\nlet later = 0;\nlet other = 0;\nconst callback = () => later;\nconst wrapped = factory(callback, () => other);\nconst observed = consume(wrapped);\nlater = 42;\nother = 7;\nconsole.log(observed, later, other);\n",
+        chunks: &[
+            ("static/peer", PROVIDER),
+            (
+                "static/host",
+                "export function consume(value) { return Reflect.apply(value.compare, null, []); }\n",
+            ),
+        ],
+        callbacks: &["callback", "wrapped", "observed"],
+        ..both_values
+    });
+    assert_split_rejected(SplitCase {
+        name: "callback argument evaluation effects remain eager and ordered",
+        source: "import { factory } from './peer.js';\nlet later = 0;\nconst callback = () => later;\nconst wrapped = factory((globalThis.seen = callback(), callback), () => later);\nlater = 42;\nconsole.log(globalThis.seen, later);\n",
+        chunks: &peer,
+        contracts: &contracts,
+        callbacks: &["callback", "wrapped"],
+        values: &["later"],
+        value_writes: &["later = 42;"],
+        output: "0 42\n",
+        eager_reads: &[("wrapped", "later")],
+        ..Default::default()
+    });
 }
 
-fn assert_eager_read(fixture: &Fixture, source: &str, target: &str) {
-    let graph = fixture.dependency_graph();
-    let source = source_unit_for_binding(&graph, source);
-    let target = source_unit_for_binding(&graph, target);
-    assert!(graph.edges.iter().any(|edge| edge.source == source
-        && edge.target == target
+#[test]
+fn admitted_call_argument_retains_its_own_synchronous_effects() {
+    let colocated = assert_split_rejected(SplitCase {
+        name: "admitted call argument",
+        source: "import { factory } from './peer.js';\nlet later = 0;\nconst callback = () => later;\nfunction makeReader() { globalThis.seen = callback(); return () => later; }\nconst wrapped = factory(makeReader(), () => other);\nconst other = 7;\nlater = 42;\nconsole.log(globalThis.seen, wrapped.invoke(), wrapped.compare());\n",
+        chunks: &[("static/peer", PROVIDER)],
+        contracts: &[retained_factory(2, &[0, 1])],
+        callbacks: &["callback", "makeReader", "wrapped"],
+        values: &["later", "other"],
+        value_writes: &["later = 42;"],
+        output: "0 42 7\n",
+        eager_reads: &[("wrapped", "later")],
+        ..Default::default()
+    });
+    let graph = colocated.dependency_graph();
+    let wrapped = source_unit_for_binding(&graph, "wrapped");
+    let other = source_unit_for_binding(&graph, "other");
+    assert!(!graph.edges.iter().any(|edge| edge.source == wrapped
+        && edge.target == other
         && edge.edge_kind == DepKind::EagerUse
         && edge.constrains_init_order));
 }
 
 #[test]
 fn custom_callable_property_and_prototype_writes_through_aliases_stay_conservative() {
+    let contracts = [retained_factory(1, &[0])];
     for (mutation, projection) in [
         ("alias.extra = () => later;", "extra"),
         ("alias.prototype.extra = () => later;", "prototype.extra"),
@@ -375,99 +491,87 @@ fn custom_callable_property_and_prototype_writes_through_aliases_stay_conservati
         let source = format!(
             "import {{ factory }} from './peer.js';\nlet later = 0;\nfunction callback() {{ return 1; }}\nconst alias = callback;\n{mutation}\nconst wrapped = factory(callback);\nconst observed = wrapped.invoke.{projection}();\nlater = 42;\nconsole.log(observed, later);\n"
         );
-        let contracts = [ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory("factory", 1, &[0])
-            .build()];
-        let all: Vec<_> = ["callback", "alias", "wrapped", "observed", "later"]
-            .into_iter()
-            .map(Member::new)
-            .collect();
-        let colocated = run_fixture(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module_with_anon(
-                    "all",
-                    &all,
-                    &[mutation, "later = 42;"],
-                )],
-            )
-            .with_extra_chunks(&[("static/peer", PROVIDER)])
-            .with_chunk_export_purity(&contracts),
-        );
-        assert_preserved_entry_output(&colocated, "0 42\n");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module_with_anon(
-                        "callbacks/wrapped",
-                        &binding_members(["callback", "alias", "wrapped", "observed"]),
-                        &[mutation],
-                    ),
-                    logical_module_with_anon(
-                        "values/later",
-                        &[Member::new("later")],
-                        &["later = 42;"],
-                    ),
-                ],
-            )
-            .with_extra_chunks(&[("static/peer", PROVIDER)])
-            .with_chunk_export_purity(&contracts),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
+        assert_split_rejected(SplitCase {
+            name: mutation,
+            source: &source,
+            chunks: &[("static/peer", PROVIDER)],
+            contracts: &contracts,
+            callbacks: &["callback", "alias", "wrapped", "observed"],
+            callback_writes: &[mutation],
+            values: &["later"],
+            value_writes: &["later = 42;"],
+            output: "0 42\n",
+            ..Default::default()
+        });
     }
 }
 
 #[test]
-fn opaque_factory_after_custom_callable_property_write_keeps_callback_reads() {
-    assert_callable_surface_split(
-        "import { factory } from './peer.js';\nlet later = 0;\nfunction callback() { return 1; }\nconst alias = callback;\nalias.extra = () => later;\nconst wrapped = factory(callback);\nconst observed = wrapped.invoke.extra();\nlater = 42;\nconsole.log(observed, later);\n",
-        &["callback", "alias", "wrapped", "observed"],
-        &["alias.extra = () => later;"],
-    );
-}
-
-#[test]
-fn local_helper_callable_property_write_keeps_callback_reads() {
-    assert_callable_surface_split(
-        "import { factory } from './peer.js';\nlet later = 0;\nfunction callback() { return 1; }\nconst alias = callback;\nfunction install() { alias.extra = () => later; }\ninstall();\nconst wrapped = factory(callback);\nconst observed = wrapped.invoke.extra();\nlater = 42;\nconsole.log(observed, later);\n",
-        &["callback", "alias", "install", "wrapped", "observed"],
-        &["install();"],
-    );
-}
-
-#[test]
-fn opaque_consumer_can_invoke_a_returned_closure_without_any_assertion() {
-    let source = "import { consume } from './peer.js';\nlet later = 0;\nconst observed = consume(() => () => later);\nlater = 42;\nconsole.log(observed, later);\n";
-    let chunks = [(
-        "static/peer",
-        "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n",
-    )];
-    let colocated = run_fixture(
-        FixtureOpts::new(
-            source,
-            vec![logical_module_with_anon(
-                "all",
-                &binding_members(["observed", "later"]),
-                &["later = 42;"],
-            )],
-        )
-        .with_extra_chunks(&chunks),
-    );
-    assert_preserved_entry_output(&colocated, "0 42\n");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("callbacks/wrapped", &[Member::new("observed")]),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&chunks),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
+fn opaque_calls_that_reach_callbacks_keep_their_reads() {
+    let peer = [("static/peer", PROVIDER)];
+    let consumer = [("static/peer", CONSUMER)];
+    let later = SplitCase {
+        values: &["later"],
+        value_writes: &["later = 42;"],
+        output: "0 42\n",
+        ..Default::default()
+    };
+    assert_split_rejected(SplitCase {
+        name: "opaque factory after custom callable property write",
+        source: "import { factory } from './peer.js';\nlet later = 0;\nfunction callback() { return 1; }\nconst alias = callback;\nalias.extra = () => later;\nconst wrapped = factory(callback);\nconst observed = wrapped.invoke.extra();\nlater = 42;\nconsole.log(observed, later);\n",
+        chunks: &peer,
+        callbacks: &["callback", "alias", "wrapped", "observed"],
+        callback_writes: &["alias.extra = () => later;"],
+        ..later
+    });
+    assert_split_rejected(SplitCase {
+        name: "local helper callable property write",
+        source: "import { factory } from './peer.js';\nlet later = 0;\nfunction callback() { return 1; }\nconst alias = callback;\nfunction install() { alias.extra = () => later; }\ninstall();\nconst wrapped = factory(callback);\nconst observed = wrapped.invoke.extra();\nlater = 42;\nconsole.log(observed, later);\n",
+        chunks: &peer,
+        callbacks: &["callback", "alias", "install", "wrapped", "observed"],
+        callback_writes: &["install();"],
+        ..later
+    });
+    assert_split_rejected(SplitCase {
+        name: "opaque consumer invokes a returned closure without any assertion",
+        source: "import { consume } from './peer.js';\nlet later = 0;\nconst observed = consume(() => () => later);\nlater = 42;\nconsole.log(observed, later);\n",
+        chunks: &consumer,
+        callbacks: &["observed"],
+        ..later
+    });
+    for (name, expression) in [
+        (
+            "returned callback roots grow across captures",
+            "(consume(() => makeReader(first)), consume(() => makeReader(second)))",
+        ),
+        (
+            "returned callback roots grow across rebinds",
+            "(consume(() => makeReader(selected)), selected = second, consume(() => makeReader(selected)))",
+        ),
+    ] {
+        let source = format!(
+            "import {{ consume }} from './peer.js';\nlet later = 0;\nfunction makeReader(reader) {{ return () => reader(); }}\nconst first = () => 7;\nconst second = () => later;\nlet selected = first;\nconst result = {expression};\nlater = 42;\nconsole.log(result, later);\n"
+        );
+        assert_split_rejected(SplitCase {
+            name,
+            source: &source,
+            chunks: &consumer,
+            callbacks: &["makeReader", "first", "second", "selected", "result"],
+            eager_reads: &[("result", "later")],
+            ..later
+        });
+    }
+    assert_split_rejected(SplitCase {
+        name: "returned class superclass re-enters returned callback fallback",
+        source: "import { consume } from './peer.js';\nlet later = 0;\nfunction Base() { globalThis.observed = consume(() => () => later); }\nclass Derived extends Base {}\nconst result = consume(() => Derived);\nlater = 42;\nconsole.log(globalThis.observed, later);\n",
+        chunks: &[(
+            "static/peer",
+            "export function consume(callback) { const returned = callback(); return returned.prototype ? new returned() : returned(); }\n",
+        )],
+        callbacks: &["Base", "Derived", "result"],
+        eager_reads: &[("result", "later")],
+        ..later
+    });
 }
 
 #[test]
@@ -481,131 +585,14 @@ fn returned_callback_identity_cycle_terminates_conservatively() {
 }
 
 #[test]
-fn returned_callback_roots_grow_across_captures_and_rebinds_in_one_initializer() {
-    for expression in [
-        "(consume(() => makeReader(first)), consume(() => makeReader(second)))",
-        "(consume(() => makeReader(selected)), selected = second, consume(() => makeReader(selected)))",
-    ] {
-        let source = format!(
-            "import {{ consume }} from './peer.js';\nlet later = 0;\nfunction makeReader(reader) {{ return () => reader(); }}\nconst first = () => 7;\nconst second = () => later;\nlet selected = first;\nconst result = {expression};\nlater = 42;\nconsole.log(result, later);\n"
-        );
-        let names = ["makeReader", "first", "second", "selected", "result"];
-        let all: Vec<_> = names
-            .into_iter()
-            .chain(["later"])
-            .map(Member::new)
-            .collect();
-        let callbacks: Vec<_> = names.into_iter().map(Member::new).collect();
-        let chunks = [(
-            "static/peer",
-            "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n",
-        )];
-        let colocated = run_fixture_with_graphs(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module_with_anon("all", &all, &["later = 42;"])],
-            )
-            .with_extra_chunks(&chunks),
-        );
-        assert_preserved_entry_output(&colocated, "0 42\n");
-        assert_eager_read(&colocated, "result", "later");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module("callbacks/wrapped", &callbacks),
-                    logical_module_with_anon(
-                        "values/later",
-                        &[Member::new("later")],
-                        &["later = 42;"],
-                    ),
-                ],
-            )
-            .with_extra_chunks(&chunks),
-            &["callbacks/wrapped", "values/later"],
-            &[],
-        );
-    }
-}
-
-#[test]
-fn returned_class_superclass_can_reenter_returned_callback_fallback() {
-    let source = "import { consume } from './peer.js';\nlet later = 0;\nfunction Base() { globalThis.observed = consume(() => () => later); }\nclass Derived extends Base {}\nconst result = consume(() => Derived);\nlater = 42;\nconsole.log(globalThis.observed, later);\n";
-    let chunks = [(
-        "static/peer",
-        "export function consume(callback) { const returned = callback(); return returned.prototype ? new returned() : returned(); }\n",
-    )];
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            source,
-            vec![logical_module_with_anon(
-                "all",
-                &binding_members(["Base", "Derived", "result", "later"]),
-                &["later = 42;"],
-            )],
-        )
-        .with_extra_chunks(&chunks),
-    );
-    assert_preserved_entry_output(&fixture, "0 42\n");
-    assert_eager_read(&fixture, "result", "later");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["Base", "Derived", "result"]),
-                ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&chunks),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
 fn returned_callback_effects_are_applied_at_each_initialization_prefix() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "import { consume } from './peer.js';\nlet later = 0;\nfunction callback() { return () => later; }\nconst first = consume(callback);\nlater = 42;\nconst second = consume(callback);\nconsole.log(first, second);\n",
         vec![logical_module_with_anon("all", &binding_members(["callback", "first", "second", "later"]), &["later = 42;"])],
-    ).with_extra_chunks(&[("static/peer", "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n")]));
+    ).with_extra_chunks(&[("static/peer", CONSUMER)]));
     assert_preserved_entry_output(&fixture, "0 42\n");
     assert_eager_read(&fixture, "first", "later");
     assert_eager_read(&fixture, "second", "later");
-}
-
-fn assert_callable_surface_split(source: &str, names: &[&'static str], writes: &[&str]) {
-    let all: Vec<_> = names
-        .iter()
-        .copied()
-        .chain(["later"])
-        .map(Member::new)
-        .collect();
-    let callbacks: Vec<_> = names.iter().copied().map(Member::new).collect();
-    let mut all_statements = writes.to_vec();
-    all_statements.push("later = 42;");
-    let colocated = run_fixture(
-        FixtureOpts::new(
-            source,
-            vec![logical_module_with_anon("all", &all, &all_statements)],
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)]),
-    );
-    assert_preserved_entry_output(&colocated, "0 42\n");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module_with_anon("callbacks/wrapped", &callbacks, writes),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)]),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
 }
 
 #[test]
@@ -618,15 +605,12 @@ fn namespace_member_mutation_disables_retention_contract() {
             vec!["alias"],
         ),
     ] {
+        eprintln!("case: {mutation}");
         let source = format!(
             "import {{ api }} from './peer.js';\nlet later = 0;\nconst callback = () => later;\nconst replacement = callback => (globalThis.seen = callback(), {{ invoke: callback }});\n{setup}{mutation}\nconst wrapped = api.make(callback);\nlater = 42;\nconsole.log(globalThis.seen, later);\n"
         );
         let mut members: Vec<_> = names.into_iter().map(Member::new).collect();
-        members.extend([
-            Member::new("callback"),
-            Member::new("replacement"),
-            Member::new("wrapped"),
-        ]);
+        members.extend(binding_members(["callback", "replacement", "wrapped"]));
         expect_atomic_conflict_rejection(
             FixtureOpts::new(
                 &source,
@@ -639,14 +623,8 @@ fn namespace_member_mutation_disables_retention_contract() {
                     ),
                 ],
             )
-            .with_extra_chunks(&[(
-                "static/peer",
-                "export const api = { make(callback) { return { invoke: callback }; } };\n",
-            )])
-            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                .with_retained_callback_factory_member("api", "make", 1, &[0])
-                .with_namespace_independent_members("api", &["make"])
-                .build()]),
+            .with_extra_chunks(&[("static/peer", NAMESPACE_PROVIDER)])
+            .with_chunk_export_purity(&[namespace_make_contract()]),
             &["callbacks/wrapped", "values/later"],
             &[],
         );
@@ -655,6 +633,11 @@ fn namespace_member_mutation_disables_retention_contract() {
 
 #[test]
 fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_retained_callback_factory_member("api", "make", 1, &[0])
+        .with_retained_callback_factory_member("api", "make", 2, &[0])
+        .with_namespace_independent_members("api", &["make"])
+        .build()];
     let accepted = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
@@ -670,15 +653,8 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: callback }; } };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory_member("api", "make", 1, &[0])
-            .with_retained_callback_factory_member("api", "make", 2, &[0])
-            .with_namespace_independent_members("api", &["make"])
-            .build()]),
+        .with_extra_chunks(&[("static/peer", NAMESPACE_PROVIDER)])
+        .with_chunk_export_purity(&contracts),
     );
     assert_preserved_entry_output(&accepted, "42\n");
     assert!(
@@ -698,36 +674,30 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
          alias.make = replacement;\n\
          api.make = replacement;\n",
     );
-    let mut members = vec![
-        Member::new("replacement"),
-        Member::new("alias"),
-        Member::new("prefixA"),
-        Member::new("prefixB"),
-    ];
+    let mut members = Vec::from(binding_members([
+        "replacement",
+        "alias",
+        "prefixA",
+        "prefixB",
+    ]));
     source.push_str("const callback0 = () => later;\ncallback0();\n");
     members.push(Member::new("callback0"));
-    for index in 1..=6 {
+    for (index, (callback, wrapped)) in [
+        ("callback1", "wrapped1"),
+        ("callback2", "wrapped2"),
+        ("callback3", "wrapped3"),
+        ("callback4", "wrapped4"),
+        ("callback5", "wrapped5"),
+        ("callback6", "wrapped6"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let index = index + 1;
         source.push_str(&format!(
             "const callback{index} = () => later;\nconst wrapped{index} = api.make(callback{index});\n"
         ));
-        members.push(Member::new(match index {
-            1 => "callback1",
-            2 => "callback2",
-            3 => "callback3",
-            4 => "callback4",
-            5 => "callback5",
-            6 => "callback6",
-            _ => unreachable!(),
-        }));
-        members.push(Member::new(match index {
-            1 => "wrapped1",
-            2 => "wrapped2",
-            3 => "wrapped3",
-            4 => "wrapped4",
-            5 => "wrapped5",
-            6 => "wrapped6",
-            _ => unreachable!(),
-        }));
+        members.extend([Member::new(callback), Member::new(wrapped)]);
     }
     source.push_str("later = 42;\n");
 
@@ -743,15 +713,8 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: callback }; } };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory_member("api", "make", 1, &[0])
-            .with_retained_callback_factory_member("api", "make", 2, &[0])
-            .with_namespace_independent_members("api", &["make"])
-            .build()]),
+        .with_extra_chunks(&[("static/peer", NAMESPACE_PROVIDER)])
+        .with_chunk_export_purity(&contracts),
     );
 
     let bounded = gate_diagnose_json(&rejected, "later", &[]);
@@ -785,34 +748,26 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
         .expect("a supported trace must back the query's supported status");
     assert_eq!(first["ownership_target"]["binding"], "later");
     assert_eq!(first["ownership_target"]["module"], "values/later");
-    assert_eq!(first["constraining_dependency"]["edge_kind"], "eager_use");
-    assert_eq!(first["constraining_dependency"]["binding"], "later");
+    let dependency = &first["constraining_dependency"];
+    assert_eq!(dependency["edge_kind"], "eager_use");
+    assert_eq!(dependency["binding"], "later");
     assert!(
-        first["constraining_dependency"]["callee_source_unit"]
+        dependency["callee_source_unit"]
             .as_str()
             .unwrap()
             .starts_with("unit:")
     );
-    assert_eq!(first["constraining_dependency"]["role"], "promoted_at_init");
+    assert_eq!(dependency["role"], "promoted_at_init");
+    assert_eq!(dependency["constrains_init_order"], true);
+    let contract = &first["matched_contract"];
+    assert_eq!(contract["namespace_binding"], "api");
+    assert_eq!(contract["member"], "make");
+    assert_eq!(contract["argument_count"], 1);
     assert_eq!(
-        first["constraining_dependency"]["constrains_init_order"],
-        true
-    );
-    assert_eq!(first["coverage"], "supported_namespace_member_write");
-    assert_eq!(first["matched_contract"]["namespace_binding"], "api");
-    assert_eq!(first["matched_contract"]["member"], "make");
-    assert_eq!(first["matched_contract"]["argument_count"], 1);
-    assert_eq!(
-        first["matched_contract"]["callback_source_units"]
-            .as_array()
-            .unwrap()
-            .len(),
+        contract["callback_source_units"].as_array().unwrap().len(),
         1
     );
-    assert_eq!(
-        first["matched_contract"]["callback_arguments"],
-        serde_json::json!([0])
-    );
+    assert_eq!(contract["callback_arguments"], serde_json::json!([0]));
     let guard = &first["first_rejected_guard"];
     assert_eq!(guard["code"], "namespace_member_write");
     let witness = &guard["witness"];
@@ -822,15 +777,12 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
         witness["witness_selection"],
         "first_source_unit_order_deterministic_within_unit"
     );
-    assert_eq!(witness["source_location"]["source_path"], "static/app.js");
-    assert!(witness["source_location"]["start_line"].as_u64().unwrap() > 0);
-    assert!(
-        witness["source_location"]["end_line"].as_u64().unwrap()
-            >= witness["source_location"]["start_line"].as_u64().unwrap()
-    );
+    let location = &witness["source_location"];
+    assert_eq!(location["source_path"], "static/app.js");
+    assert!(location["start_line"].as_u64().unwrap() > 0);
+    assert!(location["end_line"].as_u64().unwrap() >= location["start_line"].as_u64().unwrap());
     let inspection = witness["inspection_command"].as_str().unwrap();
-    let binary = debundler_path();
-    let executable = binary
+    let executable = debundler_path()
         .canonicalize()
         .expect("resolve debundle runfile executable");
     let argv = shlex::split(inspection).expect("inspection command is a POSIX shell command");
@@ -845,77 +797,21 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
             "missing {flag}: {inspection}"
         );
     }
-    assert!(
-        inspection.contains(
-            rejected
-                .report_root
-                .join(&rejected.chunk_id)
-                .join("dependency_graph.json.gz")
-                .canonicalize()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        )
-    );
-    assert!(
-        inspection.contains(
-            rejected
-                .modules_root
-                .canonicalize()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        )
-    );
-    assert!(
-        inspection.contains(
-            rejected
-                .source_root
-                .canonicalize()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        )
-    );
-
-    // Execute the exact generated command with the runfile binary directory on PATH.
-    let binary_dir = binary.parent().expect("debundle runfile has a parent");
-    let path = format!(
-        "{}:{}",
-        binary_dir.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-    let inspected = process::output(
-        std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(inspection)
-            .env("PATH", path),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        inspected.status.success(),
-        "generated inspection command failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&inspected.stdout),
-        String::from_utf8_lossy(&inspected.stderr),
-    );
-    let inspected = parse_stdout_json(&inspected);
-    assert!(
-        inspected["files"][0]["statements"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|statement| {
-                statement["source_unit_ids"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|id| id == &witness["source_unit"])
-                    && statement["source"]
-                        .as_str()
-                        .unwrap()
-                        .contains("alias.make = replacement")
-            })
-    );
+    for path in [
+        rejected
+            .report_root
+            .join(&rejected.chunk_id)
+            .join("dependency_graph.json.gz"),
+        rejected.modules_root.clone(),
+        rejected.source_root.clone(),
+    ] {
+        let path = path.canonicalize().unwrap();
+        assert!(
+            inspection.contains(path.to_str().unwrap()),
+            "missing {path:?}: {inspection}"
+        );
+    }
+    assert_inspection_shows(witness, "alias.make = replacement");
 }
 
 #[test]
@@ -942,14 +838,8 @@ fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
                 logical_module_with_anon("values/other", &[Member::new("other")], &["other = 7;"]),
             ],
         )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: callback }; } };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory_member("api", "make", 1, &[0])
-            .with_namespace_independent_members("api", &["make"])
-            .build()]),
+        .with_extra_chunks(&[("static/peer", NAMESPACE_PROVIDER)])
+        .with_chunk_export_purity(&[namespace_make_contract()]),
     );
 
     let report = gate_diagnose_json(&rejected, "other", &["--all"]);
@@ -967,35 +857,41 @@ fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
     );
 }
 
-#[test]
-fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
-    let rejected = run_rejection_fixture_with_graphs(
+/// Rejects `source` split between `callbacks/wrapped` (with `members` and
+/// `anonymous` statements) and `values/later` under the `api.make` contract.
+fn rejected_namespace_fixture(
+    source: &str,
+    provider: &str,
+    members: &[Member],
+    anonymous: &[&str],
+) -> RejectedFixture {
+    run_rejection_fixture_with_graphs(
         FixtureOpts::new(
-            "import { api } from './peer.js';\n\
-             let later = 0;\n\
-             const callback = () => later;\n\
-             const replacement = callback => ({ invoke: callback });\n\
-             const method = 'make';\n\
-             api[method] = replacement;\n\
-             const wrapped = api.make(callback);\n\
-             later = 42;\n",
+            source,
             vec![
-                logical_module_with_anon(
-                    "callbacks/wrapped",
-                    &binding_members(["callback", "replacement", "method", "wrapped"]),
-                    &["api[method] = replacement;"],
-                ),
+                logical_module_with_anon("callbacks/wrapped", members, anonymous),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: callback }; } };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory_member("api", "make", 1, &[0])
-            .with_namespace_independent_members("api", &["make"])
-            .build()]),
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&[namespace_make_contract()]),
+    )
+}
+
+#[test]
+fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
+    let rejected = rejected_namespace_fixture(
+        "import { api } from './peer.js';\n\
+         let later = 0;\n\
+         const callback = () => later;\n\
+         const replacement = callback => ({ invoke: callback });\n\
+         const method = 'make';\n\
+         api[method] = replacement;\n\
+         const wrapped = api.make(callback);\n\
+         later = 42;\n",
+        NAMESPACE_PROVIDER,
+        &binding_members(["callback", "replacement", "method", "wrapped"]),
+        &["api[method] = replacement;"],
     );
 
     let report = gate_diagnose_json(&rejected, "later", &[]);
@@ -1005,82 +901,42 @@ fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
         report["coverage_scope"],
         "callback_factory_namespace_writes_and_call_arguments"
     );
+    let trace = &report["traces"][0];
     assert_eq!(
-        report["traces"][0]["coverage"],
+        trace["coverage"],
         "supported_namespace_dynamic_property_write"
     );
-    assert_eq!(report["traces"][0]["matched_contract"]["member"], "make");
+    assert_eq!(trace["matched_contract"]["member"], "make");
     assert_eq!(
-        report["traces"][0]["first_rejected_guard"]["code"],
+        trace["first_rejected_guard"]["code"],
         "namespace_dynamic_property_write"
     );
-    let trace = &report["traces"][0];
     assert_eq!(trace["constraining_dependency"]["binding"], "later");
     assert_eq!(trace["constraining_dependency"]["role"], "promoted_at_init");
     assert_eq!(
         trace["matched_contract"]["callback_arguments"],
         serde_json::json!([0])
     );
-    assert_eq!(
-        trace["first_rejected_guard"]["witness"]["receiver_binding"],
-        "api"
-    );
-    assert!(trace["first_rejected_guard"]["witness"]["property"].is_null());
-    let inspection = trace["first_rejected_guard"]["witness"]["inspection_command"]
-        .as_str()
-        .unwrap();
-    let inspected = process::output(
-        std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(inspection),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
-    assert!(inspected.status.success());
-    assert!(
-        parse_stdout_json(&inspected)["files"][0]["statements"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|statement| statement["source_unit_ids"]
-                .as_array()
-                .unwrap()
-                .contains(&trace["first_rejected_guard"]["witness"]["source_unit"])
-                && statement["source"]
-                    .as_str()
-                    .unwrap()
-                    .contains("api[method] = replacement"))
-    );
+    let witness = &trace["first_rejected_guard"]["witness"];
+    assert_eq!(witness["receiver_binding"], "api");
+    assert!(witness["property"].is_null());
+    assert_inspection_shows(witness, "api[method] = replacement");
 }
 
 #[test]
 fn computed_write_through_aggregate_receiver_remains_inconclusive() {
-    let rejected = run_rejection_fixture_with_graphs(
-        FixtureOpts::new(
-            "import { api } from './peer.js';\n\
-             let later = 0;\n\
-             const holder = { api };\n\
-             const method = 'make';\n\
-             holder.api[method] = callback => ({ invoke: callback });\n\
-             const callback = () => later;\n\
-             const wrapped = api.make(callback);\n\
-             later = 42;\n",
-            vec![
-                logical_module_with_anon(
-                    "callbacks/wrapped",
-                    &binding_members(["holder", "method", "callback", "wrapped"]),
-                    &["holder.api[method] = callback => ({ invoke: callback });"],
-                ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: callback }; } };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory_member("api", "make", 1, &[0])
-            .with_namespace_independent_members("api", &["make"])
-            .build()]),
+    let rejected = rejected_namespace_fixture(
+        "import { api } from './peer.js';\n\
+         let later = 0;\n\
+         const holder = { api };\n\
+         const method = 'make';\n\
+         holder.api[method] = callback => ({ invoke: callback });\n\
+         const callback = () => later;\n\
+         const wrapped = api.make(callback);\n\
+         later = 42;\n",
+        NAMESPACE_PROVIDER,
+        &binding_members(["holder", "method", "callback", "wrapped"]),
+        &["holder.api[method] = callback => ({ invoke: callback });"],
     );
     let report = gate_diagnose_json(&rejected, "later", &[]);
     assert_eq!(
@@ -1099,31 +955,16 @@ fn computed_write_through_aggregate_receiver_remains_inconclusive() {
 
 #[test]
 fn direct_namespace_call_argument_has_exact_callback_barrier_witness() {
-    let rejected = run_rejection_fixture_with_graphs(
-        FixtureOpts::new(
-            "import { api } from './peer.js';\n\
-             let later = 0;\n\
-             const callback = () => later;\n\
-             sink(api);\n\
-             const wrapped = api.make(callback);\n\
-             later = 42;\n",
-            vec![
-                logical_module_with_anon(
-                    "callbacks/wrapped",
-                    &binding_members(["callback", "wrapped"]),
-                    &["sink(api);"],
-                ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: callback }; } };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory_member("api", "make", 1, &[0])
-            .with_namespace_independent_members("api", &["make"])
-            .build()]),
+    let rejected = rejected_namespace_fixture(
+        "import { api } from './peer.js';\n\
+         let later = 0;\n\
+         const callback = () => later;\n\
+         sink(api);\n\
+         const wrapped = api.make(callback);\n\
+         later = 42;\n",
+        NAMESPACE_PROVIDER,
+        &binding_members(["callback", "wrapped"]),
+        &["sink(api);"],
     );
     let report = gate_diagnose_json(&rejected, "later", &[]);
     assert_eq!(
@@ -1140,43 +981,14 @@ fn direct_namespace_call_argument_has_exact_callback_barrier_witness() {
         trace["first_rejected_guard"]["code"],
         "namespace_call_argument"
     );
-    assert_eq!(
-        trace["first_rejected_guard"]["witness"]["argument_index"],
-        0
-    );
-    assert_eq!(
-        trace["first_rejected_guard"]["witness"]["namespace_binding"],
-        "api"
-    );
-    assert_eq!(
-        trace["first_rejected_guard"]["witness"]["opaque_call"],
-        true
-    );
     let witness = &trace["first_rejected_guard"]["witness"];
+    assert_eq!(witness["argument_index"], 0);
+    assert_eq!(witness["namespace_binding"], "api");
+    assert_eq!(witness["opaque_call"], true);
     assert!(
         witness["call_span_start"].as_u64().unwrap() < witness["call_span_end"].as_u64().unwrap()
     );
-    let command = witness["inspection_command"].as_str().unwrap();
-    let inspected = process::output(std::process::Command::new("/bin/sh").arg("-c").arg(command))
-        .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        inspected.status.success(),
-        "{}",
-        String::from_utf8_lossy(&inspected.stderr)
-    );
-    assert!(
-        parse_stdout_json(&inspected)["files"][0]["statements"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|statement| {
-                statement["source_unit_ids"]
-                    .as_array()
-                    .unwrap()
-                    .contains(&witness["source_unit"])
-                    && statement["source"].as_str().unwrap().contains("sink(api)")
-            })
-    );
+    assert_inspection_shows(witness, "sink(api)");
 }
 
 fn rejected_namespace_argument_variant(
@@ -1194,28 +1006,13 @@ fn rejected_namespace_argument_variant(
          const wrapped = {factory_call};\n\
          later = 42;\n"
     );
-    let mut members = vec![
-        Member::new("sink"),
-        Member::new("callback"),
-        Member::new("wrapped"),
-    ];
+    let mut members = Vec::from(binding_members(["sink", "callback", "wrapped"]));
     members.extend(extra_members.iter().copied().map(Member::new));
-    run_rejection_fixture_with_graphs(
-        FixtureOpts::new(
-            &source,
-            vec![
-                logical_module_with_anon("callbacks/wrapped", &members, anonymous_statements),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = { make(callback) { return { invoke: callback }; } };\nexport const other = {};\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_retained_callback_factory_member("api", "make", 1, &[0])
-            .with_namespace_independent_members("api", &["make"])
-            .build()]),
+    rejected_namespace_fixture(
+        &source,
+        "export const api = { make(callback) { return { invoke: callback }; } };\nexport const other = {};\n",
+        &members,
+        anonymous_statements,
     )
 }
 
@@ -1228,6 +1025,7 @@ fn known_namespace_call_argument_is_not_labeled_opaque_by_unrelated_loss() {
             "(sink(api), unknown(other));",
         ),
     ] {
+        eprintln!("case: {call_source}");
         let rejected = rejected_namespace_argument_variant(
             call_source,
             "api.make(callback)",
@@ -1289,6 +1087,7 @@ fn alias_aggregate_signature_and_ambiguous_calls_stay_inconclusive() {
             vec!["sink(api);"],
         ),
     ] {
+        eprintln!("case: {call_source} {factory_call}");
         let rejected = rejected_namespace_argument_variant(
             call_source,
             factory_call,
@@ -1318,6 +1117,7 @@ fn old_and_new_contracts_are_independent_and_unmatched_shapes_fall_back() {
         ("factory(callback, () => later)", true),
         ("factory(callback)", false),
     ] {
+        eprintln!("case: {call}");
         let source = format!(
             "import {{ factory }} from './peer.js';\nconst callback = () => later;\nconst wrapped = {call};\nconst later = 42;\nconsole.log(wrapped.invoke());\n"
         );
@@ -1344,154 +1144,12 @@ fn old_and_new_contracts_are_independent_and_unmatched_shapes_fall_back() {
 }
 
 #[test]
-fn publishing_returned_graph_exposes_both_callback_positions() {
-    let source = "import { factory } from './peer.js';\nimport { consume } from './host.js';\nlet later = 0;\nlet other = 0;\nconst callback = () => later;\nconst wrapped = factory(callback, () => other);\nconst observed = consume(wrapped);\nlater = 42;\nother = 7;\nconsole.log(observed, later, other);\n";
-    let chunks = [
-        ("static/peer", PROVIDER),
-        (
-            "static/host",
-            "export function consume(value) { return Reflect.apply(value.compare, null, []); }\n",
-        ),
-    ];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_retained_callback_factory("factory", 2, &[0, 1])
-        .build()];
-    let all: Vec<_> = ["callback", "wrapped", "observed", "later", "other"]
-        .into_iter()
-        .map(Member::new)
-        .collect();
-    let colocated = run_fixture_with_graphs(
-        FixtureOpts::new(
-            source,
-            vec![logical_module_with_anon(
-                "all",
-                &all,
-                &["later = 42;", "other = 7;"],
-            )],
-        )
-        .with_extra_chunks(&chunks)
-        .with_chunk_export_purity(&contracts),
-    );
-    assert_preserved_entry_output(&colocated, "0 42 7\n");
-    assert_eager_read(&colocated, "observed", "later");
-    assert_eager_read(&colocated, "observed", "other");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["callback", "wrapped", "observed"]),
-                ),
-                logical_module_with_anon(
-                    "values/later",
-                    &binding_members(["later", "other"]),
-                    &["later = 42;", "other = 7;"],
-                ),
-            ],
-        )
-        .with_extra_chunks(&chunks)
-        .with_chunk_export_purity(&contracts),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn callback_argument_evaluation_effects_remain_eager_and_ordered() {
-    let source = "import { factory } from './peer.js';\nlet later = 0;\nconst callback = () => later;\nconst wrapped = factory((globalThis.seen = callback(), callback), () => later);\nlater = 42;\nconsole.log(globalThis.seen, later);\n";
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_retained_callback_factory("factory", 2, &[0, 1])
-        .build()];
-    let colocated = run_fixture_with_graphs(
-        FixtureOpts::new(
-            source,
-            vec![logical_module_with_anon(
-                "all",
-                &binding_members(["callback", "wrapped", "later"]),
-                &["later = 42;"],
-            )],
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_chunk_export_purity(&contracts),
-    );
-    assert_preserved_entry_output(&colocated, "0 42\n");
-    assert_eager_read(&colocated, "wrapped", "later");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["callback", "wrapped"]),
-                ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_chunk_export_purity(&contracts),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
-fn admitted_call_argument_retains_its_own_synchronous_effects() {
-    let source = "import { factory } from './peer.js';\nlet later = 0;\nconst callback = () => later;\nfunction makeReader() { globalThis.seen = callback(); return () => later; }\nconst wrapped = factory(makeReader(), () => other);\nconst other = 7;\nlater = 42;\nconsole.log(globalThis.seen, wrapped.invoke(), wrapped.compare());\n";
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_retained_callback_factory("factory", 2, &[0, 1])
-        .build()];
-    let all: Vec<_> = ["callback", "makeReader", "wrapped", "later", "other"]
-        .into_iter()
-        .map(Member::new)
-        .collect();
-    let colocated = run_fixture_with_graphs(
-        FixtureOpts::new(
-            source,
-            vec![logical_module_with_anon("all", &all, &["later = 42;"])],
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_chunk_export_purity(&contracts),
-    );
-    assert_preserved_entry_output(&colocated, "0 42 7\n");
-    assert_eager_read(&colocated, "wrapped", "later");
-    let graph = colocated.dependency_graph();
-    let wrapped = source_unit_for_binding(&graph, "wrapped");
-    let other = source_unit_for_binding(&graph, "other");
-    assert!(!graph.edges.iter().any(|edge| edge.source == wrapped
-        && edge.target == other
-        && edge.edge_kind == DepKind::EagerUse
-        && edge.constrains_init_order));
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &binding_members(["callback", "makeReader", "wrapped"]),
-                ),
-                logical_module_with_anon(
-                    "values/later",
-                    &binding_members(["later", "other"]),
-                    &["later = 42;"],
-                ),
-            ],
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_chunk_export_purity(&contracts),
-        &["callbacks/wrapped", "values/later"],
-        &[],
-    );
-}
-
-#[test]
 fn previously_published_callback_keeps_conservative_timing() {
     expect_atomic_conflict_rejection(FixtureOpts::new(
         "import { factory } from './peer.js';\nconst callback = () => later;\nglobalThis.saved = callback;\nconst wrapped = factory(callback);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
         vec![logical_module_with_anon("callbacks/wrapped", &binding_members(["callback", "wrapped"]), &["globalThis.saved = callback;"]),
              logical_module("values/later", &[Member::new("later")])],
-    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-        .with_retained_callback_factory("factory", 1, &[0]).build()]), &["callbacks/wrapped", "values/later"], &[]);
+    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[retained_factory(1, &[0])]), &["callbacks/wrapped", "values/later"], &[]);
 }
 
 #[test]
@@ -1500,7 +1158,6 @@ fn distinct_local_closure_instances_preserve_their_captured_callbacks() {
         "import { factory } from './peer.js';\nfunction reader(callback) { return () => callback(); }\nconst first = reader(() => later);\nconst second = reader(() => other);\nconst wrapped = factory(first, second);\nconst later = 42;\nconst other = 7;\nconsole.log(wrapped.invoke(), wrapped.compare());\n",
         vec![logical_module("callbacks/wrapped", &binding_members(["reader", "first", "second", "wrapped"])),
              logical_module("values/later", &[Member::new("later")]), logical_module("values/other", &[Member::new("other")])],
-    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-        .with_retained_callback_factory("factory", 2, &[0, 1]).build()]));
+    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[retained_factory(2, &[0, 1])]));
     assert_preserved_entry_output(&fixture, "42 7\n");
 }

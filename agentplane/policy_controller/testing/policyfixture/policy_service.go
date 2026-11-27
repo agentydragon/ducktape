@@ -2,6 +2,7 @@
 package policyfixture
 
 import (
+	"context"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -20,6 +21,10 @@ func PolicyService(t *testing.T, namespace string, objects client.WithWatch) pol
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+	go func() { _ = service.Start(ctx); close(stopped) }()
+	t.Cleanup(func() { cancel(); <-stopped })
 	methods, err := service.Methods()
 	if err != nil {
 		t.Fatal(err)

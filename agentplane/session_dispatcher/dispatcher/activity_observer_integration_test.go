@@ -11,6 +11,8 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -222,5 +224,49 @@ func TestHostActivityObserverCatchupReconnectAndLifecycle(t *testing.T) {
 		if activity.GetUnknown().GetReason() != dispatcherpb.SessionActivity_Unknown_STREAM_LOST {
 			t.Fatalf("unexpected delete transition %v", activity)
 		}
+	}
+}
+
+func TestHostActivityObserverRetriesFailedScan(t *testing.T) {
+	queueStore, url := testStoreWithURL(t, 5)
+	ctx := admitted(t)
+	uid, id := uuid.NewString(), uuid.NewString()
+	if _, err := createSession(queueStore, ctx, id, "activity-scan-retry", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Block the initial scan on a table lock, then cancel it: a transient DB error.
+	lock, err := queueStore.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Rollback() }()
+	if _, err := lock.ExecContext(ctx, `LOCK TABLE session IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	db := postgres.Open(t, url)
+	db.SetMaxOpenConns(1)
+	observerPID := postgres.BackendPID(t, ctx, db)
+	catalog := &activityCatalog{testCatalog: testCatalog{sandbox: SandboxSnapshot{Name: "activity-scan-retry", Namespace: "test", UID: uid}}}
+	client := &activityClient{calls: make(chan *activityCall, 8)}
+	observer := &HostActivityObserver{Store: store.NewStore(db, 5), Catalog: catalog, Client: client, Hub: sessionWatchHub(t, url, "activity-scan-retry-"+uuid.NewString()), Namespace: "test"}
+	observers, cancel := context.WithCancel(t.Context())
+	var runErr error
+	stopped := make(chan struct{})
+	go func() { defer close(stopped); runErr = observer.Run(observers) }()
+	t.Cleanup(func() { cancel(); <-stopped })
+	postgres.WaitForBlocker(t, ctx, queueStore.DB, observerPID, postgres.BackendPID(t, ctx, lock))
+	if _, err := lock.ExecContext(ctx, `SELECT pg_cancel_backend($1)`, observerPID); err != nil {
+		t.Fatal(err)
+	}
+	if err := lock.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case call := <-client.calls:
+		close(call.disconnect)
+	case <-stopped:
+		t.Fatalf("observer stopped after a transient scan error: %v", runErr)
+	case <-time.After(10 * time.Second):
+		t.Fatal("failed scan was not retried")
 	}
 }

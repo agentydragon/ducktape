@@ -15,13 +15,17 @@ fn has_function(values: &Values) -> bool {
 }
 
 fn assert_matches_reference(source: &str) -> ChunkValueFlow {
+    assert_case_matches_reference("", source)
+}
+
+fn assert_case_matches_reference(case: &str, source: &str) -> ChunkValueFlow {
     let module = raw_js_test_support::parse(source);
     let body = top_level_item_views(&module.body);
     let actual = ChunkValueFlow::analyze(&body);
     let reference = ChunkValueFlow::analyze_reference(&body);
     assert_eq!(
         actual, reference,
-        "value-flow mismatch for source:\n{source}"
+        "value-flow mismatch for case {case:?}, source:\n{source}"
     );
 
     // The raw parse above preserves empty SyntaxContexts for the individual
@@ -37,7 +41,7 @@ fn assert_matches_reference(source: &str) -> ChunkValueFlow {
     let resolved_reference = ChunkValueFlow::analyze_reference(&resolved_body);
     assert_eq!(
         resolved_actual, resolved_reference,
-        "resolved value-flow mismatch for source:\n{source}"
+        "resolved value-flow mismatch for case {case:?}, source:\n{source}"
     );
     actual
 }
@@ -423,44 +427,25 @@ const returned = make();
         flow.candidate_object_index_reference_for_test(&candidates)
     );
 
-    let binding_origin = |name: &str, is_object: fn(&Value) -> bool| {
+    let binding_origin = |name: &str, kind: Kind| {
         flow.values_of_binding(&id(name))
             .iter()
-            .find(is_object)
-            .unwrap_or_else(|| panic!("{name} should have a matching value origin"))
+            .find(|origin| matches!(origin, Value::Alloc(origin_kind, _) if *origin_kind == kind))
+            .unwrap_or_else(|| panic!("{name} should have a {kind:?} origin"))
     };
-    let Value::Alloc(Kind::Object, leaf) = binding_origin("leaf", |origin| {
-        matches!(origin, Value::Alloc(Kind::Object, _))
-    }) else {
-        unreachable!();
-    };
-    let Value::Alloc(Kind::Object, outer) = binding_origin("outer", |origin| {
-        matches!(origin, Value::Alloc(Kind::Object, _))
-    }) else {
-        unreachable!();
-    };
-    let Value::Alloc(Kind::Function, relay) = binding_origin("relay", |origin| {
-        matches!(origin, Value::Alloc(Kind::Function, _))
-    }) else {
-        unreachable!();
-    };
-    let Value::Alloc(Kind::Function, make) = binding_origin("make", |origin| {
-        matches!(origin, Value::Alloc(Kind::Function, _))
-    }) else {
-        unreachable!();
-    };
-
-    assert!(
-        actual.0[&Value::Alloc(Kind::Object, outer)].contains(&Value::Alloc(Kind::Object, leaf))
-    );
-    assert!(
-        actual.0[&Value::Alloc(Kind::Function, relay)].contains(&Value::Alloc(Kind::Object, leaf))
-    );
-    assert!(
-        actual.0[&Value::Alloc(Kind::Function, make)].contains(&Value::Alloc(Kind::Object, leaf))
-    );
+    let leaf = binding_origin("leaf", Kind::Object);
+    for (name, kind) in [
+        ("outer", Kind::Object),
+        ("relay", Kind::Function),
+        ("make", Kind::Function),
+    ] {
+        assert!(
+            actual.0[&binding_origin(name, kind)].contains(&leaf),
+            "{name}"
+        );
+    }
     for name in ["alias", "returned"] {
-        assert!(actual.1[&id(name)].contains(&Value::Alloc(Kind::Object, leaf)));
+        assert!(actual.1[&id(name)].contains(&leaf), "{name}");
     }
 }
 
@@ -582,19 +567,31 @@ fn cached_expression_dependency_work_tracks_distinct_reads() {
 }
 
 #[test]
-fn worklist_matches_reference_across_reverse_calls_and_source_orders() {
-    for source in [
-        return_call_chain(48, false),
-        return_call_chain(48, true),
-        reverse_identity_alias_chain(48),
-        r#"
+fn worklist_matches_reference() {
+    let generated = [
+        ("return call chain", return_call_chain(48, false)),
+        (
+            "reverse-declared return call chain",
+            return_call_chain(48, true),
+        ),
+        (
+            "reverse identity alias chain",
+            reverse_identity_alias_chain(48),
+        ),
+    ];
+    let fixed = [
+        (
+            "callee declared after its call",
+            r#"
 const result = relay(target);
 function relay(callback) { return callback(); }
 function target() { return base; }
 function base() {}
-"#
-        .to_string(),
-        r#"
+"#,
+        ),
+        (
+            "recursive apply over projected branches",
+            r#"
 function apply(callback, depth) {
   if (depth > 0) return apply(callback, depth - 1);
   return callback();
@@ -608,18 +605,11 @@ const branch0 = { run: source.run };
 const branch1 = { run: branch0.run };
 const branch2 = { run: branch1.run };
 const result = apply(branch2.run, 2);
-"#
-        .to_string(),
-    ] {
-        assert_matches_reference(&source);
-    }
-}
-
-#[test]
-fn worklist_matches_reference_across_expression_and_binding_shapes() {
-    let cases = [
-        // Arrow expression bodies and block bodies both contribute return facts.
-        r#"
+"#,
+        ),
+        (
+            "arrow expression and block bodies both contribute return facts",
+            r#"
 function leaf() { return base; }
 function base() {}
 const expression = callback => callback();
@@ -627,8 +617,10 @@ const block = callback => { return callback(); };
 const first = expression(leaf);
 const second = block(leaf);
 "#,
-        // Canonical callable identities flow through classes and object methods.
-        r#"
+        ),
+        (
+            "canonical callable identities through classes and object methods",
+            r#"
 function helper() {}
 class Target { static run(callback = helper) { return callback; } }
 const { run } = Target;
@@ -638,16 +630,20 @@ const holder = {
 };
 const result = holder.invoke();
 "#,
-        // Array holes and spreads preserve the existing element-value behavior.
-        r#"
+        ),
+        (
+            "array holes and spreads",
+            r#"
 function first() {}
 function second() {}
 const source = [first, , ...[second]];
 const copy = [...source];
 const result = copy[0] || copy[1] || copy[2];
 "#,
-        // Dynamic member writes and later static reads must agree with the sweep.
-        r#"
+        ),
+        (
+            "dynamic member writes and later static reads",
+            r#"
 function target() {}
 const key = "run";
 const box = {};
@@ -656,8 +652,10 @@ const dynamic_read = box[key];
 const static_read = box.run;
 const result = dynamic_read || static_read;
 "#,
-        // Destructured/default/rest parameters include declared ids with no value.
-        r#"
+        ),
+        (
+            "destructured/default/rest parameters with valueless declared ids",
+            r#"
 function fallback() {}
 function target() {}
 let empty;
@@ -667,8 +665,10 @@ function select({ run = fallback } = {}, ...callbacks) {
 }
 const result = select({ run: target }, target, fallback);
 "#,
-        // Nested conditional/logical/sequence/assignment expressions grow callees.
-        r#"
+        ),
+        (
+            "nested conditional/logical/sequence/assignment callees",
+            r#"
 function invoke(callback) { return callback(); }
 function first() { return second(); }
 function second() { return leaf; }
@@ -678,23 +678,44 @@ let chosen;
 const box = { run: first };
 const result = invoke((chosen = true ? box.run : second, chosen || fallback));
 "#,
+        ),
+        // Only function metadata is discovered in the next four cases.
+        (
+            "metadata only: global argument",
+            "((callback) => callback)(globalThis);",
+        ),
+        (
+            "metadata only: class argument",
+            "((callback) => callback)(class {});",
+        ),
+        (
+            "metadata only: constructed class argument",
+            "((Constructor) => new Constructor())(class {});",
+        ),
+        (
+            // A separate return fact makes the legacy solver perform another sweep.
+            "metadata only with an extra sweep",
+            "((callback) => callback)(globalThis); (() => ({}))();",
+        ),
+        // Property feedback refreshes receiver and RHS reads.
+        (
+            "property feedback: receiver cycle",
+            "const first = {}; const second = {}; first.next = second; second.next = first; const state = { slot: first }; state.slot.next = state.slot; state.slot = state.slot.next;",
+        ),
+        (
+            "property feedback: late RHS",
+            "function callback() {} const first = {}; const second = {}; const state = { slot: first }; state.slot.run = state.slot.next; first.next = second; second.next = callback; state.slot = state.slot.next;",
+        ),
+        (
+            "property feedback: self receiver",
+            "function callback() {} const box = {}; box.next = box; box.next.run = box.next.next.run || callback;",
+        ),
     ];
-
-    for source in cases {
-        assert_matches_reference(source);
-    }
-}
-
-#[test]
-fn worklist_matches_reference_when_only_function_metadata_is_discovered() {
-    for source in [
-        "((callback) => callback)(globalThis);",
-        "((callback) => callback)(class {});",
-        "((Constructor) => new Constructor())(class {});",
-        // A separate return fact makes the legacy solver perform another sweep.
-        "((callback) => callback)(globalThis); (() => ({}))();",
-    ] {
-        assert_matches_reference(source);
+    let generated = generated
+        .iter()
+        .map(|(case, source)| (*case, source.as_str()));
+    for (case, source) in generated.chain(fixed) {
+        assert_case_matches_reference(case, source);
     }
 }
 
@@ -790,43 +811,22 @@ poly(box.missing || leaf, extra);
 "#,
     );
 
-    let extra = flow.values_of_binding(&id("extra"));
-    let extra_values = extra.iter().collect::<Vec<_>>();
-    assert_eq!(
-        extra_values.len(),
-        1,
-        "extra should have one function identity"
-    );
-    let extra_origin = extra_values[0];
+    let values = |name: &str| flow.values_of_binding(&id(name)).iter().collect::<Vec<_>>();
+    let [extra] = values("extra")[..] else {
+        panic!("extra should have one function identity");
+    };
+    let [leaf] = values("leaf")[..] else {
+        panic!("leaf should have one function identity");
+    };
     let callback = flow.values_of_binding(&id("callback"));
     assert!(callback.contains(&Value::Top));
-    let leaf = flow.values_of_binding(&id("leaf"));
-    let leaf_values = leaf.iter().collect::<Vec<_>>();
-    assert_eq!(
-        leaf_values.len(),
-        1,
-        "leaf should have one function identity"
-    );
-    assert!(callback.contains(&leaf_values[0]));
-    assert!(!callback.contains(&extra_origin));
-
-    assert_eq!(
-        flow.values_of_binding(&id("secondary"))
-            .iter()
-            .collect::<Vec<_>>(),
-        [extra_origin],
-    );
-    assert_eq!(
-        flow.values_of_binding(&id("right"))
-            .iter()
-            .collect::<Vec<_>>(),
-        [extra_origin],
-    );
+    assert!(callback.contains(&leaf));
+    assert!(!callback.contains(&extra));
+    for name in ["secondary", "right"] {
+        assert_eq!(values(name), [extra], "{name}");
+    }
     assert!(
-        flow.values_of_binding(&id("ignored"))
-            .iter()
-            .next()
-            .is_none(),
+        values("ignored").is_empty(),
         "a destructured parameter should not receive a binding fact",
     );
 }
@@ -888,9 +888,11 @@ const result = noParams(box.missing || leaf);
 }
 
 #[test]
-fn unknown_from_missing_property_survives_its_later_static_write() {
-    let flow = assert_matches_reference(
-        r#"
+fn early_reads_keep_unknown_and_gain_late_written_functions() {
+    for (case, source, binding) in [
+        (
+            "missing property survives its later static write",
+            r#"
 function invoke(callback) { return callback(); }
 function target() { return leaf; }
 function leaf() {}
@@ -899,110 +901,112 @@ const early = invoke(box.run);
 box.run = target;
 const later = invoke(box.run);
 "#,
-    );
-
-    let callback_values = flow.values_of_binding(&id("callback"));
-    assert!(callback_values.contains(&Value::Top));
-    assert!(has_function(&callback_values));
-}
-
-#[test]
-fn dynamic_property_read_wakes_when_a_new_static_property_is_added() {
-    for source in [
-        r#"
+            "callback",
+        ),
+        (
+            "dynamic read wakes for a new static property",
+            r#"
 function target() {}
 const key = "run";
 const box = {};
 const early = box[key];
 box.run = target;
 "#,
-        // The member event must first track its base binding, then its property.
-        r#"
+            "early",
+        ),
+        (
+            // The member event must first track its base binding, then its property.
+            "member read tracks a late base binding, then its property",
+            r#"
 let box;
 function target() {}
 const early = box.run;
 box.run = target;
 box = {};
 "#,
+            "early",
+        ),
     ] {
-        let flow = assert_matches_reference(source);
-
-        let values = flow.values_of_binding(&id("early"));
-        assert!(values.contains(&Value::Top));
-        assert!(has_function(&values));
+        let flow = assert_case_matches_reference(case, source);
+        let values = flow.values_of_binding(&id(binding));
+        assert!(values.contains(&Value::Top), "{case}: {values:?}");
+        assert!(has_function(&values), "{case}: {values:?}");
     }
 }
 
 #[test]
-fn a_possible_property_read_keeps_its_watcher_for_a_late_fixed_writer() {
-    let source = r#"
+fn property_read_watchers_follow_the_producer_census() {
+    // `has_function`: whether the early read must (Some(true)) or must not
+    // (Some(false)) gain the late function; None leaves it unasserted.
+    // `impossible`: no producer can ever write the slot, so the read is skipped.
+    for (case, source, has_late_function, impossible) in [
+        (
+            "possible read keeps its watcher for a late fixed writer",
+            r#"
 const box = { run: target };
 const early = box.run;
 function target() {}
-"#;
-    let (flow, stats) = analyze_checked(source);
-    let values = flow.values_of_binding(&id("early"));
-    assert!(values.contains(&Value::Top));
-    assert!(has_function(&values));
-    assert_eq!(stats.property_impossible_reads_skipped, 0);
-    assert!(stats.property_possible_reads_tracked > 0);
-}
-
-#[test]
-fn impossible_property_absence_keeps_top_without_a_property_watcher() {
-    let source = "const box = {};\nconst early = box.neverWritten;\n";
-    let (flow, stats) = analyze_checked(source);
-    assert!(flow.values_of_binding(&id("early")).contains(&Value::Top));
-    assert_eq!(stats.property_impossible_reads_skipped, 1);
-    assert_eq!(stats.property_possible_reads_tracked, 0);
-}
-
-#[test]
-fn a_possible_property_read_keeps_its_watcher_for_a_late_dynamic_receiver() {
-    let source = r#"
+"#,
+            Some(true),
+            false,
+        ),
+        (
+            "possible read keeps its watcher for a late dynamic receiver",
+            r#"
 const box = {};
 let receiver;
 function target() {}
 const early = box.run;
 receiver = box;
 receiver.run = target;
-"#;
-    let (flow, stats) = analyze_checked(source);
-    let values = flow.values_of_binding(&id("early"));
-    assert!(values.contains(&Value::Top));
-    assert!(has_function(&values));
-    assert_eq!(stats.property_impossible_reads_skipped, 0);
-    assert!(stats.property_possible_reads_tracked > 0);
-}
-
-#[test]
-fn same_slot_dynamic_writer_on_an_unrelated_object_is_conservative() {
-    let source = r#"
+"#,
+            Some(true),
+            false,
+        ),
+        (
+            "same-slot writer on an unrelated object is conservative",
+            r#"
 const box = {};
 const other = {};
 function target() {}
 const early = box.run;
 other.run = target;
-"#;
-    let (flow, stats) = analyze_checked(source);
-    let values = flow.values_of_binding(&id("early"));
-    assert!(values.contains(&Value::Top));
-    assert!(!has_function(&values));
-    assert_eq!(stats.property_impossible_reads_skipped, 0);
-    assert!(stats.property_possible_reads_tracked > 0);
-}
-
-#[test]
-fn empty_rhs_property_events_remain_in_the_producer_census() {
-    let source = r#"
+"#,
+            Some(false),
+            false,
+        ),
+        (
+            "empty-RHS property events remain in the producer census",
+            r#"
 const box = {};
 const early = box.run;
 box.run = 1;
-"#;
-    let (flow, stats) = analyze_checked(source);
-    assert!(flow.values_of_binding(&id("early")).contains(&Value::Top));
-    assert_eq!(stats.property_impossible_reads_skipped, 0);
-    assert!(stats.property_possible_reads_tracked > 0);
+"#,
+            None,
+            false,
+        ),
+        (
+            "impossible absence keeps Unknown without a watcher",
+            "const box = {};\nconst early = box.neverWritten;\n",
+            None,
+            true,
+        ),
+    ] {
+        let (flow, stats) = analyze_checked(source);
+        let values = flow.values_of_binding(&id("early"));
+        assert!(values.contains(&Value::Top), "{case}: {values:?}");
+        if let Some(expected) = has_late_function {
+            assert_eq!(has_function(&values), expected, "{case}: {values:?}");
+        }
+        assert_eq!(
+            (
+                stats.property_impossible_reads_skipped,
+                stats.property_possible_reads_tracked > 0,
+            ),
+            (usize::from(impossible), !impossible),
+            "{case}: {stats:?}"
+        );
+    }
 }
 
 #[test]
@@ -1099,26 +1103,18 @@ const late_right = make_right()[key];
         }
     }
 
-    for binding in ["early_left", "late_left"] {
+    for (binding, own, other) in [
+        ("early_left", left_functions, right_functions),
+        ("late_left", left_functions, right_functions),
+        ("early_right", right_functions, left_functions),
+        ("late_right", right_functions, left_functions),
+    ] {
         let values = flow.values_of_binding(&id(binding));
         assert!(values.contains(&Value::Top), "{binding} lost Unknown");
-        for expected in left_functions {
+        for expected in own {
             assert!(values.contains(&expected), "{binding} lost {expected:?}");
         }
-        for other_object in right_functions {
-            assert!(
-                !values.contains(&other_object),
-                "{binding} included another object's value {other_object:?}",
-            );
-        }
-    }
-    for binding in ["early_right", "late_right"] {
-        let values = flow.values_of_binding(&id(binding));
-        assert!(values.contains(&Value::Top), "{binding} lost Unknown");
-        for expected in right_functions {
-            assert!(values.contains(&expected), "{binding} lost {expected:?}");
-        }
-        for other_object in left_functions {
+        for other_object in other {
             assert!(
                 !values.contains(&other_object),
                 "{binding} included another object's value {other_object:?}",
@@ -1258,14 +1254,6 @@ fn growing_invocation(
 }
 
 #[test]
-fn unchanged_argument_is_evaluated_once_while_call_targets_grow() {
-    for targets in [4, 16, 64] {
-        let source = growing_invocation(targets, false, false);
-        assert_eq!(argument_evaluations(&source), 1, "targets={targets}");
-    }
-}
-
-#[test]
 fn growing_argument_does_not_revisit_an_unchanged_sibling() {
     for targets in [4, 16, 64] {
         let changing = argument_evaluations(&growing_invocation(targets, true, false));
@@ -1297,14 +1285,10 @@ const next = target;
     }
 }
 
-fn invocation_work(source: &str) -> crate::FlowWorkStats {
-    analyze_checked(source).1
-}
-
 #[test]
 fn late_targets_activate_edges_once_without_replaying_existing_edges() {
     for targets in [4, 16, 64] {
-        let stats = invocation_work(&growing_invocation(targets, false, false));
+        let (_, stats) = analyze_checked(&growing_invocation(targets, false, false));
         assert_eq!(stats.target_discoveries, targets);
         assert_eq!(stats.activated_edges, targets);
         assert_eq!(stats.edge_visits, targets);
@@ -1348,7 +1332,7 @@ fn invocation_origin_deliveries_are_bounded_by_edges_times_distinct_origins() {
                         source
                             .push_str(&format!("const payload{origin} = origin{origin}{next};\n"));
                     }
-                    let stats = invocation_work(&source);
+                    let (_, stats) = analyze_checked(&source);
                     let edges = targets * consumers;
                     assert_eq!(stats.activated_edges, edges, "{source}");
                     assert_eq!(stats.target_discoveries, edges);
@@ -1421,17 +1405,6 @@ var next = second;
     assert_eq!(late, &flow.values_of_binding(&id("callback")));
 }
 
-#[test]
-fn property_feedback_refreshes_receiver_and_rhs_reads() {
-    for source in [
-        "const first = {}; const second = {}; first.next = second; second.next = first; const state = { slot: first }; state.slot.next = state.slot; state.slot = state.slot.next;",
-        "function callback() {} const first = {}; const second = {}; const state = { slot: first }; state.slot.run = state.slot.next; first.next = second; second.next = callback; state.slot = state.slot.next;",
-        "function callback() {} const box = {}; box.next = box; box.next.run = box.next.next.run || callback;",
-    ] {
-        assert_matches_reference(source);
-    }
-}
-
 fn property_fanout(
     receivers: usize,
     origins: usize,
@@ -1483,7 +1456,8 @@ fn work_bounds_property_receivers_do_not_replay_old_receivers_or_stable_rhs() {
     for receivers in [2, 8, 32] {
         for origins in [1, 8] {
             for consumers in [1, 5] {
-                let stats = invocation_work(&property_fanout(receivers, origins, consumers, true));
+                let (_, stats) =
+                    analyze_checked(&property_fanout(receivers, origins, consumers, true));
                 let edges = receivers * consumers;
                 assert_eq!(stats.property_rhs_evaluations, consumers);
                 assert_eq!(stats.property_receiver_activations, edges);
@@ -1605,7 +1579,7 @@ fn work_bounds_property_rhs_preserves_shared_full_result() {
 
 #[test]
 fn literal_fields_retain_only_caches_with_growing_inputs() {
-    let stats = invocation_work(
+    let (_, stats) = analyze_checked(
         "function callback() {} const record = { fixed: function () {}, empty: 1, callback, read: delayed }; const delayed = callback; record.count = 1;",
     );
     assert_eq!(stats.property_dynamic_records, 0);
@@ -1650,22 +1624,12 @@ const string_key = items["0"];
     for name in ["numeric", "bigint"] {
         let values = flow.values_of_binding(&id(name));
         assert!(values.contains(&Value::Top), "{name}: {values:?}");
-        assert!(
-            zero.iter().all(|value| values.contains(&value)),
-            "{name}: {values:?}"
-        );
-        assert!(
-            one.iter().all(|value| values.contains(&value)),
-            "{name}: {values:?}"
-        );
-        assert!(
-            nan.iter().all(|value| values.contains(&value)),
-            "{name}: {values:?}"
-        );
-        assert!(
-            infinity.iter().all(|value| values.contains(&value)),
-            "{name}: {values:?}"
-        );
+        for numeric_value in [&zero, &one, &nan, &infinity] {
+            assert!(
+                numeric_value.iter().all(|value| values.contains(&value)),
+                "{name}: {values:?}"
+            );
+        }
         assert!(
             !named.iter().any(|value| values.contains(&value)),
             "{name}: {values:?}"
