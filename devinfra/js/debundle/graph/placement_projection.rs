@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use anyhow::Context;
 use serde::Serialize;
 use source_identity::{SourceUnitId, SourceUnitOrdinal, StatementId};
 use swc_ecma_ast::{Id, ModuleItem};
@@ -308,6 +309,22 @@ impl SourceUnitLayout {
 
     pub fn by_source_unit(&self, source_unit: SourceUnitId) -> Option<&SourceUnitLocation> {
         self.by_id.get(&source_unit)
+    }
+
+    /// Checked placement of one graph source unit. A unit without a row is
+    /// [`SourceUnitLayoutIssue::MissingSyntaxLocation`], so emitters and plan
+    /// builders that place against the layout report that as a failure instead
+    /// of restating the message at each lookup.
+    pub fn checked_location(
+        &self,
+        source_unit: SourceUnitId,
+    ) -> anyhow::Result<&SourceUnitLocation> {
+        self.by_source_unit(source_unit).with_context(|| {
+            format!(
+                "source unit {} has no checked syntax location",
+                source_unit.0
+            )
+        })
     }
 
     pub fn for_statement(

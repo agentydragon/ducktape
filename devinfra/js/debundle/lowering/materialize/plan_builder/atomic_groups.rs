@@ -35,9 +35,7 @@ impl<'a> PlacementSourceUnits<'a> {
     ) -> Result<Self> {
         let graph = &precomputed.dependency_graph;
         for node in graph.iter_nodes() {
-            layout.by_source_unit(node.id).with_context(|| {
-                format!("source unit {} has no checked syntax location", node.id.0)
-            })?;
+            layout.checked_location(node.id)?;
         }
         Ok(Self { graph, layout })
     }
@@ -408,12 +406,7 @@ impl ChunkPlanBuilder {
                 let node = dependency_graph.node(*source_unit).with_context(|| {
                     format!("source unit {} has no export surface", source_unit.0)
                 })?;
-                let location = layout.by_source_unit(*source_unit).with_context(|| {
-                    format!(
-                        "source unit {} has no checked syntax location",
-                        source_unit.0
-                    )
-                })?;
+                let location = layout.checked_location(*source_unit)?;
                 for id in &node.declared {
                     export_surface.add_binding(id.0.to_string(), id.clone());
                 }

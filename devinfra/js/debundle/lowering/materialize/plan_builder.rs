@@ -1228,9 +1228,7 @@ impl ChunkPlanBuilder {
         let source_unit_statements: HashMap<SourceUnitId, StatementId> = graph
             .iter_nodes()
             .map(|node| {
-                let location = layout.by_source_unit(node.id).with_context(|| {
-                    format!("source unit {} has no checked syntax location", node.id.0)
-                })?;
+                let location = layout.checked_location(node.id)?;
                 Ok((node.id, location.statement))
             })
             .collect::<Result<_>>()?;
