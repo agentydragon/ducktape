@@ -475,7 +475,7 @@ theorem evalExpr_localUnary {W : World} {op : UnOp} {operand : Expr}
     (h : localUnaryOperand op operand = true) (n : Nat) (env : Env) :
     evalExpr (W := W) (n + 1) env (.unary op operand) =
       (evalExpr n env operand >>= fun v => lift (unop (initialState W 0) op v)) := by
-  rcases localUnaryOperand_ops h with rfl | rfl <;> rfl
+  rcases localUnaryOperand_ops h with h | h | h <;> cases h <;> rfl
 
 /-- At any fuel, a literal arithmetic tree either runs out of fuel or returns
 a Number independent of the state. Use the evaluator's own binary operation,

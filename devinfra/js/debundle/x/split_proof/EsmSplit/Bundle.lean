@@ -56,7 +56,7 @@ structure Stmt where
       Effectful statements keep their relative order. A statement that only builds and changes objects of the program
       is not an effect: its `writes` order it against whoever shares an object with it. -/
   effect  : Bool := false
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- What a statement binds: the names it declares and the names it assigns. -/
 def Stmt.binds (s : Stmt) : List Name := s.defs ++ s.writes

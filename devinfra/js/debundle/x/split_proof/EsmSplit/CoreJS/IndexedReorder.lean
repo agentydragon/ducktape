@@ -10,9 +10,26 @@ namespace CoreJS.IndexedReorder
 
 open LiteralSwapCheck
 
-/-- A checked schedule changes the execution order while preserving the
-original-ID allocation, source scopes, and complete bounded result. -/
-theorem run_of_schedule {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+/-- The common indexed linker construction for a checked executable order.
+Both primitive and allocation-only schedule theorems use this evidence, so
+they reason about the same source allocation and generated module scopes. -/
+structure ScheduleLinks {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    (original : Program) (source : Module) (scheduled : List (Nat × Stmt)) (w : World) where
+  frames : List (Nat × List (Name × Addr))
+  ready : State w
+  allocated : declareTops source.body (initialState w original.regions) = .ok frames ready
+  env : Env
+  envMatches : env = { vars := source.scope frames, this := .undef }
+  before : LinkedBehavior.CheckedLink original w
+  beforeReady : before.ready = ready
+  after : LinkedBehavior.CheckedLink (splitProgramIndexed source.body B P) w
+  afterReady : after.ready = ready
+  same : SameUnits (inScope env scheduled) (unitsOf after.linked)
+  sourceUnits : unitsOf before.linked = inScope env source.body
+
+/-- Allocate the exact source IDs, link the actual indexed candidate, and
+relate its loaded units to the requested schedule. -/
+theorem checkedScheduleLinks {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
     (valid : EsmSplit.Valid B S P) {original : Program} {source : Module}
     (single : original.modules = [source]) (imports : source.imports = [])
     (found : original.find original.entry = some source)
@@ -21,15 +38,14 @@ theorem run_of_schedule {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.
     (complete : IndexedPlanCells.DefinitionsPresent source.body B)
     (ordered : source.body.Pairwise (fun a b => a.1 ≤ b.1))
     (consts : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init)
-    {scheduled : List (Nat × Stmt)} (steps : SourceSchedule source.body scheduled)
+    {scheduled : List (Nat × Stmt)} (permutation : scheduled.Perm source.body)
     (ids : SparseProjectedOrder.executableIds source.body P = scheduled.map Prod.fst)
-    (w : World) (fuel : Nat) :
-    runProgram w fuel original = runProgram w fuel (splitProgramIndexed source.body B P) := by
+    (w : World) : Nonempty (ScheduleLinks (B := B) (P := P) original source scheduled w) := by
   let output := splitProgramIndexed source.body B P
   have unique := footprints.uniqueIds
   have covered : (SparseProjectedOrder.executableIds source.body P).Perm (source.body.map Prod.fst) := by
     rw [ids]
-    exact steps.perm.map Prod.fst
+    exact permutation.map Prod.fst
   have tops : output.tops = source.body :=
     SparseProjectedOrder.split_indexed_tops_of_perm unique covered ordered
   have regions : output.regions = original.regions := by
@@ -50,27 +66,96 @@ theorem run_of_schedule {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.
       rw [regions]
       exact IndexedEntryLink.link_after_const_allocation tops unique allocated scopes
         (IndexedEntryLink.indexed_initFunctions_consts scopes consts)⟩
-  have cells : ∀ id x e, (id, .decl .const x e) ∈ source.body →
-      ∃ a, env.vars.lookup x = some a := by
-    intro id x e member
-    have originalRow := IndexedExportCells.body_lookup footprints member
-    have defined := ((footprints.statement id _ originalRow).2 x).2 (by simp [Stmt.bindings, Stmt.varNames, varNamesOf, lexDecls])
-    obtain ⟨a, binding, _⟩ := IndexedExportCells.source_and_module_cell footprints frameNames
-      valid.1 (source := source) (m := source) rfl originalRow member defined
-    exact ⟨a, binding⟩
-  have moves := steps.linked env cells (fun _ _ _ hx hy => declareTops_scope_injective allocated source hx hy)
   have same : SameUnits (inScope env scheduled) (unitsOf linked) := by
     refine sameUnits_of ?_ fun u hu u' hu' _ sameStmt => ?_
-    · rw [keys, SparseProjectedOrder.split_indexed_loaded_of_ids unique steps.perm ids]
+    · rw [keys, SparseProjectedOrder.split_indexed_loaded_of_ids unique permutation ids]
       simp [inScope, List.map_map, Function.comp_def]
     · obtain ⟨⟨id, stmt⟩, _, rfl⟩ := List.mem_map.1 hu
       rw [sameStmt]
       exact agree u' hu'
-  rw [LinkedBehavior.run_after_link fuel before, LinkedBehavior.run_after_link fuel after]
-  have originalUnits : unitsOf before.linked = inScope env source.body := by simp [before, unitsOf, inScope]
-  rw [originalUnits]
-  exact (ExactLiteralMove.reorder_exact fuel moves ready).trans
-    (congrFun (runUnits_same fuel same) ready)
+  have sourceUnits : unitsOf before.linked = inScope env source.body := by
+    simp [before, unitsOf, inScope]
+  exact ⟨⟨frames, ready, allocated, env, rfl, before, rfl, after, rfl, same, sourceUnits⟩⟩
+
+/-- Any theorem about successful executions of the real linked units can use
+this common construction to prove normal-completion equivalence. -/
+theorem normal_of_unit_schedule {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (valid : EsmSplit.Valid B S P) {original : Program} {source : Module}
+    (single : original.modules = [source]) (imports : source.imports = [])
+    (found : original.find original.entry = some source)
+    (footprints : IndexedExportCells.Footprints source.body B)
+    (free : IndexedUnitsAgree.FreeFootprints source.body B)
+    (complete : IndexedPlanCells.DefinitionsPresent source.body B)
+    (ordered : source.body.Pairwise (fun a b => a.1 ≤ b.1))
+    (consts : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init)
+    {scheduled : List (Nat × Stmt)} (permutation : scheduled.Perm source.body)
+    (ids : SparseProjectedOrder.executableIds source.body P = scheduled.map Prod.fst)
+    (unitSchedule : ∀ {w} (links : ScheduleLinks (B := B) (P := P) original source scheduled w)
+      (fuel : Nat) (final : State w),
+      runUnits fuel (inScope links.env source.body) links.ready = .ok () final ↔
+        runUnits fuel (inScope links.env scheduled) links.ready = .ok () final) :
+    LinkedBehavior.ScheduleEquivalent .normalCompletion (fun _ => True)
+      original (splitProgramIndexed source.body B P) := by
+  change LinkedBehavior.NormalEquivalent (fun _ => True) original (splitProgramIndexed source.body B P)
+  intro w _ final
+  constructor
+  · rintro ⟨fuel, hrun, hnotFuel⟩
+    obtain ⟨links⟩ := checkedScheduleLinks valid single imports found footprints free complete ordered consts
+      permutation ids w
+    have sourceRun : runUnits fuel (inScope links.env source.body) links.ready = .ok () final := by
+      rw [← links.beforeReady, ← links.sourceUnits, ← LinkedBehavior.run_after_link fuel links.before]
+      exact hrun
+    have targetUnits := (unitSchedule links fuel final).mp sourceRun
+    have targetRun : runProgram w fuel (splitProgramIndexed source.body B P) = .ok () final := by
+      rw [LinkedBehavior.run_after_link fuel links.after, links.afterReady,
+        ← congrFun (runUnits_same fuel links.same) links.ready]
+      exact targetUnits
+    exact ⟨fuel, targetRun, by simp⟩
+  · rintro ⟨fuel, hrun, hnotFuel⟩
+    obtain ⟨links⟩ := checkedScheduleLinks valid single imports found footprints free complete ordered consts
+      permutation ids w
+    have candidateUnits : runUnits fuel (unitsOf links.after.linked) links.ready = .ok () final := by
+      rw [← links.afterReady, ← LinkedBehavior.run_after_link fuel links.after]
+      exact hrun
+    have targetUnits := (congrFun (runUnits_same fuel links.same) links.ready).trans candidateUnits
+    have sourceRun : runProgram w fuel original = .ok () final := by
+      rw [LinkedBehavior.run_after_link fuel links.before, links.beforeReady, links.sourceUnits]
+      exact (unitSchedule links fuel final).mpr targetUnits
+    exact ⟨fuel, sourceRun, by simp⟩
+
+/-- A checked schedule changes the execution order while preserving the
+original-ID allocation, source scopes, and complete bounded result. -/
+theorem run_of_schedule {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (valid : EsmSplit.Valid B S P) {original : Program} {source : Module}
+    (single : original.modules = [source]) (imports : source.imports = [])
+    (found : original.find original.entry = some source)
+    (footprints : IndexedExportCells.Footprints source.body B)
+    (free : IndexedUnitsAgree.FreeFootprints source.body B)
+    (complete : IndexedPlanCells.DefinitionsPresent source.body B)
+    (ordered : source.body.Pairwise (fun a b => a.1 ≤ b.1))
+    (consts : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init)
+    {scheduled : List (Nat × Stmt)} (steps : SourceSchedule source.body scheduled)
+    (ids : SparseProjectedOrder.executableIds source.body P = scheduled.map Prod.fst)
+    (w : World) (fuel : Nat) :
+    runProgram w fuel original = runProgram w fuel (splitProgramIndexed source.body B P) := by
+  obtain ⟨links⟩ := checkedScheduleLinks valid single imports found footprints free complete ordered consts
+    steps.perm ids w
+  have cells : ∀ id x e, (id, .decl .const x e) ∈ source.body →
+      ∃ a, links.env.vars.lookup x = some a := by
+    intro id x e member
+    have originalRow := IndexedExportCells.body_lookup footprints member
+    have defined := ((footprints.statement id _ originalRow).2 x).2 (by simp [Stmt.bindings, Stmt.varNames, varNamesOf, lexDecls])
+    obtain ⟨a, binding, _⟩ := IndexedExportCells.source_and_module_cell footprints
+      (declareTops_names _ links.allocated)
+      valid.1 (source := source) (m := source) rfl originalRow member defined
+    exact ⟨a, by simpa [links.envMatches] using binding⟩
+  have moves := steps.linked links.env cells
+    (fun _ _ _ hx hy => declareTops_scope_injective links.allocated source
+      (by simpa [links.envMatches] using hx) (by simpa [links.envMatches] using hy))
+  rw [LinkedBehavior.run_after_link fuel links.before, LinkedBehavior.run_after_link fuel links.after,
+    links.beforeReady, links.afterReady, links.sourceUnits]
+  exact (ExactLiteralMove.reorder_exact fuel moves links.ready).trans
+    (congrFun (runUnits_same fuel links.same) links.ready)
 
 /-- Inline export locals must come from original exporting declarations
 actually owned by the authored entry. These are executable IDs. -/
@@ -268,6 +353,5 @@ theorem inline_links_of_order_kept {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P 
   refine ⟨after, ready, same, ?_⟩
   rw [originalLinked]
   exact inline_tables valid found footprints complete frameNames afterScopes planEntry own table
-
 
 end CoreJS.IndexedReorder

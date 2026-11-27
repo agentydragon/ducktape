@@ -1653,8 +1653,11 @@ lean_library(
     name = "lowersplit_slice_certificate",
     srcs = ["EsmSplit/LowerSplit/SliceCertificate.lean"],
     deps = [
+        ":corejs_authenticated_source",
         ":corejs_binding_moves",
+        ":corejs_closed_array_schedule",
         ":corejs_heritage_certificate",
+        ":corejs_indexed_input_checks",
         ":corejs_linked_certificate_probe",
         ":corejs_linked_input",
         ":corejs_linked_pivot_certificate",
@@ -1724,7 +1727,11 @@ lean_proof_test(
     name = "slice_certificate_axioms_test",
     allow_empty = True,
     modules = ["EsmSplit.LowerSplit.SliceCertificate"],
-    required_theorems = ["EsmSplit.LowerSplit.certifySlice_sound"],
+    required_theorems = [
+        "EsmSplit.LowerSplit.certifyClosedArraySchedule",
+        "EsmSplit.LowerSplit.certifySlice",
+        "EsmSplit.LowerSplit.certifySlice_sound",
+    ],
     deps = [
         ":lowersplit_certified",
         ":lowersplit_diagnostic",
@@ -1983,6 +1990,7 @@ test_runner(
         ":corejs_opaque_input",
         ":corejs_state_match",
         ":lowersplit_input",
+        ":lowersplit_slice_certificate",
     ],
 )
 
@@ -3768,13 +3776,36 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.IndexedReorder"],
     required_theorems = [
+        "CoreJS.IndexedReorder.checkedScheduleLinks",
         "CoreJS.IndexedReorder.inline_links_of_order_kept",
         "CoreJS.IndexedReorder.inline_tables",
+        "CoreJS.IndexedReorder.normal_of_unit_schedule",
         "CoreJS.IndexedReorder.run_of_schedule",
         "CoreJS.IndexedReorder.same_inline_exports",
         "CoreJS.IndexedReorder.same_inline_exports_of_declarations",
     ],
     deps = [":corejs_indexed_reorder"],
+)
+
+lean_library(
+    name = "corejs_closed_array_schedule",
+    srcs = ["EsmSplit/CoreJS/ClosedArraySchedule.lean"],
+    deps = [":corejs_indexed_reorder"],
+)
+
+lean_proof_test(
+    name = "corejs_closed_array_schedule_axioms_test",
+    modules = ["EsmSplit.CoreJS.ClosedArraySchedule"],
+    required_theorems = [
+        "CoreJS.ClosedArraySchedule.Trace.perm",
+        "CoreJS.ClosedArraySchedule.Trace.successful",
+        "CoreJS.ClosedArraySchedule.check",
+        "CoreJS.ClosedArraySchedule.indexed_normal_of_schedule",
+        "CoreJS.ClosedArraySchedule.refuses_alias",
+        "CoreJS.ClosedArraySchedule.refuses_property_read",
+        "CoreJS.ClosedArraySchedule.swap_successful",
+    ],
+    deps = [":corejs_closed_array_schedule"],
 )
 
 lean_library(
