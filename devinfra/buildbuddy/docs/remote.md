@@ -137,10 +137,9 @@ starts Bazel on the hosted runner. That process reads `RunRequest.steps[].run` o
 Sandbox and makes its own nested BES, cache and Remote Execution requests, without the caller
 Pod's workload token or egress path, so a placeholder copied into `steps[].run` stays inert.
 
-The execution policy that follows (when to use direct `bb run` instead of `bbr`) is in
-[`bazel_configuration.md`](../../docs/bazel_configuration.md#credential-boundary-for-hosted-bb-remote).
-The design tradeoffs of the hosted-runner alternatives are in
-[`agentplane/docs/buildbuddy_remote_auth.md`](../../../agentplane/docs/buildbuddy_remote_auth.md).
+For staging's projected BuildBuddy key, its exposure and the agent-container execution policy,
+see [Agentplane hosted-run authentication](../../../agentplane/docs/buildbuddy_remote_auth.md).
+Choose the client using the [Bazel execution guide](../../docs/bazel_configuration.md#execution-environments-and-entry-points).
 
 ## Git state synchronization
 
