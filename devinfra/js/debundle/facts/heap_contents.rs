@@ -111,30 +111,16 @@ pub fn annotate_heap_contents(
         // Keep transient hash sets scoped to this source unit. Repeated body
         // keys in the item still union here before one ordered merge below.
         let mut item_callables = FxHashMap::default();
-        let mut collector = ArrayContentCollector {
+        let mut collector = ArrayContentCollector::for_statement(
             value_flow,
-            statement_owner: fact.ordinal,
-            local_class_heap_proof: proofs.local_class,
-            set_iterable_proof: proofs.set_iterable,
-            fresh_freeze_proof: proofs.fresh_freeze,
-            native_reads: proofs.native_reads,
-            native_facts: proofs.native_facts,
-            shadowed: proofs.shadowed,
-            array_reachability: &reachability,
-            array_origins: &origins.0,
-            eager: HeapContentBuilder::default(),
-            callables: &mut item_callables,
-            deferred_allocations: BTreeSet::new(),
-            collect_one_shot_arrays: single_initializer.is_some(),
-            one_shot_allocations: BTreeSet::new(),
-            bodies: Vec::new(),
-            heap_native_integrity_uses: BTreeSet::new(),
-            native_read_inferences: BTreeMap::new(),
-            native_read_inputs: BTreeMap::new(),
-            position: LazyPosition::default(),
-            checked_factory_call: None,
-            direct_root_new_site,
-        };
+            fact.ordinal,
+            &proofs,
+            &reachability,
+            &origins.0,
+            &mut item_callables,
+        );
+        collector.collect_one_shot_arrays = single_initializer.is_some();
+        collector.direct_root_new_site = direct_root_new_site;
         item.as_module_item().visit_with(&mut collector);
         // A local export list wires live bindings without evaluating their
         // values or executing a heap operation. Export reentry and callback
@@ -212,30 +198,15 @@ pub fn annotate_heap_contents(
             }
         }) {
             let mut unused_callables = FxHashMap::default();
-            let mut projection = ArrayContentCollector {
+            let mut projection = ArrayContentCollector::for_statement(
                 value_flow,
-                statement_owner: fact.ordinal,
-                local_class_heap_proof: proofs.local_class,
-                set_iterable_proof: proofs.set_iterable,
-                fresh_freeze_proof: proofs.fresh_freeze,
-                native_reads: proofs.native_reads,
-                native_facts: proofs.native_facts,
-                shadowed: proofs.shadowed,
-                array_reachability: &reachability,
-                array_origins: &origins.0,
-                eager: HeapContentBuilder::default(),
-                callables: &mut unused_callables,
-                deferred_allocations: BTreeSet::new(),
-                collect_one_shot_arrays: false,
-                one_shot_allocations: BTreeSet::new(),
-                bodies: Vec::new(),
-                heap_native_integrity_uses: BTreeSet::new(),
-                native_read_inferences: BTreeMap::new(),
-                native_read_inputs: BTreeMap::new(),
-                position: LazyPosition::default(),
-                checked_factory_call: Some(span),
-                direct_root_new_site: None,
-            };
+                fact.ordinal,
+                &proofs,
+                &reachability,
+                &origins.0,
+                &mut unused_callables,
+            );
+            projection.checked_factory_call = Some(span);
             item.as_module_item().visit_with(&mut projection);
             checked_factory_arguments.insert(span, std::mem::take(&mut projection.eager).finish());
         }
@@ -346,6 +317,46 @@ struct ArrayContentCollector<'a> {
     position: LazyPosition,
     checked_factory_call: Option<u32>,
     direct_root_new_site: Option<u32>,
+}
+
+impl<'a> ArrayContentCollector<'a> {
+    /// One walk of one source-unit statement. The proofs, reachability index
+    /// and origin set are the same for every walk of a statement, so they come
+    /// in together; what a particular walk collects stays at its call site,
+    /// and every other field starts from the collector's own empty state.
+    fn for_statement(
+        value_flow: &'a ChunkValueFlow,
+        statement_owner: source_identity::SourceUnitOrdinal,
+        proofs: &HeapContentProofs<'a>,
+        array_reachability: &'a CandidateObjectIndex<'a>,
+        array_origins: &'a BTreeSet<u32>,
+        callables: &'a mut FxHashMap<u32, HeapContentBuilder>,
+    ) -> Self {
+        Self {
+            value_flow,
+            statement_owner,
+            local_class_heap_proof: proofs.local_class,
+            set_iterable_proof: proofs.set_iterable,
+            fresh_freeze_proof: proofs.fresh_freeze,
+            native_reads: proofs.native_reads,
+            native_facts: proofs.native_facts,
+            shadowed: proofs.shadowed,
+            array_reachability,
+            array_origins,
+            eager: HeapContentBuilder::default(),
+            callables,
+            deferred_allocations: BTreeSet::new(),
+            collect_one_shot_arrays: false,
+            one_shot_allocations: BTreeSet::new(),
+            bodies: Vec::new(),
+            heap_native_integrity_uses: BTreeSet::new(),
+            native_read_inferences: BTreeMap::new(),
+            native_read_inputs: BTreeMap::new(),
+            position: LazyPosition::default(),
+            checked_factory_call: None,
+            direct_root_new_site: None,
+        }
+    }
 }
 
 impl ArrayContentCollector<'_> {
