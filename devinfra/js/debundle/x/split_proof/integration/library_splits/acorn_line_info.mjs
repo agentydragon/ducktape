@@ -59,6 +59,7 @@ const text = new Map(
 );
 const publication = "export { " + exports.map((sp) => original.code.slice(sp.start, sp.end)).join(", ") + " };\n";
 const code = [...text.values()].join("\n") + "\n" + publication;
+assert.equal(digest(code), "c3e458d7a67d6a8b781b7d3ff8052bc135db59b36eeac620c470f9a01b2c83ab");
 const projection = parse(code);
 assert.equal(topLevelStatements(projection.ast).length, ordinals.length + 1);
 assert.deepEqual(projection.scopes.globalScope.through, [], "no ambient binding in the projection");
@@ -167,6 +168,40 @@ async function nodeLayout(dir, owners, order, miswired = false) {
   return readModule(path.join(dir, entry));
 }
 
+// Change the scanner's single read of the imported function. Keep the
+// public alias and its original cell, so direct predicate tests still pass.
+async function checkMiswiredArtifact(request) {
+  const file = path.join(request.out, entry);
+  const originalBytes = readFileSync(file, "utf8");
+  const parsed = parse(originalBytes);
+  const module = parsed.scopes.scopes.find((scope) => scope.type === "module");
+  const scanner = topLevelStatements(parsed.ast).find(({ node }) => node.id?.name === names.get(b));
+  const scannerReads = module.set.get(names.get(a)).references.filter(({ identifier }) => {
+    return scanner.start <= identifier.start && identifier.end <= scanner.end;
+  });
+  assert.equal(scannerReads.length, 1);
+  const [{ identifier }] = scannerReads;
+  const tampered =
+    originalBytes.slice(0, identifier.start) +
+    "wrongPredicate" +
+    originalBytes.slice(identifier.end) +
+    "\nfunction wrongPredicate() { return false; }\n";
+  writeFileSync(file, tampered);
+  try {
+    const wrong = await import(pathToFileURL(file).href + "?wrong-scanner");
+    assert.deepEqual(Object.keys(wrong), publicNames);
+    const actual = observe(wrong);
+    assert.deepEqual(actual.direct, expected.direct);
+    assert.deepEqual(actual.positions[2], [1, 3, 1, 5]);
+    const reread = split({ ...request, checkOutput: true });
+    assert.equal(reread.status, "refused", reread.log);
+    assert.match(reread.reason, /entry\.mjs/);
+  } finally {
+    writeFileSync(file, originalBytes);
+  }
+}
+
+const acceptedOut = path.join(tmp, "cli-A");
 const results = [];
 for (const [name, moved] of [
   ["A", [a]],
@@ -195,16 +230,28 @@ for (const [name, moved] of [
   writeFileSync(spec, JSON.stringify({ entry, modules, order, sequential: true }, null, 2));
   const request = { source: input, spec, out: path.join(tmp, "cli-" + name), require: "all-outcomes" };
   const result = split(request);
-  if (result.status === "certified") {
+  if (name === "A") {
+    assert.equal(result.status, "certified", result.log);
+    assert.equal(result.scope, "indexed-exported-function", result.log);
+    assert.deepEqual(result.files, [entry, newline]);
     assert.equal(result.verdict.strategy, "compiled-constructor", result.log);
     assert.equal(result.guarantee, "all-outcomes", result.log);
     assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
     const actual = await readModule(path.join(request.out, entry));
     assert.deepEqual(Object.keys(actual), publicNames);
     assert.deepEqual(observe(actual), expected);
+    await checkMiswiredArtifact(request);
+    assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
   } else {
+    assert.equal(result.status, "refused", result.log);
     assert.equal(result.reasonCode, "no_constructed_rule", result.log);
     assert.equal(result.guarantee, null);
+    // Check and publication requests for a different layout both leave the
+    // existing certified A tree untouched. The split helper snapshots it.
+    for (const checkOutput of [false, true]) {
+      const againstA = split({ ...request, out: acceptedOut, allowExistingOut: true, checkOutput });
+      assert.equal(againstA.status, "refused", againstA.log);
+    }
   }
   const row = {
     name,
@@ -220,4 +267,26 @@ for (const [name, moved] of [
   results.push(row);
   console.log(JSON.stringify(row));
 }
+// A modeled outer function must not hide a deferred body inside the entry.
+const deferredSource = path.join(tmp, "deferred.mjs");
+writeFileSync(
+  deferredSource,
+  "function predicate(value) { return value === 10; }\n" +
+    "function retained() { return async function () { return 1; }; }\n" +
+    "export { predicate, retained };\n"
+);
+const deferredSpec = path.join(tmp, "deferred-spec.json");
+writeFileSync(
+  deferredSpec,
+  JSON.stringify({ entry, modules: { [newline]: ["#0"], [entry]: ["#1", "#2"] }, order: [newline], sequential: true })
+);
+const deferred = split({
+  source: deferredSource,
+  spec: deferredSpec,
+  out: path.join(tmp, "deferred-out"),
+  require: "all-outcomes",
+});
+assert.equal(deferred.status, "refused", deferred.log);
+assert.match(deferred.reason, /entry unit 1: expected concrete retained code/);
+
 writeFileSync(path.join(artifacts, "results.json"), JSON.stringify({ expected, results }, null, 2));

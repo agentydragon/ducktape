@@ -3728,6 +3728,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.IndexedExportedFunction"],
     required_theorems = [
         "CoreJS.IndexedExportedFunction.construct",
+        "CoreJS.IndexedExportedFunction.Construction.linkedCaptures",
         "CoreJS.IndexedExportedFunction.Construction.readbackGuarantees",
     ],
     deps = [":corejs_indexed_exported_function"],

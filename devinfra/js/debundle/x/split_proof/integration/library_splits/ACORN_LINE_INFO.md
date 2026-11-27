@@ -52,15 +52,19 @@ Node controls. If the CLI certifies, the fixture rechecks the emitted files
 from disk and repeats the same observations through the emitted entry.
 No emitted artifact was available on the measured revisions.
 
-The next bounded prerequisite is A alone on this unchanged source: preserve
-the hoisted predicate's exact cell as the deferred scanner callee while
-keeping the other functions, `Position` allocation, and prototype write in
-the entry. A+B needs that same edge across the two extracted owners. B
-alone also changes declaration order and produces a cycle through the entry;
-success on A would not settle either of those extra checks.
+With the ordered predicate extraction constructor, A certifies at
+`all-outcomes` on the same projection and owners. The entry keeps all four
+executable rows and both original export specifiers. The proof preserves the
+hoisted heap and the captured cells of every unit, including the scanner's
+read of the extracted predicate. It also preserves the complete public
+address table, so fresh calls use the same cells after initialization.
 
-The evidence PR can land independently. The comparison runs use the
-already-published fork revisions above and require no merge.
+The test requires both emitted files and checks them from disk. It then
+changes only the scanner's binding in the emitted entry and confirms that
+Node observes the same CRLF error as in the handwritten control. The disk
+checker rejects the edited artifact. B and A+B still refuse; they need,
+respectively, an order change through an entry cycle and more than one
+extracted owner. Refusing either request leaves an existing A tree intact.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:acorn_line_info --test_output=all

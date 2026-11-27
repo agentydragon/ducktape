@@ -8,9 +8,10 @@ import EsmSplit.CoreJS.IndexedSourceSchedule
 import EsmSplit.CoreJS.IndexedSortedScopes
 import EsmSplit.CoreJS.LinkWorld
 
-/-! Publish one hoisted predicate through an original standalone export row.
-The bounded expression gate needs no host behavior even for object arguments:
-strict comparison and truthiness do not invoke coercion hooks. -/
+/-! Extract one hoisted predicate through an original standalone export row.
+The helper is a source prefix; any remaining executable rows stay in the entry.
+Exact scope agreement preserves retained calls to the moved cell, including
+calls made after module evaluation. -/
 
 namespace CoreJS.IndexedExportedFunction
 
@@ -34,15 +35,66 @@ private def seeds (names : List Name) : List (Nat × Stmt) → Option (List Name
     if names.contains name || !literal value then none else seeds (name :: names) rest
   | _ => none
 
-private def checkFamily (source : Module) : Except String Unit := do
+-- The retained code is a bounded CoreJS fragment. In particular the parser's
+-- deferred bodies and ambient operations cannot be used to justify a move.
+mutual
+
+private def entryExpr : Nat → Expr → Bool
+  | 0, _ => false
+  | n + 1, expr =>
+    match expr with
+    | .undef | .this | .var _ => true
+    | .func f => entryFunc n f
+    | .get a b | .binary _ a b | .logical _ a b => entryExpr n a && entryExpr n b
+    | .unary _ e => entryExpr n e
+    | .cond test yes no => entryExpr n test && entryExpr n yes && entryExpr n no
+    | .assign target value => entryTarget n target && entryExpr n value
+    | .update target _ _ => entryTarget n target
+    | .call callee args | .new callee args => entryExpr n callee && args.all (entryExpr n)
+    | .callMethod receiver key args => entryExpr n receiver && entryExpr n key && args.all (entryExpr n)
+    | e => literal e
+
+private def entryTarget : Nat → Target → Bool
+  | 0, _ => false
+  | _ + 1, .var _ => true
+  | n + 1, .member receiver key => entryExpr n receiver && entryExpr n key
+  | _ + 1, .frozen _ => false
+
+private def entryStmt : Nat → Stmt → Bool
+  | 0, _ => false
+  | n + 1, stmt =>
+    match stmt with
+    | .expr e | .decl _ _ e | .ret e => entryExpr n e
+    | .funDecl f => entryFunc n f
+    | .varDecl _ => true
+    | .block body => body.all (entryStmt n)
+    | .ite test yes no => entryExpr n test && entryStmt n yes && entryStmt n no
+    | .loop init test update body _ =>
+      init.all (entryStmt n) && entryExpr n test && entryExpr n update && entryStmt n body
+    | _ => false
+
+private def entryFunc : Nat → Func → Bool
+  | n + 1, .mk _ .normal _ _ body => body.all (entryStmt n)
+  | _, _ => false
+
+end
+
+private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSplit.Spec)
+    (helper : String) : Except String Unit := do
+  let authored owner (row : Nat × Stmt) := request.claimants B row.1 == [owner]
+  let (prefixRows, entryRows) := source.body.span (authored helper)
+  unless !prefixRows.isEmpty && entryRows.all (authored request.entry) do
+    throw "predicate and captures must be authored in the helper, before the entry body"
   let (_, .funDecl (.mk name .normal false [param] [.ret value])) :: revSeeds :=
-      source.body.reverse | throw "expected an ordinary one-parameter return predicate"
+      prefixRows.reverse | throw "expected an ordinary one-parameter return predicate"
   let some captures := seeds [] revSeeds.reverse | throw "expected only literal const captures"
   unless !captures.contains name && !captures.contains param && param != name &&
       predicate (param :: captures) value do
     throw "expected strict comparisons and logical expressions over the parameter and literal captures"
-  let [(_, localName)] := source.exports | throw "expected one public function"
-  unless name == localName do throw "the source export must name the original predicate"
+  unless (source.exports.map Prod.snd).contains name do
+    throw "the source export must name the original predicate"
+  for (id, stmt) in entryRows do
+    unless entryStmt 128 stmt do throw s!"entry unit {id}: expected concrete retained code"
 
 /-- Call a public cell after a fresh module evaluation. Failure, fuel and
 the final call state are retained. The receiver of the imported call is undefined. -/
@@ -68,6 +120,8 @@ structure Construction (decoded : IndexedSource) (B : EsmSplit.Bundle) (request 
   exactExports : ∀ w, ∃ cells, LinkedBehavior.exports w decoded.program = some cells ∧
     LinkedBehavior.exports w program = some cells
   allOutcomes : ∀ w fuel, runProgram w fuel decoded.program = runProgram w fuel program
+  linkedCaptures : ∀ w, ∃ before : CheckedLink decoded.program w, ∃ after : CheckedLink program w,
+    before.ready = after.ready ∧ captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked)
 
 def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec) :
     Except String (Construction decoded B request) := do
@@ -75,7 +129,6 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
   let [_] := decoded.localExports | throw "expected one original standalone export row"
   let source := decoded.source
   let original := decoded.program
-  checkFamily source
   unless request.sequential && !request.privateEntryBody && helper != request.entry &&
       request.modules.all (fun module => module.1.endsWith ".mjs") && !decoded.hasTemplates do
     throw "expected two sequential .mjs modules with a public entry and no templates"
@@ -85,8 +138,7 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
   let .isTrue metadataOwner := (inferInstance : Decidable
       (∀ row ∈ decoded.localExports, request.claimants B row.ordinal = [request.entry])) |
     throw "standalone export row must be authored in the entry"
-  unless source.body.all (fun (id, _) => request.claimants B id == [helper]) do
-    throw "predicate and captures must be authored in the helper"
+  checkFamily source B request helper
   unless decide (IndexedInlineConstructor.SelectorsOnce source.body B request) do
     throw "each original executable unit must be selected exactly once"
   let schedule ← IndexedSourceSchedule.check decoded B request
@@ -179,7 +231,14 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
     intro w fuel
     obtain ⟨after, ready, same, _⟩ := linked w
     rw [run_after_link fuel (before.forWorld w), run_after_link fuel after, ready, runUnits_same fuel same]
-  return ⟨schedule, program, rfl, places, metadataOnce, metadataOwner, exactExports, outcomes⟩
+  -- This records the exact captured environments as well as the common
+  -- initialized heap, so a retained caller uses the same hoisted callee cell.
+  have captures : ∀ w, ∃ a : CheckedLink original w, ∃ b : CheckedLink program w,
+      a.ready = b.ready ∧ captureUnits (unitsOf a.linked) = captureUnits (unitsOf b.linked) := by
+    intro w
+    obtain ⟨after, ready, same, _⟩ := linked w
+    exact ⟨before.forWorld w, after, ready, OrderedRegion.sameUnits_capture same⟩
+  return ⟨schedule, program, rfl, places, metadataOnce, metadataOwner, exactExports, outcomes, captures⟩
 
 /-- Transfer the authored placement and full outcome contract to independently
 decoded files, including calls on the identical live export cell. -/
