@@ -11,7 +11,7 @@ use analysis_vocabulary::inputs::{
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use anyhow::{Context, Result, bail, ensure};
-use artifact::ChunkBundle;
+use artifact::{ChunkArtifact, ChunkBundle};
 use cross_module_purity::module_facts::ModulePurityFacts;
 use graph_provenance::{CurrentRoots, GraphProvenance, InputRoot};
 use swc_common::{Span, Spanned};
@@ -554,6 +554,27 @@ pub(super) fn resolve_native_operation_inputs(
     Ok(resolved)
 }
 
+/// What every analysis-input family that reads a provider chunk checks before it
+/// looks at that provider's facts: loaded, inside the analyzed closure, analyzed.
+/// `prefix` is the family's request id, which each refusal names.
+fn analyzed_provider<'a, 'b>(
+    artifact: &'b ChunkBundle,
+    modules: &'a BTreeMap<String, ModulePurityFacts<'a>>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+    prefix: &str,
+    chunk_name: &str,
+) -> Result<(&'b ChunkArtifact, &'a ModulePurityFacts<'a>)> {
+    let chunk = artifact.loaded_provider_chunk(prefix, chunk_name)?;
+    ensure!(
+        chunk_allowed(chunk.chunk_id, chunk_filter),
+        "{prefix} cannot target an outside-closure provider"
+    );
+    let facts = modules
+        .get(chunk_name)
+        .with_context(|| format!("{prefix} has no analyzed provider"))?;
+    Ok((chunk, facts))
+}
+
 pub(super) fn resolve_argument_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
@@ -568,14 +589,8 @@ pub(super) fn resolve_argument_inputs(
             continue;
         }
         let prefix = format!("chunk_analysis_options.{chunk_name}.argument_inputs");
-        let chunk = artifact.loaded_provider_chunk(&prefix, chunk_name)?;
-        ensure!(
-            chunk_allowed(chunk.chunk_id, chunk_filter),
-            "{prefix} cannot target an outside-closure provider"
-        );
-        let facts = modules
-            .get(chunk_name)
-            .with_context(|| format!("{prefix} has no analyzed provider"))?;
+        let (chunk, facts) =
+            analyzed_provider(artifact, modules, chunk_filter, &prefix, chunk_name)?;
         ensure!(
             chunk.js.get_file(&chunk.analysis.entry_file).is_some(),
             "{prefix} has no parser entry file"
@@ -702,14 +717,8 @@ pub(super) fn resolve_no_accessor_install_callables(
             continue;
         }
         let prefix = format!("chunk_analysis_options.{chunk_name}.no_accessor_install_callables");
-        let chunk = artifact.loaded_provider_chunk(&prefix, chunk_name)?;
-        ensure!(
-            chunk_allowed(chunk.chunk_id, chunk_filter),
-            "{prefix} cannot target an outside-closure provider"
-        );
-        let facts = modules
-            .get(chunk_name)
-            .with_context(|| format!("{prefix} has no analyzed provider"))?;
+        let (_chunk, facts) =
+            analyzed_provider(artifact, modules, chunk_filter, &prefix, chunk_name)?;
         let declarations = selected_sites
             .get(chunk_name)
             .with_context(|| format!("{prefix} has no frontend-resolved source sites"))?;
