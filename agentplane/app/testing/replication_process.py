@@ -37,10 +37,10 @@ from agentplane.environments.testing.environment_service_process import run_envi
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import GoHistoryService
-from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
+from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, SANDBOX_CONTROLLER_URI, ClientTLS
 from agentplane.notification_service.api.notifications import notifications_pb2_grpc
 from agentplane.testing.go_process import GoProcess, HttpReadiness, go_process
-from agentplane.testing.tls import CertificateAuthority, make_ca
+from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.asgi import serve_app_in_loop
 from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
@@ -251,6 +251,21 @@ def fixture_config() -> dict[str, object]:
     }
 
 
+def _unused_environment_service(directory: Path) -> dict[str, object]:
+    """An unreachable EnvironmentService peer for app processes whose tests never call it."""
+    ca = make_ca("unused Environment Service test trust")
+    ca_file = directory / "environment-service-ca.pem"
+    ca_file.write_bytes(ca.cert_pem)
+    certificate, key = issue_workload_leaf(ca, APP_URI, directory)
+    return EnvironmentServicePeer(
+        target="127.0.0.1:1",
+        request_timeout_s=10,
+        tls=ClientTLS(
+            ca_file=ca_file, server_uri=SANDBOX_CONTROLLER_URI, cert_file=certificate, key_file=key, client_uri=APP_URI
+        ),
+    ).model_dump(mode="json")
+
+
 @asynccontextmanager
 async def spawn_go_app(
     config: dict[str, object],
@@ -260,14 +275,14 @@ async def spawn_go_app(
     env: dict[str, str] | None = None,
     listener: Listener | None = None,
 ) -> AsyncIterator[AppProcess]:
-    configured = fixture_config() | config
-    database_url = render_postgresql_url(
-        str(configured.pop("database_url")), "postgresql", query={"sslmode": "disable"}
-    )
     with (
         nullcontext(listener) if listener is not None else listen_tcp() as endpoint,
         TemporaryDirectory(prefix="go-app-") as directory,
     ):
+        configured = fixture_config() | {"environment_service": _unused_environment_service(Path(directory))} | config
+        database_url = render_postgresql_url(
+            str(configured.pop("database_url")), "postgresql", query={"sslmode": "disable"}
+        )
         url = f"http://{endpoint.host}:{endpoint.port}"
         listener_fd = endpoint.socket.fileno()
         configured["listen_address"] = f"fd:{listener_fd}"

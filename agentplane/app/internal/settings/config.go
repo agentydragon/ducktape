@@ -65,33 +65,12 @@ type Config struct {
 	sandboxPresetOrder                  []string
 }
 
-// EnvironmentServicePeer is an optional dedicated EnvironmentService route. Its SVID is required
-// because this peer targets the receiver introduced by the receiver-before-config rollout.
+// EnvironmentServicePeer is the Sandbox Controller's EnvironmentService route. It authenticates
+// with the App service SVID only.
 type EnvironmentServicePeer struct {
 	Target                string             `mapstructure:"target"`
 	RequestTimeoutSeconds float64            `mapstructure:"request_timeout_s"`
 	TLS                   *peertls.ClientTLS `mapstructure:"tls"`
-}
-
-// ServicePeer is a resolved backend connection. When no dedicated EnvironmentService peer is
-// configured, the legacy Session Dispatcher endpoint and credentials remain in use.
-type ServicePeer struct {
-	Target                string
-	TokenFile             string
-	RequestTimeoutSeconds float64
-	TLS                   *peertls.ClientTLS
-}
-
-func (c Config) EnvironmentServicePeer() ServicePeer {
-	if peer := c.EnvironmentService; peer != nil {
-		return ServicePeer{
-			Target: peer.Target, RequestTimeoutSeconds: peer.RequestTimeoutSeconds, TLS: peer.TLS,
-		}
-	}
-	return ServicePeer{
-		Target: c.SessionDispatcherTarget, TokenFile: c.SessionDispatcherTokenFile,
-		RequestTimeoutSeconds: c.SessionDispatcherRequestTimeoutSecs, TLS: c.SessionDispatcherTLS,
-	}
 }
 
 type ThreadPreset struct {
@@ -349,16 +328,18 @@ func (c Config) validate() error {
 			return err
 		}
 	}
-	if peer := c.EnvironmentService; peer != nil {
-		if strings.TrimSpace(peer.Target) == "" {
-			return errors.New("environment_service.target is required")
-		}
-		if peer.RequestTimeoutSeconds <= 0 || math.IsNaN(peer.RequestTimeoutSeconds) || math.IsInf(peer.RequestTimeoutSeconds, 0) {
-			return errors.New("environment_service.request_timeout_s must be positive")
-		}
-		if err := validateAppServiceCaller("environment_service", peer.TLS, "", []string{peertls.SandboxControllerURI}); err != nil {
-			return err
-		}
+	environmentPeer := c.EnvironmentService
+	if environmentPeer == nil {
+		return errors.New("environment_service is required")
+	}
+	if strings.TrimSpace(environmentPeer.Target) == "" {
+		return errors.New("environment_service.target is required")
+	}
+	if environmentPeer.RequestTimeoutSeconds <= 0 || math.IsNaN(environmentPeer.RequestTimeoutSeconds) || math.IsInf(environmentPeer.RequestTimeoutSeconds, 0) {
+		return errors.New("environment_service.request_timeout_s must be positive")
+	}
+	if err := validateAppServiceCaller("environment_service", environmentPeer.TLS, "", []string{peertls.SandboxControllerURI}); err != nil {
+		return err
 	}
 	for _, peer := range []struct {
 		name, serverURI string

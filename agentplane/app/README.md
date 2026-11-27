@@ -16,7 +16,8 @@ selected rows and content to the browser through authenticated Electric endpoint
 Actions, operator decisions and Connection consent. The staging instance lives in
 `cluster/k8s/agentplane-staging/`.
 
-Diagnostics use the `environment_service` target and pin `spiffe://agentplane/sandbox-controller`.
+EnvironmentService calls, diagnostics included, use the required `environment_service` peer and pin
+`spiffe://agentplane/sandbox-controller`.
 The separate `session_dispatcher_tls` pin remains `spiffe://agentplane/session-dispatcher`.
 
 The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,

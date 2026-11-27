@@ -64,7 +64,13 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Settings, TraceSearchSettings
+from agentplane.app.settings import (
+    EnvironmentServicePeer,
+    FrontendConfig,
+    LangfuseSearchSettings,
+    Settings,
+    TraceSearchSettings,
+)
 from agentplane.env.config import CodexReadiness, Executor, SystemdExecutorOwner
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.operator.settings import OperatorOidcSettings
@@ -300,6 +306,11 @@ def app_props(
             runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
             session_dispatcher_target=(runner_gateway.sessions_service(NAMESPACE).authority),
             session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
+            environment_service=EnvironmentServicePeer(
+                target=environment_service.environments_service(NAMESPACE).authority,
+                request_timeout_s=20,
+                tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
+            ),
             policy_service_target=policy_controller.tls_service(NAMESPACE).authority,
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
             history_service_target=(history_service.service(NAMESPACE).authority),
@@ -766,7 +777,6 @@ def add_app(chart: Chart, env: Environment) -> AppFixture:
         env,
         electric=None,
         database_url=Database.APP.url(chart, namespace=env.namespace, key="async-uri"),
-        environment_service_endpoint=environment_service.environments_service(NAMESPACE),
         placement=None,
         registry_secret_name=None,
         memory_request=Size.mebibytes(48),

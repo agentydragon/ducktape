@@ -16,7 +16,7 @@ from agentplane.action_service.orchestration_v1.binding import (
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
-from agentplane.app.settings import FrontendConfig, Settings
+from agentplane.app.settings import EnvironmentServicePeer, FrontendConfig, Settings
 from agentplane.env.runtime.harness import Harness
 from agentplane.net.peertls.config import (
     APP_URI,
@@ -210,6 +210,11 @@ def settings(
         egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
         runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
         session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
+        environment_service=EnvironmentServicePeer(
+            target=environment_service.environments_service(namespace).authority,
+            request_timeout_s=20,
+            tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
+        ),
         history_service_target=(history_service.service(namespace).authority),
         history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
         notifications_url=AnyHttpUrl(notifications.service(namespace).url),

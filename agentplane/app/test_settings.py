@@ -51,6 +51,11 @@ def _settings_fields() -> dict[str, object]:
         "session_dispatcher_token_file": Path("/run/session-dispatcher/token"),
         "history_service_token_file": Path("/run/history/token"),
         "egress_admin_token_file": Path("/run/egress-admin/token"),
+        "environment_service": {
+            "target": "sandbox-controller.agentplane.svc:8082",
+            "request_timeout_s": 12,
+            "tls": _svid(SANDBOX_CONTROLLER_URI),
+        },
     }
 
 
@@ -113,15 +118,11 @@ def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> No
     _settings(runner_gateway_tls=_svid(server_uri), runner_gateway_token_file=None)
 
 
-def test_environment_service_peer_is_optional_and_uses_its_own_controller_svid() -> None:
-    assert _settings().environment_service is None
-    _settings(
-        environment_service={
-            "target": "sandbox-controller.agentplane.svc:8082",
-            "request_timeout_s": 12,
-            "tls": _svid(SANDBOX_CONTROLLER_URI),
-        }
-    )
+def test_environment_service_peer_is_required() -> None:
+    fields = _settings_fields()
+    del fields["environment_service"]
+    with pytest.raises(ValidationError, match="environment_service"):
+        Settings.model_validate(fields)
 
 
 @pytest.mark.parametrize(
