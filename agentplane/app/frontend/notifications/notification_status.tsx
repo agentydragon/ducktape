@@ -20,6 +20,7 @@ import {
   type Subscription,
 } from "../../../notification_service/api/notifications/notifications_pb";
 import { clockTime, isoTime, timeAgo } from "../ui/format_time";
+import { NOTIFICATION_STATUS_FIELDS } from "./inbox_fields";
 import { followInbox, followNotificationWatch } from "./inbox_watch";
 
 type SubscriptionFilter = "not-cancelled" | "active" | "expired" | "cancelled" | "all";
@@ -150,7 +151,7 @@ function InboxDetails({
     }
     let entriesReady = false;
     let subscriptionsReady = false;
-    const inboxStop = followInbox(sessionId, setInbox, connection("inbox"));
+    const inboxStop = followInbox(sessionId, NOTIFICATION_STATUS_FIELDS, setInbox, connection("inbox"));
     const entriesStop = followNotificationWatch(sessionId, "inbox/entries", {
       onOpen: () => {
         entriesReady = false;

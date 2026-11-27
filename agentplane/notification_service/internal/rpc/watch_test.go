@@ -10,6 +10,7 @@ import (
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 type inboxWatch = grpc.ServerStreamingClient[pb.WatchInboxResponse]
@@ -17,6 +18,15 @@ type inboxWatch = grpc.ServerStreamingClient[pb.WatchInboxResponse]
 func (s testServer) watchInbox(t *testing.T, session string) inboxWatch {
 	t.Helper()
 	stream, err := s.client.WatchInbox(bearing(t, operatorCaller), &pb.WatchInboxRequest{SessionId: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stream
+}
+
+func (s testServer) watchInboxFields(t *testing.T, session string, fields ...string) inboxWatch {
+	t.Helper()
+	stream, err := s.client.WatchInbox(bearing(t, operatorCaller), &pb.WatchInboxRequest{SessionId: session, FieldMask: &fieldmaskpb.FieldMask{Paths: fields}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +43,20 @@ func untilInbox(t *testing.T, stream inboxWatch, want func(*pb.Inbox) bool) *pb.
 		if inbox := response.GetInbox(); inbox != nil && want(inbox) {
 			return inbox
 		}
+	}
+}
+
+func TestInboxWatchSendsOnlyTheRequestedFields(t *testing.T) {
+	s := newServer(t)
+	stream := s.watchInboxFields(t, testSession, "delivery.pending_acknowledgement_count")
+	sub := s.subscribe(t, "fields")
+	s.record(t, sub, 1)
+	inbox := untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetDelivery().GetPendingAcknowledgementCount() == 1 })
+	if inbox.GetId() != sub.GetInboxId() || inbox.GetSessionId() != testSession {
+		t.Fatalf("the frame does not identify its inbox: %v", inbox)
+	}
+	if inbox.GetLastCursor() != 0 || inbox.GetDelivery().GetNextWorkAt() != nil {
+		t.Fatalf("the frame carries fields that were not requested: %v", inbox)
 	}
 }
 

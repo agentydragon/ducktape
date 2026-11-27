@@ -5,6 +5,7 @@ import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 import { useEffect, useState, type JSX } from "react";
 
 import { clockTime } from "../ui/format_time";
+import { THREAD_NOTICE_FIELDS } from "./inbox_fields";
 import { followInbox } from "./inbox_watch";
 import { type Inbox } from "../../../notification_service/api/notifications/notifications_pb";
 
@@ -22,6 +23,7 @@ export function useThreadNotices(threadIds: readonly string[]): ThreadNotices {
     const stops = ids.map((id) =>
       followInbox(
         id,
+        THREAD_NOTICE_FIELDS,
         (inbox) =>
           setState((old) => {
             const bySession = new Map(old.bySession);

@@ -16,6 +16,12 @@ filegroup(
 )
 
 ts_library(
+    name = "inbox_fields",
+    srcs = ["inbox_fields.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+)
+
+ts_library(
     name = "inbox_watch",
     srcs = ["inbox_watch.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
@@ -31,6 +37,7 @@ ts_library(
     srcs = ["notification_status.tsx"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
+        ":inbox_fields",
         ":inbox_watch",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -47,6 +54,7 @@ ts_library(
     srcs = ["thread_notices.tsx"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
+        ":inbox_fields",
         ":inbox_watch",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
