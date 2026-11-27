@@ -200,8 +200,6 @@ swapped conflicting pairs, not only the first.
   - TV runs in `debundle_apply` on the saved `debundle_analysis` facts,
     which must carry the effect sets. They already carry `StatementFacts`.
   - Commuting resolution already sits in `debundle_apply`.
-  - The graph build shrinks: it emits only the hard edges, and the full edge
-    set becomes a tooling view built on demand.
   - Assignment edits, the agent loop, still never rerun `debundle_analysis`.
 - **Tooling** (atomic groups, `peel`, `modules propose`, `gate describe`,
   `per_atomic_group` / `coarse_atomic_groups`): these read `dependency_graph.json.gz` edges
@@ -247,8 +245,6 @@ the complete conflict enumeration.
      obligations can be represented. An assessment's empty blocker list does
      not cover requests that never reached it. Preserve the shared projection's
      distinction between structural blockers and semantic-order SCC vetoes.
-3. **Slim.** The graph build materializes hard edges only, and the full edge
-   set moves behind the tooling queries that still need it.
 
 The comparison runs in e2e as differential tests
 (`e2e/translation_validation_differential_test.rs`, plus the oracle in every
