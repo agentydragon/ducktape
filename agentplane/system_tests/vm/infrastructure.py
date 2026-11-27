@@ -80,10 +80,11 @@ def _kubevirt() -> dict[str, Any]:
             "imagePullPolicy": "IfNotPresent",
             "infra": {"replicas": 1},
             "configuration": {
-                # The feature gate production's runner VMs need (cluster/cdk8s/kubevirt/app.py).
+                # EnableVirtioFsStorageVolumes is the gate production's runner VMs need
+                # (cluster/cdk8s/kubevirt/app.py). HostDisk is test-only: vm/guest_root.py.
                 "developerConfiguration": {
                     "useEmulation": not strict_env_flag(_KVM_MODE_ENV),
-                    "featureGates": ["EnableVirtioFsStorageVolumes"],
+                    "featureGates": ["EnableVirtioFsStorageVolumes", "HostDisk"],
                 }
             },
         },

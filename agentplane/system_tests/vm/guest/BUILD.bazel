@@ -352,6 +352,12 @@ erofs_image(
     out = "root.img",
     compress_lz4 = True,
     tar = ":root_tar",
+    # vm_test(guest_root_host_disk = True) stages the image itself.
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
+    ],
     volume_label = "guest",
 )
 

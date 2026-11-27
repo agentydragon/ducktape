@@ -836,3 +836,9 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "guest_root",
+    srcs = ["guest_root.py"],
+    deps = ["@rules_python//python/runfiles"],
+)

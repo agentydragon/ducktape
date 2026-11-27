@@ -27,6 +27,7 @@ def main() -> None:
         include_app: bool,
         include_mcp_edge: bool = False,
         include_central_sampler: bool = False,
+        guest_root_host_disk: bool = False,
     ) -> None:
         fixture = suite_deployment.render(
             runtime=runtime,
@@ -34,6 +35,7 @@ def main() -> None:
             include_app=include_app,
             include_mcp_edge=include_mcp_edge,
             include_central_sampler=include_central_sampler,
+            guest_root_host_disk=guest_root_host_disk,
         )
         write_fixture(args.output_dir / filename, fixture, models=MODEL_PLACEHOLDERS[backend], mcp=None)
 
@@ -43,6 +45,12 @@ def main() -> None:
     render("real_model_manifests.json", backend=Backend.PUBLIC_LITELLM, include_app=True, include_mcp_edge=True)
     render("pod_native_manifests.json", include_app=False)
     render("vm_native_manifests.json", runtime=SandboxRuntime.KUBEVIRT, include_app=False)
+    render(
+        "vm_native_host_root_manifests.json",
+        runtime=SandboxRuntime.KUBEVIRT,
+        include_app=False,
+        guest_root_host_disk=True,
+    )
     render("firecracker_manifests.json", runtime=SandboxRuntime.FIRECRACKER, include_app=False)
     render("recovery_manifests.json", include_app=False, include_central_sampler=True)
     render("history_manifests.json", include_app=True, include_mcp_edge=True, include_central_sampler=True)

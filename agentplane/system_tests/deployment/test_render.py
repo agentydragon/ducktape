@@ -35,7 +35,7 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
-from agentplane.system_tests.vm import infrastructure as vm_infrastructure, sandboxes as vm_sandboxes
+from agentplane.system_tests.vm import guest_root, infrastructure as vm_infrastructure, sandboxes as vm_sandboxes
 from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from cluster.cdk8s.agentplane import (
@@ -123,6 +123,44 @@ def _vm_fixture_template(runfiles: Runfiles) -> rendered_fixture.RenderedFixture
 @pytest.fixture
 def vm_fixture(_vm_fixture_template: rendered_fixture.RenderedFixture) -> rendered_fixture.RenderedFixture:
     return _vm_fixture_template.model_copy(deep=True)
+
+
+def _vm_templates(fixture: rendered_fixture.RenderedFixture) -> dict[str, dict[str, Any]]:
+    return {
+        doc["metadata"]["name"]: doc["spec"]["vm"]["template"]["spec"]
+        for doc in fixture.objects
+        if doc["kind"] == "SandboxTemplate" and "vm" in doc["spec"]
+    }
+
+
+def test_host_root_fixture_attaches_only_the_guest_root_as_a_read_only_host_disk(runfiles: Runfiles) -> None:
+    container = _read_fixture(runfiles, "K3S_VM_NATIVE_FIXTURE_RLOCATION")
+    host = _read_fixture(runfiles, "K3S_VM_NATIVE_HOST_ROOT_FIXTURE_RLOCATION")
+    assert not guest_root.referenced_by(container.objects)
+    assert guest_root.referenced_by(host.objects)
+    container_templates, host_templates = _vm_templates(container), _vm_templates(host)
+    assert container_templates.keys() == host_templates.keys()
+    for name, host_spec in host_templates.items():
+        root_disk = one(disk for disk in host_spec["domain"]["devices"]["disks"] if "bootOrder" in disk)
+        root_volume = one(volume for volume in host_spec["volumes"] if volume["name"] == root_disk["name"])
+        assert root_volume == {
+            "name": root_disk["name"],
+            "hostDisk": {"path": str(guest_root.HOST_PATH), "type": "Disk"},
+        }
+        assert root_disk["disk"]["readonly"] is True
+        # Apart from that disk and volume, the template is the one production's construct renders.
+        expected = json.loads(json.dumps(container_templates[name]))
+        expected_root = one(disk for disk in expected["domain"]["devices"]["disks"] if "bootOrder" in disk)
+        expected_root["disk"]["readonly"] = True
+        expected["volumes"] = [
+            root_volume if volume["name"] == root_disk["name"] else volume for volume in expected["volumes"]
+        ]
+        assert host_spec == expected, name
+    container_objects = [
+        doc for doc in container.objects if not (doc["kind"] == "SandboxTemplate" and "vm" in doc["spec"])
+    ]
+    host_objects = [doc for doc in host.objects if not (doc["kind"] == "SandboxTemplate" and "vm" in doc["spec"])]
+    assert host_objects == container_objects
 
 
 def test_pod_profile_omits_mcp_edge_database_and_keeps_app_and_action_flows(runfiles: Runfiles) -> None:
