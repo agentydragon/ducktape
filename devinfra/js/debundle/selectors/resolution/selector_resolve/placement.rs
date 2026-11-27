@@ -10,6 +10,12 @@ use spec::member_selectors::{BindingSelector, MemberSelectorSpec};
 use crate::projection::Resolve;
 use crate::{Chunk, EntityIndex, Member, MemberSelector, Resolution, SpecModule, solve};
 
+/// The frozen base holds one member per logical export identity, and every path
+/// that extends it refuses a second claim on an identity with this sentence.
+fn duplicate_export_identity(claim: &str, module: &str, export_name: &str) -> String {
+    format!("{claim} contains duplicate export identity {module}::{export_name}")
+}
+
 /// The named exports of a fully resolved base assignment, frozen as
 /// read-only reference anchors for a separate placement-only resolution.
 /// Source-unit ids are transient solver inputs; this type is not serialized.
@@ -73,9 +79,8 @@ impl<'m> Chunk<'m> {
             for (member_index, member) in module.members.iter().enumerate() {
                 ensure!(
                     export_identities.insert((module.path.as_str(), member.export_name.as_str())),
-                    "frozen base contains duplicate export identity {}::{}",
-                    module.path,
-                    member.export_name
+                    "{}",
+                    duplicate_export_identity("frozen base", &module.path, &member.export_name)
                 );
                 let outcome = resolution
                     .outcome(module_index, EntityIndex::Member(member_index))
@@ -164,9 +169,12 @@ impl<'m> Chunk<'m> {
         for import in imports {
             ensure!(
                 identities.insert((import.logical_module.as_str(), import.export_name.as_str())),
-                "frozen import anchors contain duplicate export identity {}::{}",
-                import.logical_module,
-                import.export_name
+                "{}",
+                duplicate_export_identity(
+                    "frozen import anchors",
+                    &import.logical_module,
+                    &import.export_name,
+                )
             );
             ensure!(
                 imported_bindings.contains_key(&import.imported_binding),
@@ -190,9 +198,12 @@ impl<'m> Chunk<'m> {
                     .members
                     .iter()
                     .any(|member| member.export_name == import.export_name),
-                "frozen base contains duplicate export identity {}::{}",
-                import.logical_module,
-                import.export_name
+                "{}",
+                duplicate_export_identity(
+                    "frozen base",
+                    &import.logical_module,
+                    &import.export_name,
+                )
             );
         }
         for import in imports {
