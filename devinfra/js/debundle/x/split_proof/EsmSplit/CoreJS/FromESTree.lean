@@ -1543,6 +1543,49 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
 
 end
 
+/-- Pieces of an ordinary async declaration at a single discarded primitive
+await. The combined function body is used for one scope instantiation. -/
+structure PrimitiveAwaitParts where
+  scope : Func
+  before : List Stmt
+  operand : Expr
+  after : List Stmt
+
+private def discardedAwait? (j : Json) : Option Json := do
+  guard ((field j "type").toOption == some "ExpressionStatement")
+  let expr ← (j.getObjVal? "expression").toOption
+  guard ((field expr "type").toOption == some "AwaitExpression")
+  (expr.getObjVal? "argument").toOption
+
+/-- A model-only cut, for a top-level expression statement within the async
+body. The ordinary linked lowerer still retains the original deferred closure. -/
+def primitiveAwaitParts (j : Json) : Except String PrimitiveAwaitParts := do
+  unless (← field j "type") == "FunctionDeclaration" &&
+      (← j.getObjValAs? Bool "async") && !(← j.getObjValAs? Bool "generator") &&
+      !needsOpaqueContext j (checkPrivateNames := true) do
+    throw "await cut requires an ordinary async declaration"
+  let name ← j.getObjVal? "id" >>= moduleBinding
+  let params ← (← j.getObjValAs? (List Json) "params").mapM localBinding
+  unless params.Nodup do throw "duplicate async parameter"
+  let block ← j.getObjVal? "body"
+  unless (← field block "type") == "BlockStatement" do throw "expected an async body block"
+  let stmts ← block.getObjValAs? (List Json) "body"
+  let lead := stmts.takeWhile fun s => (discardedAwait? s).isNone
+  let cut :: tail := stmts.drop lead.length | throw "expected a discarded await"
+  let some operand := discardedAwait? cut | throw "expected a discarded await"
+  if (lead ++ operand :: tail).any hasAsyncSuspension then
+    throw "only one discarded await is supported"
+  let lower (ss : List Json) := linkedBlockBody .empty [] .function
+    (Json.mkObj [("body", .arr ss.toArray)]) (allowFunctions := true)
+  let before ← lower lead
+  let after ← lower tail
+  let operand ← linkedExpr .empty [] true "" operand
+  let combined := before ++ .expr operand :: after
+  let functions := (funDecls combined).map Func.name
+  unless functions.Nodup && !functions.any (fun x => params.contains x || (varNamesOf combined).contains x) do
+    throw "async function declaration overlaps another binding"
+  return ⟨.mk name .asyncFn false params combined, before, operand, after⟩
+
 /-- Lower one module declaration and list its declared names in binding order.
 Function declarations initialize their cells at link time. -/
 def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) :

@@ -4052,3 +4052,16 @@ lean_proof_test(
     ],
     deps = [":corejs_primitive_await"],
 )
+
+lean_library(
+    name = "corejs_linked_primitive_await",
+    srcs = ["EsmSplit/CoreJS/LinkedPrimitiveAwait.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [
+        ":corejs_eval",
+        ":corejs_from_estree",
+        ":corejs_linked_input",
+        ":corejs_primitive_await",
+        ":estree_units",
+    ],
+)
