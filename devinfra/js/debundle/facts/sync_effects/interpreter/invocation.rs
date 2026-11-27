@@ -94,17 +94,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 if incomplete && let Some(owner) = self.inputs.index.class_owners.get(&class) {
                     let reads = &self.inputs.facts[owner.0].reads;
-                    values.extend(
-                        reads
-                            .eager
-                            .iter()
-                            .chain(&reads.lazy)
-                            .filter_map(|binding| {
-                                self.state.world.module.prefix_values.get(binding)
-                            })
-                            .flatten()
-                            .cloned(),
-                    );
+                    values
+                        .extend(self.retained_prefix_values(reads.eager.iter().chain(&reads.lazy)));
                 }
             }
         }

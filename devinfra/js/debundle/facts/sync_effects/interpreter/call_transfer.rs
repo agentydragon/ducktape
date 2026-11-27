@@ -61,13 +61,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 reached.extend(self.evaluate(argument, env, captures));
             }
             reached.extend(
-                outcome
-                    .effects
-                    .reads
-                    .iter()
-                    .filter_map(|(binding, _)| self.state.world.module.prefix_values.get(binding))
-                    .flatten()
-                    .cloned(),
+                self.retained_prefix_values(
+                    outcome.effects.reads.iter().map(|(binding, _)| binding),
+                ),
             );
             self.unsettle(&reached);
         }
