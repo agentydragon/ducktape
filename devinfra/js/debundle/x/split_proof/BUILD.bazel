@@ -1985,6 +1985,45 @@ lean_proof_test(
     deps = [":corejs_indexed_hoisted_swap"],
 )
 
+lean_library(
+    name = "corejs_ordered_arrow_init",
+    srcs = ["EsmSplit/CoreJS/OrderedArrowInit.lean"],
+    deps = [
+        ":corejs_constructed_output",
+        ":corejs_link_world",
+        ":corejs_linked_pivot_check",
+        ":corejs_state_match",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_ordered_arrow_init_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.OrderedArrowInit"],
+    required_theorems = [
+        "CoreJS.OrderedArrowInit.bindings_var_arrow",
+        "CoreJS.OrderedArrowInit.check",
+        "CoreJS.OrderedArrowInit.checkReadback",
+        "CoreJS.OrderedArrowInit.runUnit_var_arrow",
+    ],
+    deps = [":corejs_ordered_arrow_init"],
+)
+
+test_runner(
+    name = "visible_elements_model_test_runner",
+    src = "VisibleElementsModelTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+    deps = [
+        ":cli",
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_source_schedule",
+        ":corejs_ordered_arrow_init",
+        ":estree_emit",
+        ":lowersplit_input",
+        ":split_files",
+    ],
+)
+
 test_runner(
     name = "acorn_hoisted_cycle_test_runner",
     src = "AcornHoistedCycleTest.lean",
