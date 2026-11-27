@@ -204,7 +204,7 @@ fn endpoint_in_another_chunk_is_rejected() {
                     )],
                 )
         },
-        &[&format!("{ENTRY}.b"), "belongs to another provider"],
+        &[&format!("{ENTRY}.b"), "belongs to another chunk"],
     );
 }
 

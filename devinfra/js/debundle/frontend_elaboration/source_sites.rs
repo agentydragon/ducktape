@@ -435,9 +435,7 @@ fn resolve_provider_source_sites(
             &contract.resolved_member.module,
             &contract.resolved_member.name,
         )?;
-        let declaration = site.declaration.clone().with_context(|| {
-            format!("{request_id}.resolved_member has no unique original local declaration")
-        })?;
+        let declaration = site.original_declaration(&request_id)?.clone();
         resolved.initializer_call_effect_inputs.push(declaration);
     }
     for (index, contract) in options.analysis.argument_inputs.iter().enumerate() {
@@ -484,9 +482,7 @@ fn resolve_provider_source_sites(
                     &member.module,
                     &member.name,
                 )?;
-                let declaration = site.declaration.clone().with_context(|| {
-                    format!("{request_id}.resolved_member has no unique original local declaration")
-                })?;
+                let declaration = site.original_declaration(&request_id)?.clone();
                 (
                     declaration.clone(),
                     NativeOperationSelectorProvenance::Declaration(declaration),
@@ -506,7 +502,7 @@ fn resolve_provider_source_sites(
     Ok(resolved)
 }
 
-fn resolve_premise_member_site<'a>(
+pub fn resolve_premise_member_site<'a>(
     resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
     request_id: &str,
     chunk_name: &str,

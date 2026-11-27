@@ -12,7 +12,7 @@ pub use elaboration::member_claims::{MemberClaimInput, project_member_claims};
 pub use elaboration::resolved_ownership::{
     CanonicalOwnership, ClaimSelector, OwnershipClaim, resolve_ownership,
 };
-pub use elaboration::source_sites::select_one_declared_binding;
+pub use elaboration::source_sites::{resolve_premise_member_site, select_one_declared_binding};
 pub use elaboration::{
     FrontendChunk, FrontendChunkInput, FrontendElaboration, FrontendSpecInputs,
     MemberClaimProjection, ResolvedMemberSite, complete_analysis_spec, elaborate, project_analysis,

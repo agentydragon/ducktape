@@ -60,6 +60,18 @@ pub struct ResolvedMemberSite {
     pub declaration: Option<SourceDeclaration>,
 }
 
+impl ResolvedMemberSite {
+    /// The original local declaration this site's provider chunk owns. A member
+    /// claimed outside the chunk, or with repeated or pattern declaration
+    /// sites, has none, so every consumer of a `resolved_member` premise
+    /// refuses it here.
+    pub fn original_declaration(&self, request_id: &str) -> Result<&SourceDeclaration> {
+        self.declaration.as_ref().with_context(|| {
+            format!("{request_id}.resolved_member has no unique original local declaration")
+        })
+    }
+}
+
 /// Canonical binding ownership after the joint selector solve. Lowering applies
 /// these same decisions when it mutates output plans; analysis projection uses
 /// them to resolve layout-relative member premises.

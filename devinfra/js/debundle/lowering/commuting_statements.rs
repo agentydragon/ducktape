@@ -20,7 +20,9 @@ use spec::ResolvedMemberSelector;
 use spec::input_contracts::{CommutingStatementsContract, SourceUnitSelector};
 use swc_ecma_ast::{Module, ModuleItem};
 
-use frontend_elaboration::{ResolvedMemberSite, select_one_declared_binding};
+use frontend_elaboration::{
+    ResolvedMemberSite, resolve_premise_member_site, select_one_declared_binding,
+};
 
 /// Resolve every `commuting_statements` pair of `chunk_name` to two distinct
 /// post-split source units of `body`. Resolution failures, ambiguity, a foreign
@@ -146,26 +148,14 @@ fn resolve_source_unit_endpoint(
             (body_index, Some(binding))
         }
         SourceUnitSelector::ResolvedMember(member) => {
-            let sites = resolved_member_sites
-                .get(&(member.module.clone(), member.name.clone()))
-                .with_context(|| {
-                    format!("{endpoint_id}.resolved_member names no logical module member")
-                })?;
-            let mut provider_sites = sites
-                .iter()
-                .filter(|site| site.provider_chunk == chunk_name);
-            let site = provider_sites.next().with_context(|| {
-                format!(
-                    "{endpoint_id}.resolved_member belongs to another provider, not {chunk_name}"
-                )
-            })?;
-            ensure!(
-                provider_sites.next().is_none(),
-                "{endpoint_id}.resolved_member is ambiguous in provider {chunk_name}"
-            );
-            let declaration = site.declaration.as_ref().with_context(|| {
-                format!("{endpoint_id}.resolved_member has no unique original local declaration")
-            })?;
+            let site = resolve_premise_member_site(
+                resolved_member_sites,
+                endpoint_id,
+                chunk_name,
+                &member.module,
+                &member.name,
+            )?;
+            let declaration = site.original_declaration(endpoint_id)?;
             (declaration.body_index, Some(declaration.binding.clone()))
         }
     };
