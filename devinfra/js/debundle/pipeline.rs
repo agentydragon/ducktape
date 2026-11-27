@@ -562,12 +562,8 @@ fn prepare_transform(
         preflight_output_roots(&spec)?;
     }
     let artifact = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
-    let embedded_loaders: BTreeMap<String, spec::BunLoader> =
-        match &spec.inputs.embedded_loaders_path {
-            Some(path) => serde_json::from_str(&graph_provenance::read_source_to_string(path)?)
-                .with_context(|| format!("parse embedded loaders {}", path.display()))?,
-            None => BTreeMap::new(),
-        };
+    let embedded_loaders =
+        spec_modules::read_embedded_loader_manifest(spec.inputs.embedded_loaders_path.as_deref())?;
     let source = prepare_js_chunks(
         &spec.materialize_chunk_ids(),
         &spec.source_premise_chunk_ids(),

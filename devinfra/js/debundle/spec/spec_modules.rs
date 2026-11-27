@@ -14,13 +14,14 @@
 //! debundler and the analysis tools always agree on the spec's
 //! on-disk layout.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use selector_outcome::SelectorKind;
 
+use spec::BunLoader;
 use spec::TransformSpec;
 use spec::annotations::{AnonymousStatementSelector, SourceMatchClaim};
 use spec::member_selectors::MemberSelectorSpec;
@@ -150,6 +151,18 @@ pub fn read_module_file(path: &Path) -> Result<ModuleFile> {
 pub fn read_flat_transform_spec(path: &Path) -> Result<TransformSpec> {
     serde_yaml::from_slice(&graph_provenance::read_bytes(path)?)
         .with_context(|| format!("parsing {}", path.display()))
+}
+
+/// Read the embedded-loader manifest named by a spec's
+/// `embedded_loaders_path` input: each embedded file's input path mapped to the
+/// loader the host applies when that file is required. An omitted path is the
+/// empty manifest, meaning no embedded file has a recorded loader.
+pub fn read_embedded_loader_manifest(path: Option<&Path>) -> Result<BTreeMap<String, BunLoader>> {
+    let Some(path) = path else {
+        return Ok(BTreeMap::new());
+    };
+    serde_json::from_str(&graph_provenance::read_source_to_string(path)?)
+        .with_context(|| format!("parse embedded loaders {}", path.display()))
 }
 
 pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {

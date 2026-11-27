@@ -39,6 +39,7 @@ rust_library(
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle/selectors/resolution:selector_outcome",
         "@crates//:anyhow",
+        "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
 )

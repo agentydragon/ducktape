@@ -816,6 +816,7 @@ rust_library(
         "//devinfra/js/debundle/artifacts:write_tree",
         "//devinfra/js/debundle/lowering",
         "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
         "//devinfra/js/debundle/spec:spec_tree",
         "//devinfra/js/debundle/vendor",
         "@crates//:anyhow",

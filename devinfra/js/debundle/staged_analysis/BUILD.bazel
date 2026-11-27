@@ -28,6 +28,7 @@ rust_library(
         "//devinfra/js/debundle/cross_module_purity",
         "//devinfra/js/debundle/purity",
         "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
         "//devinfra/js/debundle/value_flow",
         "//devinfra/js/debundle/vendor",
         "@crates//:anyhow",

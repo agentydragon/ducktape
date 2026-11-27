@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use artifact::load_js_chunks;
 use graph_provenance::{InputCapture, ProvenanceRoots};
 use prepare_chunks::prepare_js_chunks;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use vendor::{VendorPlanOptions, build_vendor_resolution_plan};
@@ -58,11 +58,8 @@ pub fn analyze_from_projection(
     )?;
     let inputs = spec.inputs_under(&source_root);
     let artifact = load_js_chunks(&inputs.input_root, &inputs.js_list_path)?;
-    let embedded_loaders: BTreeMap<String, spec::BunLoader> = match &inputs.embedded_loaders_path {
-        Some(path) => serde_json::from_str(&graph_provenance::read_source_to_string(path)?)
-            .with_context(|| format!("parse embedded loaders {}", path.display()))?,
-        None => BTreeMap::new(),
-    };
+    let embedded_loaders =
+        spec_modules::read_embedded_loader_manifest(inputs.embedded_loaders_path.as_deref())?;
     let vendor = spec.vendor_under(&source_root);
     let materialized: BTreeSet<String> = spec.analysed_chunks().iter().cloned().collect();
     // Match live preparation's provider retention using the canonical source-site
