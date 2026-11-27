@@ -19,7 +19,24 @@ function verdict(result, phase) {
   throw new Error("inconsistent lowersplit status or verdict: " + result.stdout);
 }
 
-export function certify({ stage, chunkFile, plan, want, providers, run, lowersplit, nodeRun }) {
+export function certify({ stage, chunkFile, plan, resolvedUnits, want, providers, run, lowersplit, nodeRun }) {
+  // The authored Lean request only carries ownership and priority. A
+  // nonidentity member mapping would be lost before planning or readback.
+  const renames = resolvedUnits.flatMap(({ ordinal, owner, members }) =>
+    Object.entries(members ?? {})
+      .filter(([binding, readable]) => binding !== readable)
+      .map(([binding, readable]) => ({ ordinal, owner, binding, readable }))
+  );
+  if (renames.length) {
+    return {
+      outcome: "rejected",
+      emission: {
+        blocker: "the ordinary certificate spec cannot express authored member renames",
+        code: "untranslated_member_rename",
+        renames,
+      },
+    };
+  }
   const output = path.join(stage, "certified");
   const spec = path.join(stage, "certificate-spec.json");
   let manifest,
