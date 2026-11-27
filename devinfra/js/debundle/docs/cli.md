@@ -820,9 +820,11 @@ selector edits keep going, reporting every failure of a pass in each chunk's
 selector or claim is the useful debugging target (its outcome line is the
 error).
 
-Every chunk's selectors resolve as one program. In a tree spec, several
-module trees may scope to one chunk. Their entities never claim the same place.
-See [tree spec configuration](spec_editing.md#tree-spec-configuration).
+Selectors for every chunk resolve as one program, each entity scoped to the
+chunk its spec tree names, and no two entities claim the same place
+(<../SPEC.md> § Input and spec scope). In a tree spec several module trees can
+scope to one chunk; see
+[tree spec configuration](spec_editing.md#tree-spec-configuration).
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
