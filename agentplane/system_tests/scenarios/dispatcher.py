@@ -2,13 +2,11 @@
 
 import asyncio
 import json
-import re
-import signal
 import sqlite3
 import sys
 import tarfile
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager, closing
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager, closing
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -28,6 +26,7 @@ from agentplane.session_dispatcher.dispatcher.api.session import (
 )
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.containerd_task import stopped_container_task
 from agentplane.system_tests.driver.dispatcher_operations import session_until
 from agentplane.system_tests.driver.dispatcher_transport import forward, service_caller
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
@@ -214,93 +213,17 @@ WHERE d.command_id='{command}'
     raise AssertionError("settlement never blocked")
 
 
-@asynccontextmanager
-async def _crashed_dispatcher_process(
-    cluster: Cluster, pod: dict[str, Any], crictl_command: tuple[str, ...]
-) -> AsyncIterator[None]:
+def _crashed_dispatcher_process(
+    pod: dict[str, Any], crictl_command: tuple[str, ...]
+) -> AbstractAsyncContextManager[None]:
     (container,) = [status for status in pod["status"]["containerStatuses"] if status["name"] == WORKLOAD]
-    container_id = container["containerID"].removeprefix("containerd://")
-    crictl_config = undeclared_outputs_dir() / "dispatcher-crash-crictl.yaml"
-    crictl_config.write_text("runtime-endpoint: unix:///run/k3s/containerd/containerd.sock\ntimeout: 15\n")
-    inspect = await asyncio.create_subprocess_exec(
-        *crictl_command,
-        "--config",
-        str(crictl_config),
-        "inspect",
-        container_id,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    return stopped_container_task(
+        crictl_command,
+        container["containerID"].removeprefix("containerd://"),
+        executable="sessions",
+        evidence=undeclared_outputs_dir() / "dispatcher-mid-delivery-crash.json",
+        evidence_context={"pod_uid": pod["metadata"]["uid"]},
     )
-    stdout, stderr = await asyncio.wait_for(inspect.communicate(), timeout=15)
-    assert inspect.returncode == 0, stderr.decode()
-    inspected = json.loads(stdout)
-    assert inspected["status"]["id"] == container_id
-    pid = inspected["info"]["pid"]
-    assert isinstance(pid, int)
-    assert pid > 1
-    executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
-    assert executable.name == "sessions", executable
-
-    async def send_signal(name: str) -> None:
-        command = await asyncio.create_subprocess_exec(
-            crictl_command[0],
-            "ctr",
-            "--address",
-            "/run/k3s/containerd/containerd.sock",
-            "-n",
-            "k8s.io",
-            "tasks",
-            "kill",
-            "--signal",
-            name,
-            container_id,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await asyncio.wait_for(command.communicate(), timeout=15)
-        assert command.returncode == 0, stderr.decode()
-
-    # Keep the proc file open so PID reuse cannot change which task is observed.
-    with await asyncio.to_thread(Path(f"/proc/{pid}/status").open) as process_status:
-
-        def read_status() -> str:
-            process_status.seek(0)
-            return process_status.read()
-
-        try:
-            await send_signal("SIGSTOP")
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(5),
-                wait=wait_fixed(0.01),
-                retry=retry_if_exception_type(AssertionError),
-                reraise=True,
-            ):
-                with attempt:
-                    assert re.search(r"^State:\s+T ", await asyncio.to_thread(read_status), re.MULTILINE)
-            yield
-            # Kubelet must observe deletion before SIGKILL, so it does not restart this container.
-            async with asyncio.timeout(15):
-                while True:
-                    status = await asyncio.to_thread(read_status)
-                    assert re.search(r"^State:\s+T ", status, re.MULTILINE), status
-                    pending = re.findall(r"^(?:SigPnd|ShdPnd):\s+([0-9a-f]+)", status, re.MULTILINE)
-                    if any(int(mask, 16) & (1 << (signal.SIGTERM - 1)) for mask in pending):
-                        break
-                    await asyncio.sleep(0.01)
-            (undeclared_outputs_dir() / "dispatcher-mid-delivery-crash.json").write_text(
-                json.dumps(
-                    {
-                        "pod_uid": pod["metadata"]["uid"],
-                        "container_id": container_id,
-                        "pid": pid,
-                        "pending_sigterm_status": status,
-                    },
-                    indent=2,
-                )
-                + "\n"
-            )
-        finally:
-            await send_signal("SIGKILL")
 
 
 async def _wait_for_dispatcher_replicas(cluster: Cluster, count: int) -> list[dict[str, Any]]:
@@ -356,7 +279,7 @@ async def _replace_original_with_peer(
             if crictl_command is None:
                 await _delete_pod(cluster, original["metadata"]["name"], original_uid)
             else:
-                async with _crashed_dispatcher_process(cluster, original, crictl_command), cluster.api_client() as api:
+                async with _crashed_dispatcher_process(original, crictl_command), cluster.api_client() as api:
                     await k8s.CoreV1Api(api).delete_namespaced_pod(
                         original["metadata"]["name"],
                         cluster.namespace,
