@@ -4657,6 +4657,14 @@ data:
       cert_file: /run/agentplane/workload-tls/tls.crt
       key_file: /run/agentplane/workload-tls/tls.key
       client_uri: spiffe://agentplane/app
+    sampler_stats:
+      target: central-sampler.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/central-sampler
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/app
     history_service_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/history-ingress
@@ -5137,6 +5145,14 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: central-sampler
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             app.kubernetes.io/name: notifications
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -5200,6 +5216,25 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: app-sampler-stats
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: central-sampler
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: app
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
               protocol: TCP
 ---
 apiVersion: v1
