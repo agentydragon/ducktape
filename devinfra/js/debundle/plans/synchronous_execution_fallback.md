@@ -68,6 +68,6 @@ must keep conservative promotion where their effects are not proved;
 uninitialized observations must retain their separate ordering constraint.
 
 The current reach classifier and precision-loss report are in
-`facts/sync_effects/interpreter.rs` and `e2e/synchronous_precision_report_test.rs`;
+`facts/sync_effects/interpreter.rs` and `e2e/synchronous_precision_report/`;
 the remaining promotion fallback is in `graph/build/at_init.rs`. See
 <abstract_interpreter.md> for the broader effect-domain migration.

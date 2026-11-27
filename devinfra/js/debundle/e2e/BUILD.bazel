@@ -1230,6 +1230,11 @@ debundle_graph_e2e_test(
 
 debundle_graph_e2e_test(
     name = "synchronous_precision_report_test",
+    srcs = glob(
+        ["synchronous_precision_report/*.rs"],
+        exclude = ["synchronous_precision_report/mod.rs"],
+    ),
+    source = "synchronous_precision_report/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle/graph",
