@@ -136,6 +136,17 @@ pub fn lazy_visit_may_skip<V: LazyBoundary, N: VisitWith<V>>(v: &mut V, node: &N
     v.position().past_await = before;
 }
 
+/// Walk a `for…in`/`for…of` loop with the pre-loop await state restored after it:
+/// the loop may bind and may not run at all, so awaits inside its head and body do
+/// not defer the code after it. `lazy_visit_may_skip` also counts an optional path,
+/// which the write-recording collectors do not want, so they call this instead and
+/// do their head work in `visit_for_head`, which the walk below reaches.
+pub fn lazy_visit_binding_loop<V: LazyBoundary, N: VisitWith<V>>(v: &mut V, node: &N) {
+    let before_loop = v.position().past_await;
+    node.visit_children_with(v);
+    v.position().past_await = before_loop;
+}
+
 pub fn lazy_visit_function<V: LazyBoundary>(v: &mut V, node: &Function) {
     v.descend_lazy(|s| node.visit_children_with(s));
 }

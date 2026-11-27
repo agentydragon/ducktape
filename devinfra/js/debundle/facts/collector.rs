@@ -583,29 +583,22 @@ impl Visit for SyncInlineEffectCollector {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        let before_loop = self.position.past_await;
-        if self.active()
-            && let ForHead::Pat(pattern) = &node.left
-        {
-            record_pat_write(pattern, self);
-        }
-        node.left.visit_with(self);
-        node.right.visit_with(self);
-        node.body.visit_with(self);
-        self.position.past_await = before_loop;
+        lazy_visit_binding_loop(self, node);
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        let before_loop = self.position.past_await;
+        lazy_visit_binding_loop(self, node);
+    }
+
+    /// The inline-effect collector models a loop head as a write only while its
+    /// boundary is still active, and only for the destructuring form.
+    fn visit_for_head(&mut self, head: &ForHead) {
         if self.active()
-            && let ForHead::Pat(pattern) = &node.left
+            && let ForHead::Pat(pattern) = head
         {
             record_pat_write(pattern, self);
         }
-        node.left.visit_with(self);
-        node.right.visit_with(self);
-        node.body.visit_with(self);
-        self.position.past_await = before_loop;
+        head.visit_children_with(self);
     }
 }
 
@@ -846,37 +839,27 @@ impl Visit for StatementFactsCollector {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        let before_loop = self.position.past_await;
-        match &node.left {
-            ForHead::Pat(pattern) => record_pat_write(pattern, self),
-            ForHead::VarDecl(var) => {
-                for decl in &var.decls {
-                    record_pat_write(&decl.name, self);
-                }
-            }
-            ForHead::UsingDecl(_) => {}
-        }
-        node.left.visit_with(self);
-        node.right.visit_with(self);
-        node.body.visit_with(self);
-        self.position.past_await = before_loop;
+        lazy_visit_binding_loop(self, node);
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        let before_loop = self.position.past_await;
-        match &node.left {
+        lazy_visit_binding_loop(self, node);
+    }
+
+    /// A loop head writes every binding it names: the destructuring pattern, or
+    /// each declarator of a `var`/`let`/`const` head. A `using` head binds a
+    /// disposal resource without a write cell.
+    fn visit_for_head(&mut self, head: &ForHead) {
+        match head {
             ForHead::Pat(pattern) => record_pat_write(pattern, self),
-            ForHead::VarDecl(var) => {
-                for decl in &var.decls {
-                    record_pat_write(&decl.name, self);
+            ForHead::VarDecl(declaration) => {
+                for declarator in &declaration.decls {
+                    record_pat_write(&declarator.name, self);
                 }
             }
             ForHead::UsingDecl(_) => {}
         }
-        node.left.visit_with(self);
-        node.right.visit_with(self);
-        node.body.visit_with(self);
-        self.position.past_await = before_loop;
+        head.visit_children_with(self);
     }
 
     // The S-chain's dataflow-summarizability of calls/news is
