@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.IndexedConstLink
+import EsmSplit.CoreJS.IndexedSortedScopes
 import EsmSplit.CoreJS.LiteralSwapCheck
 
 /-! Exact schedule steps for const declarations in the existing indexed
@@ -231,6 +232,42 @@ theorem same_inline_exports_of_declarations {B : EsmSplit.Bundle} {S : EsmSplit.
     change (EntryExports.resolve output.entry _).toOption = _
     rw [targetTable]
     rfl
+
+/-- An order-preserving indexed plan shares the original allocation and hoisted
+state. The linked units agree on their free cells, including a hoisted helper's
+captures and its callers' imports. Resolve the complete public table from the
+same frames; this does not require the source rows to be plain declarations. -/
+theorem inline_links_of_order_kept {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (valid : EsmSplit.Valid B S P) {original : Program} {source : Module}
+    (single : original.modules = [source]) (imports : source.imports = [])
+    (found : original.find original.entry = some source)
+    (footprints : IndexedExportCells.Footprints source.body B)
+    (free : IndexedUnitsAgree.FreeFootprints source.body B)
+    (complete : IndexedPlanCells.DefinitionsPresent source.body B)
+    (ordered : source.body.Pairwise (fun a b => a.1 ≤ b.1))
+    (kept : SparseProjectedOrder.OrderKept source.body P)
+    {entry : EsmSplit.Module} (planEntry : P.find P.entry = some entry)
+    (own : InlineExportsOwned source B entry)
+    (table : (moduleOfIndexed source.body B P entry).exports = source.exports)
+    {w : World} (before : LinkedBehavior.CheckedLink original w) :
+    ∃ after : LinkedBehavior.CheckedLink (splitProgramIndexed source.body B P) w,
+      before.ready = after.ready ∧
+      SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
+      ∃ exports, EntryExports.resolve original.entry before.linked = .ok exports ∧
+        EntryExports.resolve (splitProgramIndexed source.body B P).entry after.linked = .ok exports := by
+  obtain ⟨tops, regions⟩ :=
+    IndexedSortedScopes.indexed_tops_regions valid footprints rfl single imports found ordered
+  have scopes := IndexedUnitsAgree.indexed_scopes_agree valid footprints free complete rfl imports found
+    ordered (SparseProjectedOrder.split_indexed_loaded_eq_source kept)
+  obtain ⟨_, frames, _, after, allocated, beforeScopes, afterScopes, ready, same, _⟩ :=
+    OrderedRegion.matching_link_with_frames regions tops scopes before
+  have frameNames := declareTops_names _ allocated
+  rw [IndexedEntryLink.import_free_source_tops found imports ordered] at frameNames
+  have originalLinked := Except.ok.inj
+    (beforeScopes.symm.trans (IndexedEntryLink.import_free_entry_scopes found imports frames))
+  refine ⟨after, ready, same, ?_⟩
+  rw [originalLinked]
+  exact inline_tables valid found footprints complete frameNames afterScopes planEntry own table
 
 
 end CoreJS.IndexedReorder
