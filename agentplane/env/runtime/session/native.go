@@ -177,8 +177,8 @@ func (s *Session) appServerAttachment() *codexappserver.Attachment {
 					return s.receive(ctx, line, adapter)
 				})
 			},
-			Stderr: func(ctx context.Context, text string) error {
-				return s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: text}), nil)
+			Stderr: func(ctx context.Context, data []byte) error {
+				return s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Data: data}), nil)
 			},
 			End: s.harnessEnded,
 		}

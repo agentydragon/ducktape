@@ -497,7 +497,7 @@ func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 
 func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	r, s := lifecycleTestSession(t)
-	if err := s.Emit(context.Background(), &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "kept"}}}, nil); err != nil {
+	if err := s.Emit(context.Background(), &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte("kept")}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{}); err != nil {
@@ -901,7 +901,7 @@ func TestJournalChangesWakeSessionSummaryObservers(t *testing.T) {
 	r, s := lifecycleTestSession(t)
 	summaryChanges := r.sessions.SummaryChangesSince()
 	inventoryChanges := r.sessions.InventoryChangesSince()
-	if err := s.Emit(r.lifecycleContext, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "journal update"}}}, nil); err != nil {
+	if err := s.Emit(r.lifecycleContext, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte("journal update")}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	select {

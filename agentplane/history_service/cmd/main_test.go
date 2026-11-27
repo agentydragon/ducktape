@@ -87,7 +87,7 @@ func journalEntry(cursor uint64) *eventlogpb.EventEntry {
 	return &eventlogpb.EventEntry{
 		Cursor: cursor,
 		Origin: &eventlogpb.EventOrigin{SourceId: "test-runner-journal", Sequence: cursor},
-		Event:  &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "journal"}}},
+		Event:  &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte("journal")}}},
 	}
 }
 

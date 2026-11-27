@@ -372,7 +372,7 @@ func TestStaleTurnCompletionsDoNotClearCurrentTurnOrPoisonBatch(t *testing.T) {
 			}
 		}
 		entry, err := journal.Append(batchCtx, &eventpb.Event{
-			Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "still writable"}},
+			Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte("still writable")}},
 		}, AppendOptions{})
 		if err != nil {
 			return err
@@ -778,5 +778,19 @@ func TestCommittedBatchAllowsReplayAndAdmissionWhileCallbackWaits(t *testing.T) 
 	}
 	if len(entries) != 3 || entries[1].GetEvent().GetCommandAdmitted().GetCommand().GetCommandId() != "between" || entries[2].GetEvent().GetNative().Line != "last" {
 		t.Fatalf("journal handoff order = %v", entries)
+	}
+}
+
+// Journal and History rows store events as binary protobuf. A row written while `HarnessStderr` was
+// `string text = 1` must decode under `bytes data = 1`: these are the bytes that schema wrote for
+// Event{harness_stderr: {text: "λ old"}}.
+func TestHarnessStderrDecodesRowsWrittenAsString(t *testing.T) {
+	stored := []byte{0x3a, 0x08, 0x0a, 0x06, 0xce, 0xbb, ' ', 'o', 'l', 'd'}
+	var event eventpb.Event
+	if err := proto.Unmarshal(stored, &event); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(event.GetHarnessStderr().GetData()); got != "λ old" {
+		t.Fatalf("decoded stderr = %q", got)
 	}
 }

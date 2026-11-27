@@ -18,7 +18,7 @@ public control RPCs are in [Environment Runtime control](../control/environment_
   line and Codex home apply to every Codex Session; each thread carries its own Session's working
   directory, instructions, model, reasoning effort and tool environment, including the notification
   destination. A native frame naming a thread is recorded only in that thread's Session, a
-  sub-agent's in its root's; a frame naming none, and the app-server's stderr, is recorded in every
+  sub-agent's in its root's; a frame naming none, and the app-server's stderr (to the Runtime's own stderr while no Session is hosted), is recorded in every
   Codex Session the app-server hosts. Interrupting one Session's turn leaves the others running. An
   app-server exit ends every hosted Session's harness: each records `HarnessExited` and, with an
   active turn, `PROCESS_LOST`, and resumes its thread when it next needs a harness.
@@ -88,7 +88,7 @@ retained verbatim as `Native`.
 
 | Family  | Events                                                                                                                                       |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| harness | `HarnessStarted` (resumed, pid), `HarnessExited` (exit code, stopped by the Runtime), `HarnessLost`, `HarnessStderr`                         |
+| harness | `HarnessStarted` (resumed, pid), `HarnessExited` (exit code, stopped by the Runtime), `HarnessLost`, `HarnessStderr` (one raw read)          |
 | command | `CommandAdmitted`, `CommandFailed`, `CommandNoop`, `HarnessUserMessageConfirmed`, `ModelChanged`                                             |
 | turn    | `TurnStarted`, `TurnCompleted` (`COMPLETED`, `INTERRUPTED`, `FAILED`, `PROCESS_LOST`)                                                        |
 | item    | `ItemStarted` (assistant text, reasoning, tool call), `TextDelta`, `ToolArgumentsDelta`, `ToolArguments`, `ToolOutputDelta`, `ItemCompleted` |

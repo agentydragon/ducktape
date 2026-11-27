@@ -876,7 +876,7 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
 
     for index in range(65):
         source.append(event_pb2.Event(native=event_pb2.Native(line=f"Unlinked packet {index}")))
-    stderr = source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text="Debug stderr retained")))
+    stderr = source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(data=b"Debug stderr retained")))
     checkpoint = source.append(event_pb2.Event(debug_checkpoint=event_pb2.DebugCheckpoint(name="Debug checkpoint")))
     last = source.append(
         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and debug ready"))
@@ -908,6 +908,9 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
         await expect(frame).to_be_visible()
         assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == entry
         assert event_read_requested_after(entry.cursor)
+    # The JSON shows stderr's raw bytes as base64; the decoded text sits beside it.
+    stderr_record = dialog.locator(f'[data-debug-observation="{stderr.cursor}"]')
+    await expect(stderr_record.get_by_text("Debug stderr retained", exact=True)).to_be_visible()
     await review_view.capture(label=f"Chronological debug on {viewport_name}")
     await dialog.get_by_role("button", name="Older observations", exact=True).click()
     await expect(observations).to_have_count(30)

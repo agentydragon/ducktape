@@ -595,7 +595,7 @@ func TestFollowSessionBoundsEntryFramesAndAllowsOneOversizedEntry(t *testing.T) 
 
 	bytesSession, _ := server.record(t)
 	oversized := testEntry(1)
-	oversized.Event.Observation = &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: strings.Repeat("x", storage.FollowBytesLimit+100)}}
+	oversized.Event.Observation = &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Data: []byte(strings.Repeat("x", storage.FollowBytesLimit+100))}}
 	appendFollowEntries(t, server, bytesSession, oversized, testEntry(2))
 	byBytes := server.follow(t, &historypb.FollowSessionRequest{
 		SessionId: bytesSession.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0},

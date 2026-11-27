@@ -6,6 +6,7 @@ go_library(
         "adapter.go",
         "native_request.go",
         "recovery.go",
+        "stdio_reader.go",
         "stdout_framer.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/harness",
@@ -27,6 +28,7 @@ go_test(
     name = "harness_test",
     srcs = [
         "recovery_test.go",
+        "stdio_reader_test.go",
         "stdout_framer_test.go",
     ],
     embed = [":harness"],

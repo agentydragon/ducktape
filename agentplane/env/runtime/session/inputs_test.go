@@ -24,7 +24,7 @@ func TestSessionReconcileSnapshotsIgnoreJournalOnlyChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: "raw output"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Data: []byte("raw output")}), nil); err != nil {
 		t.Fatal(err)
 	}
 	s.wake()
@@ -167,7 +167,7 @@ func TestJournalNotificationsOnlySignalBlockerTransitions(t *testing.T) {
 	s.deps.changed = func() { notifications.Add(1) }
 	summariesChanged := manager.SummaryChangesSince()
 	for _, text := range []string{"first", "second"} {
-		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: text}), nil); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Data: []byte(text)}), nil); err != nil {
 			t.Fatal(err)
 		}
 		s.wake()
