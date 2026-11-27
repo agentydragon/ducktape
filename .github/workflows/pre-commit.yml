@@ -40,24 +40,9 @@ jobs:
         with:
           installables: ".#precommit"
 
-      # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
-      - name: Restore Ansible Galaxy roles cache
-        id: cache-ansible-roles-restore
-        if: steps.changed-files.outputs.needs_ansible_roles == 'true'
-        uses: actions/cache/restore@v6
-        with:
-          path: ~/.ansible/roles
-          key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
-          restore-keys: ansible-roles-${{ runner.os }}-
-
-      # Roles ARE needed for syntax checking - ansible-playbook --syntax-check resolves
-      # role dependencies from meta/main.yml files (e.g., legacy_gui depends on
-      # petermosmans.customize-gnome)
       - name: Install Ansible Galaxy roles
         if: steps.changed-files.outputs.needs_ansible_roles == 'true'
-        run: |
-          cd ansible
-          ansible-galaxy role install -r requirements.yaml
+        uses: ./.github/actions/ansible-galaxy-roles
 
       # ============================================================================
       # PRE-COMMIT RUN
@@ -88,17 +73,3 @@ jobs:
           else
             pre-commit run --all-files --show-diff-on-failure -v
           fi
-
-      # ============================================================================
-      # ANSIBLE CACHE SAVE
-      # ============================================================================
-
-      - name: Save Ansible Galaxy roles cache
-        if: >-
-          always() &&
-          steps.changed-files.outputs.needs_ansible_roles == 'true' &&
-          steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ~/.ansible/roles
-          key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}
