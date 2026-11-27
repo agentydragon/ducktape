@@ -308,11 +308,11 @@ private def stageConstructed (program : CoreJS.Program) (src : BundleInput)
 /-- Use the proved ordered-declaration constructor when it accepts. Other inputs
 continue through the existing certified routes; printer refusals remain final. -/
 private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
+    (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.LinkedInput.IndexedSource)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural do return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
-  let .ok classified := CoreJS.LinkedInput.decodeSourceClassification src.program src.source spec.entry | return none
   let original := classified.source
   unless original.imports.isEmpty && !classified.hasTemplates do return none
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
@@ -323,7 +323,7 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   unless CoreJS.IndexedInlineConstructor.staticDeclarations [] original.body do return none
   -- Once the source is recognized, omitted original units are a final
   -- refusal. The same classification supplies the indexed construction.
-  let decoded ← match CoreJS.LinkedInput.checkIndexedSource classified with
+  let decoded ← match indexed with
     | .ok indexed => pure indexed
     | .error reason =>
       return some (← emitRefusal options.request.label { reason := s!"source provenance: {reason}" }
@@ -363,8 +363,7 @@ private structure LocalExportSource where
   bundle : Bundle
   facts : CoreJS.IndexedCheckedSplit.SourceFacts source bundle rows
 
-private def decodeLocalExportSource (original : Json) (sourceText entry : String) : Except String LocalExportSource := do
-  let decoded ← CoreJS.LinkedInput.decodeIndexedSource original sourceText entry
+private def decodeLocalExportSource (decoded : CoreJS.LinkedInput.IndexedSource) : Except String LocalExportSource := do
   let source := decoded.program
   let bundle := sourceBundle decoded.nodes
   let sequence ← CoreJS.IndexedSourceSchedule.checkSequence decoded bundle
@@ -380,12 +379,15 @@ private def decodeLocalExportSource (original : Json) (sourceText entry : String
 /-- Construct from the actual indexed source, bundle, export rows and authored
 placement. Both terminal and interior rows use the same proof and writer. -/
 private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
+    (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.LinkedInput.IndexedSource)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural &&
       options.deploymentOrigin.isNone do return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
-  let .ok input := decodeLocalExportSource src.program src.source spec.entry | return none
+  unless !classified.localExports.isEmpty do return none
+  let .ok decoded := indexed | return none
+  let .ok input := decodeLocalExportSource decoded | return none
   unless decide (CoreJS.IndexedCheckedSplit.MetadataSelectorsOnce input.bundle spec input.rows) do
     return some (← emitVerdict options.request.label (.error "each metadata row must be selected exactly once")
       "indexed-local-exports")
@@ -409,8 +411,16 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
-  if let some verdict ← tryLocalExports chunk src out work options timings then return verdict
-  if let some verdict ← tryNamedDeclarations chunk src out work options timings then return verdict
+  -- Classify the original source once for both indexed constructor families.
+  -- The coverage result is shared, but the named route decides whether its
+  -- failure is a terminal refusal only after recognizing the source shape.
+  if options.profile == .empty && options.intrinsics.isEmpty && !options.structural then
+    if let .authored spec := chunk.placement then
+      if spec.sequential then
+        if let .ok classified := CoreJS.LinkedInput.decodeSourceClassification src.program src.source spec.entry then
+          let indexed := CoreJS.LinkedInput.checkIndexedSource classified
+          if let some verdict ← tryLocalExports chunk src classified indexed out work options timings then return verdict
+          if let some verdict ← tryNamedDeclarations chunk src classified indexed out work options timings then return verdict
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
   let { original := program, bundle := B, spec := S, plan := P, output } := part
