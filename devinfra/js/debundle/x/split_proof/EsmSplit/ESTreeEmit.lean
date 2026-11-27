@@ -184,6 +184,11 @@ private def coreStatement (shadowed : Bool) : CoreJS.Stmt → Except String Json
     let init ← coreExpr shadowed value
     return node "VariableDeclaration" [("kind", .str "let"), ("declarations", toJson [
       node "VariableDeclarator" [("id", id), ("init", init)]])]
+  | .decl .var name value => do
+    let id ← coreIdentifier name
+    let init ← coreExpr shadowed value
+    return node "VariableDeclaration" [("kind", .str "var"), ("declarations", toJson [
+      node "VariableDeclarator" [("id", id), ("init", init)]])]
   | _ => throw "unsupported CoreJS statement for direct printing"
 
 private def coreModule (m : CoreJS.Module) (hashbang : List (String × Json)) : Except String Json := do

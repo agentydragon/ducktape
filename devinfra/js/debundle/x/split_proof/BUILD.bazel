@@ -3789,6 +3789,22 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_var_initializer",
+    srcs = ["EsmSplit/CoreJS/VarInitializer.lean"],
+    deps = [":corejs_eval"],
+)
+
+lean_proof_test(
+    name = "corejs_var_initializer_axioms_test",
+    modules = ["EsmSplit.CoreJS.VarInitializer"],
+    required_theorems = [
+        "CoreJS.VarInitializer.binding_before_initializer",
+        "CoreJS.VarInitializer.execute_initializer",
+    ],
+    deps = [":corejs_var_initializer"],
+)
+
+lean_library(
     name = "corejs_indexed_inline_constructor",
     srcs = ["EsmSplit/CoreJS/IndexedInlineConstructor.lean"],
     deps = [
@@ -3796,6 +3812,7 @@ lean_library(
         ":corejs_indexed_checked_split",
         ":corejs_indexed_inline_plan",
         ":corejs_primitive_rhs",
+        ":corejs_var_initializer",
     ],
 )
 

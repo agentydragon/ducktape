@@ -120,7 +120,7 @@ private def tryInlineDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   unless original.imports.isEmpty && !classified.hasTemplates do return none
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
       match stmt with
-      | .decl .const _ _ | .decl .let_ _ _ => true
+      | .decl _ _ _ => true
       | _ => false) do return none
   unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
   unless CoreJS.IndexedInlineConstructor.staticDeclarations [] original.body do return none

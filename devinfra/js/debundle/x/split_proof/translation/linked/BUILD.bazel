@@ -202,3 +202,13 @@ eslint_test(
     name = "eslint_test",
     srcs = [":lint_sources"],
 )
+
+js_test(
+    name = "var_constructor_test",
+    data = [
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "var_constructor_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
+)
