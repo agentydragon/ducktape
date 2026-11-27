@@ -111,6 +111,11 @@ def main : IO Unit := do
   match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOwner [row] .allOutcomes with
   | .ok _ => throw (IO.userError "indexed constructor accepted the wrong export-row owner")
   | .error _ => pure ()
+  let duplicateSelector : EsmSplit.Spec := { request with
+    modules := [("worker.mjs", [.stmt 0]), ("entry.mjs", [.stmt 1, .stmt 1, .stmt 2])] }
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle duplicateSelector [row] .allOutcomes with
+  | .ok _ => throw (IO.userError "indexed constructor accepted a duplicate metadata selector")
+  | .error _ => pure ()
   let wrongOrder : EsmSplit.Spec := { request with order := ["entry.mjs", "worker.mjs"] }
   match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOrder [row] .allOutcomes with
   | .ok _ => throw (IO.userError "indexed constructor accepted an invalid sequential order")

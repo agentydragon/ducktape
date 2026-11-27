@@ -11,6 +11,18 @@ open LinkedBehavior
 def assignments (body : List (Nat × Stmt)) (P : EsmSplit.Plan) : List UnitPlacement :=
   P.mods.flatMap fun m => (m.stmts.filterMap (indexedNumbered body)).map fun row => (row.1, m.name)
 
+/-- Count the authored selectors themselves, before the planner deduplicates
+the units they pick. Each metadata ordinal must be selected exactly once. -/
+def MetadataSelectorsOnce (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
+    (rows : List EsmSplit.LocalExportUnit) : Prop :=
+  ∀ row ∈ rows, (S.modules.flatMap fun m => m.2.filter fun selector =>
+    selector.claims B row.ordinal).length = 1
+
+instance (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (rows : List EsmSplit.LocalExportUnit) :
+    Decidable (MetadataSelectorsOnce B S rows) := by
+  unfold MetadataSelectorsOnce
+  infer_instance
+
 private def isConst : Stmt → Bool
   | .decl .const _ _ => true
   | _ => false
@@ -54,6 +66,7 @@ structure Construction (source : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Sp
   assignmentEq : assignment = assignments body plan
   placement : Places assignment source program
   authored : ∀ id owner, (id, owner) ∈ assignment → S.claimants B id = [owner]
+  metadataSelectorsOnce : MetadataSelectorsOnce B S rows
   rowOwner : ∀ row ∈ rows, S.claimants B row.ordinal = [S.entry]
   rowPlaced : ∀ row ∈ rows, ∃ entry, plan.find plan.entry = some entry ∧ row.ordinal ∈ entry.stmts ∧
     ∀ stmt, (row.ordinal, stmt) ∉ body
@@ -79,6 +92,8 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
     throw "checked split requires no private entry body"
   let .isTrue orderRequiresSequential := (inferInstance : Decidable (S.order ≠ [] → S.sequential = true)) |
     throw "an explicit module order requires a sequential request"
+  let .isTrue metadataSelectorsOnce := (inferInstance : Decidable (MetadataSelectorsOnce B S rows)) |
+    throw "each metadata row must be selected exactly once"
   match single : original.modules with
   | [source] =>
     if sourceEntry : original.entry = source.name then
@@ -161,7 +176,8 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
                                               exact member
                                             return ⟨body, sourceCoverage, P, rfl, publicEntry, orderRequiresSequential, schedule,
                                               splitProgramIndexed body B P, rfl, labels, rfl,
-                                              placed, ownerProof, rowOwner, rowPlaced, exports, runs, forRequest requested runs⟩
+                                              placed, ownerProof, metadataSelectorsOnce, rowOwner, rowPlaced,
+                                              exports, runs, forRequest requested runs⟩
                                           else throw "entry needs unsupported glue exports"
                                         else throw "entry export rows differ from source order"
                                       else throw "entry units differ from source export metadata"

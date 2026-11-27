@@ -369,6 +369,9 @@ private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
   let .authored spec := chunk.placement | return none
   unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
   let .ok input := decodeLocalExportSource src.program src.source spec.entry | return none
+  unless decide (CoreJS.IndexedCheckedSplit.MetadataSelectorsOnce input.bundle spec input.rows) do
+    return some (← emitVerdict options.request.label (.error "each metadata row must be selected exactly once")
+      "indexed-local-exports")
   let .ok built := CoreJS.IndexedCheckedSplit.construct input.source input.bundle spec input.rows .allOutcomes |
     return none
   try
