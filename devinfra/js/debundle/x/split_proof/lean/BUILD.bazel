@@ -1008,12 +1008,14 @@ lean_library(
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
+        ":corejs_terminal_source",
         ":lowersplit_input",
         ":lowersplit_support",
         ":named_declaration_split",
         ":ordered_const_syntax",
         ":planner",
         ":sparse_checked_artifact",
+        ":terminal_export_placement",
     ],
 )
 
