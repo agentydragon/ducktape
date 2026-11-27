@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { topLevelStatements } from "../../translation/scope_metadata.mjs";
@@ -43,8 +44,24 @@ function inputs(source, name, placement) {
   return { manifest: writeDeployment(source, spec, out), out };
 }
 
+function ownerRanges(placement) {
+  return Object.fromEntries(
+    Object.entries(placement.modules).map(([owner, selectors]) => {
+      const ranges = [];
+      for (const selector of selectors) {
+        const ordinal = Number(selector.slice(1));
+        const last = ranges.at(-1);
+        if (last && ordinal === last[1] + 1) last[1] = ordinal;
+        else ranges.push([ordinal, ordinal]);
+      }
+      return [owner, ranges.map(([first, last]) => (first === last ? `#${first}` : `#${first}..#${last}`))];
+    })
+  );
+}
+
 for (const source of process.argv.slice(2)) {
   const library = path.basename(source, ".mjs");
+  const sha256 = createHash("sha256").update(readFileSync(source)).digest("hex");
   const units = topLevelStatements(JSON.parse(readFileSync(source.slice(0, -4) + ".json", "utf8")));
   const n = units.length;
   const baseline = await smoke(library, source);
@@ -58,16 +75,31 @@ for (const source of process.argv.slice(2)) {
   if (firstFunction !== -1) placements.push(["advance-function", extract(n, firstFunction)]);
   for (const [strategy, placement] of placements) {
     const request = inputs(source, library + "-" + strategy, placement);
+    const evidence = {
+      library,
+      sha256,
+      units: n,
+      strategy,
+      entry: placement.entry,
+      owners: ownerRanges(placement),
+      order: Object.keys(placement.modules).filter((name) => name !== placement.entry),
+      firstUnits: units.slice(0, 2).map(({ node }) => ({
+        type: node.type,
+        kind: node.kind ?? null,
+        initializer: node.declarations?.[0]?.init?.type ?? null,
+      })),
+      ...(strategy === "advance-function" ? { advancedOrdinal: firstFunction } : {}),
+    };
     const verdict = certificate(request);
     if (verdict.status === "rejected") {
       assert.equal(verdict.reason_code, "no_constructed_rule", JSON.stringify(verdict));
       assert(!existsSync(request.out));
-      results.push({ library, strategy, outcome: "refused", reason: verdict.reason });
+      results.push({ ...evidence, outcome: "refused", reasonCode: verdict.reason_code, reason: verdict.reason });
     } else {
       assert.equal(verdict.strategy, "compiled-constructor");
       assert.deepEqual(certificate({ ...request, checkOutput: true }), verdict);
       assert.deepEqual(await smoke(library, path.join(request.out, placement.entry)), baseline);
-      results.push({ library, strategy, outcome: "certified", scope: verdict.scope });
+      results.push({ ...evidence, outcome: "certified", scope: verdict.scope });
     }
   }
 }
