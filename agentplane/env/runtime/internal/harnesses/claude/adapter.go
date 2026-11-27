@@ -330,11 +330,8 @@ func (a *claudeAdapter) answeredMessages(ctx context.Context, turnID string) (ma
 }
 
 func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) error {
-	if a.host.Session().ActiveTurnID == "" {
-		turnID := newTurnID()
-		if err := a.host.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: turnID, Model: a.host.Session().Model}), nil); err != nil {
-			return err
-		}
+	if _, err := a.turnID(ctx, nil); err != nil {
+		return err
 	}
 	messageUUID := uuid.NewString()
 	if err := a.host.RecordNativeRequest(ctx, messageUUID, harness.ClaudeSubmit, []string{commandID}); err != nil {
@@ -362,55 +359,41 @@ func (a *claudeAdapter) Submit(ctx context.Context, commandID, text string) erro
 
 func (a *claudeAdapter) Interrupt(ctx context.Context, turnID string) error {
 	_ = turnID // Claude interrupts its current native turn; its protocol has no turn id on this request.
-	requestID := nativeRequestID()
-	frame, err := marshalClaudeControlRequest(requestID, claudeInterruptRequest{
+	return a.sendControlRequest(ctx, nativeRequestID(), claudeInterruptRequest{
 		SDKControlInterruptRequest: types.SDKControlInterruptRequest{Subtype: "interrupt"},
 		Reason:                     "agentplane", CancelQueued: false,
 	})
-	if err != nil {
-		return err
-	}
-	return a.host.SendNative(ctx, frame)
 }
 
 func (a *claudeAdapter) ChangeModel(ctx context.Context, commandID, model string) error {
-	requestID := nativeRequestID()
-	a.mu.Lock()
-	a.modelChanges[requestID] = claudeChange{commandID: commandID, value: model}
-	a.mu.Unlock()
-	if err := a.host.RecordNativeRequest(ctx, requestID, harness.ClaudeModelChange, []string{commandID}); err != nil {
-		a.mu.Lock()
-		delete(a.modelChanges, requestID)
-		a.mu.Unlock()
-		return err
-	}
-	err := a.sendControlRequest(ctx, requestID, claudeSetModelRequest{Subtype: "set_model", Model: model})
-	if err != nil && !errors.Is(err, harness.ErrNativeResponsePending) {
-		a.mu.Lock()
-		delete(a.modelChanges, requestID)
-		a.mu.Unlock()
-	}
-	return err
+	return a.trackedControlRequest(ctx, a.modelChanges, harness.ClaudeModelChange, commandID, model, claudeSetModelRequest{Subtype: "set_model", Model: model})
 }
 
 func (a *claudeAdapter) ChangeReasoningEffort(ctx context.Context, commandID, effort string) error {
-	requestID := nativeRequestID()
-	a.mu.Lock()
-	a.effortChanges[requestID] = claudeChange{commandID: commandID, value: effort}
-	a.mu.Unlock()
-	if err := a.host.RecordNativeRequest(ctx, requestID, harness.ClaudeEffortChange, []string{commandID}); err != nil {
-		a.mu.Lock()
-		delete(a.effortChanges, requestID)
-		a.mu.Unlock()
-		return err
-	}
 	request := claudeApplyFlagSettingsRequest{Subtype: "apply_flag_settings"}
 	request.Settings.EffortLevel = effort
+	return a.trackedControlRequest(ctx, a.effortChanges, harness.ClaudeEffortChange, commandID, effort, request)
+}
+
+// trackedControlRequest records a control request in changes until its response settles it. The entry
+// stays when delivery is uncertain (ErrNativeResponsePending), so a late response can still settle it.
+func (a *claudeAdapter) trackedControlRequest(ctx context.Context, changes map[string]claudeChange, kind harness.NativeRequestKind, commandID, value string, request any) error {
+	requestID := nativeRequestID()
+	a.mu.Lock()
+	changes[requestID] = claudeChange{commandID: commandID, value: value}
+	a.mu.Unlock()
+	forget := func() {
+		a.mu.Lock()
+		delete(changes, requestID)
+		a.mu.Unlock()
+	}
+	if err := a.host.RecordNativeRequest(ctx, requestID, kind, []string{commandID}); err != nil {
+		forget()
+		return err
+	}
 	err := a.sendControlRequest(ctx, requestID, request)
 	if err != nil && !errors.Is(err, harness.ErrNativeResponsePending) {
-		a.mu.Lock()
-		delete(a.effortChanges, requestID)
-		a.mu.Unlock()
+		forget()
 	}
 	return err
 }
@@ -446,7 +429,8 @@ func (a *claudeAdapter) OnFrame(ctx context.Context, raw json.RawMessage, source
 	a.mu.Lock()
 	toolResult := a.toolResult != nil
 	isStarted := frame.Type == "command_lifecycle" && frame.State == "started"
-	isReplayPending := frame.Type == "user" && frame.IsReplay && hasString(a.pending, frame.UUID)
+	_, pending := a.pending[frame.UUID]
+	isReplayPending := frame.Type == "user" && frame.IsReplay && pending
 	a.mu.Unlock()
 	if toolResult && !isStarted && !isReplayPending {
 		if err := a.confirmToolResultInputs(ctx, sources); err != nil {
@@ -950,11 +934,6 @@ func startedSequences(inputs []claudeStartedInput, final uint64) []uint64 {
 
 func containsStarted(inputs []claudeStartedInput, uuid string) bool {
 	return slices.ContainsFunc(inputs, func(input claudeStartedInput) bool { return input.messageUUID == uuid })
-}
-
-func hasString(inputs map[string]claudePendingInput, key string) bool {
-	_, ok := inputs[key]
-	return ok
 }
 
 var _ harness.ProcessAdapter = (*claudeAdapter)(nil)
