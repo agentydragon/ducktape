@@ -53,6 +53,42 @@ private def checkFamily (n : Nat) (kind : DeclKind := .const) : IO Unit := do
   | _, _ => throw (IO.userError "fuel exhaustion changed")
 
 private def run : IO Unit := do
+  let negationSource : Program := ⟨entry, [⟨entry, [], [
+    (0, .decl .const "seed" (.num 7)),
+    (1, .decl .const "ready" (.unary .not (.var "seed"))),
+    (2, .decl .const "result" (.var "ready"))], [("result", "result")]⟩]⟩
+  let negationRequest : EsmSplit.Spec := {
+    entry
+    modules := [(entry, [.stmt 2]), (worker, [.stmt 0, .stmt 1])]
+    order := [worker]
+    sequential := true
+  }
+  let negationBuilt ← IO.ofExcept ((construct negationSource negationRequest).mapError
+    ("logical negation: " ++ ·))
+  unless negationBuilt.split.program.evalOrder == [worker, entry] do
+    throw (IO.userError "logical negation: authored order changed")
+  let .ok () _ := runProgram World.probe 32 negationBuilt.split.program |
+    throw (IO.userError "logical negation: constructed graph did not complete")
+  let arithmeticSource : Program := ⟨entry, [⟨entry, [], [
+    (0, .decl .let_ "seed" (.num 7)),
+    (1, .decl .let_ "ready" (.binary .add (.var "seed") (.num 2))),
+    (2, .decl .let_ "result" (.var "ready"))], [("result", "result")]⟩]⟩
+  let arithmeticRequest : EsmSplit.Spec := {
+    entry
+    modules := [(entry, [.stmt 1, .stmt 2]), (worker, [.stmt 0])]
+    order := [worker]
+    sequential := true
+  }
+  let arithmeticBuilt ← IO.ofExcept ((construct arithmeticSource arithmeticRequest).mapError
+    ("let arithmetic: " ++ ·))
+  unless arithmeticBuilt.split.program.evalOrder == [worker, entry] do
+    throw (IO.userError "let arithmetic: authored order changed")
+  let .ok () arithmeticBefore := runProgram World.probe 32 arithmeticSource |
+    throw (IO.userError "let arithmetic: source did not complete")
+  let .ok () arithmeticAfter := runProgram World.probe 32 arithmeticBuilt.split.program |
+    throw (IO.userError "let arithmetic: constructed graph did not complete")
+  unless (StateMatch.probe arithmeticBefore arithmeticAfter).isSome do
+    throw (IO.userError "let arithmetic: constructed final state changed")
   for n in [1, 2, 5, 19, 64] do checkFamily n
   for n in [1, 2, 5, 19, 64] do checkFamily n .let_
   let emptySource := source 0
