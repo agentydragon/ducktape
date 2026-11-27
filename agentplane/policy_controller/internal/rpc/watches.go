@@ -21,9 +21,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
+	toolscache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -35,10 +34,8 @@ func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsReque
 	if err != nil {
 		return err
 	}
-	return serveWatch(s, stream, func() *policyapi.PolicyBindingList { return &policyapi.PolicyBindingList{} },
-		func(list *policyapi.PolicyBindingList) (map[string]*policypb.PolicyBinding, error) {
-			return messages(list.Items, func(binding *policyapi.PolicyBinding) bool { return selected(binding.Spec.Subject) }, bindingMessage, "invalid policy binding")
-		},
+	return serveWatch(stream, s.informers.bindings,
+		func(binding *policyapi.PolicyBinding) bool { return selected(binding.Spec.Subject) }, bindingMessage, "invalid policy binding",
 		watchFrames[*policypb.PolicyBinding, policypb.WatchPolicyBindingsResponse]{
 			snapshot: func(items []*policypb.PolicyBinding) *policypb.WatchPolicyBindingsResponse {
 				return &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Snapshot{Snapshot: &policypb.PolicyBindingChunk{Bindings: items}}}
@@ -87,10 +84,7 @@ func (s *Service) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grp
 	if err := s.requireReader(stream.Context()); err != nil {
 		return err
 	}
-	return serveWatch(s, stream, func() *policyapi.IdentityList { return &policyapi.IdentityList{} },
-		func(list *policyapi.IdentityList) (map[string]*policypb.Identity, error) {
-			return messages(list.Items, every, identityMessage, "invalid identity")
-		},
+	return serveWatch(stream, s.informers.identities, every, identityMessage, "invalid identity",
 		watchFrames[*policypb.Identity, policypb.WatchIdentitiesResponse]{
 			snapshot: func(items []*policypb.Identity) *policypb.WatchIdentitiesResponse {
 				return &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Snapshot{Snapshot: &policypb.IdentityChunk{Identities: items}}}
@@ -111,10 +105,7 @@ func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grp
 	if err := s.requireReader(stream.Context()); err != nil {
 		return err
 	}
-	return serveWatch(s, stream, func() *policyapi.PolicySetList { return &policyapi.PolicySetList{} },
-		func(list *policyapi.PolicySetList) (map[string]*policypb.PolicySet, error) {
-			return messages(list.Items, every, policySetMessage, "invalid policy set")
-		},
+	return serveWatch(stream, s.informers.sets, every, policySetMessage, "invalid policy set",
 		watchFrames[*policypb.PolicySet, policypb.WatchPolicySetsResponse]{
 			snapshot: func(items []*policypb.PolicySet) *policypb.WatchPolicySetsResponse {
 				return &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Snapshot{Snapshot: &policypb.PolicySetChunk{PolicySets: items}}}
@@ -145,46 +136,48 @@ type policyResource interface {
 	GetIdentity() *policypb.PolicyResourceIdentity
 }
 
-// serveWatch streams the policy namespace's objects of one kind: a snapshot, then upserts and removals as they change.
-// read converts one fresh List.
-func serveWatch[L client.ObjectList, T policyResource, F any](s *Service, stream grpc.ServerStreamingServer[F], newList func() L, read func(L) (map[string]T, error), frames watchFrames[T, F]) error {
+// serveWatch streams the policy namespace's objects of one kind that keep admits, from informer's store: a snapshot,
+// then upserts and removals as they change. invalid names the Internal error for an object that does not convert.
+func serveWatch[O client.Object, T policyResource, F any](stream grpc.ServerStreamingServer[F], informer toolscache.SharedIndexInformer, keep func(O) bool, convert func(O) (T, error), invalid string, frames watchFrames[T, F]) error {
 	ctx := stream.Context()
-	changes, err := s.watch(ctx, newList())
+	// Registered before the first read, so no change between that read and the wait is missed. The buffer of one
+	// coalesces a burst into one re-read.
+	wake := make(chan struct{}, 1)
+	signal := func(any) {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	registration, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+		AddFunc: signal, UpdateFunc: func(_, current any) { signal(current) }, DeleteFunc: signal,
+	})
 	if err != nil {
-		return err
+		return status.Error(codes.Internal, "policy watch could not subscribe")
 	}
-	defer changes.Stop()
-	return follow(ctx, changes,
-		func() (map[string]T, error) {
-			list := newList()
-			if err := s.objects.List(ctx, list, client.InNamespace(s.namespace)); err != nil {
-				return nil, unavailable(ctx, err)
+	defer func() { _ = informer.RemoveEventHandler(registration) }()
+	if !toolscache.WaitForCacheSync(ctx.Done(), informer.HasSynced, registration.HasSynced) {
+		return status.FromContextError(ctx.Err()).Err()
+	}
+	read := func() (map[string]T, error) {
+		out := make(map[string]T)
+		for _, item := range informer.GetStore().List() {
+			object, ok := item.(O)
+			if !ok {
+				return nil, status.Error(codes.Internal, invalid)
 			}
-			return read(list)
-		},
-		func(frame *F) error { return send(ctx, stream, frame) },
-		frames)
-}
-
-// messages converts the listed objects keep admits, keyed by name; invalid names the Internal error for one that
-// does not convert.
-func messages[O any, PO interface {
-	*O
-	GetName() string
-}, T any](items []O, keep func(PO) bool, convert func(PO) (T, error), invalid string) (map[string]T, error) {
-	out := make(map[string]T)
-	for i := range items {
-		item := PO(&items[i])
-		if !keep(item) {
-			continue
+			if !keep(object) {
+				continue
+			}
+			converted, err := convert(object)
+			if err != nil {
+				return nil, status.Error(codes.Internal, invalid)
+			}
+			out[object.GetName()] = converted
 		}
-		converted, err := convert(item)
-		if err != nil {
-			return nil, status.Error(codes.Internal, invalid)
-		}
-		out[item.GetName()] = converted
+		return out, nil
 	}
-	return out, nil
+	return follow(ctx, wake, read, func(frame *F) error { return send(ctx, stream, frame) }, frames)
 }
 
 func every[O any](O) bool { return true }
@@ -254,23 +247,6 @@ func convert(value any, message proto.Message) error {
 	return protojson.Unmarshal(data, message)
 }
 
-func (s *Service) watch(ctx context.Context, list client.ObjectList) (watch.Interface, error) {
-	options := &client.ListOptions{Namespace: s.namespace}
-	if err := s.objects.List(ctx, list, options); err != nil {
-		return nil, unavailable(ctx, err)
-	}
-	accessor, ok := list.(metav1.ListInterface)
-	if !ok {
-		return nil, status.Error(codes.Internal, "invalid list")
-	}
-	options.Raw = &metav1.ListOptions{ResourceVersion: accessor.GetResourceVersion()}
-	result, err := s.objects.Watch(ctx, list, options)
-	if err != nil {
-		return nil, unavailable(ctx, err)
-	}
-	return result, nil
-}
-
 func unavailable(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
 		return status.FromContextError(ctx.Err()).Err()
@@ -292,7 +268,7 @@ func send[T any](ctx context.Context, stream grpc.ServerStreamingServer[T], fram
 	return nil
 }
 
-func follow[T policyResource, F any](ctx context.Context, changes watch.Interface, read func() (map[string]T, error), emit func(*F) error, frames watchFrames[T, F]) error {
+func follow[T policyResource, F any](ctx context.Context, wake <-chan struct{}, read func() (map[string]T, error), emit func(*F) error, frames watchFrames[T, F]) error {
 	current, err := read()
 	if err != nil {
 		return err
@@ -319,8 +295,6 @@ func follow[T policyResource, F any](ctx context.Context, changes watch.Interfac
 	ticker := time.NewTicker(recheckInterval)
 	defer ticker.Stop()
 	for {
-		var event watch.Event
-		var ok bool
 		select {
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
@@ -329,13 +303,7 @@ func follow[T policyResource, F any](ctx context.Context, changes watch.Interfac
 				return err
 			}
 			continue
-		case event, ok = <-changes.ResultChan():
-		}
-		if !ok {
-			return unavailable(ctx, errors.New("watch closed"))
-		}
-		if event.Type == watch.Error {
-			return unavailable(ctx, apierrors.FromObject(event.Object))
+		case <-wake:
 		}
 		next, err := read()
 		if err != nil {
