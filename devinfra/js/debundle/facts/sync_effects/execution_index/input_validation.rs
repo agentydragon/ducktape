@@ -30,6 +30,33 @@ pub fn positively_identified_contradiction(
     }
 }
 
+/// The refusal both refinement paths give when provider analysis came from a
+/// dynamic scope: every captured value is uncertain, so no selected input can
+/// be trusted against the canonical index.
+fn dynamic_scope_refusal(request: &str, selected_binding: &str) -> String {
+    format!(
+        "{request} cannot refine `{selected_binding}` because provider analysis contains dynamic-scope contamination"
+    )
+}
+
+/// The refusal a `source_match` clause gets when the canonical index does not
+/// hold exactly one direct, simple, top-level declaration for it.
+fn source_match_declaration_count(
+    request: &str,
+    selected_binding: &str,
+    found_declarations: usize,
+) -> String {
+    format!(
+        "{request}.source_match selected `{selected_binding}`, but the canonical execution index found {found_declarations} direct simple top-level declarations in that source item; exactly one is required"
+    )
+}
+
+/// The refusal for a resolved input whose pinned declaration is no longer the
+/// single canonical declaration of its binding.
+fn stale_canonical_declaration(request: &str) -> String {
+    format!("{request} no longer resolves to one canonical declaration in this prepared AST")
+}
+
 impl ExecutionIndex {
     pub fn validated_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
         self.resolved_native_operation_inputs.clone()
@@ -436,6 +463,29 @@ impl ExecutionIndex {
         ))
     }
 
+    /// The declarations a `source_match` clause can point at: direct, simple,
+    /// top-level writes whose binding span lies inside the selected statement.
+    /// Both refinement paths ask this question, and both require exactly one
+    /// answer before they accept an input.
+    fn source_match_declarations(
+        &self,
+        selected_binding: &str,
+        selected_statement_span: Span,
+    ) -> Vec<(Id, BindingDeclarationWrite)> {
+        self.binding_declaration_writes
+            .iter()
+            .filter(|(binding, _)| binding.0.as_ref() == selected_binding)
+            .flat_map(|(binding, writes)| {
+                writes.iter().filter_map(move |write| {
+                    (write.simple_identifier
+                        && write.direct_top_level
+                        && selected_statement_span.contains(write.binding_span))
+                    .then_some((binding.clone(), write.clone()))
+                })
+            })
+            .collect()
+    }
+
     pub(super) fn validate_value_inputs(
         &mut self,
         selected: &[SelectedBindingValueInput],
@@ -446,30 +496,17 @@ impl ExecutionIndex {
         for input in selected {
             let request = &input.evidence.spec_location;
             if !self.dynamic_scope_owners.is_empty() {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because provider analysis contains dynamic-scope contamination",
-                    input.selected_binding
-                ));
+                self.value_input_errors
+                    .push(dynamic_scope_refusal(request, &input.selected_binding));
                 continue;
             }
-            let candidates: Vec<_> = self
-                .binding_declaration_writes
-                .iter()
-                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-                .flat_map(|(binding, writes)| {
-                    writes.iter().filter_map(move |write| {
-                        (write.simple_identifier
-                            && write.direct_top_level
-                            && input.selected_statement_span.contains(write.binding_span))
-                        .then_some((binding.clone(), write.clone()))
-                    })
-                })
-                .collect();
+            let candidates = self
+                .source_match_declarations(&input.selected_binding, input.selected_statement_span);
             let [(binding, declaration)] = candidates.as_slice() else {
-                self.value_input_errors.push(format!(
-                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                    input.selected_binding,
-                    candidates.len()
+                self.value_input_errors.push(source_match_declaration_count(
+                    request,
+                    &input.selected_binding,
+                    candidates.len(),
                 ));
                 continue;
             };
@@ -590,22 +627,20 @@ impl ExecutionIndex {
         for input in resolved {
             let request = &input.evidence.spec_location;
             if !self.dynamic_scope_owners.is_empty() {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because provider analysis contains dynamic-scope contamination",
-                    input.evidence.selected_binding
+                self.value_input_errors.push(dynamic_scope_refusal(
+                    request,
+                    &input.evidence.selected_binding,
                 ));
                 continue;
             }
             let Some(writes) = self.binding_declaration_writes.get(&input.binding) else {
-                self.value_input_errors.push(format!(
-                    "{request} no longer resolves to one canonical declaration in this prepared AST"
-                ));
+                self.value_input_errors
+                    .push(stale_canonical_declaration(request));
                 continue;
             };
             let [declaration] = writes.as_slice() else {
-                self.value_input_errors.push(format!(
-                    "{request} no longer resolves to one canonical declaration in this prepared AST"
-                ));
+                self.value_input_errors
+                    .push(stale_canonical_declaration(request));
                 continue;
             };
             if !declaration.direct_top_level
