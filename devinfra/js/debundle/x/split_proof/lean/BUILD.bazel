@@ -2845,7 +2845,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/IndexedSourceFacts.lean"],
     deps = [
         ":corejs_indexed_checked_split",
-        ":corejs_indexed_source_schedule",
+        ":corejs_source_row_order",
     ],
 )
 
@@ -2855,7 +2855,6 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.IndexedSourceFacts"],
     required_theorems = [
         "CoreJS.IndexedCheckedSplit.SourceFacts.fromSequence",
-        "CoreJS.IndexedCheckedSplit.metadataOrderFromItems",
     ],
     deps = [":corejs_indexed_source_facts"],
 )
