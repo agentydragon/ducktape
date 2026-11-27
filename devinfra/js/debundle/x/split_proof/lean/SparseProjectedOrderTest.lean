@@ -95,26 +95,32 @@ example :
 
 def main : IO Unit := do
   let row : EsmSplit.LocalExportUnit := ⟨1, [("exposed", "seed")]⟩
-  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle request row .allOutcomes with
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle request [row] .allOutcomes with
   | .error reason => throw (IO.userError s!"indexed constructor refused the original sparse case: {reason}")
   | .ok built =>
     unless built.assignment == [(0, "worker.mjs"), (2, "entry.mjs")] do
       throw (IO.userError "indexed constructor changed the authored owners")
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle request [] .allOutcomes with
+  | .ok _ => throw (IO.userError "indexed constructor accepted a dropped export row")
+  | .error _ => pure ()
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle request [row, row] .allOutcomes with
+  | .ok _ => throw (IO.userError "indexed constructor accepted a duplicate export row")
+  | .error _ => pure ()
   let wrongOwner : EsmSplit.Spec := { request with
     modules := [("worker.mjs", [.stmt 0, .stmt 1]), ("entry.mjs", [.stmt 2])] }
-  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOwner row .allOutcomes with
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOwner [row] .allOutcomes with
   | .ok _ => throw (IO.userError "indexed constructor accepted the wrong export-row owner")
   | .error _ => pure ()
   let wrongOrder : EsmSplit.Spec := { request with order := ["entry.mjs", "worker.mjs"] }
-  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOrder row .allOutcomes with
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOrder [row] .allOutcomes with
   | .ok _ => throw (IO.userError "indexed constructor accepted an invalid sequential order")
   | .error _ => pure ()
   let orderWithoutSequential : EsmSplit.Spec := { request with sequential := false }
-  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle orderWithoutSequential row .allOutcomes with
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle orderWithoutSequential [row] .allOutcomes with
   | .ok _ => throw (IO.userError "indexed constructor accepted an order without sequential mode")
   | .error _ => pure ()
   let privateEntry : EsmSplit.Spec := { request with privateEntryBody := true }
-  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle privateEntry row .allOutcomes with
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle privateEntry [row] .allOutcomes with
   | .ok _ => throw (IO.userError "indexed constructor accepted a private entry")
   | .error _ => pure ()
   unless decide (EsmSplit.Valid bundle request plan) do

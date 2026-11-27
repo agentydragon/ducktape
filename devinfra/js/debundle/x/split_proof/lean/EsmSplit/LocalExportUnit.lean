@@ -9,6 +9,7 @@ namespace EsmSplit
 structure LocalExportUnit where
   ordinal : Nat
   names : List (Name × Name)
+  deriving DecidableEq
 
 /-- Build a planner footprint from this source unit. `eager` records the
 local names needed for linking; no CoreJS execution of the export list is
@@ -24,6 +25,13 @@ this relation alone does not establish the actual graph or module order. -/
 structure LocalExportUnit.FootprintMatches (unit : LocalExportUnit) (statement : Stmt) : Prop where
   exports : statement.exports = unit.names.map (fun (publicName, localName) => (publicName, some localName))
   locals : ∀ pair ∈ unit.names, pair.2 ∈ statement.eager ++ statement.lazy
+
+instance (unit : LocalExportUnit) (statement : Stmt) : Decidable (unit.FootprintMatches statement) := by
+  by_cases exports : statement.exports = unit.names.map (fun (publicName, localName) => (publicName, some localName))
+  · by_cases locals : ∀ pair ∈ unit.names, pair.2 ∈ statement.eager ++ statement.lazy
+    · exact isTrue ⟨exports, locals⟩
+    · exact isFalse (fun h => locals h.locals)
+  · exact isFalse (fun h => exports h.exports)
 
 /-- The unit's direct constructor is one way to satisfy the footprint
 contract; callers may instead supply a deduplicated footprint. -/
