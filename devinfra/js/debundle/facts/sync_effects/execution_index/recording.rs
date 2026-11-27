@@ -96,40 +96,30 @@ impl ExecutionIndex {
             self.no_reentry_accessor_calls
                 .insert(CallSite::from(member.span), no_reentry_call);
         }
-        self.record_call(Call {
-            kind: CallKind::AccessorCalleeLookup,
-            callee: ValueExpr::Member(
+        self.record_call(Call::without_argument_facts(
+            CallKind::AccessorCalleeLookup,
+            ValueExpr::Member(
                 Arc::new(ValueExpr::from_expr(&member.obj)),
                 static_prop(&member.prop),
                 MemberKey::of(&member.prop),
                 member.span.into(),
             ),
-            args: Vec::new(),
-            span: member.span,
-            caller: self.current,
-            owner: self.owner,
-            plain_object_sources: false,
-            no_sync_arguments: false,
-            no_reentry_candidate: false,
-            no_reentry_record_candidate: false,
-            has_spread: false,
-        });
+            Vec::new(),
+            member.span,
+            self.current,
+            self.owner,
+        ));
     }
 
     pub(super) fn record_source_protocol(&mut self, kind: CallKind, source: ValueExpr, span: Span) {
-        self.record_call(Call {
+        self.record_call(Call::without_argument_facts(
             kind,
-            callee: ValueExpr::Unknown,
-            args: vec![source],
+            ValueExpr::Unknown,
+            vec![source],
             span,
-            caller: self.current,
-            owner: self.owner,
-            plain_object_sources: false,
-            no_sync_arguments: false,
-            no_reentry_candidate: false,
-            no_reentry_record_candidate: false,
-            has_spread: false,
-        });
+            self.current,
+            self.owner,
+        ));
     }
 
     pub(super) fn record_implicit_coercion(&mut self, expression: &Expr, span: Span) {
@@ -145,19 +135,14 @@ impl ExecutionIndex {
         if self.current.is_some() && self.past_await {
             return;
         }
-        self.record_call(Call {
-            kind: CallKind::ImplicitCoercion,
-            callee: ValueExpr::Unknown,
-            args: vec![argument],
+        self.record_call(Call::without_argument_facts(
+            CallKind::ImplicitCoercion,
+            ValueExpr::Unknown,
+            vec![argument],
             span,
-            caller: self.current,
-            owner: self.owner,
-            plain_object_sources: false,
-            no_sync_arguments: false,
-            no_reentry_candidate: false,
-            no_reentry_record_candidate: false,
-            has_spread: false,
-        });
+            self.current,
+            self.owner,
+        ));
     }
 
     pub(super) fn mark_opaque(&mut self) {

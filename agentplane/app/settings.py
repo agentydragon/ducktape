@@ -75,7 +75,7 @@ class FrontendConfig(BaseModel):
 
 
 class EnvironmentServicePeer(BaseModel):
-    """Optional standalone EnvironmentService endpoint on the Sandbox Controller."""
+    """The Sandbox Controller's EnvironmentService endpoint."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -153,9 +153,8 @@ class Settings(BaseModel):
     session_dispatcher_target: str = Field(
         min_length=1, description="Session Dispatcher gRPC host:port for commands and app-brokered resume requests."
     )
-    environment_service: EnvironmentServicePeer | None = Field(
-        default=None,
-        description="Optional separate Sandbox Controller EnvironmentService endpoint; omission uses the Session Dispatcher peer.",
+    environment_service: EnvironmentServicePeer = Field(
+        description="Sandbox Controller EnvironmentService endpoint for Sandbox lifecycle, identity and diagnostics."
     )
     policy_service_target: str = Field(min_length=1)
     policy_service_token_file: Path | None = Field(

@@ -30,7 +30,7 @@ adding or extending one:
    scenario and settle all exchanges so teardown catches leaked background work.
 3. Assert the native relationship and lifecycle evidence, separately from the model API transcript.
    Model request IDs help the test drive the harness; they are not necessarily available to the runner.
-4. Retain `stdin.jsonl`, `stdout.jsonl`, and `stderr.jsonl` through the `native_logs` fixture in
+4. Retain `stdin.jsonl`, `stdout.jsonl`, and `stderr.log` through the `native_logs` fixture in
    Bazel undeclared outputs. Record the commit (which fixes the binary pins), launch/initialize
    options, test target, and CI invocation when reporting a finding. Sanitize any published excerpts.
 5. Distinguish **tested**, **unmeasured**, and **unsupported with evidence**. A missing event in a

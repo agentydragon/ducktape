@@ -1,0 +1,546 @@
+"""Real-browser acceptance for a thread's window: one shape, paged back into, resumed after a gap."""
+
+import asyncio
+import base64
+import hashlib
+import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from typing import Any
+from unittest.mock import Mock, PropertyMock
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
+import pytest_bazel
+from google.protobuf.json_format import ParseDict
+from playwright.async_api import CDPSession, Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
+
+from agentplane.app.frontend.testing.history_interactions import frames
+from agentplane.app.testing import thread_view_marks
+from agentplane.app.testing.thread_browser import (
+    ThreadBrowser,
+    append_items,
+    capture_reading_anchor,
+    expect_reading_anchor,
+    message_composer,
+    wheel_and_capture_anchor_at_scrollend,
+)
+from agentplane.history_service.api.history import history_service_pb2
+from agentplane.proto import event_log_pb2, event_pb2
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+
+# gazelle:include_dep @pypi//protobuf
+
+
+def _append_uneven_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
+    """Alternates a one-line message with one many times taller, so a page of them diverges wildly
+    from VirtualizedHistory's fixed 180px `estimateSize` -- unlike append_items's mild 1x-4x
+    variance, this maximizes the gap scrollToIndex's estimate has to correct for an unmounted row."""
+    latest = None
+    for number in numbers:
+        item_id = f"{prefix}-{number:03d}"
+        text = (
+            f"Short {number:03d}"
+            if number % 3
+            else f"Tall message {number:03d}\n\n" + "A much longer measured paragraph of reading text. " * 20
+        )
+        thread_browser.source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        latest = thread_browser.source.append(
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=text))
+        )
+    assert latest is not None
+    return latest
+
+
+def _handles(urls: list[str]) -> set[str]:
+    """The entity shape handles a set of requests named."""
+    return {
+        handle for url in urls if "/sync/entities?" in url for handle in parse_qs(urlsplit(url).query).get("handle", [])
+    }
+
+
+async def _scopes(requests: list[Request]) -> list[history_service_pb2.ReadThreadEntitiesResponse]:
+    """Generated History scope reads, independent of the Electric row-window requests."""
+    scopes = []
+    for request in requests:
+        if "/upstream/history/v1/sessions/" in request.url and request.url.endswith("/entities"):
+            assert request.method == "POST"
+            post_data = request.post_data_json
+            assert isinstance(post_data, dict)
+            query = ParseDict(post_data, history_service_pb2.ReadThreadEntitiesRequest())
+            assert query.HasField("range")
+            assert query.range.limit == 1
+            response = await request.response()
+            # A reload or disconnect can abort an in-flight read before it has a response.
+            if response is not None:
+                assert response.ok
+                scopes.append(ParseDict(await response.json(), history_service_pb2.ReadThreadEntitiesResponse()))
+    return scopes
+
+
+def _older_page(request: Request) -> bool:
+    """Whether a request is for the page before the oldest row the reader holds."""
+    return (
+        request.method == "POST"
+        and urlsplit(request.url).path.endswith("/sync/entities")
+        and "entity_index < $1" in (request.post_data or "")
+    )
+
+
+def test_older_page_filter_ignores_binary_telemetry_posts() -> None:
+    telemetry = Mock(spec=Request, method="POST", url="https://app.test/telemetry/v1/traces")
+    # Playwright decodes post_data as UTF-8; real OTLP protobuf bytes raised here on RBE.
+    type(telemetry).post_data = PropertyMock(
+        side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+    )
+    assert not _older_page(telemetry)
+    page = Mock(
+        spec=Request,
+        method="POST",
+        url="https://app.test/threads/session/sync/entities?offset=0_inf",
+        post_data='{"where":"entity_index < $1","params":{"1":"44"}}',
+    )
+    assert _older_page(page)
+
+
+def _recording_requests(page: Page) -> list[Request]:
+    """Every request the page makes from now on."""
+    requests: list[Request] = []
+
+    # Playwright cannot register a builtin method such as `list.append` as a handler.
+    def record(request: Request) -> None:
+        requests.append(request)
+
+    page.on("request", record)
+    return requests
+
+
+@dataclass
+class _HeldPages:
+    """Set once the browser asks for a page before its oldest row; that request waits for `release`."""
+
+    asked: asyncio.Event = field(default_factory=asyncio.Event)
+    release: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+@asynccontextmanager
+async def _holding_older_pages(page: Page) -> AsyncIterator[_HeldPages]:
+    held = _HeldPages()
+
+    async def hold(route: Route) -> None:
+        if not _older_page(route.request):
+            await route.fallback()
+            return
+        held.asked.set()
+        await held.release.wait()
+        await route.continue_()
+
+    await page.route("**/sync/entities?*", hold)
+    try:
+        yield held
+    finally:
+        held.release.set()
+        # Keep the released route until page close, like test_thread_browser.route_once.
+        # Removing the last route disables Chromium interception while the next live GET
+        # starts, which can leave that request paused forever (see PR #10094).
+
+
+@dataclass
+class _EntityStream:
+    """The current entity SSE response, retained by Chromium rather than a fetch wrapper."""
+
+    session: CDPSession
+    request_id: str | None = None
+    url: str | None = None
+
+    def response_received(self, event: dict[str, Any]) -> None:
+        response = event["response"]
+        if "/sync/entities?" in response["url"] and response["mimeType"] == "text/event-stream":
+            self.request_id = event["requestId"]
+            self.url = response["url"]
+
+    async def capture(self) -> None:
+        if self.request_id is None or self.url is None:
+            raise AssertionError("Chromium observed no entity SSE response")
+        result = await self.session.send("Network.streamResourceContent", {"requestId": self.request_id})
+        body = base64.b64decode(result["bufferedData"], validate=True)
+        if len(body) > 1_048_576:
+            raise AssertionError("Entity SSE buffer exceeds the diagnostic byte limit")
+        # Inspect bytes only in memory. CI artifacts retain cursor evidence, never entity text/state.
+        revisions = []
+        changes = 0
+        malformed = 0
+        frames = body.replace(b"\r\n", b"\n").split(b"\n\n")
+        for raw_frame in frames[:-1]:
+            try:
+                frame = raw_frame.decode()
+                data = "\n".join(
+                    line.removeprefix("data:").lstrip() for line in frame.splitlines() if line.startswith("data:")
+                )
+                if not data:
+                    continue
+                message = json.loads(data)
+                if not isinstance(message, dict):
+                    raise ValueError("Expected an SSE message object")
+                value = message.get("value", {})
+                headers = message["headers"]
+                if not isinstance(value, dict) or not isinstance(headers, dict):
+                    raise ValueError("Expected SSE row and header objects")
+                if "operation" in headers:
+                    changes += 1
+                if value.get("entity_kind") == "view_state":
+                    revisions.append(int(value["revision_cursor"]))
+            except ValueError, KeyError, TypeError:
+                # A bad frame is evidence too; retain the other cursors and whole-buffer digest.
+                malformed += 1
+        query = parse_qs(urlsplit(self.url).query)
+        (undeclared_outputs_dir() / "thread-window-entity-stream.json").write_text(
+            json.dumps(
+                {
+                    "request_id": self.request_id,
+                    "handle": query.get("handle"),
+                    "offset": query.get("offset"),
+                    "bytes": len(body),
+                    "sha256": hashlib.sha256(body).hexdigest(),
+                    "changes": changes,
+                    "view_revisions": revisions,
+                    "malformed_frames": malformed,
+                    "trailing_bytes": len(frames[-1]),
+                }
+            )
+        )
+
+
+@pytest.fixture
+async def entity_stream(thread_browser: ThreadBrowser) -> AsyncIterator[_EntityStream]:
+    session = await thread_browser.page.context.new_cdp_session(thread_browser.page)
+    stream = _EntityStream(session)
+    session.on("Network.responseReceived", stream.response_received)
+    try:
+        await session.send("Network.enable", {"maxResourceBufferSize": 1_048_576, "maxTotalBufferSize": 2_097_152})
+        yield stream
+    finally:
+        await session.detach()
+
+
+async def open_without_saved_history(page: Page) -> None:
+    """Exercise initial pagination even though the seeding document saw every row arrive live."""
+    url = page.url
+    # Leave the app before deleting its checkpoint so a pending write cannot recreate it.
+    await page.goto(urlsplit(url)._replace(path="/auth/me", query="", fragment="").geturl())
+    await page.evaluate("navigator.storageBuckets.delete('agentplane-history')")
+    await page.goto(url)
+
+
+async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place(
+    thread_browser: ThreadBrowser, entity_stream: _EntityStream
+) -> None:
+    page = thread_browser.page
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    appended = range(130)
+    latest = append_items(thread_browser, "window-item", appended)
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+
+    # Opened now, the thread is longer than its eager initial load: older rows are still a page away.
+    requests = _recording_requests(page)
+    await open_without_saved_history(page)
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    await expect(page.get_by_text("Window message 129", exact=False)).to_be_visible()
+    composer = message_composer(page)
+    await composer.fill("Draft retained while the thread grows")
+    # Virtualization keeps only the measured viewport and overscan mounted, not every row appended.
+    assert await page.locator("[data-thread-anchor]").count() < len(appended)
+    # Opening eagerly loads a couple of screens' worth up front -- itself some of these
+    # same-shaped requests -- but settles there; nothing more loads before the reader scrolls up.
+    await frames(page)
+    eager = len([request for request in requests if _older_page(request)])
+    assert eager > 0
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    loading = history.get_by_role("status").filter(has_text="Loading earlier…")
+    await history.hover()
+    async with _holding_older_pages(page) as held:
+        # Reaching the top asks for the page before it. Sample the reader's row while that page is
+        # still on its way, once the gesture has ended and two consecutive frames agree.
+        gesture = await history.evaluate_handle("area => window.__threadPage.scrollEnded(area)")
+        await page.mouse.wheel(0, -10_000)
+        async with asyncio.timeout(30):
+            await held.asked.wait()
+            await gesture.evaluate("gesture => gesture.ended")
+            anchor = await capture_reading_anchor(history)
+        await gesture.dispose()
+        await expect(loading).to_be_visible()
+        await page.screenshot(path=undeclared_outputs_dir() / "thread-window-loading-earlier.png")
+        held.release.set()
+        # The page lands above the reader, whose row stays where it was.
+        await expect(loading).to_have_count(0)
+        await expect_reading_anchor(page, anchor)
+
+    # The tail grows by more than a page while the reader stays back in the thread: its rows
+    # arrive on the same shape, and the row the reader is at does not move.
+    latest = append_items(thread_browser, "window-item", range(130, 165))
+    try:
+        await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    except AssertionError as error:
+        # Best-effort evidence must neither wedge the test nor replace its browser assertion.
+        try:
+            async with asyncio.timeout(10):
+                thread_id = thread_browser.source.session_id
+                summary = await thread_browser.content.session_summary(thread_id)
+                if summary is None:
+                    raise AssertionError("History has no Session summary for the seeded thread")
+                view = await thread_browser.content.reader.read_thread_entities(
+                    history_service_pb2.ReadThreadEntitiesRequest(
+                        session_id=str(thread_id),
+                        keys=history_service_pb2.EntityKeys(
+                            keys=[
+                                history_service_pb2.EntityKey(
+                                    entity_kind=history_service_pb2.THREAD_ENTITY_KIND_VIEW_STATE, entity_id="current"
+                                )
+                            ]
+                        ),
+                    )
+                )
+                shape = await page.request.post(
+                    f"{thread_browser.ingress.url}/threads/{thread_id}/sync/entities"
+                    f"?projection_epoch={summary.projection_epoch}&offset=now",
+                    data={"where": "entity_kind = 'view_state'", "order_by": "entity_index DESC", "limit": 1},
+                    headers={"Origin": thread_browser.ingress.url},
+                )
+                browser_cursor = await page.locator("[data-projection-cursor]").get_attribute("data-projection-cursor")
+                (undeclared_outputs_dir() / "thread-window-projection-gap.json").write_text(
+                    json.dumps(
+                        {
+                            "expected": latest.cursor,
+                            "committed": summary.committed_cursor,
+                            "folded": summary.folded_through,
+                            "view": [row.revision_cursor for row in view.entities],
+                            "browser": browser_cursor,
+                            "electric_status": shape.status,
+                            "electric_body": await shape.text(),
+                        }
+                    )
+                )
+                error.add_note("Projection diagnostics saved to thread-window-projection-gap.json")
+                await entity_stream.capture()
+                error.add_note("Chromium entity SSE cursor evidence saved to thread-window-entity-stream.json")
+        except Exception as diagnostic_error:
+            error.add_note(f"Projection diagnostics unavailable ({type(diagnostic_error).__name__})")
+        raise
+    restored = page.locator(f'[data-thread-anchor="{anchor["cursor"]}"]')
+    await expect(restored).to_have_count(1)
+    assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2
+    await expect(composer).to_have_value("Draft retained while the thread grows")
+
+    # History may reread the epoch after summary notifications. The window stays on one epoch
+    # and one shape since the reload, moving by loading more into it, at
+    # least one further page for the one time the reader reached its top -- on top of the eager
+    # initial load. Not pinned to exactly eager + 1: loadOlderAtTop keeps asking for another page
+    # while scrollTop is within a full screen of the top, so a taller viewport can settle one page
+    # further before the buffer clears that (viewport-height-relative) threshold.
+    urls = [request.url for request in requests]
+    scopes = await _scopes(requests)
+    assert scopes
+    assert len({scope.projection_epoch for scope in scopes}) == 1
+    assert scopes[0].projection_epoch
+    assert len(_handles(urls)) == 1
+    assert len([request for request in requests if _older_page(request)]) >= eager + 1
+    await page.screenshot(path=undeclared_outputs_dir() / "thread-window-retained-reader.png")
+
+
+async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread_browser: ThreadBrowser) -> None:
+    """test_a_growing_thread_stays_one_shape... releases the held older-page response only after
+    the scroll-up gesture has already settled (scrollend fired). A real fast scroll can instead
+    have that response land while the browser is still between the scroll and its later
+    scrollend -- the race a live report described as the view jumping while scrolling up to see
+    the loading-earlier banner."""
+    page = thread_browser.page
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    latest = append_items(thread_browser, "window-item", range(130))
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    await open_without_saved_history(page)
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    loading = history.get_by_role("status").filter(has_text="Loading earlier…")
+    await history.hover()
+    async with _holding_older_pages(page) as held:
+        gesture = await history.evaluate_handle("area => window.__threadPage.scrollEnded(area)")
+        await page.mouse.wheel(0, -10_000)
+        async with asyncio.timeout(30):
+            await held.asked.wait()
+        # Unlike test_a_growing_thread_stays_one_shape..., release before the gesture settles: the
+        # response lands while the browser is still between the scroll and its later scrollend.
+        anchor = await capture_reading_anchor(history)
+        held.release.set()
+        await expect(loading).to_have_count(0)
+        async with asyncio.timeout(30):
+            await gesture.evaluate("gesture => gesture.ended")
+        await gesture.dispose()
+        await frames(page)
+        await expect_reading_anchor(page, anchor)
+        await page.screenshot(path=undeclared_outputs_dir() / "thread-window-mid-gesture-prepend.png")
+
+
+async def test_scrolling_up_continuously_through_a_landing_older_page_does_not_jump_to_the_bottom(
+    thread_browser: ThreadBrowser,
+) -> None:
+    """A trackpad/touch scroll dispatches many small wheel events over time, not one big one --
+    unlike test_an_older_page_landing_mid_gesture_does_not_move_the_reader, several of them can
+    land while the older page's rows are still being measured one at a time (each starts at the
+    180px estimate and is re-measured as it mounts), not just before or after that process."""
+    page = thread_browser.page
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    latest = append_items(thread_browser, "window-item", range(130))
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    await open_without_saved_history(page)
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await history.hover()
+    async with _holding_older_pages(page) as held:
+        # The eager initial load holds 3x as many rows as before (INITIAL_ROWS vs the old PAGE-sized
+        # load) -- three times as far to scroll through to cross the top-of-loaded trigger.
+        await page.mouse.wheel(0, -9_000)
+        async with asyncio.timeout(30):
+            await held.asked.wait()
+        held.release.set()
+        for _ in range(20):
+            await page.mouse.wheel(0, -150)
+    await frames(page)
+    await frames(page)
+    await frames(page)
+    geometry = await history.evaluate(
+        "area => ({top: area.scrollTop, bottom: area.scrollHeight - area.clientHeight - area.scrollTop})"
+    )
+    # A reader scrolling up through the landing page must not end up at the tail.
+    assert geometry["bottom"] > 24, geometry
+
+
+async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_reader_s_place(
+    thread_browser: ThreadBrowser,
+) -> None:
+    """A live report described the jump as reliable across repeated reloads of one real thread --
+    not an occasional race, but something that keeps happening on that thread's actual content.
+    The old integration used a flat 180px estimate; a page of rows nowhere near that (a one-liner
+    next to a message twenty paragraphs long) made its estimate-based jump and subsequent
+    DOM correction wrong by a large and inconsistent margin each cycle --
+    unlike append_items's mild variance, which every existing pagination test here uses. Runs
+    several scroll-to-top cycles deep into that unevenness, each one fully settled before the
+    next, to isolate accumulated estimate error from any gesture-timing race."""
+    page = thread_browser.page
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    # Generously larger than 6 cycles' worth of pages: loadOlderAtTop keeps fetching older pages
+    # until a full screen is buffered above the reader, so a taller viewport settles further into
+    # the backlog per cycle. Too small a backlog runs out mid-loop -- the last cycle's wheel then
+    # has nothing left to scroll into, so it never fires the scrollend this test waits on.
+    latest = _append_uneven_items(thread_browser, "uneven-item", range(600))
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    await open_without_saved_history(page)
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    loading = history.get_by_role("status").filter(has_text="Loading earlier…")
+    await history.hover()
+
+    for cycle in range(6):
+        cycle_began = await page.evaluate("performance.now()")
+        anchor = await wheel_and_capture_anchor_at_scrollend(page, history, -20_000)
+        await expect(loading).to_have_count(0, timeout=30_000)
+        await frames(page)
+        await frames(page)
+        try:
+            await expect_reading_anchor(page, anchor)
+        except PlaywrightTimeoutError:
+            trace = thread_view_marks.as_json_lines(await thread_view_marks.events(page, since=cycle_began))
+            raise AssertionError(f"cycle {cycle} anchor={anchor}\n{trace}") from None
+        await page.screenshot(path=undeclared_outputs_dir() / f"thread-window-uneven-cycle-{cycle}.png")
+    # A passing run still parses all it recorded, so an event the typed trace lacks fails here, not only in a dump.
+    await thread_view_marks.events(page)
+
+
+async def test_a_thread_shorter_than_the_eager_load_shows_in_full_without_a_scroll(
+    thread_browser: ThreadBrowser,
+) -> None:
+    """A thread this short (with the eager initial load's headroom) loads in full up front, not
+    via a separate request a scroll -- or a too-short-tail safety net -- would otherwise trigger."""
+    page = thread_browser.page
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
+    latest = append_items(thread_browser, "short-item", range(32))
+    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+
+    # Opened again in a view taller than the whole (short) thread: there is no scrollbar, and
+    # nothing for the reader to ever scroll up to -- the eager initial load already covers it all.
+    await page.set_viewport_size({"width": 1280, "height": 8000})
+    await open_without_saved_history(page)
+    await expect(page.get_by_text("Window message 031", exact=False)).to_be_visible(timeout=30_000)
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    await expect(history.get_by_role("status")).to_have_count(0)
+    assert await history.evaluate("area => area.scrollHeight <= area.clientHeight")
+    await page.screenshot(
+        path=undeclared_outputs_dir() / "thread-window-short-loaded-in-full.png",
+        clip={"x": 0, "y": 0, "width": 1280, "height": 1000},
+    )
+
+    requests = _recording_requests(page)
+    await history.hover()
+    await page.mouse.wheel(0, -10_000)
+    await frames(page)
+    await frames(page)
+    # The whole thread already loaded eagerly; scrolling up asks for nothing more.
+    assert not [request for request in requests if _older_page(request)]
+
+
+async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draft(
+    thread_browser: ThreadBrowser,
+) -> None:
+    page, store = thread_browser.page, thread_browser.store
+    thread_browser.opened.replay.set()
+    await page.get_by_text("Test retained prefix", exact=True).wait_for(state="visible")
+    (thread,) = await store.list_threads()
+    composer = message_composer(page)
+    await composer.fill("Draft retained across a long offline gap")
+    document = await page.evaluate_handle("document")
+    before = _handles(await page.evaluate("() => performance.getEntriesByType('resource').map(entry => entry.name)"))
+    assert len(before) == 1
+    requests = _recording_requests(page)
+    scope_before = await thread_browser.content.session_summary(thread.id)
+    assert scope_before is not None
+    assert scope_before.HasField("projection_epoch")
+
+    await page.context.set_offline(True)
+    try:
+        # Offline fails only new requests; the live SSE response ends with its connection.
+        async with page.expect_event("requestfailed", predicate=lambda request: "/sync/entities?" in request.url):
+            await thread_browser.ingress.drop_connections()
+        latest = append_items(thread_browser, "offline-item", range(70))
+        await thread_browser.history.service.folded(thread.id, latest.cursor)
+        await expect(composer).to_have_value("Draft retained across a long offline gap")
+        async with page.expect_response(lambda response: "/sync/entities?" in response.url and response.ok):
+            await page.context.set_offline(False)
+        await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+        await expect(page.get_by_text("Window message 069", exact=False)).to_be_visible()
+        await expect(composer).to_have_value("Draft retained across a long offline gap")
+        assert await document.evaluate("original => original === document")
+        # The gap is read from the shape's log, from the offset the reader had reached.
+        assert _handles([request.url for request in requests]) == before
+        assert all(scope.projection_epoch == scope_before.projection_epoch for scope in await _scopes(requests))
+        await page.screenshot(path=undeclared_outputs_dir() / "thread-long-offline-recovery.png")
+    finally:
+        await page.context.set_offline(False)
+        await document.dispose()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

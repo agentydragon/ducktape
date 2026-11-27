@@ -34,10 +34,4 @@ async def release_owned_sandboxes(owned: Sequence[EnvironmentTarget], release: S
         if failures:
             raise BaseExceptionGroup("Sandbox cleanup failed", failures)
 
-    result = await finish_cleanup(release_all())
-    if result.cancellation is not None:
-        if result.failure is not None and result.failure is not result.cancellation:
-            raise result.cancellation from result.failure
-        raise result.cancellation
-    if result.failure is not None:
-        raise result.failure
+    (await finish_cleanup(release_all())).raise_outcome()

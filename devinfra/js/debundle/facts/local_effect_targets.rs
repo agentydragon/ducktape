@@ -8,6 +8,9 @@ pub fn collect_local_effects(
     graph: &ChunkCodeGraph,
     local_effect_context: &local_effects::LocalEffectContext,
 ) -> BTreeSet<Id> {
+    // Local-effect recognition classifies at chunk top level, where no name is
+    // lexically shadowed.
+    let scope = PurityScope::chunk_top(shadowed, &hints.assumptions.declared_pure, graph);
     let mut out = BTreeSet::new();
     if let Some(target) =
         recognized_local_effect_target(item, &hints.assumptions.known_effects, local_effect_context)
@@ -20,12 +23,7 @@ pub fn collect_local_effects(
             out.extend(local_effect_context.local_effect_targets(item));
         }
         LocalEffectPolicy::LocalPropertyWrites => {
-            out.extend(local_effect_context.local_property_write_targets(
-                item,
-                shadowed,
-                &hints.assumptions.declared_pure,
-                graph,
-            ));
+            out.extend(local_effect_context.local_property_write_targets(item, &scope));
         }
     }
     out

@@ -92,14 +92,16 @@ func TestCommandAdmissionMetadataMigrationPreservesPackedLegacyRows(t *testing.T
 		t.Fatalf("admission cursor %d was not packed before migration", wantAdmission.GetCursor())
 	}
 
-	// Recreate the pre-0024 schema while keeping the already-packed journal and command row. Reapply
-	// 0024 to verify the migration leaves legacy rows NULL for the journal fallback.
+	// Recreate the pre-0024/0025 schema while keeping the already-packed journal and command row.
+	// Reapply both migrations to verify 0024 preserves packed data and 0025 leaves legacy rows
+	// without sampling projections.
+	removeSamplingRecoveryProjection(t, store.DB())
 	migrationExec(t, store.DB(), `ALTER TABLE sampler_command
 		DROP CONSTRAINT sampler_command_admission_metadata_check,
 		DROP COLUMN admission_origin_source_id,
 		DROP COLUMN admission_event_at_seconds,
 		DROP COLUMN admission_event_at_nanos`)
-	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=24 AND is_applied`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id>=24 AND is_applied`)
 	if err := migrations.Up(t.Context(), store.DB()); err != nil {
 		t.Fatal(err)
 	}

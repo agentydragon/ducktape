@@ -27,7 +27,7 @@ use command_output::write_report;
 use graph::CommutingStatementsDiagnostic;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::OutputFormat;
-use pipeline::{RunOutput, TransformRunOptions, run_transform};
+use pipeline::{TransformRunOptions, run_transform};
 use selector_outcome::{
     Entity, InvalidSelectorError, InvalidSelectorReport, Outcome, Placement, SelectorKind,
     SelectorOutcome, SelectorOutcomeReport, SelectorValidationCounts, Severity,
@@ -170,18 +170,10 @@ pub(crate) fn run_captured_pass(
         run_transform(
             &cli,
             TransformRunOptions {
-                ownership_subset: None,
-                ownership_subset_input: None,
-                output: RunOutput::DryRun,
-                artifacts: pipeline::RunArtifacts::Program,
-                graph_reports: lowering::GraphReportSelection::None,
                 keep_going,
                 report_dir_override: Some(capture.path().to_path_buf()),
                 list_template_identifiers: true,
-                effect_conflicts_jsonl: false,
-                effect_conflicts_chunks: Default::default(),
-                full_reports: Default::default(),
-                full_report_chunks: Default::default(),
+                ..TransformRunOptions::dry_run()
             },
             diagnostics,
         )
@@ -377,10 +369,7 @@ fn validate_modules_against_source(
     source_file: &Path,
     chunk: &str,
 ) -> Result<SelectorOutcomeReport> {
-    let source = std::fs::read_to_string(source_file)
-        .with_context(|| format!("reading source file {}", source_file.display()))?;
-    let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)
-        .with_context(|| format!("parsing source file {}", source_file.display()))?;
+    let parsed = js_ast::parse_js_module_file(source_file)?;
 
     let mut outcomes = Vec::new();
     let mut modules = Vec::new();
@@ -532,13 +521,7 @@ fn collect_chunk_reports<T: DeserializeOwned>(
             collect_chunk_reports(root, &path, filename, reports)?;
         } else if path.file_name().and_then(|name| name.to_str()) == Some(filename) {
             let chunk = report_chunk_id(root, &path)?;
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            reports.push((
-                chunk,
-                serde_json::from_str(&text)
-                    .with_context(|| format!("parsing {}", path.display()))?,
-            ));
+            reports.push((chunk, report_io::read_json(&path)?));
         }
     }
     Ok(())

@@ -1,7 +1,9 @@
 use source_identity::{SourceUnitOrdinal, StatementId};
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use binding_targets::declaration_name_strings;
 use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
@@ -11,11 +13,11 @@ use swc_common::{
     Spanned, SyntaxContext,
 };
 use swc_ecma_ast::{
-    ArrayLit, ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr,
-    ExprOrSpread, Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase,
-    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module, ModuleDecl,
-    ModuleExportName, ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl, VarDeclKind,
-    VarDeclarator,
+    ArrayLit, CallExpr, Callee, ComputedPropName, Decl, EsReserved, ExportNamedSpecifier,
+    ExportSpecifier, Expr, ExprOrSpread, Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier,
+    ImportPhase, ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module,
+    ModuleDecl, ModuleExportName, ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl,
+    VarDeclKind, VarDeclarator,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -259,6 +261,16 @@ pub fn parse_js_module(
         unresolved_mark,
         top_level_mark,
     })
+}
+
+/// Read a source file and parse it under its own path, with the two context
+/// messages callers repeat. Callers that parse under a different source name
+/// (a graph-verified logical path, for example) keep their own read.
+pub fn parse_js_module_file(path: &Path) -> Result<ParsedJsModule> {
+    let source = fs::read_to_string(path)
+        .with_context(|| format!("reading source file {}", path.display()))?;
+    parse_js_module(&path.display().to_string(), source)
+        .with_context(|| format!("parsing source file {}", path.display()))
 }
 
 /// Parse a module to a bare `Module` with hygiene contexts assigned.
@@ -760,6 +772,15 @@ pub fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
     match item_decl(item) {
         Some(Decl::Var(var)) => Some(var),
         _ => None,
+    }
+}
+
+/// The expression a call evaluates its callee to, with grouping parentheses
+/// removed. `super` and `import` callees carry no expression to read.
+pub fn callee_expr(call: &CallExpr) -> Option<&Expr> {
+    match &call.callee {
+        Callee::Expr(callee) => Some(callee.unwrap_parens()),
+        Callee::Super(_) | Callee::Import(_) => None,
     }
 }
 

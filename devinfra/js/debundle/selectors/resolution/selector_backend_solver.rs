@@ -59,19 +59,10 @@ fn singleton_no_constraint_backend_result(
         return None;
     }
 
-    if problem
-        .variables
-        .iter()
-        .any(|variable| problem.variable_domain_value_count(variable) != 1)
-    {
-        return None;
-    }
-
     let mut singleton_values = BTreeMap::new();
     for variable in &problem.variables {
-        let domain_values = problem.variable_domain_values(variable);
-        let [value] = domain_values.as_slice() else {
-            unreachable!()
+        let [value] = problem.variable_domain_values(variable) else {
+            return None;
         };
         singleton_values.insert(variable.id, *value);
     }

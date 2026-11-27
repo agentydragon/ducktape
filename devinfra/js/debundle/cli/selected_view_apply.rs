@@ -12,8 +12,8 @@ use selector_codemod::source_unit::{SourceUnitSelectorRequest, SourceUnitSelecto
 use spec::annotations::SourceMatchBinding;
 use spec::{LogicalModule, ModulePath, SourceMatchBindingDetail};
 
-use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 use crate::source_unit_apply::{SelectorOverride, SourceUnitApplyOptions, SourceUnitApplyOutcome};
+use outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 pub(super) fn selected_provenance(
     context: &VerifiedGraphSourceContext,

@@ -46,8 +46,6 @@ mod graph_purity_tests;
 mod initializer_overlay_tests;
 #[cfg(test)]
 mod redundant_hints_tests;
-#[cfg(test)]
-mod test_support;
 
 /// Compute the policy-dependent half of the chunk analysis from the
 /// pre-computed structural layer and a set of `AnalysisInputs`. Builds
@@ -431,7 +429,7 @@ pub fn analyze_vendor_prune_chunk(module: &Module) -> ChunkFactAnalysis {
 /// would attribute `B`'s read of `X` to `mod_a` (the first
 /// declared name's source_unit), inventing or hiding cycles. The
 /// emitter splits the same comma-lists separately at lower-time
-/// (`split_var_decl` in `lowering/util.rs`); this pre-split
+/// (`split_var_decl` in `lowering/declaration_split.rs`); this pre-split
 /// just teaches the analyzer the same view.
 pub fn analyze_chunk(
     module: &Module,

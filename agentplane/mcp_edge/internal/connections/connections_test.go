@@ -179,67 +179,6 @@ func TestARebindRetargetsAnActiveConnectionToALabeledAccount(t *testing.T) {
 	wantCode(t, "a rebind while the view of Identities is stale", err, codes.FailedPrecondition)
 }
 
-func TestLegacyConnectionFailsClosedUntilExplicitIdentityRebind(t *testing.T) {
-	s := serve(t)
-	id := uuid.New()
-	created := now().Add(-time.Hour)
-	legacy := auth.Account{Namespace: "legacy", Name: "caller"}
-	if _, err := s.db.ExecContext(t.Context(), `
-		INSERT INTO external_connection (id, display_name, legacy_bound_caller, identity_binding_required, version, created_at, updated_at)
-		VALUES ($1, 'test-legacy', $2::jsonb, true, 1, $3, $3)`, id, accountJSON(legacy), created); err != nil {
-		t.Fatal(err)
-	}
-	grantID := uuid.New()
-	activated := created.Add(time.Minute)
-	if _, err := s.db.ExecContext(t.Context(), `
-		INSERT INTO external_connection_grant (id, connection_id, revision, original_caller, issuer, client_id, status,
-			created_at, activated_at)
-		VALUES ($1, $2, 1, $3::jsonb, 'https://test-actions.example', 'legacy-client', 'active', $4, $5)`,
-		grantID, id, accountJSON(legacy), created, activated); err != nil {
-		t.Fatal(err)
-	}
-	tx, err := s.db.BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.store.ResolveGrant(t.Context(), tx, grantID, "https://test-actions.example", "legacy-client")
-	if err != refusedLegacy {
-		t.Fatalf("legacy grant resolved as %v, %v; want fail-closed legacy refusal", err, status.Code(err))
-	}
-	_ = tx.Rollback()
-
-	before := s.get(t, id)
-	if !before.GetIdentityBindingRequired() || before.GetLegacyBoundCaller().GetNamespace() != legacy.Namespace ||
-		before.GetGrants()[0].GetId() != grantID.String() || before.GetGrants()[0].GetCaller().GetName() != legacy.Name ||
-		before.GetGrants()[0].GetIdentity() != nil {
-		t.Fatalf("legacy audit/binding data was not preserved: %+v", before)
-	}
-	if _, err := s.db.ExecContext(t.Context(), `UPDATE external_connection SET bound_caller = $2::jsonb WHERE id = $1`,
-		id, accountJSON(legacy)); err == nil {
-		t.Fatal("an old binary restored active ServiceAccount authority after the cutover")
-	}
-	rebound, err := s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
-		ConnectionId: id.String(), ExpectedVersion: 1, Identity: identityMessage(callerIdentity),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := rebound.GetConnection()
-	if got.GetIdentityBindingRequired() || got.GetVersion() != 2 || got.GetLegacyBoundCaller().GetName() != legacy.Name ||
-		got.GetGrants()[0].GetId() != grantID.String() || got.GetGrants()[0].GetCaller().GetName() != legacy.Name {
-		t.Fatalf("rebind did not preserve history and clear pause: %+v", got)
-	}
-	tx, err = s.db.BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolved, err := s.store.ResolveGrant(t.Context(), tx, grantID, "https://test-actions.example", "legacy-client")
-	if err != nil || resolved.Identity != callerIdentity {
-		t.Errorf("explicit rebind resolved %v, %v; want %v", resolved, err, callerIdentity)
-	}
-	_ = tx.Rollback()
-}
-
 func TestAnUnbindRevokesEveryGrantOnce(t *testing.T) {
 	s := serve(t)
 	created := now().Add(-time.Hour)

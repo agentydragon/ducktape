@@ -113,6 +113,16 @@ def test : IO Unit := do
   | .fuel, .fuel => pure ()
   | _, _ => throw (IO.userError "fuel exhaustion changed")
   checkEmitterBoundary
+  -- `.undef` must not print as an identifier resolved to a local cell, even
+  -- when nested in an expression or shadowed by an import.
+  let shadowed : Program := ⟨"entry.mjs", [⟨"entry.mjs", [],
+    [(0, .decl .const "undefined" (.bool true)), (1, .decl .const "x" (.unary .void .undef))], []⟩]⟩
+  expectError "undefined initializer is shadowed in the output module"
+    (EsmSplit.ESTreeEmit.corePrograms shadowed "")
+  let imported : Program := ⟨"entry.mjs", [⟨"entry.mjs", [⟨"other.mjs", [("x", "undefined")]⟩],
+    [(0, .decl .const "x" .undef)], []⟩]⟩
+  expectError "undefined initializer is shadowed in the output module"
+    (EsmSplit.ESTreeEmit.corePrograms imported "")
 
 end SparseCheckedSplitTest
 

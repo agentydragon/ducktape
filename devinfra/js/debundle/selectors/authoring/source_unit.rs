@@ -29,10 +29,7 @@ pub fn synthesize_residual_claims_for_modules(
     modules: &BTreeMap<String, BTreeMap<String, String>>,
 ) -> Result<BTreeMap<String, Vec<SourceMatchClaim>>> {
     js_ast::with_swc_globals(|| {
-        let source = fs::read_to_string(source_file)
-            .with_context(|| format!("reading source file {}", source_file.display()))?;
-        let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)
-            .with_context(|| format!("parsing source file {}", source_file.display()))?;
+        let parsed = js_ast::parse_js_module_file(source_file)?;
         let index = ChunkSelectorIndex::new(&parsed.module);
         let mut result = BTreeMap::new();
         for (module, bindings) in modules {

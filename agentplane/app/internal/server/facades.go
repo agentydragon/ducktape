@@ -23,7 +23,7 @@ import (
 
 // configureFacades binds each browser route to its generated RPCs and its App credential.
 func configureFacades(ctx context.Context, c settings.Config, streams *streamhttp.Dependencies) error {
-	env := c.EnvironmentServicePeer()
+	env := c.EnvironmentService
 	for _, service := range []struct {
 		name           string
 		upstream       *streamhttp.Upstream
@@ -58,9 +58,9 @@ func configureFacades(ctx context.Context, c settings.Config, streams *streamhtt
 		},
 		{
 			name: "Environment Service", upstream: &streams.EnvironmentHTTP, target: env.Target,
-			tokenFile: env.TokenFile, timeoutSeconds: env.RequestTimeoutSeconds,
-			options:       facade.HandlerOptions{TLS: env.TLS},
-			registrations: []facade.Registration{environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint},
+			timeoutSeconds: env.RequestTimeoutSeconds,
+			options:        facade.HandlerOptions{TLS: env.TLS},
+			registrations:  []facade.Registration{environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint},
 		},
 		{
 			name: "Policy Service", upstream: &streams.PolicyHTTP, target: c.PolicyServiceTarget,

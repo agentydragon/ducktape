@@ -1,10 +1,4 @@
-"""Fixtures and helpers shared by the real-browser thread tests, registered by each of them with
-`pytest_plugins = ("agentplane.app.testing.thread_browser",)`.
-
-A conftest fixture outranks a plugin's, so each test module defines `service_history_db_url` itself,
-as `electric`'s database, for the package conftest's history fixtures to follow; and `sandbox` as the
-`ReplicationSource`'s, whose scripted runner the Runner Gateway reaches.
-"""
+"""Fixtures and helpers shared by the real-browser thread tests in `agentplane/app/browser/`."""
 
 import asyncio
 import faulthandler

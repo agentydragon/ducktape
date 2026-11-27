@@ -225,8 +225,8 @@ func (s *served) connect(t *testing.T, name string, createdAt time.Time, bound *
 		boundIdentity = &document
 	}
 	if _, err := s.db.ExecContext(t.Context(), `
-		INSERT INTO external_connection (id, display_name, bound_identity, identity_binding_required, binding_version, version, created_at, updated_at)
-		VALUES ($1, $2, $3::jsonb, false, 0, 1, $4, $4)`, id, name, boundIdentity, createdAt); err != nil {
+		INSERT INTO external_connection (id, display_name, bound_identity, binding_version, version, created_at, updated_at)
+		VALUES ($1, $2, $3::jsonb, 0, 1, $4, $4)`, id, name, boundIdentity, createdAt); err != nil {
 		t.Fatal(err)
 	}
 	later := createdAt.Add(time.Minute)

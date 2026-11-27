@@ -26,19 +26,67 @@ theorem newCell_value {b : Binding} {s s' : State W} {a : Addr} (h : newCell b s
     simp
   · cases h
 
-/-- Every returned cell was absent before the allocation sequence began. -/
-theorem newCells_fresh : ∀ (bs : List (Name × Binding)) {s s' : State W} {frame : List (Name × Addr)},
-    newCells bs s = .ok frame s' → ∀ p ∈ frame, s.cellAt p.2 = none
-  | [], s, s', frame, h => by unfold newCells at h; cases h; simp
-  | (x, b) :: rest, s, s', frame, h => by
-    unfold newCells at h
-    obtain ⟨c, t1, hc, h⟩ := bind_ok h
-    obtain ⟨tail, t2, ht, h⟩ := bind_ok h
-    cases h
+/-- Ordered allocation facts for each input binding and returned address. -/
+inductive BindingAllocation (s : State W) : List (Name × Binding) → List (Name × Addr) → Prop
+  | nil : BindingAllocation s [] []
+  | cons {name : Name} {binding : Binding} {addr : Addr} {rest frame}
+      (value : s.cellAt addr = some binding) (tail : BindingAllocation s rest frame) :
+      BindingAllocation s ((name, binding) :: rest) ((name, addr) :: frame)
+
+/-- Every recorded allocation names a cell containing its original binding. -/
+theorem BindingAllocation.present {s : State W} {bs : List (Name × Binding)} {frame : List (Name × Addr)}
+    (h : BindingAllocation s bs frame) : ∀ p ∈ frame, ∃ b, s.cellAt p.2 = some b := by
+  induction h with
+  | nil => simp
+  | @cons name binding addr rest frame value tail ih =>
     intro p hp
     rcases List.mem_cons.1 hp with rfl | hp
-    · exact (newCell_ok hc).1
-    · exact (newCell_ok hc).2.freshCell (newCells_fresh rest ht p hp)
+    · exact ⟨binding, value⟩
+    · exact ih p hp
+
+/-- Each input binding has a corresponding returned address containing that
+binding. Repeated names remain separate list entries. -/
+theorem BindingAllocation.binding_present {s : State W} {bs : List (Name × Binding)} {frame : List (Name × Addr)}
+    (h : BindingAllocation s bs frame) {name : Name} {binding : Binding} (member : (name, binding) ∈ bs) :
+    ∃ addr, (name, addr) ∈ frame ∧ s.cellAt addr = some binding := by
+  induction h with
+  | nil => simp at member
+  | @cons x b a rest frame value tail ih =>
+    rcases List.mem_cons.1 member with eq | member
+    · cases eq
+      exact ⟨a, List.mem_cons_self, value⟩
+    · obtain ⟨addr, found, cell⟩ := ih member
+      exact ⟨addr, List.mem_cons_of_mem _ found, cell⟩
+
+/-- A successful allocation extends the old state, preserves the order and names
+of the input bindings, and records each new binding at its fresh address. This
+works for nonempty regions and arbitrary binding values and mutability. -/
+theorem newCells_allocation : ∀ (bs : List (Name × Binding)) {s s' : State W}
+    {frame : List (Name × Addr)}, newCells bs s = .ok frame s' →
+      Extends s s' ∧ (∀ p ∈ frame, s.cellAt p.2 = none) ∧
+      BindingAllocation s' bs frame
+  | [], s, s', frame, h => by
+    unfold newCells at h
+    cases h
+    exact ⟨Extends.refl s, by simp, .nil⟩
+  | (x, b) :: rest, s, s', frame, h => by
+    unfold newCells at h
+    obtain ⟨a, t1, hc, h⟩ := bind_ok h
+    obtain ⟨tail, t2, ht, h⟩ := bind_ok h
+    cases h
+    obtain ⟨extendsTail, freshTail, valuesTail⟩ := newCells_allocation rest ht
+    have extendsHead := (newCell_ok hc).2
+    refine ⟨extendsHead.trans extendsTail, ?_, ?_⟩
+    · intro p hp
+      rcases List.mem_cons.1 hp with rfl | hp
+      · exact (newCell_ok hc).1
+      · exact extendsHead.freshCell (freshTail p hp)
+    · exact .cons (extendsTail.cells a b (newCell_value hc)) valuesTail
+
+/-- Every returned cell was absent before the allocation sequence began. -/
+theorem newCells_fresh (bs : List (Name × Binding)) {s s' : State W} {frame : List (Name × Addr)}
+    (h : newCells bs s = .ok frame s') : ∀ p ∈ frame, s.cellAt p.2 = none :=
+  (newCells_allocation bs h).2.1
 
 theorem newCells_distinct : ∀ (bs : List (Name × Binding)) {s s' : State W} {frame : List (Name × Addr)},
     newCells bs s = .ok frame s' → DistinctCells frame
@@ -152,6 +200,9 @@ theorem allocation_rejects_alias (W : World) :
 
 end LinkedCellsExamples
 
+#print axioms BindingAllocation.present
+#print axioms BindingAllocation.binding_present
+#print axioms newCells_allocation
 #print axioms newCells_distinct
 #print axioms declareTops_bundleEnv_injective
 #print axioms LinkedCellsExamples.allocation_rejects_alias

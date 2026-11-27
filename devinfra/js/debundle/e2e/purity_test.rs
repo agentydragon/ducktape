@@ -78,26 +78,76 @@
 
 use debundle_e2e_support::*;
 
+const MOD_ORDER: &[&str] = &["mod_a", "mod_b", "residual"];
+
+fn members(names: &[&'static str]) -> Vec<Member> {
+    names.iter().copied().map(Member::new).collect()
+}
+
+/// `source` split between `mod_a` and `mod_b`; `ordered` pins their import order.
+fn interleaved<'a>(
+    source: &'a str,
+    mod_a: &[&'static str],
+    mod_b: &[&'static str],
+    ordered: bool,
+) -> FixtureOpts<'a> {
+    let opts = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("mod_a", &members(mod_a)),
+            logical_module("mod_b", &members(mod_b)),
+        ],
+    );
+    if ordered {
+        opts.with_import_order(MOD_ORDER)
+    } else {
+        opts
+    }
+}
+
+fn foo_bar_modules() -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module("foo", &binding_members(["a", "c"])),
+        logical_module("bar", &[Member::new("b")]),
+    ]
+}
+
+fn pure_new_box() -> [(&'static str, Vec<LogicalModuleEntry>); 1] {
+    [(
+        "static/vendorlib",
+        vec![logical_module(
+            "provider",
+            &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+        )],
+    )]
+}
+
+/// Asserts `mod_a` owns `A` and `C` and `mod_b` owns `B`.
+fn assert_interleaved_ownership(fixture: &Fixture) {
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &["A", "C"],
+        &["B"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["B"],
+        &["A", "C"],
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Inferred purity — `classify_expr_purity` recognizes shapes statically.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn inferred_pure_hof_wrapper_across_modules_emits_no_s_cycle() {
-    // The HOF `wrap` takes a function and returns a struct
-    // containing it. Body has no observable side effects: no
-    // global writes, no calls into unknown territory. The
-    // analyzer should classify `wrap(...)` calls as pure.
-    //
-    // The chunk has three `wrap(...)` top-level statements
-    // interleaved across two modules. Today the conservative
-    // classifier flags each as side-effecting and the resulting
-    // `S` graph has cross-module edges in both directions —
-    // an `S` cycle that the gate rejects. With inferred purity,
-    // no `S` edges are emitted between the modules and the
-    // build accepts.
-    let fixture = run_fixture(
-        FixtureOpts::new(
+fn inferred_pure_initializers_across_modules_emit_no_s_cycle() {
+    for (name, source, mod_a, mod_b, ordered, output) in [
+        // No global writes, no calls into unknown territory: `wrap(...)` is pure.
+        (
+            "hof wrapper",
             r#"function wrap(f) { return { kind: "wrapped", impl: f }; }
 const A = wrap(function () { return "a"; });
 const B = wrap(function () { return "b"; });
@@ -105,14 +155,81 @@ const C = wrap(function () { return "c"; });
 console.log(A.impl(), B.impl(), C.impl());
 export { A, B, C };
 "#,
-            vec![
-                logical_module("mod_a", &binding_members(["A", "C"])),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
-    );
-    assert_entry_output(&fixture, "a b c\n");
+            &["A", "C"][..],
+            &["B"][..],
+            true,
+            "a b c\n",
+        ),
+        // Reads a function reference off the `Object` global without invoking
+        // it; no standard `Object` property is a getter. Logs primitives:
+        // Node's array formatting shifts across versions.
+        (
+            "static Object method aliasing",
+            r#"const define = Object.defineProperty;
+const freeze = Object.freeze;
+const values = Object.values;
+const keys = Object.keys;
+const obj = freeze({ x: 1 });
+console.log(values(obj)[0], keys(obj)[0]);
+export { define, freeze, values, keys };
+"#,
+            &["define", "values"],
+            &["freeze", "keys"],
+            true,
+            "1 x\n",
+        ),
+        // Minified enum builder: an IIFE mutating and returning its own parameter.
+        (
+            "IIFE enum builder",
+            r#"var Status = ((n) => ((n.OK = 0), (n.WARN = 1), (n.ERROR = 2), n))(Status || {});
+var Color = ((n) => ((n.RED = "r"), (n.GREEN = "g"), (n.BLUE = "b"), n))(Color || {});
+var Tag = ((n) => ((n[(n.SMALL = 0)] = "small"), (n[(n.LARGE = 1)] = "large"), n))(Tag || {});
+console.log(Status.OK, Color.RED, Tag.SMALL, Tag[1]);
+export { Status, Color, Tag };
+"#,
+            &["Status", "Tag"],
+            &["Color"],
+            false,
+            "0 r 0 large\n",
+        ),
+        // Mutual recursion must terminate and conclude pure. `prev` avoids
+        // `n - 1`: arithmetic on an opaque parameter coerces and is NotPure.
+        (
+            "mutually recursive functions",
+            r#"function prev(n) { return n === 4 ? 3 : n === 3 ? 2 : n === 2 ? 1 : 0; }
+function even(n) { return n === 0 ? true : odd(prev(n)); }
+function odd(n) { return n === 0 ? false : even(prev(n)); }
+const fourEven = even(4);
+const fiveOdd = odd(5);
+console.log(fourEven, fiveOdd);
+export { even, odd, fourEven, fiveOdd };
+"#,
+            &["even", "fourEven"],
+            &["odd", "fiveOdd"],
+            true,
+            "true true\n",
+        ),
+        // The source-wide write census must prove these `var`s never change
+        // before arithmetic can skip user-defined ToPrimitive callbacks.
+        (
+            "immutable numeric var chain",
+            r#"var retry = 20000, delay = 15000, base = 5000, period = base;
+var first = delay + period + 2 * retry;
+var second = delay + period + 2 * retry;
+var third = delay + period + 2 * retry;
+console.log(first, second, third);
+export { first, second, third };
+"#,
+            &["retry", "delay", "base", "period", "first", "third"],
+            &["second"],
+            false,
+            "60000 60000 60000\n",
+        ),
+    ] {
+        eprintln!("case: {name}");
+        let fixture = run_fixture(interleaved(source, mod_a, mod_b, ordered));
+        assert_entry_output(&fixture, output);
+    }
 }
 
 #[test]
@@ -166,69 +283,21 @@ export { tagsA, tagsB, cfgA, cfgB, reA, reB };
     assert_entry_output(&fixture, "2 1 1 1 true true\n");
 }
 
-#[test]
-fn inferred_pure_static_object_method_aliasing_emits_no_s_cycle() {
-    // The expression being classified here is bare member
-    // access — `const define = Object.defineProperty;` reads
-    // a property off the `Object` global without invoking it.
-    // (Calling `Object.defineProperty(...)` mutates its
-    // target; that's not what's classified pure here.) Today
-    // the classifier marks any `MemberExpression` as
-    // `Unknown` because any object can have a getter; for the
-    // well-known `Object` global, the analyzer should
-    // recognize that no standard property is a getter, so
-    // reading the function reference is side-effect-free.
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const define = Object.defineProperty;
-const freeze = Object.freeze;
-const values = Object.values;
-const keys = Object.keys;
-const obj = freeze({ x: 1 });
-console.log(values(obj)[0], keys(obj)[0]);
-export { define, freeze, values, keys };
-"#,
-            vec![
-                logical_module("mod_a", &binding_members(["define", "values"])),
-                logical_module("mod_b", &binding_members(["freeze", "keys"])),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
-    );
-    // Log primitives directly: Node's `util.inspect` array
-    // formatting (`[ 1 ]` vs `[1]`) shifts across versions; a
-    // primitive comparison is version-stable.
-    assert_entry_output(&fixture, "1 x\n");
-}
+// ---------------------------------------------------------------------------
+// Inferred purity — negative cases. Real side effects must still register.
+// ---------------------------------------------------------------------------
 
 #[test]
-fn inferred_pure_iife_enum_builder_emits_no_s_cycle() {
-    // The minified enum-builder pattern: an IIFE whose body
-    // mutates its own parameter and returns it. All writes are local
-    // to the enum object for the binding being initialized; no
-    // globals are touched. The whole var initializer is pure.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var Status = ((n) => ((n.OK = 0), (n.WARN = 1), (n.ERROR = 2), n))(Status || {});
-var Color = ((n) => ((n.RED = "r"), (n.GREEN = "g"), (n.BLUE = "b"), n))(Color || {});
-var Tag = ((n) => ((n[(n.SMALL = 0)] = "small"), (n[(n.LARGE = 1)] = "large"), n))(Tag || {});
-console.log(Status.OK, Color.RED, Tag.SMALL, Tag[1]);
-export { Status, Color, Tag };
-"#,
-        vec![
-            logical_module("mod_a", &binding_members(["Status", "Tag"])),
-            logical_module("mod_b", &[Member::new("Color")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "0 r 0 large\n");
-}
-
-#[test]
-fn unsafe_iife_enum_builder_still_emits_s_cycle() {
-    // A call inside the IIFE body is outside the narrow enum-init
-    // model. These statements stay side-effecting and the
-    // interleaved modules still reject on the S-cycle.
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
+fn side_effecting_initializers_across_modules_still_emit_s_cycle() {
+    let impure_vendor = [(
+        "static/vendorlib",
+        "export function wrap(f) { globalThis.__sink = f; return { impl: f }; }\n",
+    )];
+    let fluent_vendor = [("static/vendorlib", FLUENT_VENDORLIB)];
+    for (name, source, mod_a, mod_b, ordered, chunks) in [
+        // A call inside the IIFE body is outside the narrow enum-init model.
+        (
+            "IIFE enum builder calling a helper",
             r#"function value(x) { return x; }
 var A = ((n) => (n.OK = value(0), n))(A || {});
 var B = ((n) => (n.OK = value(1), n))(B || {});
@@ -236,59 +305,13 @@ var C = ((n) => (n.OK = value(2), n))(C || {});
 console.log(A.OK, B.OK, C.OK);
 export { A, B, C };
 "#,
-            vec![
-                logical_module("mod_a", &binding_members(["A", "C"])),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
-        &["mod_a", "mod_b"],
-    );
-}
-
-#[test]
-fn inferred_pure_recursive_function_classified_pure() {
-    // Mutually recursive pure functions: `even` calls `odd` and
-    // vice versa. Recursive analysis must terminate (memoize
-    // per-function visit status) and conclude both pure. The
-    // decrement goes through `prev` (literal-equality ternaries)
-    // rather than `n - 1`: arithmetic on an opaque param is a
-    // coercing operator on a possibly-object operand and
-    // classifies NotPure by design — this test pins recursion
-    // termination, not arithmetic.
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"function prev(n) { return n === 4 ? 3 : n === 3 ? 2 : n === 2 ? 1 : 0; }
-function even(n) { return n === 0 ? true : odd(prev(n)); }
-function odd(n) { return n === 0 ? false : even(prev(n)); }
-const fourEven = even(4);
-const fiveOdd = odd(5);
-console.log(fourEven, fiveOdd);
-export { even, odd, fourEven, fiveOdd };
-"#,
-            vec![
-                logical_module("mod_a", &binding_members(["even", "fourEven"])),
-                logical_module("mod_b", &binding_members(["odd", "fiveOdd"])),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
-    );
-    assert_entry_output(&fixture, "true true\n");
-}
-
-// ---------------------------------------------------------------------------
-// Inferred purity — negative cases. Real side effects must still register.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn inferred_impure_console_log_still_rejected() {
-    // `console.log` writes to the host's stdout — observable
-    // I/O. A function that calls `console.log` must be
-    // classified impure. Top-level statements that invoke
-    // such a function across modules must still produce S
-    // edges and reject the spec.
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
+            &["A", "C"][..],
+            &["B"][..],
+            true,
+            &[][..],
+        ),
+        (
+            "console.log in callee",
             r#"function logged(x) { console.log("init:", x); return x; }
 const a1 = logged("a1");
 const b1 = logged("b1");
@@ -296,26 +319,14 @@ const a2 = logged("a2");
 console.log(a1, b1, a2);
 export { a1, a2, b1 };
 "#,
-            vec![
-                logical_module("mod_a", &binding_members(["a1", "a2"])),
-                logical_module("mod_b", &[Member::new("b1")]),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
-        &["mod_a", "mod_b"],
-    );
-}
-
-#[test]
-fn inferred_impure_via_transitively_impure_callee_still_rejected() {
-    // `caller(...)` does nothing observable on its own, but
-    // calls `tainted()` which mutates `globalThis`. Recursive
-    // purity analysis must propagate impurity from `tainted`
-    // back to `caller` and reject specs that distribute
-    // `caller(...)` calls across modules in interleaved
-    // source order.
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
+            &["a1", "a2"],
+            &["b1"],
+            true,
+            &[],
+        ),
+        // Impurity of `tainted` must propagate back to `caller`.
+        (
+            "transitively impure callee",
             r#"function tainted() { globalThis.touched = true; return 1; }
 function caller(label) { tainted(); return { label }; }
 const a1 = caller("a1");
@@ -324,73 +335,28 @@ const a2 = caller("a2");
 console.log(a1.label, b1.label, a2.label, globalThis.touched);
 export { a1, a2, b1 };
 "#,
-            vec![
-                logical_module("mod_a", &binding_members(["a1", "a2"])),
-                logical_module("mod_b", &[Member::new("b1")]),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
-        &["mod_a", "mod_b"],
-    );
-}
-
-#[test]
-fn coercing_operator_on_opaque_operand_still_emits_s_edges() {
-    // SOUNDNESS: `obj + 1` runs ToPrimitive on `obj` — a user
-    // `valueOf` can fire arbitrary code, so the statements stay
-    // side-effecting and the interleaved modules still close an
-    // S cycle the gate must reject. Pins the coercing-operator
-    // gate at the pipeline level (the classifier previously
-    // admitted `A + 1` as pure).
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
+            &["a1", "a2"],
+            &["b1"],
+            true,
+            &[],
+        ),
+        // SOUNDNESS: `obj + 1` runs ToPrimitive, so a user `valueOf` can fire.
+        (
+            "coercing operator on opaque operand",
             r#"const a1 = obj + 1;
 const b1 = obj + 2;
 const a2 = obj + 3;
 console.log(a1, b1, a2);
 export { a1, a2, b1 };
 "#,
-            vec![
-                logical_module("mod_a", &binding_members(["a1", "a2"])),
-                logical_module("mod_b", &[Member::new("b1")]),
-            ],
+            &["a1", "a2"],
+            &["b1"],
+            false,
+            &[],
         ),
-        &["mod_a", "mod_b"],
-    );
-}
-
-#[test]
-fn immutable_numeric_var_chain_across_modules_emits_no_s_cycle() {
-    // A bundled top-level `var` declaration can hold literal numbers and
-    // immutable aliases just like the corresponding `const` form. The
-    // source-wide write census must establish that these bindings never
-    // change before arithmetic can skip user-defined ToPrimitive callbacks.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var retry = 20000, delay = 15000, base = 5000, period = base;
-var first = delay + period + 2 * retry;
-var second = delay + period + 2 * retry;
-var third = delay + period + 2 * retry;
-console.log(first, second, third);
-export { first, second, third };
-"#,
-        vec![
-            logical_module(
-                "mod_a",
-                &binding_members(["retry", "delay", "base", "period", "first", "third"]),
-            ),
-            logical_module("mod_b", &[Member::new("second")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "60000 60000 60000\n");
-}
-
-#[test]
-fn destructuring_declarators_still_emit_s_edges() {
-    // SOUNDNESS: `const { a1 } = src` fires `src`'s getters at
-    // declaration time — the statements stay side-effecting and
-    // interleaved modules close an S cycle the gate must reject.
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
+        // SOUNDNESS: `const { a1 } = src` fires `src`'s getters.
+        (
+            "destructuring declarators",
             r#"const src = make();
 const { a1 } = src;
 const { b1 } = src;
@@ -398,14 +364,43 @@ const { a2 } = src;
 console.log(a1, b1, a2);
 export { a1, a2, b1 };
 "#,
-            vec![
-                logical_module("mod_a", &binding_members(["a1", "a2"])),
-                logical_module("mod_b", &[Member::new("b1")]),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
-        &["mod_a", "mod_b"],
-    );
+            &["a1", "a2"],
+            &["b1"],
+            true,
+            &[],
+        ),
+        // The cross-module oracle removes only false impurity, never real effects.
+        (
+            "impure imported wrapper",
+            r#"import { wrap } from "./vendorlib.js";
+const A = wrap(function () { return "a"; });
+const B = wrap(function () { return "b"; });
+const C = wrap(function () { return "c"; });
+console.log(A, B, C);
+export { A, B, C };
+"#,
+            &["A", "C"],
+            &["B"],
+            false,
+            &impure_vendor,
+        ),
+        // Fluent chain receivers are call results, so every link is
+        // `unknown_call`/`unknown_member` without an assertion.
+        (
+            "fluent chain schema declarations without assertion",
+            FLUENT_CHAIN_ENTRY,
+            &["A", "C"],
+            &["B"],
+            true,
+            &fluent_vendor,
+        ),
+    ] {
+        eprintln!("case: {name}");
+        expect_sequenced_cycle_rejection(
+            interleaved(source, mod_a, mod_b, ordered).with_extra_chunks(chunks),
+            &["mod_a", "mod_b"],
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -433,20 +428,13 @@ export { A, B, C, dispatcher };
             logical_module("mod_b", &[Member::new("B")]),
         ],
     )
-    .with_import_order(&["mod_a", "mod_b", "residual"])
+    .with_import_order(MOD_ORDER)
 }
 
 #[test]
 fn declared_pure_member_suppresses_s_edges_for_opaque_call() {
-    // `dispatcher` does dynamic property access into a
-    // registry — recursive purity analysis can't statically
-    // prove the lookup is pure (the registry value at the
-    // dynamic key could be a getter or a function that
-    // mutates state). The spec author knows the registry
-    // entries are all pure handlers, so they annotate the
-    // `dispatcher` member with `purity: "pure"`. The
-    // validator trusts the assertion and stops emitting
-    // `S` edges for `dispatcher(...)` call sites.
+    // Inference cannot prove the dynamic registry lookup pure; the author's
+    // `purity: "pure"` is trusted.
     let fixture = run_fixture(dispatcher_fixture(
         Member::new("dispatcher").with_purity(MemberPurity::Pure),
     ));
@@ -455,12 +443,8 @@ fn declared_pure_member_suppresses_s_edges_for_opaque_call() {
 
 #[test]
 fn declared_pure_member_does_not_bypass_at_init_read_cycle() {
-    // Declared purity affects only `S` (side-effect ordering)
-    // edges. It does *not* suppress `R` (at-init read) edges.
-    // Here `wrap(...)` is annotated pure, but `wrap(B)` in
-    // mod_a still reads `B` from mod_b at-init, and `wrap(A)`
-    // in mod_b still reads `A` from mod_a at-init: the `R`
-    // graph has a cycle and the gate must still reject.
+    // Declared purity suppresses only `S` edges: `D` reads `B` and `B` reads
+    // `A` at init, an `R` cycle between the modules.
     expect_cycle_rejection(
         FixtureOpts::new(
             r#"function wrap(x) { return { ref: x }; }
@@ -476,18 +460,12 @@ export { A, B, D, wrap };
                     &[
                         Member::new("A"),
                         Member::new("D"),
-                        // Author asserts purity — `S` edges through
-                        // `wrap(...)` calls go away.
                         Member::new("wrap").with_purity(MemberPurity::Pure),
                     ],
                 ),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         ),
-        // R-edge mod_a → mod_b (D's init reads B); R-edge
-        // mod_b → mod_a (B's init reads A). The cycle's
-        // evidence is at-init reads, not the wrapped call.
-        // The cycle report must still list both modules.
         &["mod_a", "mod_b"],
     );
 }
@@ -516,14 +494,8 @@ fn canonical_source_match_purity_annotation_contributes_to_analysis_inputs() {
 
 #[test]
 fn declared_pure_annotation_applies_only_to_annotated_member_negative() {
-    // Two HOFs in the chunk: `pureWrap`, annotated pure, and
-    // `impureWrap`, not. The spec interleaves `impureWrap(...)`
-    // calls across mod_a and mod_b. Because `impureWrap` carries
-    // no annotation and its body writes `globalThis.lastWrap`,
-    // each call is classified side-effecting; the resulting
-    // `S` graph has cross-module edges in both directions and
-    // the gate must reject. The `pureWrap` annotation does
-    // not bleed onto sibling members.
+    // The `pureWrap` annotation must not bleed onto the unannotated,
+    // global-writing `impureWrap`.
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"function pureWrap(x) { return { val: x }; }
@@ -541,7 +513,6 @@ export { A, B, C, pureWrap, impureWrap };
                         Member::new("A"),
                         Member::new("C"),
                         Member::new("pureWrap").with_purity(MemberPurity::Pure),
-                        // Deliberately unannotated.
                         Member::new("impureWrap"),
                     ],
                 ),
@@ -553,7 +524,20 @@ export { A, B, C, pureWrap, impureWrap };
 }
 
 #[test]
-fn declared_pure_new_member_suppresses_s_edges_for_constructor_calls() {
+fn declared_pure_new_member_suppresses_s_edges_but_still_evaluates_arguments() {
+    let pure_box_modules = || {
+        vec![
+            logical_module(
+                "mod_a",
+                &[
+                    Member::new("A"),
+                    Member::new("C"),
+                    Member::new("PureBox").with_purity(MemberPurity::PureNew),
+                ],
+            ),
+            logical_module("mod_b", &[Member::new("B")]),
+        ]
+    };
     let fixture = run_fixture(FixtureOpts::new(
         r#"class PureBox {
   constructor(value) {
@@ -566,23 +550,9 @@ const C = new PureBox("c");
 console.log(A.value, B.value, C.value);
 export { A, B, C, PureBox };
 "#,
-        vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("A"),
-                    Member::new("C"),
-                    Member::new("PureBox").with_purity(MemberPurity::PureNew),
-                ],
-            ),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
+        pure_box_modules(),
     ));
     assert_entry_output(&fixture, "a b c\n");
-}
-
-#[test]
-fn declared_pure_new_member_still_evaluates_constructor_args() {
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"class PureBox {
@@ -600,44 +570,24 @@ const C = new PureBox(value("c"));
 console.log(A.value, B.value, C.value, globalThis.last);
 export { A, B, C, PureBox };
 "#,
-            vec![
-                logical_module(
-                    "mod_a",
-                    &[
-                        Member::new("A"),
-                        Member::new("C"),
-                        Member::new("PureBox").with_purity(MemberPurity::PureNew),
-                    ],
-                ),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
+            pure_box_modules(),
         )
-        .with_import_order(&["mod_a", "mod_b", "residual"]),
+        .with_import_order(MOD_ORDER),
         &["mod_a", "mod_b"],
     );
 }
 
 // ---------------------------------------------------------------------------
-// Builtin constructors — `new Container()` purity.
+// Pure initializers peeled away from a side-effecting predecessor.
 // ---------------------------------------------------------------------------
 
-// `new Map()`/`Set()`/`WeakMap()`/`WeakSet()`/`Array()` allocate
-// the fresh container and return — no iterator protocol, no
-// user-code getters. Same admission contract as every builtin
-// summary row.
-// Also covers the array-literal-iterable form for `Set`/`Map`:
-// built-in Array iterator + primitive-key Set.add/Map.set fire
-// no user code, so an Array-literal arg with all-Pure
-// elements (no spreads) is also pure.
+// Cycle-forcing fixture: `b` is peeled to its own module while the preceding
+// side-effecting IIFE `a` and a later at-init reader `c` stay in residual. Were
+// `b` side-effecting, its S edge to `a` plus `c`'s read of `b` would cycle.
 //
-// Cycle-forcing fixture: `b = new <Container>();` peeled to
-// b_module while previous-SE neighbor `a` (IIFE call) and a
-// downstream reader of `b` stay in residual. Without the rule
-// `new …` is Unknown → b is SE → b → a s-edge crosses into
-// residual; combined with residual → b_module (c reads b at
-// init), spec is unrealizable. With the rule `new <Container>()`
-// is Pure → b drops out of the S-chain.
-
+// `new Map()`/`Set()`/`WeakMap()`/`Array()` allocate without user code. For
+// `Set`/`Map`, an Array-literal argument of pure elements without spreads runs
+// only the built-in iterator and primitive-key `add`/`set`.
 #[test]
 fn builtin_container_initializers_break_the_side_effect_cycle() {
     for (initializer, read, output) in [
@@ -648,6 +598,7 @@ fn builtin_container_initializers_break_the_side_effect_cycle() {
         (r#"new Set(["x", "y", "z"])"#, "b.size", "4\n"),
         (r#"new Map([["x", 1], ["y", 2]])"#, r#"b.get("x")"#, "2\n"),
     ] {
+        eprintln!("case: {initializer}");
         let declaration = format!("const b = {initializer};");
         let source = format!(
             "const a = (() => 1)();\n{declaration}\nconst c = {read} + a;\nconsole.log(c);\nexport {{ a, b, c }};"
@@ -667,13 +618,11 @@ fn builtin_container_initializers_break_the_side_effect_cycle() {
 }
 
 #[test]
-fn class_static_new_map_field() {
-    // Class-declaration shape: `static x = new Map()` is the
-    // only static-side-effect candidate. Without the rule the
-    // class is flagged side-effecting and pulled into the
-    // S-chain.
-    assert_pure_cycle_break_with_opts(
-        FixtureOpts::new(
+fn pure_declarations_break_the_side_effect_cycle() {
+    for (name, source, module, owned, present, absent, output) in [
+        // `static x = new Map()` is the class's only static-side candidate.
+        (
+            "class static new Map field",
             r#"const a = (() => 1)();
 class C {
   static x = new Map();
@@ -682,49 +631,92 @@ const c = C.x.size + a;
 console.log(c);
 export { a, C, c };
 "#,
-            vec![logical_module("c_module", &[Member::new("C")])],
-        )
-        .with_import_order(&["c_module", "residual"]),
-        "c_module",
-        &["class C", "static x = new Map()"],
-        &["const a"],
-        "1\n",
-    );
+            "c_module",
+            &["C"][..],
+            &["class C", "static x = new Map()"][..],
+            &["const a"][..],
+            "1\n",
+        ),
+        (
+            "immutable symbol class key",
+            r#"const before = (() => 1)();
+const brand = Symbol('brand');
+class Hidden { [brand]() { return 7; } }
+const after = Hidden.name + before;
+console.log(after);
+export { Hidden, after };
+"#,
+            "class/hidden",
+            &["brand", "Hidden"],
+            &["class Hidden", "brand"],
+            &["const before"],
+            "Hidden1\n",
+        ),
+        // ECMA-262 §20.4.1.1: `ToString` of a primitive-literal description
+        // runs no user code.
+        (
+            "Symbol with string literal",
+            r#"const a = (() => 1)();
+const b = Symbol("b");
+const c = b.description + a;
+console.log(c);
+export { a, b, c };
+"#,
+            "b_module",
+            &["b"],
+            &["const b = Symbol(", "export {", "b"],
+            &["const a", "(()=>1)"],
+            "b1\n",
+        ),
+        // §20.4.1.1 step 2: no description, no `ToString`.
+        (
+            "Symbol without arguments",
+            r#"const a = (() => 1)();
+const b = Symbol();
+const c = (typeof b) + a;
+console.log(c);
+export { a, b, c };
+"#,
+            "b_module",
+            &["b"],
+            &["const b = Symbol()", "export {", "b"],
+            &["const a"],
+            "symbol1\n",
+        ),
+        (
+            "String.raw template",
+            r#"const a = (() => 1)();
+const b = String.raw`value:${1}`;
+const c = b.length + a;
+console.log(c);
+export { a, b, c };
+"#,
+            "b_module",
+            &["b"],
+            &["const b = String.raw"],
+            &["const a"],
+            "8\n",
+        ),
+    ] {
+        eprintln!("case: {name}");
+        assert_pure_cycle_break_with_opts(
+            FixtureOpts::new(source, vec![logical_module(module, &members(owned))])
+                .with_import_order(&[module, "residual"]),
+            module,
+            present,
+            absent,
+            output,
+        );
+    }
 }
 
-// ---------------------------------------------------------------------------
-// OptChain purity.
-// ---------------------------------------------------------------------------
-
-// `recv?.prop` / `recv?.()` add only a null/undefined short-circuit, so
-// purity recurses through the chain: a whitelisted static read stays `Pure`.
-// Were it `Unknown`, the declarator would join the side-effect-order chain and
-// drag its side-effecting predecessor into any module that peels it.
-// Host-global receivers (`window?.X?.Y`) are not whitelisted.
+// `recv?.prop` / `recv?.()` add only a null/undefined short-circuit, so purity
+// recurses through the chain: a whitelisted static read stays `Pure`. Host-global
+// receivers (`window?.X?.Y`) are not whitelisted.
 #[test]
 fn optional_chain_on_whitelisted_receiver_classified_pure() {
-    // Cycle-forcing fixture:
-    //   1. const X = (() => "x")();              — side-effecting (IIFE call); stays in residual
-    //   2. const Y = Number?.MAX_SAFE_INTEGER;   — currently OptChain → Unknown → side-effecting; peeled to y_module
-    //   3. const Z = Y + 1;                       — reads Y at init; stays in residual
-    //   4. console.log(Z);
-    //   5. export { X, Y, Z };
-    //
-    // If OptChain were `Unknown`:
-    //   Y has has_side_effect=true.
-    //   S-edges (transitive reduction over SE source_units):
-    //     Y → X        (Y depends on X via source order, both SE)
-    //     console.log(Z) → Y
-    //   After peeling Y to y_module, the schedule sees:
-    //     y_module → residual (from Y → X s-edge)
-    //     residual → y_module (residual reads Y at init via const Z = Y + 1)
-    //   That's a cycle in I ∪ S. Validator rejects the spec.
-    //
-    // With OptChain classified through:
-    //   Y is `Pure` (OptChain recurses into Number.MAX_SAFE_INTEGER
-    //   which is whitelisted), so Y has has_side_effect=false.
-    //   No Y → X s-edge. Only edge: residual → y_module
-    //   (Z's at-init read of Y). DAG. Validator accepts.
+    // Were `Y` side-effecting, its S edge to the IIFE `X` plus `Z`'s at-init
+    // read of `Y` would cycle `y_module` with residual.
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"const X = (() => "x")();
@@ -737,8 +729,6 @@ export { X, Y, Z };
         )
         .with_import_order(&["y_module", "residual"]),
     );
-
-    // y_module owns Y but does NOT own X — X stays in residual.
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/y_module.js",
@@ -751,231 +741,60 @@ export { X, Y, Z };
         &["const X", "const Z"],
         &["const Y"],
     );
-
-    // Behaviour preserved: console.log(Z) prints
-    // String(Number.MAX_SAFE_INTEGER + 1).
     assert_entry_output(&fixture, "9007199254740992\n");
 }
 
 // ---------------------------------------------------------------------------
-// Symbol purity.
+// Imported purity.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn immutable_symbol_key_does_not_make_class_definition_an_effect() {
-    assert_pure_cycle_break_with_opts(
-        FixtureOpts::new(
-            r#"const before = (() => 1)();
-const brand = Symbol('brand');
-class Hidden { [brand]() { return 7; } }
-const after = Hidden.name + before;
-console.log(after);
-export { Hidden, after };
-"#,
-            vec![logical_module(
-                "class/hidden",
-                &binding_members(["brand", "Hidden"]),
-            )],
-        )
-        .with_import_order(&["class/hidden", "residual"]),
-        "class/hidden",
-        &["class Hidden", "brand"],
-        &["const before"],
-        "Hidden1\n",
-    );
-}
-
-// Pin `Symbol(primitive_literal)` purity classification.
-//
-// ECMA-262 §20.4.1.1 says `Symbol(description)`:
-//   1. If NewTarget is not undefined, throw TypeError.
-//   2. If description is undefined, let descString be undefined.
-//   3. Else, let descString be ? ToString(description).
-//   4. Return a new unique Symbol value whose [[Description]]
-//      is descString.
-//
-// For a primitive-literal `description` (string, number,
-// boolean, null, bigint) the `ToString` step runs no user code,
-// so the call has no observable side effects beyond producing a
-// fresh symbol primitive. Same admission contract as the
-// `Boolean` row.
-//
-// Without this rule, the classifier returns `Purity::Unknown`
-// for any `Symbol(...)` call, the declarator is flagged
-// `has_side_effect = true`, and the binding gets pulled into the
-// source-order side-effect-order chain. In real chunks that's
-// enough to close phantom multi-module cycles when the spec
-// tries to peel a `Symbol`-bound brand declarator into its own
-// module.
-#[test]
-fn symbol_with_string_literal_arg_classified_pure() {
-    // Cycle-forcing fixture: the spec peels `b` (a
-    // `Symbol(string-literal)`) into `b_module`. Source-order
-    // surrounds `b` with one preceding side-effecting declarator
-    // `a` (the IIFE call) so b would inherit a previous-SE
-    // s-edge to a if it were classified side-effecting, plus a
-    // following declarator `c` whose initializer reads `b` at
-    // init so residual has a forward read-dep into b_module.
-    //
-    // Without this rule: Symbol(...) is Unknown → b is SE →
-    // b → a s-edge → cross-module b_module → residual after
-    // peel. Combined with residual → b_module (c reads b at
-    // init), spec is unrealizable.
-    //
-    // With this rule: Symbol("b") is Pure → b is not SE → no
-    // b → a s-edge. Only edge: residual → b_module. DAG.
-    assert_pure_cycle_break_with_opts(
-        FixtureOpts::new(
-            r#"const a = (() => 1)();
-const b = Symbol("b");
-const c = b.description + a;
-console.log(c);
-export { a, b, c };
-"#,
-            vec![logical_module("b_module", &[Member::new("b")])],
-        )
-        .with_import_order(&["b_module", "residual"]),
-        "b_module",
-        &["const b = Symbol(", "export {", "b"],
-        &["const a", "(()=>1)"],
-        "b1\n",
-    );
-}
-
-#[test]
-fn symbol_with_no_args_classified_pure() {
-    // No description argument — pure under the same rule
-    // (ECMA-262 §20.4.1.1 step 2: descString is undefined when
-    // description is undefined, no ToString call).
-    assert_pure_cycle_break_with_opts(
-        FixtureOpts::new(
-            r#"const a = (() => 1)();
-const b = Symbol();
-const c = (typeof b) + a;
-console.log(c);
-export { a, b, c };
-"#,
-            vec![logical_module("b_module", &[Member::new("b")])],
-        )
-        .with_import_order(&["b_module", "residual"]),
-        "b_module",
-        &["const b = Symbol()", "export {", "b"],
-        &["const a"],
-        "symbol1\n",
-    );
-}
-
-#[test]
 fn cross_module_pure_import_emits_no_s_cycle() {
-    // `wrap` is a pure HOF defined in a SEPARATE analyzed chunk and imported.
-    // Its three `wrap(...)` call sites split across two logical modules. With
-    // `wrap` opaque (`unknown_call`) the calls are side-effecting and the
-    // strict S-chain has cross-module edges both ways — a cycle the gate
-    // rejects (cf. `unsafe_iife_enum_builder_still_emits_s_cycle`). The
-    // program-level cross-module purity oracle resolves the imported `wrap`
-    // as pure, so no S edges are emitted and the build accepts.
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"import { wrap } from "./vendorlib.js";
-const A = wrap(function () { return "a"; });
-const B = wrap(function () { return "b"; });
-const C = wrap(function () { return "c"; });
-console.log(JSON.stringify([[A.kind, A.impl()], [B.kind, B.impl()], [C.kind, C.impl()]]));
-export { A, B, C };
-"#,
+    let vendor = (
+        "static/vendorlib",
+        "export function wrap(f) { return { kind: \"wrapped\", impl: f }; }\n",
+    );
+    for (name, import, chunks) in [
+        // The program-level oracle resolves the imported `wrap` as pure.
+        (
+            "direct import",
+            r#"import { wrap } from "./vendorlib.js";"#,
+            vec![vendor],
+        ),
+        // A direct-import-only pass leaves `callWrap` opaque; the static
+        // import closure must include the adapter and its vendor dependency.
+        (
+            "transitive static import closure",
+            r#"import { callWrap as wrap } from "./adapter.js";"#,
             vec![
-                logical_module("mod_a", &binding_members(["A", "C"])),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/vendorlib",
-            "export function wrap(f) { return { kind: \"wrapped\", impl: f }; }\n",
-        )]),
-    );
-    assert_imported_wrapper_values_and_ownership(&fixture);
-}
-
-fn assert_imported_wrapper_values_and_ownership(fixture: &Fixture) {
-    assert_preserved_entry_output(
-        fixture,
-        "[[\"wrapped\",\"a\"],[\"wrapped\",\"b\"],[\"wrapped\",\"c\"]]\n",
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_a.js",
-        &["A", "C"],
-        &["B"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_b.js",
-        &["B"],
-        &["A", "C"],
-    );
-}
-
-#[test]
-fn cross_module_pure_import_follows_transitive_static_import_closure() {
-    // The selected app imports `callWrap` from an adapter chunk, and the
-    // adapter imports the actual pure HOF from a third chunk. A direct-import
-    // only purity pass leaves `callWrap` opaque; the static import closure must
-    // include both the adapter and its vendor dependency.
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"import { callWrap as wrap } from "./adapter.js";
-const A = wrap(function () { return "a"; });
-const B = wrap(function () { return "b"; });
-const C = wrap(function () { return "c"; });
-console.log(JSON.stringify([[A.kind, A.impl()], [B.kind, B.impl()], [C.kind, C.impl()]]));
-export { A, B, C };
-"#,
-            vec![
-                logical_module("mod_a", &binding_members(["A", "C"])),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
-        )
-        .with_extra_chunks(&[
-            (
-                "static/adapter",
-                "import { wrap } from \"./vendorlib.js\";\n\
+                (
+                    "static/adapter",
+                    "import { wrap } from \"./vendorlib.js\";\n\
 export function callWrap(f) { return wrap(f); }\n",
-            ),
-            (
-                "static/vendorlib",
-                "export function wrap(f) { return { kind: \"wrapped\", impl: f }; }\n",
-            ),
-        ]),
-    );
-    assert_imported_wrapper_values_and_ownership(&fixture);
-}
-
-#[test]
-fn cross_module_impure_import_still_emits_s_cycle() {
-    // Same shape, but the imported `wrap` writes a global — impure. The oracle
-    // must propagate that impurity back to the call sites, so the interleaved
-    // modules still reject on the S-cycle (the oracle removes only genuine
-    // false-impurity, never real effects).
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
-            r#"import { wrap } from "./vendorlib.js";
-const A = wrap(function () { return "a"; });
-const B = wrap(function () { return "b"; });
-const C = wrap(function () { return "c"; });
-console.log(A, B, C);
-export { A, B, C };
-"#,
-            vec![
-                logical_module("mod_a", &binding_members(["A", "C"])),
-                logical_module("mod_b", &[Member::new("B")]),
+                ),
+                vendor,
             ],
-        )
-        .with_extra_chunks(&[(
-            "static/vendorlib",
-            "export function wrap(f) { globalThis.__sink = f; return { impl: f }; }\n",
-        )]),
-        &["mod_a", "mod_b"],
-    );
+        ),
+    ] {
+        eprintln!("case: {name}");
+        let source = format!(
+            r#"{import}
+const A = wrap(function () {{ return "a"; }});
+const B = wrap(function () {{ return "b"; }});
+const C = wrap(function () {{ return "c"; }});
+console.log(JSON.stringify([[A.kind, A.impl()], [B.kind, B.impl()], [C.kind, C.impl()]]));
+export {{ A, B, C }};
+"#
+        );
+        let fixture = run_fixture(
+            interleaved(&source, &["A", "C"], &["B"], false).with_extra_chunks(&chunks),
+        );
+        assert_preserved_entry_output(
+            &fixture,
+            "[[\"wrapped\",\"a\"],[\"wrapped\",\"b\"],[\"wrapped\",\"c\"]]\n",
+        );
+        assert_interleaved_ownership(&fixture);
+    }
 }
 
 #[test]
@@ -990,6 +809,7 @@ fn declared_imported_constructor_purity_emits_no_s_cycle() {
             "class Box { constructor(value) { this.value = value; } }\nexport { Box as default };\n",
         ),
     ] {
+        eprintln!("case: {import}");
         let source = format!(
             r#"{import}
 const a = new Provider(1);
@@ -1000,21 +820,9 @@ export {{ a, b, c }};
 "#
         );
         let fixture = run_fixture(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module("foo", &binding_members(["a", "c"])),
-                    logical_module("bar", &[Member::new("b")]),
-                ],
-            )
-            .with_extra_chunks(&[("static/vendorlib", provider)])
-            .with_extra_chunk_logical_modules(&[(
-                "static/vendorlib",
-                vec![logical_module(
-                    "provider",
-                    &[Member::new("Box").with_purity(MemberPurity::PureNew)],
-                )],
-            )]),
+            FixtureOpts::new(&source, foo_bar_modules())
+                .with_extra_chunks(&[("static/vendorlib", provider)])
+                .with_extra_chunk_logical_modules(&pure_new_box()),
         );
         assert_entry_output(&fixture, "1 2 3\n");
     }
@@ -1030,41 +838,33 @@ console.log(a.value, b.value, c.value);
 export { a, b, c };
 "#;
     const PROVIDER: &str = "export class Provider { constructor(value) { this.value = value; } }\n";
-    let modules = || {
-        vec![
-            logical_module("foo", &binding_members(["a", "c"])),
-            logical_module("bar", &[Member::new("b")]),
-        ]
-    };
-    let provider_modules = || {
-        [(
-            "static/provider",
-            vec![logical_module(
-                "provider",
-                &[Member::new("Provider").with_purity(MemberPurity::PureNew)],
-            )],
-        )]
-    };
+    let provider_modules = [(
+        "static/provider",
+        vec![logical_module(
+            "provider",
+            &[Member::new("Provider").with_purity(MemberPurity::PureNew)],
+        )],
+    )];
     // Listing the physical file and its copy as independent chunks makes
     // the assertion miss the actual import target, reproducing the reported
     // unknown_new cycle without any private source.
     expect_sequenced_cycle_rejection(
-        FixtureOpts::new(ENTRY, modules())
+        FixtureOpts::new(ENTRY, foo_bar_modules())
             .with_extra_chunks(&[
                 ("$bunfs/root/provider", PROVIDER),
                 ("static/provider", PROVIDER),
             ])
-            .with_extra_chunk_logical_modules(&provider_modules()),
+            .with_extra_chunk_logical_modules(&provider_modules),
         &["foo", "bar"],
     );
     let fixture = run_fixture(
-        FixtureOpts::new(ENTRY, modules())
+        FixtureOpts::new(ENTRY, foo_bar_modules())
             .with_extra_chunks(&[("static/provider", PROVIDER)])
             .with_source_paths(&[
                 ("static/app", "$bunfs/root/app.js"),
                 ("static/provider", "$bunfs/root/provider.js"),
             ])
-            .with_extra_chunk_logical_modules(&provider_modules()),
+            .with_extra_chunk_logical_modules(&provider_modules),
     );
     assert_entry_output(&fixture, "1 2 3\n");
 }
@@ -1080,10 +880,7 @@ const c = new Factory(3);
 console.log(a.value, b.value, c.value);
 export { a, b, c };
 "#,
-            vec![
-                logical_module("foo", &binding_members(["a", "c"])),
-                logical_module("bar", &[Member::new("b")]),
-            ],
+            foo_bar_modules(),
         )
         .with_extra_chunks(&[(
             "static/provider",
@@ -1105,99 +902,63 @@ export { a, b, c };
 }
 
 #[test]
-fn impure_imported_constructor_keeps_s_cycle() {
-    // A write through `this` can invoke a class-prototype setter, so a
-    // constructor is not inferred pure merely from its assignment shape.
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
+fn imported_constructor_side_effects_keep_s_cycle() {
+    for (name, source, vendor, declared) in [
+        // A write through `this` can invoke a class-prototype setter, so a
+        // constructor is not inferred pure from its assignment shape.
+        (
+            "setter-invoking constructor",
             r#"import { Box as Provider } from "./vendorlib.js";
 const a = new Provider(1);
 const b = new Provider(2);
 const c = new Provider(3);
 export { a, b, c };
 "#,
-            vec![
-                logical_module("foo", &binding_members(["a", "c"])),
-                logical_module("bar", &[Member::new("b")]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/vendorlib",
             "export class Box { set value(v) { globalThis.seen = v; } constructor(v) { this.value = v; } }\n",
-        )]),
-        &["foo", "bar"],
-    );
-}
-
-#[test]
-fn declared_imported_constructor_purity_still_classifies_arguments() {
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
+            false,
+        ),
+        (
+            "declared pure_new still classifies arguments",
             r#"import { Box as Provider } from "./vendorlib.js";
 const a = new Provider(console.log("a"));
 const b = new Provider(console.log("b"));
 const c = new Provider(console.log("c"));
 export { a, b, c };
 "#,
-            vec![
-                logical_module("foo", &binding_members(["a", "c"])),
-                logical_module("bar", &[Member::new("b")]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/vendorlib",
             "export class Box { constructor(value) { this.value = value; } }\n",
-        )])
-        .with_extra_chunk_logical_modules(&[(
-            "static/vendorlib",
-            vec![logical_module(
-                "provider",
-                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
-            )],
-        )]),
-        &["foo", "bar"],
-    );
-}
-
-#[test]
-fn declared_imported_constructor_purity_does_not_make_plain_calls_pure() {
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
+            true,
+        ),
+        (
+            "declared pure_new does not make plain calls pure",
             r#"import { Box as Provider } from "./vendorlib.js";
 const a = Provider(1);
 const b = Provider(2);
 const c = Provider(3);
 export { a, b, c };
 "#,
-            vec![
-                logical_module("foo", &binding_members(["a", "c"])),
-                logical_module("bar", &[Member::new("b")]),
-            ],
-        )
-        .with_extra_chunks(&[(
-            "static/vendorlib",
             "export class Box { constructor(value) { this.value = value; } }\n",
-        )])
-        .with_extra_chunk_logical_modules(&[(
-            "static/vendorlib",
-            vec![logical_module(
-                "provider",
-                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
-            )],
-        )]),
-        &["foo", "bar"],
-    );
+            true,
+        ),
+    ] {
+        eprintln!("case: {name}");
+        let declarations = pure_new_box();
+        let chunks = [("static/vendorlib", vendor)];
+        let opts = FixtureOpts::new(source, foo_bar_modules()).with_extra_chunks(&chunks);
+        let opts = if declared {
+            opts.with_extra_chunk_logical_modules(&declarations)
+        } else {
+            opts
+        };
+        expect_sequenced_cycle_rejection(opts, &["foo", "bar"]);
+    }
 }
 
 #[test]
 fn asserted_pure_namespace_member_calls_emit_no_s_cycle() {
-    // CJS-interop shape: the importer binds a namespace-like export of another
-    // chunk as `ns` and reaches the factory as a MEMBER call, `ns.make(...)`.
-    // Inference can't see `make` is pure (the namespace object is opaque), so
-    // the three calls split across modules would S-cycle. A binding-level
-    // `pure_members` annotation on the importer's `ns` admits the calls.
+    // CJS-interop shape: `ns.make(...)` on an opaque namespace import. A
+    // binding-level `pure_members` annotation on the importer's `ns` admits it.
     let fixture = run_fixture(
-        FixtureOpts::new(
+        interleaved(
             r#"import { reactish as ns } from "./vendorlib.js";
 const A = ns.make(function () { return "a"; });
 const B = ns.make(function () { return "b"; });
@@ -1205,10 +966,9 @@ const C = ns.make(function () { return "c"; });
 console.log(A.impl(), B.impl(), C.impl());
 export { A, B, C };
 "#,
-            vec![
-                logical_module("mod_a", &binding_members(["A", "C"])),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
+            &["A", "C"],
+            &["B"],
+            false,
         )
         .with_extra_chunks(&[(
             "static/vendorlib",
@@ -1222,18 +982,7 @@ export { A, B, C };
         )),
     );
     assert_preserved_entry_output(&fixture, "a b c\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_a.js",
-        &["A", "C"],
-        &["B"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_b.js",
-        &["B"],
-        &["A", "C"],
-    );
+    assert_interleaved_ownership(&fixture);
 }
 
 /// Zod-style schema-declaration entry: every statement is a fluent
@@ -1255,68 +1004,37 @@ const FLUENT_VENDORLIB: &str = "const zodish = { object(shape) { return { shape,
 describe(d) { return { shape: this.shape, d }; }, extend(more) { return zodish.object({ ...this.shape, ...more }); \
 } }; } };\nexport { zodish as e4 };\n";
 
-#[test]
-fn fluent_chain_schema_decls_without_assertion_emit_s_cycle() {
-    // Baseline pin: the chain receivers are call results, so every
-    // schema decl is impure (`unknown_call`/`unknown_member`) and the
-    // interleaved destinations S-cycle.
-    expect_sequenced_cycle_rejection(
-        FixtureOpts::new(
-            FLUENT_CHAIN_ENTRY,
-            vec![
-                logical_module("mod_a", &binding_members(["A", "C"])),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"])
-        .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)]),
-        &["mod_a", "mod_b"],
-    );
+fn fluent_e4_assertion() -> [(&'static str, ChunkExportPurity); 1] {
+    [ChunkExportPurityBuilder::new("static/vendorlib")
+        .with_fluent_exports(&["e4"])
+        .build()]
 }
 
 #[test]
 fn asserted_fluent_export_chains_emit_no_s_cycle() {
-    // A definition-side `fluent_exports` assertion on the defining
-    // chunk projects onto the importer's `k` local; the chain arm then
-    // admits every link (including the `Base`-derived `.extend`
-    // chain), the schema decls classify pure, and the interleaved
-    // split realizes.
+    // A definition-side `fluent_exports` assertion projects onto the
+    // importer's `k`; every link, including the `Base`-derived `.extend`
+    // chain, classifies pure. The unasserted baseline is in
+    // `side_effecting_initializers_across_modules_still_emit_s_cycle`.
+    let purities = fluent_e4_assertion();
     let fixture = run_fixture(
-        FixtureOpts::new(
-            FLUENT_CHAIN_ENTRY,
-            vec![
-                logical_module("mod_a", &binding_members(["A", "C"])),
-                logical_module("mod_b", &[Member::new("B")]),
-            ],
-        )
-        .with_import_order(&["mod_a", "mod_b", "residual"])
-        .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
-            .with_fluent_exports(&["e4"])
-            .build()]),
+        interleaved(FLUENT_CHAIN_ENTRY, &["A", "C"], &["B"], true)
+            .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)])
+            .with_chunk_export_purity(&purities),
     );
     assert_preserved_entry_output(&fixture, "1 a 1 2 b 1 c\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_a.js",
-        &["A", "C"],
-        &["B"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/mod_b.js",
-        &["B"],
-        &["A", "C"],
-    );
+    assert_interleaved_ownership(&fixture);
 }
 
 #[test]
-fn fluent_export_assertion_preserves_argument_effects() {
-    let purities = [ChunkExportPurityBuilder::new("static/vendorlib")
-        .with_fluent_exports(&["e4"])
-        .build()];
-    let options = |modules| {
-        FixtureOpts::new(
+fn fluent_export_assertion_keeps_unasserted_effects() {
+    let sibling_vendor = format!(
+        "{FLUENT_VENDORLIB}\nexport const sibling = {{ object(shape) {{ console.log(shape.value); return zodish.object(shape); }} }};\n",
+    );
+    let purities = fluent_e4_assertion();
+    for (name, source, vendor) in [
+        (
+            "argument effects",
             r#"import { e4 as k } from "./vendorlib.js";
 const A = k.object({ value: 1 }).describe((console.log("a"), "a"));
 const B = k.object({ value: 2 }).describe((console.log("b"), "b"));
@@ -1324,36 +1042,10 @@ const C = k.object({ value: 3 }).describe((console.log("c"), "c"));
 console.log(A.d, B.d, C.d);
 export { A, B, C };
 "#,
-            modules,
-        )
-        .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)])
-        .with_chunk_export_purity(&purities)
-    };
-    let fixture = run_fixture(options(vec![logical_module(
-        "values",
-        &binding_members(["A", "B", "C"]),
-    )]));
-    assert_preserved_entry_output(&fixture, "a\nb\nc\na b c\n");
-    expect_sequenced_cycle_rejection(
-        options(vec![
-            logical_module("mod_a", &binding_members(["A", "C"])),
-            logical_module("mod_b", &[Member::new("B")]),
-        ]),
-        &["mod_a", "mod_b"],
-    );
-}
-
-#[test]
-fn fluent_export_assertion_does_not_certify_a_sibling_export() {
-    let vendor = format!(
-        "{FLUENT_VENDORLIB}\nexport const sibling = {{ object(shape) {{ console.log(shape.value); return zodish.object(shape); }} }};\n",
-    );
-    let chunks = [("static/vendorlib", vendor.as_str())];
-    let purities = [ChunkExportPurityBuilder::new("static/vendorlib")
-        .with_fluent_exports(&["e4"])
-        .build()];
-    let options = |modules| {
-        FixtureOpts::new(
+            FLUENT_VENDORLIB,
+        ),
+        (
+            "sibling export",
             r#"import { sibling } from "./vendorlib.js";
 const A = sibling.object({ value: "a" }).describe("a");
 const B = sibling.object({ value: "b" }).describe("b");
@@ -1361,24 +1053,32 @@ const C = sibling.object({ value: "c" }).describe("c");
 console.log(A.d, B.d, C.d);
 export { A, B, C };
 "#,
-            modules,
-        )
-        .with_extra_chunks(&chunks)
-        .with_chunk_export_purity(&purities)
-    };
-    let fixture = run_fixture(options(vec![logical_module(
-        "values",
-        &binding_members(["A", "B", "C"]),
-    )]));
-    assert_preserved_entry_output(&fixture, "a\nb\nc\na b c\n");
-    expect_sequenced_cycle_rejection(
-        options(vec![
-            logical_module("mod_a", &binding_members(["A", "C"])),
-            logical_module("mod_b", &[Member::new("B")]),
-        ]),
-        &["mod_a", "mod_b"],
-    );
+            sibling_vendor.as_str(),
+        ),
+    ] {
+        eprintln!("case: {name}");
+        let chunks = [("static/vendorlib", vendor)];
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                source,
+                vec![logical_module("values", &binding_members(["A", "B", "C"]))],
+            )
+            .with_extra_chunks(&chunks)
+            .with_chunk_export_purity(&purities),
+        );
+        assert_preserved_entry_output(&fixture, "a\nb\nc\na b c\n");
+        expect_sequenced_cycle_rejection(
+            interleaved(source, &["A", "C"], &["B"], false)
+                .with_extra_chunks(&chunks)
+                .with_chunk_export_purity(&purities),
+            &["mod_a", "mod_b"],
+        );
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Local property effects — `displayName`-style annotation writes.
+// ---------------------------------------------------------------------------
 
 /// React annotation idiom: each component declaration is followed by
 /// a `displayName` data-property write. The writes are anonymous
@@ -1394,9 +1094,7 @@ console.log(JSON.stringify([[A.displayName, A()], [B.displayName, B()], [C.displ
 export { A, B, C };
 "#;
 
-/// The natural spec for [`ANNOTATION_WRITE_ENTRY`]: each component
-/// goes to its module WITH its annotation write (anonymous-statement
-/// claims). Both policy tests share it; only the flag differs.
+/// Each component goes to its module with its annotation write.
 fn annotation_write_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module_with_anon(
@@ -1410,11 +1108,8 @@ fn annotation_write_modules() -> Vec<LogicalModuleEntry> {
 
 #[test]
 fn annotation_property_writes_without_policy_emit_s_cycle() {
-    // Baseline pin: under the default policy every `X.displayName = …`
-    // is an `assign_or_update` impure statement; the S-chain forces
-    // their source order across the interleaved destinations
-    // (mod_a → mod_b → mod_a), which cycles — even though each write
-    // is claimed right next to its component.
+    // Default policy: every `X.displayName = …` is an impure
+    // `assign_or_update`, so source order cycles mod_a → mod_b → mod_a.
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(ANNOTATION_WRITE_ENTRY, annotation_write_modules()),
         &["mod_a", "mod_b"],
@@ -1423,9 +1118,7 @@ fn annotation_property_writes_without_policy_emit_s_cycle() {
 
 #[test]
 fn annotation_property_writes_with_policy_co_locate_and_realize() {
-    // Same spec, flag on: the writes classify Pure with a LocalEffect
-    // on their component binding; the claims agree with the forced
-    // co-location, only `console.log` remains impure, no S-cycle.
+    // With the policy, each write is Pure with a LocalEffect on its component.
     let fixture = run_fixture(
         FixtureOpts::new(ANNOTATION_WRITE_ENTRY, annotation_write_modules())
             .with_local_property_effects(),
@@ -1457,10 +1150,8 @@ fn annotation_property_writes_with_policy_co_locate_and_realize() {
 
 #[test]
 fn annotation_property_write_cannot_be_split_from_its_declarer() {
-    // Constraint-preservation pin: the policy scopes the effect, it
-    // does not erase it. Claiming the write into a DIFFERENT module
-    // than its target binding still conflicts — the LocalEffect edge
-    // forces co-location with the declarer.
+    // The policy scopes the effect, it does not erase it: the LocalEffect
+    // edge forces the write into its target's module.
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             ANNOTATION_WRITE_ENTRY,
@@ -1476,25 +1167,5 @@ fn annotation_property_write_cannot_be_split_from_its_declarer() {
         .with_local_property_effects(),
         &["mod_a", "mod_b"],
         &["local_effect"],
-    );
-}
-
-#[test]
-fn string_raw_template_initializer_admits_cycle_break() {
-    assert_pure_cycle_break_with_opts(
-        FixtureOpts::new(
-            r#"const a = (() => 1)();
-const b = String.raw`value:${1}`;
-const c = b.length + a;
-console.log(c);
-export { a, b, c };
-"#,
-            vec![logical_module("b_module", &[Member::new("b")])],
-        )
-        .with_import_order(&["b_module", "residual"]),
-        "b_module",
-        &["const b = String.raw"],
-        &["const a"],
-        "8\n",
     );
 }

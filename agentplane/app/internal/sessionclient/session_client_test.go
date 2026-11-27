@@ -15,6 +15,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -131,20 +132,6 @@ func TestCreateSessionForwardsNilUUID(t *testing.T) {
 	}
 }
 
-func TestCreateSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
-	sessionID := uuid.New()
-	dispatcher := &fakeSessionDispatcher{err: &RequestTimeoutError{Cause: context.DeadlineExceeded}}
-	client, err := New(dispatcher)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = client.CreateSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, sessionClientTestSpec(), nil)
-	var timeout *DispatcherRequestTimeoutError
-	if !errors.As(err, &timeout) || timeout.SessionID != sessionID || !strings.Contains(err.Error(), sessionID.String()) {
-		t.Fatalf("timeout = %#v, error = %v", timeout, err)
-	}
-}
-
 type appSVIDDispatcherServer struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	t        *testing.T
@@ -185,6 +172,7 @@ type dispatcherTestServer struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	t          *testing.T
 	blockOpen  bool
+	refuse     error
 	seenBearer []string
 }
 
@@ -206,6 +194,9 @@ func (s *dispatcherTestServer) CreateSession(ctx context.Context, request *dispa
 	if s.blockOpen {
 		<-ctx.Done()
 		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	if s.refuse != nil {
+		return nil, s.refuse
 	}
 	return &dispatcherpb.CreateSessionResponse{Session: &dispatcherpb.Session{
 		SessionId: request.GetSessionId(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetPlacement().GetEnvironmentHosted()}},
@@ -246,9 +237,36 @@ func TestSessionDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) 
 		t.Fatal(err)
 	}
 	_, err = slowClient.CreateSession(context.Background(), sessionClientTestRequest(id))
-	var timeout *RequestTimeoutError
-	if !errors.As(err, &timeout) {
-		t.Fatalf("deadline error = %T %v, want RequestTimeoutError", err, err)
+	if status.Code(err) != codes.DeadlineExceeded {
+		t.Fatalf("deadline error = %T %v, want DEADLINE_EXCEEDED", err, err)
+	}
+}
+
+func TestSessionDispatcherClientKeepsRefusalStatusDetails(t *testing.T) {
+	server := grpc.NewServer()
+	refusal, err := status.New(codes.FailedPrecondition, "Session is not confirmed").
+		WithDetails(&errdetails.ErrorInfo{Reason: "TEST_REFUSAL_REASON"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &dispatcherTestServer{t: t, refuse: refusal.Err()}
+	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	address := grpcserver.Serve(t, server)
+	tokenFile := t.TempDir() + "/token"
+	if err := os.WriteFile(tokenFile, []byte("token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := NewSessionDispatcherClient(SessionDispatcherConfig{Target: address, TokenFile: tokenFile, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.CreateSession(context.Background(), sessionClientTestRequest(uuid.NewString()))
+	got, ok := status.FromError(err)
+	if !ok || got.Code() != codes.FailedPrecondition || len(got.Details()) != 1 {
+		t.Fatalf("refusal = %T %v, want FAILED_PRECONDITION with its details", err, err)
+	}
+	if info, ok := got.Details()[0].(*errdetails.ErrorInfo); !ok || info.GetReason() != "TEST_REFUSAL_REASON" {
+		t.Fatalf("refusal details = %v", got.Details())
 	}
 }
 

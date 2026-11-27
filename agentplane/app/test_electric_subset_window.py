@@ -29,8 +29,8 @@ from agentplane.proto import event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures",)
+# gazelle:include_dep //agentplane/app/testing:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.integration_fixtures",)
 
 Row = dict[str, Any]
 _SHAPE = "/v1/shape"

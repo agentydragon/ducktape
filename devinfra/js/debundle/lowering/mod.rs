@@ -34,6 +34,7 @@ mod body_facts;
 mod candidate_emission;
 mod chunk_renames;
 mod commuting_statements;
+mod declaration_split;
 mod exports;
 mod imports;
 mod io;
@@ -46,7 +47,7 @@ mod plans;
 mod reentry_report;
 mod rewrite_runtime;
 mod scope_names;
-mod util;
+mod target_paths;
 mod visitors;
 
 pub use candidate_emission::{CandidateEmissionDraft, FinalizedCandidateEmissionDraft};
@@ -66,7 +67,7 @@ use staged_analysis::{
     ExportReentryReport, export_reentry_reports, load_analysis, loader_surface, program_summary,
 };
 
-use util::normalize_optional_relative_dir;
+use target_paths::normalize_optional_relative_dir;
 
 pub struct MaterializeLogicalModulesResult {
     /// Lowered and pass-through files whose whole-program rewrites have not

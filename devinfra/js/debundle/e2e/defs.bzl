@@ -42,12 +42,12 @@ def debundle_e2e_test(name, source = None, deps = [], data = [], env = {}, saved
     )
 
 def debundle_graph_e2e_test(name, deps = [], **kwargs):
-    """`debundle_e2e_test` plus the `:graph_support` and `graph` crates for tests that read typed graph reports."""
+    """`debundle_e2e_test` plus `:graph_support` for tests that read typed graph reports.
+
+    Tests naming `graph::` types also list `//devinfra/js/debundle/graph` in `deps`.
+    """
     debundle_e2e_test(
         name = name,
-        deps = [
-            "//devinfra/js/debundle/e2e:graph_support",
-            "//devinfra/js/debundle/graph",
-        ] + deps,
+        deps = ["//devinfra/js/debundle/e2e:graph_support"] + deps,
         **kwargs
     )

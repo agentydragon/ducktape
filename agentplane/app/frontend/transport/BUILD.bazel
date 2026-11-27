@@ -115,6 +115,20 @@ ts_library(
     name = "watch_collection",
     srcs = ["watch_collection.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":stream_reader",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "watch_collection_test",
+    srcs = ["watch_collection.test.ts"],
+    deps = [
+        ":watch_collection",
+        "//:node_modules/vitest",
+    ],
 )
 
 ts_library(

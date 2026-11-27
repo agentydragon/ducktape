@@ -4,7 +4,6 @@
 
 use debundle_e2e_support::*;
 use serde_json::Value;
-use std::fs;
 
 #[test]
 fn emits_rename_queue_manifest() {
@@ -142,9 +141,7 @@ export { aH, bC, dE };
 }
 
 fn read_queue(out_root: &std::path::Path) -> Value {
-    let path = output_root(out_root).join("reports/rename_queue.json");
-    let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    serde_json::from_str(&raw).expect("queue JSON must parse")
+    read_json(&output_root(out_root).join("reports/rename_queue.json"))
 }
 
 fn output_root(app_root: &std::path::Path) -> &std::path::Path {

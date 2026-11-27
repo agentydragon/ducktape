@@ -56,8 +56,7 @@ service ConnectionService {
 
   // Retargets future uses of the Connection's issued tokens to another live Identity. Past grants stay as
   // they were, and requests already made keep the caller they were made as. Needs an active grant and a bound
-  // caller, else `FAILED_PRECONDITION`, as does an Identity that is missing or has been replaced. A legacy
-  // ServiceAccount-bound Connection requires this explicit Identity rebind before its grants resolve again.
+  // caller, else `FAILED_PRECONDITION`, as does an Identity that is missing or has been replaced.
   rpc RebindConnection(RebindConnectionRequest) returns (RebindConnectionResponse) {
     option (google.api.http) = {post: "/v1/operator/connections/{connection_id}/rebind" body: "*"};
   }
@@ -172,6 +171,8 @@ message ConnectionChunk {
 
 // An external client's access to Actions, acting as one Identity. Nothing is deleted: unbinding revokes.
 message Connection {
+  reserved 7, 9;
+  reserved "legacy_bound_caller", "identity_binding_required";
   // UUID.
   string id = 1;
   string display_name = 2;
@@ -181,14 +182,8 @@ message Connection {
   google.protobuf.Timestamp updated_at = 5;
   // Every grant the Connection has had, oldest revision first.
   repeated Grant grants = 6;
-  // Historical ServiceAccount binding copied by the Identity cutover migration. It is audit data only and is never
-  // an active authentication fallback.
-  agentplane.proto.ServiceAccount legacy_bound_caller = 7;
   // The exact live Identity incarnation the Connection's active grants act as.
   agentplane.proto.Identity bound_identity = 8;
-  // A migrated legacy binding is paused until an operator explicitly selects a live Identity. Its grant IDs, status,
-  // consent facts, and historical ServiceAccount attribution remain intact.
-  bool identity_binding_required = 9;
 }
 
 // One consented OAuth authorization of a Connection. Immutable apart from its status.

@@ -7,7 +7,7 @@ import { parse } from "acorn";
 import { generate } from "astring";
 import { dump } from "../parser.mjs";
 import { split } from "../testing/split.mjs";
-import { moduleGraphFixture } from "./module_graph_fixture.mjs";
+import { moduleGraphFixture, sparseNonterminalFixture } from "./module_graph_fixture.mjs";
 
 const root = process.env.TEST_TMPDIR;
 const fixture = moduleGraphFixture();
@@ -19,11 +19,11 @@ writeFileSync(spec, JSON.stringify(fixture.spec));
 
 const produced = split({ source, spec, out, require: "all-outcomes", timeoutMs: 90_000 });
 assert.equal(produced.status, "certified", produced.log);
-assert.equal(produced.scope, "terminal-declarations");
+assert.equal(produced.scope, "indexed-local-exports");
 assert.equal(produced.verdict.strategy, "compiled-constructor");
 const checked = split({ source, spec, out, require: "all-outcomes", checkOutput: true, timeoutMs: 90_000 });
 assert.equal(checked.status, "certified", checked.log);
-assert.equal(checked.scope, "terminal-declarations");
+assert.equal(checked.scope, "indexed-local-exports");
 assert.equal(checked.verdict.strategy, "compiled-constructor");
 
 const namespace = await import(pathToFileURL(path.join(out, fixture.entry)).href);
@@ -99,13 +99,7 @@ function namedProbe(placement, sourceText = fixture.source) {
 
 // Reuse the sparse_checked_artifact_test.mjs sample: the export is not terminal.
 // #2 is the actual result declaration; #1 does not execute or allocate a region.
-const sparseSource = "const seed = 42;\nexport { seed as exposed };\nconst result = seed;\n";
-const sparseSpec = {
-  entry: "entry.mjs",
-  modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
-  order: ["worker.mjs"],
-  sequential: true,
-};
+const { source: sparseSource, spec: sparseSpec } = sparseNonterminalFixture();
 const shape = probe("singletonSourceShape", { source: dump(sparseSource), entry: sparseSpec.entry });
 assert.deepEqual(shape.output, {
   entry: "entry.mjs",
@@ -129,7 +123,7 @@ writeFileSync(sparseSourceFile, sparseSource);
 writeFileSync(sparseSpecFile, JSON.stringify(sparseSpec));
 const sparse = split({ source: sparseSourceFile, spec: sparseSpecFile, out: sparseOut, require: "all-outcomes" });
 assert.equal(sparse.status, "certified", sparse.log);
-assert.equal(sparse.scope, "indexed-interior-exports", sparse.log);
+assert.equal(sparse.scope, "indexed-local-exports", sparse.log);
 assert.equal(sparse.verdict.strategy, "compiled-constructor", sparse.log);
 assert.equal(sparse.guarantee, "all-outcomes", sparse.log);
 const sparseChecked = split({
@@ -140,7 +134,7 @@ const sparseChecked = split({
   checkOutput: true,
 });
 assert.equal(sparseChecked.status, "certified", sparseChecked.log);
-assert.equal(sparseChecked.scope, "indexed-interior-exports", sparseChecked.log);
+assert.equal(sparseChecked.scope, "indexed-local-exports", sparseChecked.log);
 assert.equal(sparseChecked.verdict.strategy, "compiled-constructor", sparseChecked.log);
 const sparseEntry = path.join(sparseOut, sparseSpec.entry);
 const sparseNamespace = await import(pathToFileURL(sparseEntry).href);
@@ -195,3 +189,52 @@ console.log(
     wrongOwner: sparseOwnerResult.status,
   })
 );
+
+// A CoreJS undefined initializer must survive independent output lowering
+// exactly, including through an imported live cell.
+const undefSource = path.join(root, "undefined-source.mjs");
+const undefSpec = path.join(root, "undefined-spec.json");
+const undefOut = path.join(root, "undefined-out");
+writeFileSync(undefSource, "const first = undefined;\nconst second = first;\nexport { second };\n");
+writeFileSync(
+  undefSpec,
+  JSON.stringify({
+    entry: "entry.mjs",
+    modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+    order: ["worker.mjs"],
+    sequential: true,
+  })
+);
+const undefProduced = split({ source: undefSource, spec: undefSpec, out: undefOut, require: "all-outcomes" });
+assert.equal(undefProduced.status, "certified", undefProduced.log);
+assert.equal(undefProduced.scope, "indexed-local-exports", undefProduced.log);
+assert.equal(undefProduced.verdict.strategy, "compiled-constructor", undefProduced.log);
+const undefChecked = split({
+  source: undefSource,
+  spec: undefSpec,
+  out: undefOut,
+  require: "all-outcomes",
+  checkOutput: true,
+});
+assert.equal(undefChecked.status, "certified", undefChecked.log);
+assert.equal(undefChecked.scope, "indexed-local-exports", undefChecked.log);
+assert.equal((await import(pathToFileURL(path.join(undefOut, "entry.mjs")).href)).second, undefined);
+
+// A local binding named undefined is safe when this module has no CoreJS
+// undefined expression to print. Keep this previously accepted shape.
+const shadowSource = path.join(root, "shadow-source.mjs");
+const shadowOut = path.join(root, "shadow-out");
+writeFileSync(shadowSource, "const undefined = 3;\nconst second = undefined;\nexport { second };\n");
+const shadowProduced = split({ source: shadowSource, spec: undefSpec, out: shadowOut, require: "all-outcomes" });
+assert.equal(shadowProduced.status, "certified", shadowProduced.log);
+assert.equal(shadowProduced.scope, "indexed-local-exports", shadowProduced.log);
+assert.equal(shadowProduced.verdict.strategy, "compiled-constructor", shadowProduced.log);
+const shadowChecked = split({
+  source: shadowSource,
+  spec: undefSpec,
+  out: shadowOut,
+  require: "all-outcomes",
+  checkOutput: true,
+});
+assert.equal(shadowChecked.status, "certified", shadowChecked.log);
+assert.equal((await import(pathToFileURL(path.join(shadowOut, "entry.mjs")).href)).second, 3);

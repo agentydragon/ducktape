@@ -192,7 +192,6 @@ _UNSHARDED_TESTS = [
     "static_blocks_test",
     "strict_arguments_test",
     "string_initializer_test",
-    "structural_intrinsic_number_test",
     "structural_object_method_test",
     "switch_test",
     "symbol_brand_test",
@@ -248,6 +247,23 @@ _SHARD_COUNTS = {
     )
     for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()
 ]
+
+# This test exercises only certified output and the original source program. Do
+# not pull in the diagnostic launcher that can publish unchecked previews.
+js_test(
+    name = "structural_intrinsic_number_test",
+    size = "medium",
+    data = [
+        ":harness",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit_core",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    entry_point = "structural_intrinsic_number_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit_core)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+)
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(

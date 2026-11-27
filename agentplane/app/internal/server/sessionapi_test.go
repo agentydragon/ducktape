@@ -252,11 +252,11 @@ func TestSessionGatewayPreservesConflictAndUncertainOutcomes(t *testing.T) {
 	}{
 		{"old-uid", false, nil, 404, codes.NotFound, nil},
 		{"uid", true, nil, 503, codes.Unavailable, []string{"thread"}},
-		{"uid", false, &sessionclient.DispatcherRequestTimeoutError{SessionID: uuid.New()}, 504, codes.DeadlineExceeded, []string{"thread", "dispatch"}},
+		{"uid", false, status.Error(codes.DeadlineExceeded, "private-upstream-diagnostic"), 504, codes.DeadlineExceeded, []string{"thread", "dispatch"}},
 		{"uid", false, &sessionclient.SessionNotFoundError{SessionID: uuid.New(), Sandbox: "demo"}, 500, codes.Unknown, []string{"thread", "dispatch"}},
-		{"uid", false, &sessionclient.ServiceError{Code: codes.Unavailable, Details: "private-upstream-diagnostic"}, 503, codes.Unavailable, []string{"thread", "dispatch"}},
-		{"uid", false, &sessionclient.ServiceError{Code: codes.Internal, Details: "private-upstream-diagnostic"}, 500, codes.Internal, []string{"thread", "dispatch"}},
-		{"uid", false, &sessionclient.ServiceError{Code: codes.AlreadyExists, Details: "conflict"}, 409, codes.AlreadyExists, []string{"thread", "dispatch"}},
+		{"uid", false, status.Error(codes.Unavailable, "private-upstream-diagnostic"), 503, codes.Unavailable, []string{"thread", "dispatch"}},
+		{"uid", false, status.Error(codes.Internal, "private-upstream-diagnostic"), 500, codes.Internal, []string{"thread", "dispatch"}},
+		{"uid", false, status.Error(codes.AlreadyExists, "conflict"), 409, codes.AlreadyExists, []string{"thread", "dispatch"}},
 	} {
 		peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}, failThread: test.failThread, failOpen: test.failOpen}
 		handler, fixture := sessionTestGateway(t, peer)

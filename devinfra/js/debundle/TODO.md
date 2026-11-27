@@ -1,8 +1,5 @@
 # Debundler — Open Work Items
 
-Forward-looking gaps in the Rust debundler. Items are written to be removed
-once closed; this file is not a changelog.
-
 ## Active work queue
 
 This file is the dispatch queue, not a design record or changelog. Detailed
@@ -18,7 +15,7 @@ plans and evidence live here:
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
 - <plans/convergence_landing.md> — gate-migration debt, discrepancy controls
-  and exit gates; draft #14552 is optional reference material.
+  and exit gates; closed #14552 is optional reference material.
 - <plans/analysis_consolidation.md> — devel-based keep/extend/delete decisions
   for existing analyses; shared dataflow/effects, bounded cross-chunk propagation,
   ordered proof refinement and polynomial cost obligations. No dependency on #16762.
@@ -63,7 +60,7 @@ The sections below hold details, not competing priority queues.
    facts and operation semantics above. Delete each superseded decision path
    with its last consumer; name any remaining legacy authority and removal
    gate. Additional coverage and the effect-gate flip retain the independent
-   obligations in <plans/convergence_landing.md>. Neither draft #14552 nor
+   obligations in <plans/convergence_landing.md>. Neither closed #14552 nor
    #16762 is a prerequisite.
 4. **Single-input spec assistance.** Keep selector synthesis and repair
    diagnostics scoped to one configured input program and one exact spec.
@@ -484,9 +481,7 @@ rebuilds, codegen cache), and materialize-stage performance work lives in
    That AST is also consulted by `module_output::anonymous_statement_comments_by_span`
    and carries source maps/hygiene into output. A draining split is therefore
    an ownership-boundary change, not a local `iter()` → `into_iter()` edit.
-   The residual-item helper now returns `Option<ModuleItem>` (no temporary
-   result vector or fictitious error path). Profile the remaining required
-   copies before redesigning source ownership.
+   Profile the remaining required copies before redesigning source ownership.
 
 ### Read-off minimizer polish
 
@@ -658,16 +653,7 @@ paths and source-unit IDs belong in the consuming repo.
   is intrinsically impossible or hide it with purity assertions.
 
 - **W9 — Complete downstream explicit-order adoption and extraction acceptance.**
-  Follow <plans/explicit_import_order.md>. Bound the source-analysis fact-store
-  memory before resuming large consumer runs. Migrate and validate
-  every configured downstream consumer with its reviewed complete priority;
-  preserve diagnostic and passing controls as distinct inputs. Update maintained
-  downstream guidance and land the production pin only after the final engine
-  passes fresh configured validation and emitted-runtime checks. Demonstrate
-  useful unseeded discovery, check, preview, application and behavior on that pin.
-  Selected-view semantic premises and selector anchors remain grounded in the
-  full authored tree while the selected placement view is edited; do not
-  substitute a rejected canonical graph or weaken full-context constraints.
+  Follow <plans/explicit_import_order.md>.
 
 - **W10 — Prove additional useful residual families.** The first complete
   constructor only moves true-entry atoms to one fresh owner while retaining the

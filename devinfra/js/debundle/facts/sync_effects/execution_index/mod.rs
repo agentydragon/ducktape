@@ -285,16 +285,21 @@ pub struct Call {
 }
 
 impl Call {
-    pub fn member_read(
-        owner: SourceUnitOrdinal,
-        caller: Option<u32>,
+    /// The one place that records a call whose argument shapes establish
+    /// nothing: no assign-target source, no sync-only argument, no re-entry
+    /// suppression, no spread argument.
+    fn without_argument_facts(
+        kind: CallKind,
         callee: ValueExpr,
+        args: Vec<ValueExpr>,
         span: Span,
+        caller: Option<u32>,
+        owner: SourceUnitOrdinal,
     ) -> Self {
         Self {
-            kind: CallKind::LocalMemberRead,
+            kind,
             callee,
-            args: Vec::new(),
+            args,
             span,
             caller,
             owner,
@@ -304,6 +309,46 @@ impl Call {
             no_reentry_record_candidate: false,
             has_spread: false,
         }
+    }
+
+    /// A call recorded straight from source syntax. The argument list's
+    /// spread is the only argument fact such a recording can establish.
+    fn from_source_arguments(
+        kind: CallKind,
+        callee: &Expr,
+        args: &[ExprOrSpread],
+        span: Span,
+        caller: Option<u32>,
+        owner: SourceUnitOrdinal,
+    ) -> Self {
+        let mut call = Self::without_argument_facts(
+            kind,
+            ValueExpr::from_expr(callee),
+            args.iter()
+                .map(|arg| ValueExpr::from_expr(&arg.expr))
+                .collect(),
+            span,
+            caller,
+            owner,
+        );
+        call.has_spread = args.iter().any(|arg| arg.spread.is_some());
+        call
+    }
+
+    pub fn member_read(
+        owner: SourceUnitOrdinal,
+        caller: Option<u32>,
+        callee: ValueExpr,
+        span: Span,
+    ) -> Self {
+        Self::without_argument_facts(
+            CallKind::LocalMemberRead,
+            callee,
+            Vec::new(),
+            span,
+            caller,
+            owner,
+        )
     }
 }
 

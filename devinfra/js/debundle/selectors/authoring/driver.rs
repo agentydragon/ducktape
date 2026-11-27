@@ -1,7 +1,6 @@
 //! `debundle spec synthesize-selectors` driver: selects module files and rewrites each one.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -201,10 +200,7 @@ fn load_synthesis_module(config: &SelectorCodemodConfig) -> Result<js_ast::Parse
         config.chunk.as_deref(),
     )?
     .context("synthesize-selectors requires --source-file or --source-root + --chunk")?;
-    let source = fs::read_to_string(&source_file)
-        .with_context(|| format!("reading source file {}", source_file.display()))?;
-    js_ast::parse_js_module(&source_file.display().to_string(), source)
-        .with_context(|| format!("parsing source file {}", source_file.display()))
+    js_ast::parse_js_module_file(&source_file)
 }
 
 fn parse_synthesis_item(raw: &str) -> Result<SynthesisItem> {

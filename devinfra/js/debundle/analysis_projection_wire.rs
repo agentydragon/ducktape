@@ -101,7 +101,12 @@ pub(super) fn encode_projection(value: &crate::AnalysisSpec) -> Result<pb::Analy
         vendor: value
             .vendor
             .iter()
-            .map(|(key, value)| (key.clone(), spec_wire::encode_vendor_mark(value)))
+            .map(|(key, value)| {
+                (
+                    key.clone(),
+                    spec_wire::vendor_marks::encode_vendor_mark(value),
+                )
+            })
             .collect(),
         chunk_export_purity: value
             .chunk_export_purity
@@ -147,7 +152,7 @@ pub(super) fn decode_projection(v: pb::AnalysisSpec) -> Result<crate::AnalysisSp
         vendor: v
             .vendor
             .into_iter()
-            .map(|(key, value)| Ok((key, spec_wire::decode_vendor_mark(value)?)))
+            .map(|(key, value)| Ok((key, spec_wire::vendor_marks::decode_vendor_mark(value)?)))
             .collect::<Result<_>>()?,
         chunk_export_purity: v
             .chunk_export_purity
@@ -196,33 +201,33 @@ fn encode_chunk_inputs(value: &crate::ChunkAnalysisInputs) -> Result<pb::ChunkAn
             &value.non_reentrant_global_membership,
         ),
         local_effect_policy: Some(value.local_effect_policy as i32),
-        admission_overrides: Some(spec_wire::encode_admission_overrides(
+        admission_overrides: Some(spec_wire::contracts::encode_admission_overrides(
             &value.admission_overrides,
         )),
         value_inputs: value
             .value_inputs
             .iter()
-            .map(spec_wire::encode_value_input_contract)
+            .map(spec_wire::contracts::encode_value_input_contract)
             .collect(),
         native_call_identity_inputs: value
             .native_call_identity_inputs
             .iter()
-            .map(spec_wire::encode_native_call_identity_input_contract)
+            .map(spec_wire::contracts::encode_native_call_identity_input_contract)
             .collect(),
         initializer_call_effect_inputs: value
             .initializer_call_effect_inputs
             .iter()
-            .map(spec_wire::encode_initializer_call_effect_input_contract)
+            .map(spec_wire::contracts::encode_initializer_call_effect_input_contract)
             .collect(),
         argument_inputs: value
             .argument_inputs
             .iter()
-            .map(spec_wire::encode_argument_input_contract)
+            .map(spec_wire::contracts::encode_argument_input_contract)
             .collect(),
         no_accessor_install_callables: value
             .no_accessor_install_callables
             .iter()
-            .map(spec_wire::encode_no_accessor_install_callable_contract)
+            .map(spec_wire::contracts::encode_no_accessor_install_callable_contract)
             .collect(),
     })
 }
@@ -239,33 +244,33 @@ fn decode_chunk_inputs(v: pb::ChunkAnalysisInputs) -> Result<crate::ChunkAnalysi
             v.local_effect_policy
                 .context("missing local effect policy")?,
         )?,
-        admission_overrides: spec_wire::decode_admission_overrides(required(
+        admission_overrides: spec_wire::contracts::decode_admission_overrides(required(
             v.admission_overrides,
         )?)?,
         value_inputs: v
             .value_inputs
             .into_iter()
-            .map(spec_wire::decode_value_input_contract)
+            .map(spec_wire::contracts::decode_value_input_contract)
             .collect::<Result<_>>()?,
         native_call_identity_inputs: v
             .native_call_identity_inputs
             .into_iter()
-            .map(spec_wire::decode_native_call_identity_input_contract)
+            .map(spec_wire::contracts::decode_native_call_identity_input_contract)
             .collect::<Result<_>>()?,
         initializer_call_effect_inputs: v
             .initializer_call_effect_inputs
             .into_iter()
-            .map(spec_wire::decode_initializer_call_effect_input_contract)
+            .map(spec_wire::contracts::decode_initializer_call_effect_input_contract)
             .collect::<Result<_>>()?,
         argument_inputs: v
             .argument_inputs
             .into_iter()
-            .map(spec_wire::decode_argument_input_contract)
+            .map(spec_wire::contracts::decode_argument_input_contract)
             .collect::<Result<_>>()?,
         no_accessor_install_callables: v
             .no_accessor_install_callables
             .into_iter()
-            .map(spec_wire::decode_no_accessor_install_callable_contract)
+            .map(spec_wire::contracts::decode_no_accessor_install_callable_contract)
             .collect::<Result<_>>()?,
     })
 }
@@ -465,7 +470,7 @@ fn encode_array_operand(
         selector_local: Some(value.selector_local.clone()),
         consumer_binding: Some(value.consumer_binding.clone()),
         provider_chunk: Some(value.provider_chunk.clone()),
-        provider_source_match: Some(spec_wire::encode_source_match_claim(
+        provider_source_match: Some(spec_wire::selectors::encode_source_match_claim(
             &value.provider_source_match,
         )),
         provider_declaration: Some(encode_declaration(&value.provider_declaration)?),
@@ -479,7 +484,7 @@ fn decode_array_operand(
         selector_local: required(v.selector_local)?,
         consumer_binding: required(v.consumer_binding)?,
         provider_chunk: required(v.provider_chunk)?,
-        provider_source_match: spec_wire::decode_source_match_claim(required(
+        provider_source_match: spec_wire::selectors::decode_source_match_claim(required(
             v.provider_source_match,
         )?)?,
         provider_declaration: decode_declaration(required(v.provider_declaration)?)?,
@@ -495,7 +500,9 @@ fn encode_array_input(
     );
     Ok(pb::AnalysisImportedPrimitiveArraySpreadInput {
         consumer_declaration: Some(encode_declaration(&value.consumer_declaration)?),
-        source_match: Some(spec_wire::encode_source_match_claim(&value.source_match)),
+        source_match: Some(spec_wire::selectors::encode_source_match_claim(
+            &value.source_match,
+        )),
         audited_source_sha256: Some(value.audited_source_sha256.clone()),
         operands: value
             .operands
@@ -503,7 +510,9 @@ fn encode_array_input(
             .map(encode_array_operand)
             .collect::<Result<_>>()?,
         lifetime: Some(
-            spec_wire::encode_imported_primitive_array_lifetime_contract(&value.lifetime),
+            spec_wire::contracts::encode_imported_primitive_array_lifetime_contract(
+                &value.lifetime,
+            ),
         ),
     })
 }
@@ -512,16 +521,16 @@ fn decode_array_input(
 ) -> Result<AnalysisImportedPrimitiveArraySpreadInput> {
     Ok(AnalysisImportedPrimitiveArraySpreadInput {
         consumer_declaration: decode_declaration(required(v.consumer_declaration)?)?,
-        source_match: spec_wire::decode_source_match_claim(required(v.source_match)?)?,
+        source_match: spec_wire::selectors::decode_source_match_claim(required(v.source_match)?)?,
         audited_source_sha256: required(v.audited_source_sha256)?,
         operands: v
             .operands
             .into_iter()
             .map(decode_array_operand)
             .collect::<Result<_>>()?,
-        lifetime: spec_wire::decode_imported_primitive_array_lifetime_contract(required(
-            v.lifetime,
-        )?)?,
+        lifetime: spec_wire::contracts::decode_imported_primitive_array_lifetime_contract(
+            required(v.lifetime)?,
+        )?,
         note: None,
     })
 }
@@ -591,7 +600,7 @@ fn encode_native_selector(
     Ok(pb::NativeOperationSelectorProvenance {
         kind: Some(match value {
             NativeOperationSelectorProvenance::SourceMatch(claim) => {
-                Kind::SourceMatch(spec_wire::encode_source_match_claim(claim))
+                Kind::SourceMatch(spec_wire::selectors::encode_source_match_claim(claim))
             }
             NativeOperationSelectorProvenance::Declaration(declaration) => {
                 Kind::Declaration(encode_declaration(declaration)?)
@@ -608,7 +617,7 @@ fn decode_native_selector(
     use pb::native_operation_selector_provenance::Kind;
     Ok(match required(value.kind)? {
         Kind::SourceMatch(claim) => NativeOperationSelectorProvenance::SourceMatch(
-            spec_wire::decode_source_match_claim(claim)?,
+            spec_wire::selectors::decode_source_match_claim(claim)?,
         ),
         Kind::Declaration(declaration) => {
             NativeOperationSelectorProvenance::Declaration(decode_declaration(declaration)?)

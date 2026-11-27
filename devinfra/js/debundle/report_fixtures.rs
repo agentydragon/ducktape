@@ -22,8 +22,8 @@ use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::purity::Purity;
 use graph::{
     AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
-    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
-    ModuleEntry, ModuleKey, ModuleQuotientReport, SourceUnitReport,
+    DependencyEdgeReport, DependencyGraphReport, LineRange, ModuleDestinationKind, ModuleEntry,
+    ModuleKey, ModuleQuotientReport, SourceUnitReport,
 };
 use spec::ModulePath;
 
@@ -165,25 +165,6 @@ pub fn dependency_edge(
         sequenced_cause: None,
         commuting_premise: None,
         premise_verdict: None,
-    }
-}
-
-/// [`dependency_edge`] promoted at init from an at-init call into
-/// `callee`'s body; `callee == source` is the conservative fallback
-/// for a call the analysis cannot resolve.
-pub fn promoted_dependency_edge(
-    id: &str,
-    source: &str,
-    target: &str,
-    kind: DepKind,
-    constrains: bool,
-    callee: &str,
-) -> DependencyEdgeReport {
-    DependencyEdgeReport {
-        role: Some(EdgeRoleReport::PromotedAtInit {
-            callee_source_unit: callee.to_string(),
-        }),
-        ..dependency_edge(id, source, target, kind, constrains)
     }
 }
 

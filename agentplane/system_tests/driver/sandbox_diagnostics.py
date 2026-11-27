@@ -10,6 +10,7 @@ from uuid import uuid4
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.host_command import run_host_command
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -32,26 +33,12 @@ async def container_mount_sources(
     container_id = environment_runtime["containerID"].removeprefix("containerd://")
     crictl_config = artifact_dir / "crictl.yaml"
     crictl_config.write_text("runtime-endpoint: unix:///run/k3s/containerd/containerd.sock\ntimeout: 30\n")
-    process = await asyncio.create_subprocess_exec(
-        *crictl_command,
-        "--config",
-        str(crictl_config),
-        "inspect",
-        container_id,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    inspected = json.loads(
+        await run_host_command(
+            (*crictl_command, "--config", str(crictl_config), "inspect", container_id),
+            timeout_s=CLEANUP_DIAGNOSTICS_SECONDS,
+        )
     )
-    try:
-        async with asyncio.timeout(CLEANUP_DIAGNOSTICS_SECONDS):
-            stdout, stderr = await process.communicate()
-    except BaseException:
-        if process.returncode is None:
-            process.kill()
-        await process.wait()
-        raise
-    if process.returncode:
-        raise RuntimeError(f"crictl inspect exited {process.returncode}: {stderr.decode(errors='replace')[-2000:]}")
-    inspected = json.loads(stdout)
     runtime_spec = inspected.get("info", {}).get("runtimeSpec", {})
     if isinstance(runtime_spec, str):
         runtime_spec = json.loads(runtime_spec)

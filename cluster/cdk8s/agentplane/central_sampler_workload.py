@@ -131,6 +131,7 @@ class CentralSampler(Construct):
             termination_grace=Duration.seconds(60),
             placement=placement,
             registry_secret_name=registry_secret_name,
+            telemetry_enabled=True,
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
         workload.container.mount(_LOGS_PATH, Volume.from_empty_dir(self, "logs-volume", "logs"))

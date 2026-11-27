@@ -3,6 +3,7 @@ use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::CoerceSite;
 use analysis_vocabulary::effect::Effect;
 use analysis_vocabulary::effect::InvokeSite;
+use purity::PurityScope;
 use purity::classifier::classify_class_static_purity;
 use purity::classifier::classify_expr_purity;
 use purity::classifier::classify_var_decl_purity;
@@ -38,10 +39,11 @@ fn classify(src: &str) -> Vec<Effect> {
     let init = var.decls[0].init.as_deref().expect("init expected");
     classify_expr_purity(
         init,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &ChunkCodeGraph::default(),
+        &PurityScope::chunk_top(
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &ChunkCodeGraph::default(),
+        ),
     )
     .kinds()
 }
@@ -82,7 +84,10 @@ fn classify_with_graph(
 ) -> Vec<Effect> {
     classify_last_const(prefix, expr_src, |body, shadowed, init| {
         let graph = build(body, shadowed);
-        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+        classify_expr_purity(
+            init,
+            &PurityScope::chunk_top(shadowed, &BTreeSet::new(), &graph),
+        )
     })
 }
 
@@ -160,12 +165,29 @@ fn classify_with_module(prefix: &str, expr_src: &str) -> Vec<Effect> {
     classify_last_const(prefix, expr_src, |_, shadowed, init| {
         classify_expr_purity(
             init,
-            shadowed,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            &ChunkCodeGraph::default(),
+            &PurityScope::chunk_top(shadowed, &BTreeSet::new(), &ChunkCodeGraph::default()),
         )
     })
+}
+
+/// `(case, chunk-top prefix, expression, expected effects)`.
+type PrefixCase<'a> = (&'a str, &'a str, &'a str, &'a [Effect]);
+
+/// `(case, chunk-top prefix, expression, annotated bindings, expected effects)`.
+type AnnotatedCase<'a> = (&'a str, &'a str, &'a str, &'a [&'a str], &'a [Effect]);
+
+/// `(case, expression, imported `(binding, verdict)`, expected effects)`.
+type ImportCase<'a> = (&'a str, &'a str, (&'a str, Purity), &'a [Effect]);
+
+/// Check each case with [`classify_with_module`], naming the failing case.
+fn assert_module_cases(cases: &[PrefixCase<'_>]) {
+    for (case, prefix, src, expected) in cases {
+        assert_eq!(
+            classify_with_module(prefix, src).as_slice(),
+            *expected,
+            "{case}"
+        );
+    }
 }
 
 /// Run the classifier against `src` with both shadowing and an
@@ -175,10 +197,7 @@ fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) 
     classify_last_const(prefix, expr_src, |_, shadowed, init| {
         classify_expr_purity(
             init,
-            shadowed,
-            &BTreeSet::new(),
-            &declared_pure,
-            &ChunkCodeGraph::default(),
+            &PurityScope::chunk_top(shadowed, &declared_pure, &ChunkCodeGraph::default()),
         )
     })
 }
@@ -450,23 +469,6 @@ fn function_valued_property_calls_with_opaque_arguments_invoke() {
 }
 
 #[test]
-fn shadowed_object_function_ref_read_is_a_member_read() {
-    // A top-level decl or import specifier (A8) shadowing `Object` makes
-    // `Object.X` resolve through the user-bound value.
-    assert_eq!(
-        classify_with_module("const Object = userland;", "Object.defineProperty"),
-        [MEMBER_READ]
-    );
-    assert_eq!(
-        classify_with_module(
-            r#"import { Object } from "./userland.js";"#,
-            "Object.freeze"
-        ),
-        [MEMBER_READ]
-    );
-}
-
-#[test]
 fn boolean_is_pure_on_any_value() {
     // ToBoolean fires no user code on any value.
     assert_no_effects(&["Boolean(x)", "Boolean(0)", "Boolean({})"]);
@@ -489,68 +491,128 @@ fn string_conversion_operands_must_be_primitive() {
 }
 
 #[test]
-fn shadowed_receiver_disables_builtin_rows() {
-    // A chunk-top binding for `Math` makes `Math.PI` no longer reach the
-    // global; its rows fall back to the generic member read / call.
-    assert_eq!(
-        classify_with_module("const Math = userland;", "Math.PI"),
-        [MEMBER_READ]
-    );
-    assert_eq!(
-        classify_with_module("function Math() {}", "Math.E"),
-        [MEMBER_READ]
-    );
-    assert_eq!(
-        classify_with_module("const Array = X;", "Array.isArray(x)"),
-        [CALL]
-    );
-    assert_eq!(
-        classify_with_module("let Number = X;", "Number.isNaN(x)"),
-        [CALL]
-    );
-    assert_eq!(
-        classify_with_module("const Boolean = X;", "Boolean(x)"),
-        [CALL]
-    );
-}
-
-#[test]
-fn unshadowed_receiver_keeps_builtin_rows() {
-    // Only same-named shadowing disables the rows.
-    assert_eq!(
-        classify_with_module("const other = userland;", "Math.PI"),
-        NONE
-    );
-    assert_eq!(classify("Math.unknownProp"), [MEMBER_READ]);
-}
-
-#[test]
-fn import_specifier_locals_shadow_builtin_rows() {
-    // Import bindings are top-level lexical decls and shadow the global the
-    // same way `const Math = …` does. SOUNDNESS: the imported value can be
-    // anything, so `<imported>.<prop>` may fire a user-defined getter.
-    assert_eq!(
-        classify_with_module(r#"import { Math } from "./userland.js";"#, "Math.PI"),
-        [MEMBER_READ]
-    );
-    assert_eq!(
-        classify_with_module(r#"import Boolean from "./userland.js";"#, "Boolean(x)"),
-        [CALL]
-    );
-    assert_eq!(
-        classify_with_module(
+fn chunk_top_bindings_shadow_builtin_rows() {
+    // SOUNDNESS: `compute_shadowed_globals` must track every global a builtin
+    // row names, not just member receivers. A chunk-top decl or import
+    // specifier (A8) rebinding the name makes the rows fall back to the
+    // generic member read / call / construct: the user-bound value can be
+    // anything, so `<binding>.<prop>` may fire a getter and `new <binding>()`
+    // may run arbitrary code.
+    assert_module_cases(&[
+        (
+            "const Object, function-valued read",
+            "const Object = userland;",
+            "Object.defineProperty",
+            &[MEMBER_READ],
+        ),
+        (
+            "imported Object, function-valued read",
+            r#"import { Object } from "./userland.js";"#,
+            "Object.freeze",
+            &[MEMBER_READ],
+        ),
+        (
+            "const Object, call",
+            "const Object = userland;",
+            "Object.entries({a: 1})",
+            &[CALL],
+        ),
+        (
+            "const Math",
+            "const Math = userland;",
+            "Math.PI",
+            &[MEMBER_READ],
+        ),
+        (
+            "function Math",
+            "function Math() {}",
+            "Math.E",
+            &[MEMBER_READ],
+        ),
+        (
+            "const Array",
+            "const Array = X;",
+            "Array.isArray(x)",
+            &[CALL],
+        ),
+        ("let Number", "let Number = X;", "Number.isNaN(x)", &[CALL]),
+        ("const Boolean", "const Boolean = X;", "Boolean(x)", &[CALL]),
+        (
+            "named import Math",
+            r#"import { Math } from "./userland.js";"#,
+            "Math.PI",
+            &[MEMBER_READ],
+        ),
+        (
+            "default import Boolean",
+            r#"import Boolean from "./userland.js";"#,
+            "Boolean(x)",
+            &[CALL],
+        ),
+        (
+            "namespace import Number",
             r#"import * as Number from "./userland.js";"#,
-            "Number.isNaN(x)"
+            "Number.isNaN(x)",
+            &[CALL],
         ),
-        [CALL]
-    );
-    assert_eq!(
-        classify_with_module(
+        (
+            "renamed import Array",
             r#"import { something as Array } from "./userland.js";"#,
-            "Array.isArray(x)"
+            "Array.isArray(x)",
+            &[CALL],
         ),
-        [CALL]
-    );
+        (
+            "const Map class",
+            "const Map = class { constructor() { globalThis.boom = 1; } };",
+            "new Map()",
+            &[CONSTRUCT],
+        ),
+        (
+            "function Set",
+            "function Set() {}",
+            "new Set()",
+            &[CONSTRUCT],
+        ),
+        (
+            "named import Map",
+            r#"import { Map } from "./userland.js";"#,
+            "new Map([['k', 1]])",
+            &[CONSTRUCT],
+        ),
+        (
+            "const Symbol, global callable",
+            "const Symbol = userland;",
+            "Symbol('x')",
+            &[CALL],
+        ),
+        (
+            "const Proxy",
+            "const Proxy = userland;",
+            "new Proxy({}, {})",
+            &[CONSTRUCT],
+        ),
+        (
+            "function Proxy",
+            "function Proxy() {}",
+            "new Proxy({}, {})",
+            &[CONSTRUCT],
+        ),
+        (
+            "default import Proxy",
+            r#"import Proxy from "userland";"#,
+            "new Proxy({}, {})",
+            &[CONSTRUCT],
+        ),
+        // Positive anchor: only same-named shadowing disables the rows.
+        (
+            "unrelated chunk-top binding",
+            "const other = userland;",
+            "Math.PI",
+            &[],
+        ),
+    ]);
+    assert_no_effects(&["new Map()"]);
+    assert_eq!(classify("Math.unknownProp"), [MEMBER_READ]);
 }
 
 #[test]
@@ -609,65 +671,23 @@ fn computed_method_and_accessor_keys_are_evaluated() {
 }
 
 #[test]
-fn shadowed_proxy_constructor_constructs_the_user_binding() {
-    for prefix in [
-        "const Proxy = userland;",
-        "function Proxy() {}",
-        r#"import Proxy from "userland";"#,
-    ] {
-        assert_eq!(
-            classify_with_module(prefix, "new Proxy({}, {})"),
-            [CONSTRUCT],
-            "a chunk-top Proxy binding in `{prefix}` must shadow the intrinsic"
-        );
-    }
-
+fn body_local_proxy_binding_shadows_the_intrinsic() {
     let local_shadowed = BTreeSet::from(["Proxy".to_string()]);
     let effects = classify_last_const("", "new Proxy({}, {})", |_, shadowed, init| {
         classify_expr_purity(
             init,
-            shadowed,
-            &local_shadowed,
-            &BTreeSet::new(),
-            &ChunkCodeGraph::default(),
+            &PurityScope::function_body(
+                shadowed,
+                &local_shadowed,
+                &BTreeSet::new(),
+                &ChunkCodeGraph::default(),
+            ),
         )
     });
     assert_eq!(
         effects,
         [CONSTRUCT],
         "a body-local Proxy binding must shadow the intrinsic"
-    );
-}
-
-#[test]
-fn shadowed_builtin_new_constructs_the_user_binding() {
-    // SOUNDNESS: `compute_shadowed_globals` must track every global a builtin
-    // row names, not just member receivers. A chunk-top
-    // `const Map = class { … }` rebinds the name; `new Map()` then constructs
-    // the user class, which can run arbitrary code.
-    assert_no_effects(&["new Map()"]);
-    assert_eq!(
-        classify_with_module(
-            "const Map = class { constructor() { globalThis.boom = 1; } };",
-            "new Map()"
-        ),
-        [CONSTRUCT]
-    );
-    assert_eq!(
-        classify_with_module("function Set() {}", "new Set()"),
-        [CONSTRUCT]
-    );
-    assert_eq!(
-        classify_with_module(
-            r#"import { Map } from "./userland.js";"#,
-            "new Map([['k', 1]])"
-        ),
-        [CONSTRUCT]
-    );
-    // Shadowed global callables fall back the same way.
-    assert_eq!(
-        classify_with_module("const Symbol = userland;", "Symbol('x')"),
-        [CALL]
     );
 }
 
@@ -789,10 +809,11 @@ fn class_effects(src: &str) -> Vec<Effect> {
         .expect("expected a class declaration");
     classify_class_static_purity(
         class,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &ChunkCodeGraph::default(),
+        &PurityScope::chunk_top(
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &ChunkCodeGraph::default(),
+        ),
     )
     .kinds()
 }
@@ -827,232 +848,208 @@ fn class_static_auto_accessor_initializer_is_observable() {
 }
 
 #[test]
-fn declared_pure_ident_call_has_no_effects() {
+fn declared_pure_ident_calls_trust_the_binding_but_classify_arguments() {
     // A spec member with `purity: "pure"` populates the declared-pure set. A
     // call whose callee is the bound Ident has no effects regardless of the
-    // body (author trust; the validator does not re-verify). Args are still
-    // evaluated normally.
-    assert_eq!(
-        classify_with_declared_pure("function f(x) { return x; }", "f(42)", &["f"]),
-        NONE
-    );
-    assert_eq!(
-        classify_with_declared_pure("function f(x) { return x; }", "f({ k: 'v' })", &["f"]),
-        NONE
-    );
-}
-
-#[test]
-fn declared_pure_call_keeps_argument_effects() {
-    // The declared-purity contract covers the function value; argument
-    // evaluation is independent.
-    assert_eq!(
-        classify_with_declared_pure(
+    // body (author trust; the validator does not re-verify), and the
+    // annotation wins over the builtin rows' shadowing fallback. The
+    // contract covers the function value; argument evaluation is
+    // independent.
+    let cases: [AnnotatedCase<'_>; 4] = [
+        (
+            "primitive argument",
+            "function f(x) { return x; }",
+            "f(42)",
+            &["f"],
+            &[],
+        ),
+        (
+            "fresh literal argument",
+            "function f(x) { return x; }",
+            "f({ k: 'v' })",
+            &["f"],
+            &[],
+        ),
+        (
+            "impure argument",
             "function f(x) { return x; } function io() { return 1; }",
             "f(io())",
-            &["f"]
+            &["f"],
+            &[CALL],
         ),
-        [CALL]
-    );
-}
-
-#[test]
-fn declared_pure_overrides_global_shadowing() {
-    // Author trust: a declared-pure annotation wins over the builtin rows'
-    // shadowing fallback and the body's actual contents.
-    assert_eq!(
-        classify_with_declared_pure(
+        (
+            "overrides global shadowing",
             r#"import { Boolean } from "./userland.js";"#,
             "Boolean(x)",
-            &["Boolean"]
+            &["Boolean"],
+            &[],
         ),
-        NONE
-    );
+    ];
+    for (case, prefix, src, declared, expected) in cases {
+        assert_eq!(
+            classify_with_declared_pure(prefix, src, declared).as_slice(),
+            expected,
+            "{case}"
+        );
+    }
 }
 
 #[test]
-fn declared_pure_new_constructs_without_effects_given_pure_args() {
-    assert_eq!(
-        classify_with_declared_pure_new(
+fn declared_pure_new_admits_only_construction() {
+    let cases: [PrefixCase<'_>; 2] = [
+        (
+            "construction with pure args",
             "class PureBox { constructor(value) { globalThis.notAnalyzed = value; } }",
             "new PureBox({ value: 1, later() { globalThis.later = true; } })",
-            &["PureBox"]
+            &[],
         ),
-        NONE
-    );
-}
-
-#[test]
-fn declared_pure_new_does_not_apply_to_plain_call() {
-    assert_eq!(
-        classify_with_declared_pure_new(
+        (
+            "plain call is not covered",
             "function PureBox(value) { globalThis.value = value; return { value }; }",
             "PureBox(1)",
-            &["PureBox"]
+            &[CALL],
         ),
-        [CALL]
-    );
+    ];
+    for (case, prefix, src, expected) in cases {
+        assert_eq!(
+            classify_with_declared_pure_new(prefix, src, &["PureBox"]).as_slice(),
+            expected,
+            "{case}"
+        );
+    }
 }
 
 #[test]
-fn declared_pure_member_call_has_no_effects() {
-    // `pure_members: [forwardRef]` admits `<binding>.forwardRef(args)` even
-    // though the binding's body is unknown (the vendor namespace shape).
-    // Args are still classified independently.
-    assert_eq!(
-        classify_with_declared_pure_members(
+fn declared_pure_members_admit_only_static_calls_on_the_named_binding() {
+    // `pure_members: [forwardRef]` on `b` admits `<b>.forwardRef(args)` even
+    // though the binding's body is unknown (the vendor namespace shape). Args
+    // are still classified independently. The trust does not bleed to other
+    // props or bindings; computed access `b[expr]` may evaluate to a
+    // different property at runtime, breaking the author's contract; `?.`
+    // only adds a null/undefined short-circuit.
+    let cases: [PrefixCase<'_>; 5] = [
+        (
+            "annotated member call",
             r#"import * as b from "vendor";"#,
             "b.forwardRef(function () {})",
-            "b",
-            &["forwardRef"]
+            &[],
         ),
-        NONE
-    );
-}
-
-#[test]
-fn declared_pure_member_does_not_bleed_to_other_props() {
-    assert_eq!(
-        classify_with_declared_pure_members(
+        (
+            "other prop",
             r#"import * as b from "vendor";"#,
             "b.unknownMethod(1)",
-            "b",
-            &["forwardRef"]
+            &[CALL],
         ),
-        [CALL]
-    );
-}
-
-#[test]
-fn declared_pure_member_does_not_bleed_to_other_bindings() {
-    assert_eq!(
-        classify_with_declared_pure_members(
+        (
+            "other binding",
             r#"import * as b from "vendor"; import * as c from "other";"#,
             "c.forwardRef(1)",
-            "b",
-            &["forwardRef"]
+            &[CALL],
         ),
-        [CALL]
-    );
-}
-
-#[test]
-fn declared_pure_member_computed_access_is_not_admitted() {
-    // `b[expr]` may evaluate to a different property at runtime, breaking the
-    // spec author's trust contract.
-    assert_eq!(
-        classify_with_declared_pure_members(
+        (
+            "computed access",
             r#"import * as b from "vendor"; const key = "forwardRef";"#,
             "b[key](1)",
-            "b",
-            &["forwardRef"]
+            &[CALL],
         ),
-        [CALL]
-    );
-}
-
-#[test]
-fn declared_pure_member_optional_chain_call_has_no_effects() {
-    // `?.` only adds a null/undefined short-circuit; the call still qualifies.
-    assert_eq!(
-        classify_with_declared_pure_members(
+        (
+            "optional chain call",
             r#"import * as b from "vendor";"#,
             "b?.forwardRef(1)",
-            "b",
-            &["forwardRef"]
+            &[],
         ),
-        NONE
-    );
+    ];
+    for (case, prefix, src, expected) in cases {
+        assert_eq!(
+            classify_with_declared_pure_members(prefix, src, "b", &["forwardRef"]).as_slice(),
+            expected,
+            "{case}"
+        );
+    }
 }
 
 #[test]
-fn fluent_root_direct_call_has_no_effects() {
-    // The root itself is callable under the deep-purity contract
-    // (`k({...})`: zod-style builders are invoked directly too).
-    assert_eq!(
-        classify_with_fluent_bindings(
+fn fluent_roots_cover_the_api_but_not_caller_arguments() {
+    // The fluent contract follows a chain from an asserted root to any depth:
+    // receivers like `.optional()` / `.describe()` are call RESULTS, not
+    // bindings, so no binding-keyed arm (`pure_members`, `imported_purities`)
+    // can admit them. SOUNDNESS: it covers the API's own functions and their
+    // results, NOT caller-supplied argument evaluation. Computed access would
+    // additionally require a ToPropertyKey-safe key, so the chain stops there.
+    // `const` derivations become roots (zod base-schema reuse); a `let` cell
+    // can be rebound to an untrusted value later.
+    let cases: [AnnotatedCase<'_>; 9] = [
+        (
+            "direct root call (zod-style builders are invoked directly)",
             r#"import { e4 as k } from "vendor";"#,
             "k({ a: 1 })",
-            &["k"]
+            &["k"],
+            &[],
         ),
-        NONE
-    );
-    // Without the assertion the same call is an unknown imported callee.
-    assert_eq!(
-        classify_with_fluent_bindings(r#"import { e4 as k } from "vendor";"#, "k({ a: 1 })", &[]),
-        [CALL]
-    );
-}
-
-#[test]
-fn fluent_chain_method_calls_have_no_effects() {
-    // The receivers of `.optional()` / `.describe()` are call RESULTS, not
-    // bindings, so no binding-keyed arm (`pure_members`, `imported_purities`)
-    // can admit them. The fluent contract follows the chain to any depth.
-    assert_eq!(
-        classify_with_fluent_bindings(
+        (
+            "same call without the assertion",
+            r#"import { e4 as k } from "vendor";"#,
+            "k({ a: 1 })",
+            &[],
+            &[CALL],
+        ),
+        (
+            "chained method calls",
             r#"import { e4 as k } from "vendor";"#,
             r#"k.object({ a: 1 }).optional().describe("docs")"#,
-            &["k"]
+            &["k"],
+            &[],
         ),
-        NONE
-    );
-}
-
-#[test]
-fn fluent_chain_impure_inner_argument_surfaces() {
-    // SOUNDNESS: the assertion covers the API's own functions and their
-    // results, NOT caller-supplied argument evaluation. An impure argument to
-    // an INNER chain link must surface even though the outer call's args are
-    // pure.
-    assert_eq!(
-        classify_with_fluent_bindings(
+        (
+            "impure inner-link argument",
             r#"import { e4 as k } from "vendor"; function io() { globalThis.x = 1; return {}; }"#,
             r#"k.object(io()).describe("docs")"#,
-            &["k"]
+            &["k"],
+            &[CALL],
         ),
-        [CALL]
-    );
-}
-
-#[test]
-fn fluent_chain_member_read_has_no_effects() {
-    // Reading a property off a derived value (`.description` on a schema) is
-    // covered by the same deep contract.
-    assert_eq!(
-        classify_with_fluent_bindings(
+        (
+            "member read on a derived value",
             r#"import { e4 as k } from "vendor";"#,
             r#"k.string().description"#,
-            &["k"]
+            &["k"],
+            &[],
         ),
-        NONE
-    );
-}
-
-#[test]
-fn fluent_chain_computed_member_breaks_the_chain() {
-    // Computed access would additionally require a ToPropertyKey-safe key;
-    // the chain conservatively stops there.
-    assert_eq!(
-        classify_with_fluent_bindings(
+        (
+            "computed member",
             r#"import { e4 as k } from "vendor"; const key = "object";"#,
             r#"k[key]({ a: 1 })"#,
-            &["k"]
+            &["k"],
+            &[CALL],
         ),
-        [CALL]
-    );
-}
-
-#[test]
-fn fluent_chain_optional_chaining_has_no_effects() {
-    assert_eq!(
-        classify_with_fluent_bindings(
+        (
+            "optional chaining",
             r#"import { e4 as k } from "vendor";"#,
             r#"k.object({ a: 1 })?.describe?.("docs")"#,
-            &["k"]
+            &["k"],
+            &[],
         ),
-        NONE
-    );
+        (
+            "const derivation",
+            r#"import { e4 as k } from "vendor"; const S = k.object({ a: 1 });"#,
+            r#"S.extend({ b: 2 })"#,
+            &["k"],
+            &[],
+        ),
+        (
+            "let derivation",
+            r#"import { e4 as k } from "vendor"; let S = k.object({ a: 1 });"#,
+            r#"S.extend({ b: 2 })"#,
+            &["k"],
+            &[CALL],
+        ),
+    ];
+    for (case, prefix, src, fluent, expected) in cases {
+        assert_eq!(
+            classify_with_fluent_bindings(prefix, src, fluent).as_slice(),
+            expected,
+            "{case}"
+        );
+    }
 }
 
 #[test]
@@ -1075,97 +1072,104 @@ fn fluent_root_body_local_shadow_defeats_trust() {
                 &BTreeSet::new(),
                 &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
             );
-            classify_expr_purity(init, shadowed, &local_shadowed, &BTreeSet::new(), &graph)
+            classify_expr_purity(
+                init,
+                &PurityScope::function_body(shadowed, &local_shadowed, &BTreeSet::new(), &graph),
+            )
         },
     );
     assert_eq!(effects, [CALL]);
 }
 
 #[test]
-fn fluent_trust_propagates_through_const_derivations() {
-    // `const S = k.object({...})` makes `S` a fluent root too:
-    // `S.extend({...})` downstream is the standard zod base-schema reuse.
-    assert_eq!(
-        classify_with_fluent_bindings(
-            r#"import { e4 as k } from "vendor"; const S = k.object({ a: 1 });"#,
-            r#"S.extend({ b: 2 })"#,
-            &["k"]
+fn object_builtins_admit_only_accessor_free_fresh_arguments() {
+    let cases: [(&str, &str, &[Effect]); 14] = [
+        // `EnumerableOwnPropertyNames` only does `[[OwnPropertyKeys]]`,
+        // `[[GetOwnProperty]]` and (for values) `[[Get]]`; a plain literal has
+        // only data properties, so no accessor fires.
+        ("keys of plain literal", "Object.keys({a: 1, b: 2})", &[]),
+        (
+            "values of plain literal",
+            "Object.values({a: 1, b: 2})",
+            &[],
         ),
-        NONE
-    );
-}
-
-#[test]
-fn fluent_trust_does_not_propagate_through_let_rebindable_cells() {
-    // A `let` cell can be rebound to an untrusted value later, so
-    // derivation-closure is `const`-only.
-    assert_eq!(
-        classify_with_fluent_bindings(
-            r#"import { e4 as k } from "vendor"; let S = k.object({ a: 1 });"#,
-            r#"S.extend({ b: 2 })"#,
-            &["k"]
-        ),
-        [CALL]
-    );
-}
-
-#[test]
-fn object_keys_and_values_on_plain_object_literal_have_no_effects() {
-    // `EnumerableOwnPropertyNames` only does `[[OwnPropertyKeys]]`,
-    // `[[GetOwnProperty]]` and (for values) `[[Get]]`; a plain literal has only
-    // data properties, so no accessor fires.
-    assert_no_effects(&["Object.keys({a: 1, b: 2})", "Object.values({a: 1, b: 2})"]);
-}
-
-#[test]
-fn object_freeze_on_vite_namespace_facade_has_no_effects() {
-    assert_no_effects(&[r#"Object.freeze(Object.defineProperty(
+        (
+            "freeze of vite namespace facade",
+            r#"Object.freeze(Object.defineProperty(
                 { __proto__: null, run: handler },
                 Symbol.toStringTag,
                 { value: "Module" }
-            ))"#]);
-}
-
-#[test]
-fn object_define_property_namespace_facade_requires_fresh_target() {
-    assert_eq!(
-        classify(r#"Object.defineProperty(target, Symbol.toStringTag, { value: "Module" })"#),
-        [CALL]
-    );
-}
-
-#[test]
-fn object_define_property_namespace_facade_rejects_accessor_descriptor() {
-    assert_eq!(
-        classify(
+            ))"#,
+            &[],
+        ),
+        (
+            "namespace facade on a non-fresh target",
+            r#"Object.defineProperty(target, Symbol.toStringTag, { value: "Module" })"#,
+            &[CALL],
+        ),
+        (
+            "namespace facade with accessor descriptor",
             r#"Object.defineProperty(
                 { __proto__: null, run: handler },
                 Symbol.toStringTag,
                 { get: () => handler }
             )"#,
+            &[CALL],
         ),
-        [CALL]
-    );
-}
-
-#[test]
-fn object_values_on_object_with_method_invokes() {
-    // Admission requires `Prop::KeyValue` / `Prop::Shorthand` only.
-    assert_eq!(classify(r#"Object.values({ m() { return 1; } })"#), [CALL]);
-}
-
-#[test]
-fn object_entries_on_non_literal_arg_invokes() {
-    // An arbitrary expression could be a Proxy or carry user accessors.
-    assert_eq!(classify("Object.entries(somefn())"), [CALL]);
-    assert_eq!(classify("Object.entries(x)"), [CALL]);
-}
-
-#[test]
-fn object_freeze_on_object_with_proto_invokes() {
-    // `{__proto__: …}` in an object literal sets the prototype, which
-    // `is_plain_data_prop` rejects.
-    assert_eq!(classify(r#"Object.freeze({ __proto__: x, a: 1 })"#), [CALL]);
+        // Admission requires `Prop::KeyValue` / `Prop::Shorthand` only.
+        (
+            "values of literal with method",
+            r#"Object.values({ m() { return 1; } })"#,
+            &[CALL],
+        ),
+        // An arbitrary expression could be a Proxy or carry user accessors.
+        (
+            "entries of call result",
+            "Object.entries(somefn())",
+            &[CALL],
+        ),
+        ("entries of opaque ident", "Object.entries(x)", &[CALL]),
+        // `{__proto__: …}` in an object literal sets the prototype, which
+        // `is_plain_data_prop` rejects.
+        (
+            "freeze of literal with __proto__",
+            r#"Object.freeze({ __proto__: x, a: 1 })"#,
+            &[CALL],
+        ),
+        // `Object.fromEntries({...})` is a TypeError at runtime (objects
+        // aren't iterable); entries that aren't 2-element Array literals don't
+        // qualify since the indexed [0]/[1] reads must be own data properties.
+        (
+            "fromEntries of object",
+            r#"Object.fromEntries({a: 1})"#,
+            &[CALL],
+        ),
+        (
+            "fromEntries of array-like entry",
+            r#"Object.fromEntries([{ "0": "k", "1": "v" }])"#,
+            &[CALL],
+        ),
+        (
+            "fromEntries of 3-element entry",
+            r#"Object.fromEntries([["a", 1, "extra"]])"#,
+            &[CALL],
+        ),
+        // Single-argument form only; an accidental extra argument falls back
+        // rather than being silently admitted.
+        (
+            "freeze with extra arg",
+            r#"Object.freeze({a: 1}, true)"#,
+            &[CALL],
+        ),
+        (
+            "keys with extra arg",
+            r#"Object.keys({a: 1}, "extra")"#,
+            &[CALL],
+        ),
+    ];
+    for (case, src, expected) in cases {
+        assert_eq!(classify(src).as_slice(), expected, "{case}");
+    }
 }
 
 #[test]
@@ -1179,55 +1183,6 @@ fn object_freeze_on_object_with_spread_keeps_the_spread_effect() {
             r#"Object.freeze({ ...src, b: 2 })"#,
         ],
         &[OBJECT_SPREAD],
-    );
-}
-
-#[test]
-fn object_keys_on_plain_data_binding_has_no_effects() {
-    // `plain` is a chunk-top `const plain = {…}` bound to a plain-data shape:
-    // accessor-free because its allocation stays private and clean
-    // (`ChunkHeap`). Same admission as a fresh literal.
-    assert_eq!(
-        classify_built("const plain = { a: 1 };", "Object.keys(plain)"),
-        NONE
-    );
-}
-
-#[test]
-fn object_from_entries_requires_pair_array_entries() {
-    // `Object.fromEntries({...})` is a TypeError at runtime (objects aren't
-    // iterable); entries that aren't 2-element Array literals don't qualify
-    // since the indexed [0]/[1] reads must be own data properties.
-    assert_each_has_effects(
-        &[
-            r#"Object.fromEntries({a: 1})"#,
-            r#"Object.fromEntries([{ "0": "k", "1": "v" }])"#,
-            r#"Object.fromEntries([["a", 1, "extra"]])"#,
-        ],
-        &[CALL],
-    );
-}
-
-#[test]
-fn object_calls_with_too_many_args_invoke() {
-    // Single-argument form only; an accidental extra argument falls back
-    // rather than being silently admitted.
-    assert_each_has_effects(
-        &[
-            r#"Object.freeze({a: 1}, true)"#,
-            r#"Object.keys({a: 1}, "extra")"#,
-        ],
-        &[CALL],
-    );
-}
-
-#[test]
-fn object_calls_shadowed_receiver_invoke() {
-    // A chunk-top `Object` re-bind shadows the global, so the resolved value
-    // isn't the built-in.
-    assert_eq!(
-        classify_with_module("const Object = userland;", "Object.entries({a: 1})"),
-        [CALL]
     );
 }
 
@@ -1259,56 +1214,97 @@ fn classify_built(prefix: &str, expr_src: &str) -> Vec<Effect> {
     };
     classify_expr_purity(
         result.decls[0].init.as_deref().unwrap(),
-        &structural.shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&structural.shadowed, &BTreeSet::new(), &graph),
     )
     .kinds()
 }
 
 #[test]
-fn coercion_of_primitive_const_binding_is_pure() {
-    // A chunk-top `const` bound to a primitive is immutable and carries
-    // no user accessors, so ToString / ToNumber on a reference fires no
-    // user code — the coercion is pure.
-    for (prefix, src) in [
-        ("const s = \"x\";", "`v=${s}`"),
-        ("const n = 5;", "-n"),
-        ("const a = 1; const b = 2;", "a + b"),
-        // Transitive through another primitive const, and a computed key.
-        ("const a = \"x\"; const b = `${a}!`;", "`${b}`"),
-        ("const k = \"id\";", "({ [k]: 1 })"),
-    ] {
-        assert_eq!(classify_built(prefix, src), NONE, "{prefix} {src}");
-    }
-}
-
-#[test]
-fn const_value_inference_does_not_resolve_aliases_from_later_declarations() {
-    assert_eq!(
-        classify_built("const value = 1; const alias = value;", "`${alias}`"),
-        NONE
-    );
-    assert_eq!(
-        classify_built("const alias = value; const value = 1;", "`${alias}`"),
-        [COERCE_OPERAND]
-    );
-    assert_eq!(
-        classify_built(
-            "const alias = brand; const brand = Symbol('brand');",
-            "class { [alias]() {} }"
+fn chunk_top_binding_facts_gate_coercion_and_plain_data_reads() {
+    let cases: [PrefixCase<'_>; 13] = [
+        // A chunk-top `const` bound to a primitive is immutable and carries no
+        // user accessors, so ToString / ToNumber on a reference fires no user
+        // code.
+        (
+            "primitive const interpolated",
+            "const s = \"x\";",
+            "`v=${s}`",
+            &[],
         ),
-        [COERCE_KEY]
-    );
-}
-
-#[test]
-fn coercion_of_let_or_var_binding_stays_unknown() {
-    // `let` / `var` can be rebound to an object later, so the binding is
-    // not provably primitive and the coercion stays conservative.
-    assert_eq!(classify_built("let s = \"x\";", "`${s}`"), [COERCE_OPERAND]);
-    assert_eq!(classify_built("var s = \"x\";", "`${s}`"), [COERCE_OPERAND]);
+        ("primitive const negated", "const n = 5;", "-n", &[]),
+        (
+            "primitive consts added",
+            "const a = 1; const b = 2;",
+            "a + b",
+            &[],
+        ),
+        (
+            "transitive primitive const",
+            "const a = \"x\"; const b = `${a}!`;",
+            "`${b}`",
+            &[],
+        ),
+        (
+            "primitive const computed key",
+            "const k = \"id\";",
+            "({ [k]: 1 })",
+            &[],
+        ),
+        // Alias resolution only sees earlier declarations.
+        (
+            "alias of earlier const",
+            "const value = 1; const alias = value;",
+            "`${alias}`",
+            &[],
+        ),
+        (
+            "alias of later const",
+            "const alias = value; const value = 1;",
+            "`${alias}`",
+            &[COERCE_OPERAND],
+        ),
+        (
+            "alias of later symbol",
+            "const alias = brand; const brand = Symbol('brand');",
+            "class { [alias]() {} }",
+            &[COERCE_KEY],
+        ),
+        // `let` / `var` can be rebound to an object later.
+        (
+            "let primitive",
+            "let s = \"x\";",
+            "`${s}`",
+            &[COERCE_OPERAND],
+        ),
+        (
+            "var primitive",
+            "var s = \"x\";",
+            "`${s}`",
+            &[COERCE_OPERAND],
+        ),
+        // A non-primitive const runs user `toString` / `[Symbol.toPrimitive]`;
+        // a const whose init is not statically result-primitive (a bare
+        // import/member read) is not admitted either.
+        ("object const", "const o = {};", "`${o}`", &[COERCE_OPERAND]),
+        (
+            "member-read const",
+            "const o = globalThis.x;",
+            "`${o}`",
+            &[COERCE_OPERAND],
+        ),
+        // `plain` is bound to a plain-data shape: accessor-free because its
+        // allocation stays private and clean (`ChunkHeap`). Same admission as
+        // a fresh literal.
+        (
+            "Object.keys of plain-data binding",
+            "const plain = { a: 1 };",
+            "Object.keys(plain)",
+            &[],
+        ),
+    ];
+    for (case, prefix, src, expected) in cases {
+        assert_eq!(classify_built(prefix, src).as_slice(), expected, "{case}");
+    }
 }
 
 #[test]
@@ -1378,19 +1374,6 @@ fn stable_numeric_var_facts_do_not_cross_function_shadowing() {
     );
 }
 
-#[test]
-fn coercion_of_non_primitive_const_stays_unknown() {
-    // `const o = {}` is a const but not primitive — interpolating it runs
-    // user `toString` / `[Symbol.toPrimitive]`.
-    assert_eq!(classify_built("const o = {};", "`${o}`"), [COERCE_OPERAND]);
-    // A const whose init is not statically result-primitive (a bare
-    // import/member read) is not admitted either.
-    assert_eq!(
-        classify_built("const o = globalThis.x;", "`${o}`"),
-        [COERCE_OPERAND]
-    );
-}
-
 /// Classify `expr_src` with a populated cross-module imported-purity
 /// map (as the program-level oracle would supply). Each `(name,
 /// purity)` records the verdict for an imported function binding.
@@ -1419,7 +1402,10 @@ fn imported_purity_effects(prefix: &str, expr_src: &str, imports: &[(&str, Purit
             &BTreeSet::new(),
             &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         );
-        classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+        classify_expr_purity(
+            init,
+            &PurityScope::chunk_top(shadowed, &BTreeSet::new(), &graph),
+        )
     })
 }
 
@@ -1428,17 +1414,39 @@ fn impure_verdict() -> Purity {
 }
 
 #[test]
-fn imported_pure_callee_makes_call_pure() {
-    // The oracle resolved `memo` (an imported function) as pure, so
-    // `memo(arg)` classifies pure when the args are pure.
-    assert_eq!(
-        classify_with_imported_purities("", "memo(x)", &[("memo", Purity::pure())]),
-        NONE
-    );
-    assert_eq!(
-        classify_with_imported_purities("", "memo(() => {})", &[("memo", Purity::pure())]),
-        NONE
-    );
+fn imported_purity_verdicts_resolve_calls_but_not_arguments() {
+    // The program-level oracle resolved each imported function binding. A pure
+    // callee makes the call pure when the args are pure; args are classified
+    // independently, so a possibly-object operand coerced in one keeps the
+    // call impure.
+    let cases: [ImportCase<'_>; 4] = [
+        ("pure callee", "memo(x)", ("memo", Purity::pure()), &[]),
+        (
+            "pure callee, function argument",
+            "memo(() => {})",
+            ("memo", Purity::pure()),
+            &[],
+        ),
+        (
+            "impure callee",
+            "run(x)",
+            ("run", impure_verdict()),
+            &[CALL],
+        ),
+        (
+            "pure callee, coercing argument",
+            "memo(A + 1)",
+            ("memo", Purity::pure()),
+            &[COERCE_OPERAND],
+        ),
+    ];
+    for (case, src, import, expected) in cases {
+        assert_eq!(
+            classify_with_imported_purities("", src, &[import]).as_slice(),
+            expected,
+            "{case}"
+        );
+    }
 }
 
 #[test]
@@ -1463,10 +1471,7 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
     assert_eq!(
         classify_class_static_purity(
             &class.class,
-            &shadowed,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            &graph,
+            &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph)
         )
         .project()
         .dependencies(),
@@ -1485,25 +1490,19 @@ fn conditioned_constructor_dependencies_flow_through_local_calls_and_bindings() 
     let initializer = result.decls[0].init.as_deref().unwrap();
     let purity = classify_expr_purity(
         initializer,
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
     )
     .project();
     assert_eq!(purity.dependencies(), Some(&dependencies));
     assert_eq!(
         classify_var_decl_purity(
             result,
-            &shadowed,
-            &BTreeSet::new(),
-            &BTreeSet::new(),
-            &graph,
+            &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
             &FreshRecordDestructuringContext {
                 flow: &ChunkValueFlow::default(),
                 dynamic_scope: DynamicScopeFact::default(),
                 rebindings: &BTreeSet::new(),
-            },
+            }
         )
         .project()
         .dependencies(),
@@ -1528,10 +1527,7 @@ fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
     };
     let certified = classify_expr_purity(
         certified.decls[0].init.as_deref().unwrap(),
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
     )
     .project();
     assert_eq!(certified.dependencies(), Some(&dependencies));
@@ -1541,10 +1537,7 @@ fn conditioned_dependencies_follow_the_exact_direct_literal_set_certificate() {
     };
     let independent = classify_expr_purity(
         independent.decls[0].init.as_deref().unwrap(),
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
     )
     .project();
     assert!(independent.is_pure());
@@ -1589,7 +1582,10 @@ fn nested_conditioned_arguments_keep_dependencies_across_pure_builtins() {
             "const values = [1]; function make() { return new Set(values); }",
             expression,
             |_, _, init| {
-                classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+                classify_expr_purity(
+                    init,
+                    &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
+                )
             },
         )
         .project();
@@ -1654,10 +1650,7 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
     };
     let purity = classify_expr_purity(
         result.decls[0].init.as_deref().unwrap(),
-        &shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &graph,
+        &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph),
     )
     .project();
     assert!(purity.is_pure());
@@ -1674,24 +1667,6 @@ fn imported_pure_callee_preserves_conditioned_dependencies() {
     )
     .project();
     assert_eq!(purity.dependencies(), Some(&dependencies));
-}
-
-#[test]
-fn imported_impure_callee_keeps_call_impure() {
-    assert_eq!(
-        classify_with_imported_purities("", "run(x)", &[("run", impure_verdict())]),
-        [CALL]
-    );
-}
-
-#[test]
-fn imported_pure_callee_still_classifies_arguments() {
-    // `memo` is pure, but a possibly-object operand coerced in the arg
-    // keeps the whole call impure — args are classified independently.
-    assert_eq!(
-        classify_with_imported_purities("", "memo(A + 1)", &[("memo", Purity::pure())]),
-        [COERCE_OPERAND]
-    );
 }
 
 #[test]

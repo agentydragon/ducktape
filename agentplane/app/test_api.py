@@ -23,8 +23,8 @@ from agentplane.testing.tls import make_ca
 from testing.postgres import DatabaseNames, create_temporary_database
 from util.net import listen_tcp
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures",)
+# gazelle:include_dep //agentplane/app/testing:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.integration_fixtures",)
 
 
 async def test_go_app_serves_a_parent_owned_listener(

@@ -13,6 +13,7 @@ import (
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executor/transport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
@@ -65,6 +66,7 @@ func New(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owne
 		connection, err = grpc.NewClient(
 			settings.DirectExecutorTarget,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			observability.GRPCClientOption(),
 			grpc.WithDisableRetry(),
 		)
 		if err != nil {

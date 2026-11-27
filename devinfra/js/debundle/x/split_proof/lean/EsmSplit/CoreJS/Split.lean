@@ -33,6 +33,16 @@ inductive SameUnits : List LinkedUnit → List LinkedUnit → Prop
   | cons {u u' : LinkedUnit} {us us' : List LinkedUnit} :
     SameUnit u u' → SameUnits us us' → SameUnits (u :: us) (u' :: us')
 
+/-- The units of a list execute in order, propagating any abrupt result from the prefix. -/
+theorem runUnits_append (fuel : Nat) (pre suffix : List LinkedUnit) :
+    (runUnits fuel (pre ++ suffix) : M W Unit) =
+      (runUnits fuel pre >>= fun _ => runUnits fuel suffix) := by
+  induction pre with
+  | nil => rfl
+  | cons unit rest ih =>
+    obtain ⟨id, stmt, env⟩ := unit
+    simp only [List.cons_append, runUnits, ih, M.bind_assoc]
+
 theorem runUnits_same (n : Nat) {us us' : List LinkedUnit} (h : SameUnits us us') :
     (runUnits n us : M W Unit) = runUnits n us' := by
   induction h with

@@ -24,8 +24,8 @@ from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 # gazelle:include_dep @pypi//protobuf
 
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures",)
+# gazelle:include_dep //agentplane/app/testing:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.integration_fixtures",)
 
 
 async def test_materialized_revisions_replicate_with_restricted_role(

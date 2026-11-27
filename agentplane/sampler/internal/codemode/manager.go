@@ -35,7 +35,6 @@ type Manager struct {
 	mu         sync.Mutex
 	closed     bool
 	stopping   bool
-	starting   chan struct{}
 	retiring   chan struct{}
 	host       *Process
 	instanceID string
@@ -156,6 +155,7 @@ func (m *Manager) OpenSession(ctx context.Context, conversationID string, journa
 	return runtime, nil
 }
 
+// ensureHost requires connectMu, which serializes host starts.
 func (m *Manager) ensureHost() (*Process, error) {
 	for {
 		m.mu.Lock()
@@ -177,17 +177,6 @@ func (m *Manager) ensureHost() (*Process, error) {
 				return nil, errors.New("code-mode host lifetime ended")
 			}
 		}
-		if started := m.starting; started != nil {
-			m.mu.Unlock()
-			select {
-			case <-started:
-				continue
-			case <-m.hostLifetime.Done():
-				return nil, errors.New("code-mode host lifetime ended")
-			}
-		}
-		started := make(chan struct{})
-		m.starting = started
 		m.mu.Unlock()
 
 		host, err := m.startHost()
@@ -196,8 +185,6 @@ func (m *Manager) ensureHost() (*Process, error) {
 			m.host = host
 			m.failed = nil
 			m.writePID(host.PID())
-			m.starting = nil
-			close(started)
 			m.mu.Unlock()
 			slog.Info("central sampler code-mode host started", "pid", host.PID())
 			go m.readLoop(host)
@@ -207,8 +194,6 @@ func (m *Manager) ensureHost() (*Process, error) {
 		if err == nil {
 			err = errors.New("code-mode host is shutting down")
 		}
-		m.starting = nil
-		close(started)
 		m.mu.Unlock()
 		if host != nil {
 			_ = host.Close()

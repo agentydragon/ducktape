@@ -1,41 +1,17 @@
 use crate::analyze_chunk;
 use analysis_vocabulary::inputs::AnalysisAssumptions;
 use analysis_vocabulary::inputs::AnalysisInputs;
+use purity::PurityScope;
 use purity::classifier::classify_expr_purity;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Decl;
 use swc_ecma_ast::ModuleItem;
 use swc_ecma_ast::Stmt;
 
-use crate::test_support::{analyze_facts, test_id};
 use analysis_domain::item_views::{compute_shadowed_globals, top_level_item_views};
+use analysis_test_support::{analyze_facts, test_id};
 use analysis_vocabulary::purity::{Purity, PurityRule};
 use purity::*;
-
-#[test]
-fn local_class_construction_before_declaration_is_not_pure() {
-    let module = parse("const instance = new Registry(); class Registry { value = 1; }");
-    let facts = analyze_facts(&module);
-    let instance = facts
-        .iter()
-        .find(|fact| fact.declared.contains(&test_id("instance")))
-        .expect("instance declaration");
-    assert_eq!(rules_of(&instance.purity), [PurityRule::UnknownNew]);
-}
-
-#[test]
-fn direct_eval_disables_local_class_construction_proof() {
-    let module = parse(
-        "class Registry { value = 1; } eval('Registry = class {}'); const instance = new Registry();",
-    );
-    let facts = analyze_facts(&module);
-    let instance = facts
-        .iter()
-        .find(|fact| fact.declared.contains(&test_id("instance")))
-        .expect("instance declaration");
-    assert_eq!(rules_of(&instance.purity), [PurityRule::UnknownNew]);
-}
-
 use raw_js_test_support::parse;
 
 /// The rules of the reasons a verdict projects its effects to, in evaluation
@@ -93,55 +69,6 @@ fn fn_rules(src: &str, name: &str) -> Option<Vec<PurityRule>> {
 }
 
 #[test]
-fn enum_member_reads_need_plain_data_after_the_initializer() {
-    // An enum member resolves against its settled own fields only while no
-    // write or escape reaches the object after its initializer; a binding
-    // another statement rebinds never resolves.
-    let initializer =
-        "var Flags = ((values) => ((values[(values.FIRST = 1)] = 'FIRST'), values))(Flags || {});";
-    for (suffix, admitted) in [
-        ("", true),
-        ("[Flags] = [{ FIRST: () => 1 }];", false),
-        ("({ Flags } = { Flags: { FIRST: () => 1 } });", false),
-        (
-            "Object.defineProperty(Flags, 'FIRST', { get() { return 1; } });",
-            false,
-        ),
-        ("Flags = new Proxy(Flags, {});", false),
-        ("globalThis.savedFlags = Flags;", false),
-    ] {
-        let module = parse(&format!("{initializer}\n{suffix}"));
-        let body = top_level_item_views(&module.body);
-        let shadowed = compute_shadowed_globals(&body);
-        let graph = ChunkCodeGraph::build(
-            &body,
-            &shadowed,
-            &BTreeSet::new(),
-            &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
-        );
-        assert_eq!(
-            graph.is_plain_data("Flags"),
-            admitted,
-            "incorrect enum plain-data fact after {suffix:?}"
-        );
-    }
-    let module =
-        parse("var Flags = ((values) => ((values.FIRST = 1), values))(Flags || (Flags = {}));");
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(
-        &body,
-        &shadowed,
-        &BTreeSet::new(),
-        &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
-    );
-    assert!(
-        graph.is_plain_data("Flags"),
-        "the recognized initializer self-write must remain admitted"
-    );
-}
-
-#[test]
 fn fn_purity_mutual_recursion_converges_pure() {
     // `even` and `odd` only reference each other inside their
     // bodies. Optimistic init (Pure) holds through the
@@ -157,28 +84,6 @@ fn fn_purity_mutual_recursion_converges_pure() {
     let graph = TestGraph::new(src);
     assert_eq!(graph.function_rules("even"), Some(vec![]));
     assert_eq!(graph.function_rules("odd"), Some(vec![]));
-}
-
-#[test]
-fn fn_purity_param_arithmetic_is_not_pure() {
-    // SOUNDNESS: `n - 1` runs ToNumeric on `n`; a caller can pass
-    // an object whose `valueOf` fires arbitrary code, so a body
-    // coercing an opaque param is not pure-callable.
-    assert_eq!(
-        fn_rules("function dec(n) { return n - 1; }", "dec"),
-        Some(vec![PurityRule::CoercingOperator])
-    );
-}
-
-#[test]
-fn fn_purity_arrow_const_init() {
-    // `const f = (x) => …` — chunk-top function in a VarDecl
-    // initializer. Concise-arrow body classifies the single
-    // return expression.
-    assert_eq!(
-        fn_rules("const wrap = (x) => ({ val: x });", "wrap"),
-        Some(vec![])
-    );
 }
 
 #[test]
@@ -201,104 +106,12 @@ fn fn_purity_call_inherits_chunk_local_function_purity() {
     };
     let init = var.decls[0].init.as_deref().expect("init");
     assert!(
-        classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
-            .kinds()
-            .is_empty()
-    );
-}
-
-#[test]
-fn new_map_fresh_spread_registry_entries_with_plain_data_members_is_pure() {
-    let src = r#"
-    const m = {
-        systemToolWebSearchId: "SYS_FN16",
-        dataTypeUrlId: "SYS_D10",
-    };
-    const includeUrl = true;
-    const registry = new Map([
-        ...[[m.systemToolWebSearchId, () => io()]],
-        ...(includeUrl ? [[m.dataTypeUrlId, function () { globalThis.touched = true; }]] : []),
-    ]);
-"#;
-    let module = parse(src);
-    let facts = analyze_facts(&module);
-    let registry_fact = facts
-        .iter()
-        .find(|f| f.declared.contains(&test_id("registry")))
-        .expect("registry fact missing");
-    assert!(
-        rules_of(&registry_fact.purity).is_empty(),
-        "fresh-spread registry literal should classify pure: {:?}",
-        registry_fact.purity
-    );
-}
-
-#[test]
-fn new_map_fresh_spread_registry_does_not_bless_unknown_members() {
-    let src = r#"
-    const registry = new Map([
-        ...[[m.systemToolWebSearchId, () => 1]],
-    ]);
-"#;
-    let module = parse(src);
-    let facts = analyze_facts(&module);
-    let registry_fact = facts
-        .iter()
-        .find(|f| f.declared.contains(&test_id("registry")))
-        .expect("registry fact missing");
-    assert_eq!(
-        rules_of(&registry_fact.purity),
-        [PurityRule::UnknownNew, PurityRule::UnknownMember],
-        "unknown member read must still block: {:?}",
-        registry_fact.purity
-    );
-}
-
-#[test]
-fn fn_purity_let_var_bound_arrows_are_not_cached() {
-    // `let` and `var` bindings are reassignable. Caching their
-    // body's purity would be unsound: a later `f = …` could
-    // replace the value with something impure between graph
-    // construction and the call site. Restrict graph entries
-    // to `const`-bound function/arrow initializers.
-    assert_eq!(
-        fn_rules("let f = () => 1;", "f"),
-        None,
-        "`let`-bound arrow must not be in the function-purity graph"
-    );
-    assert_eq!(
-        fn_rules("var f = function () { return 1; };", "f"),
-        None,
-        "`var`-bound function expr must not be in the function-purity graph"
-    );
-    // Sanity: `const` still works.
-    assert_eq!(fn_rules("const f = () => 1;", "f"), Some(vec![]));
-}
-
-#[test]
-fn fn_purity_throw_makes_function_impure_even_with_pure_arg() {
-    // `throw e` alters control flow observably regardless of
-    // whether `e` itself is pure. A function that always
-    // throws must not classify as Pure.
-    assert_eq!(
-        fn_rules(r#"function f() { throw "boom"; }"#, "f"),
-        Some(vec![PurityRule::ThrowStmt])
-    );
-    // Conditional throw is still Impure (we don't reason
-    // about reachability — soundness-first).
-    assert_eq!(
-        fn_rules(r#"function f(x) { if (x) throw "boom"; return x; }"#, "f"),
-        Some(vec![PurityRule::ThrowStmt])
-    );
-}
-
-#[test]
-fn fn_purity_debugger_makes_function_impure() {
-    // `debugger` pauses execution observably to a host
-    // attached to the process — not Pure.
-    assert_eq!(
-        fn_rules("function f() { debugger; return 1; }", "f"),
-        Some(vec![PurityRule::DebuggerStmt])
+        classify_expr_purity(
+            init,
+            &PurityScope::chunk_top(&shadowed, &BTreeSet::new(), &graph)
+        )
+        .kinds()
+        .is_empty()
     );
 }
 
@@ -315,51 +128,866 @@ fn is_plain_array(src: &str, name: &str) -> bool {
     TestGraph::new(src).is_plain_array(name)
 }
 
-#[test]
-fn plain_data_const_object_literal_is_tracked() {
-    // A vanilla data shape: KeyValue with non-computed keys,
-    // plain values, no spreads/accessors/methods. Reads on it
-    // can fire no user code; the analyzer can short-circuit
-    // member access purity on this receiver.
-    assert!(is_plain_data(r#"const TA = { FOO: "bar", BAZ: 1 };"#, "TA"));
+/// `(case, source, binding, expected purity rules)`; `None` means untracked.
+type FnRulesCase<'a> = (&'a str, &'a str, &'a str, Option<&'a [PurityRule]>);
+
+/// `(case, source, binding, expected plain-data admission)`.
+type PlainDataCase<'a> = (&'a str, &'a str, &'a str, bool);
+
+fn assert_plain_data_cases(cases: &[PlainDataCase<'_>]) {
+    for (case, src, binding, admitted) in cases {
+        assert_eq!(is_plain_data(src, binding), *admitted, "{case}");
+    }
+}
+
+/// The purity rules of the chunk fact declaring `binding`.
+fn fact_rules(src: &str, binding: &str) -> Vec<PurityRule> {
+    let module = parse(src);
+    let facts = analyze_facts(&module);
+    let fact = facts
+        .iter()
+        .find(|fact| fact.declared.contains(&test_id(binding)))
+        .unwrap_or_else(|| panic!("{binding} declaration"));
+    rules_of(&fact.purity)
 }
 
 #[test]
-fn plain_data_alias_member_mutation_disqualifies_source() {
-    assert!(!is_plain_data(
-        "const lookup = { key: 'token' }, alias = lookup; alias.key = () => later;",
-        "lookup",
-    ));
+fn chunk_fact_purity_rules() {
+    let cases: [(&str, &str, &str, &[PurityRule]); 4] = [
+        (
+            "local class construction before its declaration",
+            "const instance = new Registry(); class Registry { value = 1; }",
+            "instance",
+            &[PurityRule::UnknownNew],
+        ),
+        (
+            "direct eval disables the local class construction proof",
+            "class Registry { value = 1; } eval('Registry = class {}'); const instance = new Registry();",
+            "instance",
+            &[PurityRule::UnknownNew],
+        ),
+        (
+            "new Map of fresh-spread registry entries with plain-data members",
+            r#"
+    const m = {
+        systemToolWebSearchId: "SYS_FN16",
+        dataTypeUrlId: "SYS_D10",
+    };
+    const includeUrl = true;
+    const registry = new Map([
+        ...[[m.systemToolWebSearchId, () => io()]],
+        ...(includeUrl ? [[m.dataTypeUrlId, function () { globalThis.touched = true; }]] : []),
+    ]);
+"#,
+            "registry",
+            &[],
+        ),
+        (
+            "fresh-spread registry does not bless an unknown member read",
+            r#"
+    const registry = new Map([
+        ...[[m.systemToolWebSearchId, () => 1]],
+    ]);
+"#,
+            "registry",
+            &[PurityRule::UnknownNew, PurityRule::UnknownMember],
+        ),
+    ];
+    for (case, src, binding, expected) in cases {
+        assert_eq!(fact_rules(src, binding), expected, "{case}");
+    }
 }
 
-/// Regression: a method stored on the object runs with `this` bound to it,
-/// so calling one that writes through `this` mutates the object. Arrow
-/// methods, `this`-free functions and inherited intrinsics leave it plain.
 #[test]
-fn plain_data_method_call_writing_through_this_disqualifies_receiver() {
-    assert!(!is_plain_data(
-        "const o = { x: 1, m: function () { this.x = 2; } }; o.m();",
-        "o",
-    ));
-    assert!(!is_plain_data(
-        "const o = { x: 1, m: function () { this.x = 2; } }; const alias = o; alias.m();",
-        "o",
-    ));
-    assert!(!is_plain_data(
-        "function bump() { this.x = 2; } const o = { x: 1, bump }; o.bump();",
-        "o",
-    ));
-    assert!(is_plain_data(
-        "function read() { return 3; } \
+fn enum_member_reads_need_plain_data_after_the_initializer() {
+    // An enum member resolves against its settled own fields only while no
+    // write or escape reaches the object after its initializer; a binding
+    // another statement rebinds never resolves.
+    let initializer =
+        "var Flags = ((values) => ((values[(values.FIRST = 1)] = 'FIRST'), values))(Flags || {});";
+    for (suffix, admitted) in [
+        ("", true),
+        ("[Flags] = [{ FIRST: () => 1 }];", false),
+        ("({ Flags } = { Flags: { FIRST: () => 1 } });", false),
+        (
+            "Object.defineProperty(Flags, 'FIRST', { get() { return 1; } });",
+            false,
+        ),
+        ("Flags = new Proxy(Flags, {});", false),
+        ("globalThis.savedFlags = Flags;", false),
+    ] {
+        assert_eq!(
+            is_plain_data(&format!("{initializer}\n{suffix}"), "Flags"),
+            admitted,
+            "incorrect enum plain-data fact after {suffix:?}"
+        );
+    }
+    assert!(
+        is_plain_data(
+            "var Flags = ((values) => ((values.FIRST = 1), values))(Flags || (Flags = {}));",
+            "Flags"
+        ),
+        "the recognized initializer self-write must remain admitted"
+    );
+}
+
+#[test]
+fn function_purity_rules_by_body_shape() {
+    use PurityRule::*;
+    let cases: [FnRulesCase<'_>; 24] = [
+        // SOUNDNESS: `n - 1` runs ToNumeric on `n`; a caller can pass an
+        // object whose `valueOf` fires arbitrary code.
+        (
+            "coercing an opaque param",
+            "function dec(n) { return n - 1; }",
+            "dec",
+            Some(&[CoercingOperator]),
+        ),
+        // A concise-arrow body classifies the single return expression.
+        (
+            "const concise arrow",
+            "const wrap = (x) => ({ val: x });",
+            "wrap",
+            Some(&[]),
+        ),
+        // `let` / `var` bindings are reassignable: a later `f = …` could
+        // replace the value with something impure, so only `const`-bound
+        // function/arrow initializers are cached.
+        (
+            "let-bound arrow is untracked",
+            "let f = () => 1;",
+            "f",
+            None,
+        ),
+        (
+            "var-bound function expr is untracked",
+            "var f = function () { return 1; };",
+            "f",
+            None,
+        ),
+        (
+            "const-bound arrow is tracked",
+            "const f = () => 1;",
+            "f",
+            Some(&[]),
+        ),
+        // `throw` alters control flow observably regardless of the thrown
+        // value; reachability is not reasoned about (soundness-first).
+        (
+            "unconditional throw",
+            r#"function f() { throw "boom"; }"#,
+            "f",
+            Some(&[ThrowStmt]),
+        ),
+        (
+            "conditional throw",
+            r#"function f(x) { if (x) throw "boom"; return x; }"#,
+            "f",
+            Some(&[ThrowStmt]),
+        ),
+        // `debugger` pauses execution observably to an attached host.
+        (
+            "debugger",
+            "function f() { debugger; return 1; }",
+            "f",
+            Some(&[DebuggerStmt]),
+        ),
+        // A non-computed read on a PlainData receiver has no key
+        // sub-expression to validate.
+        (
+            "static property read on plain data",
+            r#"
+    const mr = { FUNCTIONS_EMULATOR: false, FOO: 1 };
+    const check = () => mr.FUNCTIONS_EMULATOR;
+"#,
+            "check",
+            Some(&[]),
+        ),
+        // Default-value expressions evaluate at call time, like body code.
+        (
+            "assigning param default",
+            "const f = (x = (globalThis.boom = 1)) => 1;",
+            "f",
+            Some(&[AssignOrUpdate]),
+        ),
+        (
+            "calling param default",
+            "function g(x = io()) { return 1; }",
+            "g",
+            Some(&[UnknownCall]),
+        ),
+        (
+            "primitive param default",
+            "const f = (x = 1) => x;",
+            "f",
+            Some(&[]),
+        ),
+        (
+            "fresh array param default",
+            "const g = (x = []) => x;",
+            "g",
+            Some(&[]),
+        ),
+        // Destructuring fires getters (object pattern) or the iterator
+        // protocol (array pattern) on the argument.
+        (
+            "object pattern param",
+            "const f = ({ a }) => a;",
+            "f",
+            Some(&[DestructuringPattern]),
+        ),
+        (
+            "array pattern param",
+            "const g = ([x]) => x;",
+            "g",
+            Some(&[DestructuringPattern]),
+        ),
+        (
+            "defaulted object pattern param",
+            "function h({ a } = {}) { return a; }",
+            "h",
+            Some(&[DestructuringPattern]),
+        ),
+        // A rest param builds a fresh array from the arguments list.
+        ("rest param", "const f = (...xs) => xs;", "f", Some(&[])),
+        // for-of fires `[Symbol.iterator]`; for-in fires proxy
+        // ownKeys/getOwnPropertyDescriptor traps.
+        (
+            "for-of",
+            "function f(xs) { for (const x of xs) {} return 1; }",
+            "f",
+            Some(&[IterationProtocol]),
+        ),
+        (
+            "for-in",
+            "function f(o) { for (const k in o) {} return 1; }",
+            "f",
+            Some(&[IterationProtocol]),
+        ),
+        // Plain `while` / C-style `for` fire no protocol beyond their
+        // independently classified sub-expressions.
+        (
+            "while loop with assigning body",
+            "function f(flag) { while (flag) { flag = false; } return 1; }",
+            "f",
+            Some(&[AssignOrUpdate]),
+        ),
+        (
+            "while loop control",
+            "function g(flag) { while (flag) {} return 1; }",
+            "g",
+            Some(&[]),
+        ),
+        (
+            "object pattern declarator",
+            "function f(o) { const { a } = o; return a; }",
+            "f",
+            Some(&[DestructuringPattern]),
+        ),
+        (
+            "array pattern declarator",
+            "function g(o) { const [x] = o; return x; }",
+            "g",
+            Some(&[DestructuringPattern]),
+        ),
+        (
+            "plain declarator control",
+            "function h(o) { const a = o; return a; }",
+            "h",
+            Some(&[]),
+        ),
+    ];
+    for (case, src, name, expected) in cases {
+        assert_eq!(fn_rules(src, name).as_deref(), expected, "{case}");
+    }
+}
+
+#[test]
+fn plain_data_initializer_shapes() {
+    assert_plain_data_cases(&[
+        // KeyValue with non-computed keys and plain values: reads fire no
+        // user code.
+        (
+            "const object literal",
+            r#"const TA = { FOO: "bar", BAZ: 1 };"#,
+            "TA",
+            true,
+        ),
+        ("const array literal", "const TA = [1, 2, 3];", "TA", true),
+        // `let` / `var` admit when the chunk-wide write scan finds no
+        // non-plain reassignment. Hoisted pre-init reads of a `var` see
+        // `undefined`, whose member read throws an engine TypeError, not
+        // user code.
+        ("let object literal", "let TA = { a: 1 };", "TA", true),
+        ("let array literal", "let TA = [1, 2, 3];", "TA", true),
+        ("var object literal", "var TA = { a: 1 };", "TA", true),
+        ("var array literal", "var TA = [1, 2, 3];", "TA", true),
+        // Every `var` initializer of the shared binding must pass, in any
+        // order and in comma lists; `var X;` alone carries no evidence.
+        (
+            "var redeclarations all plain",
+            r#"
+    var X = { a: 1 };
+    var X = { b: 2 };
+"#,
+            "X",
+            true,
+        ),
+        (
+            "var redeclaration with a call initializer",
+            r#"
+    var X = { a: 1 };
+    var X = io();
+"#,
+            "X",
+            false,
+        ),
+        (
+            "accessor initializer first",
+            "var X = { get a() { return 1; } }; var X = { a: 1 };",
+            "X",
+            false,
+        ),
+        (
+            "accessor initializer last",
+            "var X = { a: 1 }; var X = { get a() { return 1; } };",
+            "X",
+            false,
+        ),
+        (
+            "comma declarator with a call initializer",
+            "var X = { a: 1 }, X = io();",
+            "X",
+            false,
+        ),
+        // The computed key captures X although this declarator has no simple
+        // binding candidate.
+        (
+            "pattern declarator computed key captures",
+            "var X = { a: 1 }; var { [capture(X)]: y } = object;",
+            "X",
+            false,
+        ),
+        ("uninitialized var alone", "var X;", "X", false),
+        (
+            "uninitialized var then plain initializer",
+            r#"
+    var X;
+    var X = { a: 1 };
+"#,
+            "X",
+            true,
+        ),
+        // A getter, setter or method in the literal makes member reads run
+        // user code.
+        (
+            "const with getter",
+            "const X = { get a() { return io(); } };",
+            "X",
+            false,
+        ),
+        (
+            "const with setter",
+            "const X = { set a(v) {}, };",
+            "X",
+            false,
+        ),
+        (
+            "const with method",
+            "const X = { m() { return io(); } };",
+            "X",
+            false,
+        ),
+        // `CopyDataProperties` and array spread write data descriptors
+        // regardless of the source's shape. The spread's own init-time
+        // effects belong to the declaring statement.
+        (
+            "object spread initializer",
+            "const X = { ...other, a: 1 };",
+            "X",
+            true,
+        ),
+        (
+            "array spread initializer",
+            "const X = [1, ...other];",
+            "X",
+            true,
+        ),
+        // A computed key can name a Symbol mapping to a prototype accessor.
+        ("computed key", "const X = { [k]: 1 };", "X", false),
+        // `{__proto__: P}` sets the prototype (ES262 §13.2.5.5); P's
+        // accessors would fire on reads.
+        (
+            "__proto__ key",
+            "const X = { __proto__: other, a: 1 };",
+            "X",
+            false,
+        ),
+        (
+            "quoted __proto__ key",
+            r#"const X = { "__proto__": other, a: 1 };"#,
+            "X",
+            false,
+        ),
+        // Function initializers are tracked as `Function`, not `PlainData`.
+        ("const arrow", "const f = (x) => x;", "f", false),
+        (
+            "const function expression",
+            "const f = function() { return 1; };",
+            "f",
+            false,
+        ),
+    ]);
+}
+
+#[test]
+fn plain_data_post_initializer_uses() {
+    assert_plain_data_cases(&[
+        (
+            "write through an alias",
+            "const lookup = { key: 'token' }, alias = lookup; alias.key = () => later;",
+            "lookup",
+            false,
+        ),
+        // Regression: a method stored on the object runs with `this` bound to
+        // it, so calling one that writes through `this` mutates the object.
+        // Arrow methods, `this`-free functions and inherited intrinsics leave
+        // it plain.
+        (
+            "method writing through this",
+            "const o = { x: 1, m: function () { this.x = 2; } }; o.m();",
+            "o",
+            false,
+        ),
+        (
+            "method writing through this via alias",
+            "const o = { x: 1, m: function () { this.x = 2; } }; const alias = o; alias.m();",
+            "o",
+            false,
+        ),
+        (
+            "shorthand function writing through this",
+            "function bump() { this.x = 2; } const o = { x: 1, bump }; o.bump();",
+            "o",
+            false,
+        ),
+        (
+            "this-free methods and intrinsics",
+            "function read() { return 3; } \
          const o = { x: 1, m: () => 2, n: function () { return 3; }, read }; \
          o.m(); o.n(); o.read(); o.hasOwnProperty('x');",
-        "o",
-    ));
+            "o",
+            true,
+        ),
+        // A `let` rebinding whose RHS is not a syntactic plain literal could
+        // produce an accessor-bearing value; `X || {}` short-circuits to
+        // either operand.
+        (
+            "let reassigned to a call result",
+            "let X = { a: 1 }; function reassign() { X = someFn(); }",
+            "X",
+            false,
+        ),
+        (
+            "let reassigned to a param",
+            "let X = { a: 1 }; function reassign(other) { X = other; }",
+            "X",
+            false,
+        ),
+        (
+            "let reassigned to a short-circuit",
+            "let X = { a: 1 }; function reassign() { X = X || {}; }",
+            "X",
+            false,
+        ),
+        (
+            "let reassigned to an accessor literal",
+            "let X = { a: 1 }; function bad() { X = { get a() { return io(); } }; }",
+            "X",
+            false,
+        ),
+        (
+            "let updated",
+            "let X = { a: 1 }; function bad() { X++; }",
+            "X",
+            false,
+        ),
+        // Any member write disqualifies, even inside a function body that
+        // might run before the read being classified.
+        (
+            "top-level member write",
+            "const X = { a: 1 }; X.b = 2;",
+            "X",
+            false,
+        ),
+        (
+            "member write in a function",
+            "const X = { a: 1 }; function mut() { X.a = 9; }",
+            "X",
+            false,
+        ),
+        // Accessor-installing or prototype-changing builtins, and
+        // `Object.assign` (the rule is "never written through").
+        (
+            "Object.defineProperty",
+            r#"const X = { a: 1 }; Object.defineProperty(X, "a", { get: () => io() });"#,
+            "X",
+            false,
+        ),
+        (
+            "Object.defineProperties",
+            "const X = { a: 1 }; Object.defineProperties(X, descriptors);",
+            "X",
+            false,
+        ),
+        (
+            "Object.setPrototypeOf",
+            "const X = { a: 1 }; Object.setPrototypeOf(X, P);",
+            "X",
+            false,
+        ),
+        (
+            "Reflect.defineProperty",
+            r#"const X = { a: 1 }; Reflect.defineProperty(X, "a", { get: () => io() });"#,
+            "X",
+            false,
+        ),
+        (
+            "Object.assign target",
+            "const X = { a: 1 }; Object.assign(X, src);",
+            "X",
+            false,
+        ),
+        // A local alias preserves identity; a write through it disqualifies
+        // the original.
+        (
+            "unused alias",
+            "const X = { a: 1 }; const Y = X;",
+            "X",
+            true,
+        ),
+        (
+            "defineProperty through alias",
+            r#"const X = { a: 1 }; const Y = X; Object.defineProperty(Y, "a", { get: () => io() });"#,
+            "X",
+            false,
+        ),
+        // Escapes into calls, containers and value-producing conditionals.
+        ("call argument", "const X = { a: 1 }; f(X);", "X", false),
+        (
+            "constructor argument",
+            "const X = { a: 1 }; new Thing(X);",
+            "X",
+            false,
+        ),
+        (
+            "array element",
+            "const X = { a: 1 }; const arr = [X];",
+            "X",
+            false,
+        ),
+        (
+            "object property value",
+            "const X = { a: 1 }; const o = { x: X };",
+            "X",
+            false,
+        ),
+        (
+            "shorthand property",
+            "const X = { a: 1 }; const o = { X };",
+            "X",
+            false,
+        ),
+        (
+            "conditional alias",
+            "const X = { a: 1 }; const Y = flag ? X : null;",
+            "X",
+            false,
+        ),
+        (
+            "short-circuit alias",
+            "const X = { a: 1 }; const Y = X || {};",
+            "X",
+            false,
+        ),
+        // Provably non-capturing positions keep admission.
+        (
+            "member receiver",
+            "const X = { a: 1 }; const v = X.a;",
+            "X",
+            true,
+        ),
+        (
+            "object spread source",
+            "const X = { a: 1 }; const Y = { ...X };",
+            "X",
+            true,
+        ),
+        (
+            "array spread source",
+            "const X = [1]; const Y = [...X];",
+            "X",
+            true,
+        ),
+        (
+            "typeof operand",
+            "const X = { a: 1 }; const t = typeof X;",
+            "X",
+            true,
+        ),
+        (
+            "not operand",
+            "const X = { a: 1 }; const b = !X;",
+            "X",
+            true,
+        ),
+        (
+            "Object.keys argument",
+            "const X = { a: 1 }; const ks = Object.keys(X);",
+            "X",
+            true,
+        ),
+        (
+            "return value",
+            "const X = { a: 1 }; function f() { return X; }",
+            "X",
+            true,
+        ),
+        (
+            "concise arrow body",
+            "const X = { a: 1 }; const f = () => X;",
+            "X",
+            true,
+        ),
+        (
+            "export specifier",
+            "const X = { a: 1 }; export { X };",
+            "X",
+            true,
+        ),
+        // With `Object` rebound, `Object.keys(X)` calls a user function.
+        (
+            "Object.keys argument with shadowed Object",
+            "const userland = 1; const Object = userland; const X = { a: 1 }; const ks = Object.keys(X);",
+            "X",
+            false,
+        ),
+    ]);
 }
 
 #[test]
-fn plain_data_const_array_literal_is_tracked() {
-    assert!(is_plain_data("const TA = [1, 2, 3];", "TA"));
+fn plain_data_ts_enum_iife_shapes() {
+    assert_plain_data_cases(&[
+        // Param-scope tracking: `p.A = "a"` writes the IIFE parameter, not
+        // the outer `X`.
+        (
+            "arrow comma body",
+            r#"var X = ((p) => (p.A = "a", p.B = "b", p))({});"#,
+            "X",
+            true,
+        ),
+        // Canonical TypeScript emit: self-assigning `X || (X = {})` arg with a
+        // param shadowing the binding.
+        (
+            "canonical self-assigning short-circuit",
+            r#"var X = ((X) => (X["A"] = "a", X["B"] = "b", X))(X || (X = {}));"#,
+            "X",
+            true,
+        ),
+        // esbuild's `X || {}` lowering.
+        (
+            "or-plain argument",
+            r#"var ColorName = ((p) => (p["Red"] = "red", p["Green"] = "green", p))(ColorName || {});"#,
+            "ColorName",
+            true,
+        ),
+        (
+            "function expression body",
+            r#"var Color = (function (p) { p.RED = "red"; p.GREEN = "green"; return p; })(Color || {});"#,
+            "Color",
+            true,
+        ),
+        // Equivalent to `var X = X || {}` after evaluation.
+        (
+            "degenerate return of the param",
+            r#"var X = ((p) => p)({});"#,
+            "X",
+            true,
+        ),
+        (
+            "computed numeric keys",
+            r#"var X = ((p) => (p[0] = "zero", p[1] = "one", p))({});"#,
+            "X",
+            true,
+        ),
+        // TypeScript numeric-enum reverse map `n[(n.A = 0)] = "A"`: both
+        // writes are data properties.
+        (
+            "numeric reverse mapping",
+            r#"var E = ((n) => (n[(n.A = 0)] = "A", n))(E || {});"#,
+            "E",
+            true,
+        ),
+        (
+            "numeric reverse mapping with string-key forward write",
+            r#"var E = ((n) => (n[(n["A"] = 0)] = "A", n))(E || {});"#,
+            "E",
+            true,
+        ),
+        // Writes to a separate IIFE's param named `X` don't disqualify the
+        // outer plain `X`.
+        (
+            "inner param write leaves the outer candidate",
+            r#"
+    var X = { existing: 1 };
+    (function (X) { X.A = "a"; })({});
+"#,
+            "X",
+            true,
+        ),
+        // `import { j as a }` binds only `a`; the imported NAME `j` is module
+        // metadata. Regression: the escape default used to fire on it, losing
+        // enum candidates by name coincidence with vendor exports.
+        (
+            "import specifier name collision",
+            r#"
+    import { j as a } from "./vendor.js";
+    var j = ((n) => ((n[(n.A = 0)] = "A"), n))(j || {});
+    const probe = j.A;
+"#,
+            "j",
+            true,
+        ),
+        // The IIFE must return the object synchronously.
+        (
+            "async arrow",
+            "var X = (async (p) => (p.A = 1, p))({});",
+            "X",
+            false,
+        ),
+        (
+            "async function",
+            "var X = (async function (p) { p.A = 1; return p; })({});",
+            "X",
+            false,
+        ),
+        (
+            "generator function",
+            "var X = (function* (p) { p.A = 1; return p; })({});",
+            "X",
+            false,
+        ),
+        (
+            "reverse mapping writes __proto__",
+            r#"var X = ((p) => (p[(p.A = "__proto__")] = "A", p))({});"#,
+            "X",
+            false,
+        ),
+        // `Other || {}` could pass an arbitrary existing object.
+        (
+            "short-circuit on another binding",
+            r#"var X = ((p) => (p.A = "a", p))(Other || {});"#,
+            "X",
+            false,
+        ),
+        // A chunk-local function's body is unknown to the IIFE check.
+        (
+            "call to a named function",
+            r#"
+    function makeIt(p) { return p; }
+    var X = makeIt({ a: 1 });
+"#,
+            "X",
+            false,
+        ),
+        (
+            "non-literal argument",
+            r#"var X = ((p) => (p.A = "a", p))(someFn());"#,
+            "X",
+            false,
+        ),
+        (
+            "call in body",
+            r#"var X = ((p) => (p.A = "a", observe(p), p))(X || {});"#,
+            "X",
+            false,
+        ),
+        (
+            "global write in body",
+            r#"var X = ((p) => (globalThis.A = "a", p))(X || {});"#,
+            "X",
+            false,
+        ),
+        (
+            "other-object write in body",
+            r#"var X = ((p) => (other.A = "a", p))(X || {});"#,
+            "X",
+            false,
+        ),
+        (
+            "opaque computed key",
+            r#"var X = ((p) => (p[key] = "a", p))(X || {});"#,
+            "X",
+            false,
+        ),
+        (
+            "bracketed __proto__ key",
+            r#"var X = ((p) => (p["__proto__"] = "a", p))(X || {});"#,
+            "X",
+            false,
+        ),
+        (
+            "dotted __proto__ key",
+            r#"var X = ((p) => (p.__proto__ = "a", p))(X || {});"#,
+            "X",
+            false,
+        ),
+        (
+            "param escapes",
+            r#"var X = ((p) => (leaked = p, p.A = "a", p))(X || {});"#,
+            "X",
+            false,
+        ),
+        (
+            "body returns another value",
+            r#"var X = ((p) => (p.A = "a", other))({});"#,
+            "X",
+            false,
+        ),
+        // Only the comma-expression of property writes is admitted.
+        (
+            "defineProperty in body",
+            r#"var X = ((p) => (Object.defineProperty(p, "A", { get: () => io() }), p))({});"#,
+            "X",
+            false,
+        ),
+        // The standard chunk-wide write check still applies outside the IIFE.
+        (
+            "outer member write",
+            r#"
+    var X = ((p) => (p.A = "a", p))({});
+    function mut() { X.B = "b"; }
+"#,
+            "X",
+            false,
+        ),
+        // The current rule requires the single-param shape.
+        ("no param", r#"var X = (() => ({ a: 1 }))();"#, "X", false),
+        // The nested reverse-map write must target the same param with a
+        // primitive RHS.
+        (
+            "nested key writes another object",
+            r#"var X = ((n) => (n[(other.X = 0)] = "X", n))({});"#,
+            "X",
+            false,
+        ),
+        (
+            "nested key with call RHS",
+            r#"var X = ((n) => (n[(n.A = io())] = "A", n))({});"#,
+            "X",
+            false,
+        ),
+    ]);
 }
 
 #[test]
@@ -407,82 +1035,6 @@ mutated.push(1);
 }
 
 #[test]
-fn plain_data_let_object_literal_with_no_writes_is_tracked() {
-    // `let TA = {…}` is admissible even though re-assignment
-    // is syntactically allowed: the chunk-wide write scan
-    // confirms no `TA = rhs` assigns exist anywhere, so the
-    // post-init value is invariant just like a `const`.
-    assert!(is_plain_data("let TA = { a: 1 };", "TA"));
-    assert!(is_plain_data("let TA = [1, 2, 3];", "TA"));
-}
-
-#[test]
-fn plain_data_var_object_literal_is_tracked() {
-    // `var X = { … }` at chunk top admits as PlainData on the
-    // same terms as `let`: every init must be plain-literal,
-    // and no chunk-wide member writes / hostile builtin calls /
-    // non-plain ident reassigns. Hoisting: pre-init reads see
-    // `undefined` and `undefined.k` throws a spec-mandated
-    // TypeError — engine-emitted, not user-defined, so the
-    // read-purity claim still holds.
-    assert!(is_plain_data("var TA = { a: 1 };", "TA"));
-    assert!(is_plain_data("var TA = [1, 2, 3];", "TA"));
-}
-
-#[test]
-fn plain_data_var_multi_decl_all_plain_is_tracked() {
-    // Multiple chunk-top `var X = init` redeclarations are
-    // legal; every init must independently pass the plain-
-    // literal shape rule. Both inits are plain-objects → X
-    // admits as PlainData.
-    let src = r#"
-    var X = { a: 1 };
-    var X = { b: 2 };
-"#;
-    assert!(is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_var_multi_decl_with_one_non_plain_init_is_not_tracked() {
-    // First decl init is plain, second is `io()` → the second
-    // init's runtime value could carry accessor properties, so
-    // reads on X after the second decl could fire user code.
-    // Disqualify even though the first decl is fine.
-    let src = r#"
-    var X = { a: 1 };
-    var X = io();
-"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_var_repeated_accessor_initializer_is_rejected_in_either_order() {
-    let accessor_first = "var X = { get a() { return 1; } }; var X = { a: 1 };";
-    let accessor_last = "var X = { a: 1 }; var X = { get a() { return 1; } };";
-
-    assert!(!is_plain_data(accessor_first, "X"));
-    assert!(!is_plain_data(accessor_last, "X"));
-}
-
-#[test]
-fn plain_data_var_comma_decl_checks_every_initializer() {
-    // Comma-list declarators share one module binding just like
-    // separate `var` statements. A later call can replace the first
-    // plain value with an accessor-bearing object.
-    assert!(!is_plain_data("var X = { a: 1 }, X = io();", "X"));
-}
-
-#[test]
-fn plain_data_var_direct_declaration_still_scans_pattern_expressions() {
-    // The declaration's computed key captures X even though this var
-    // declarator itself has no simple binding candidate.
-    assert!(!is_plain_data(
-        "var X = { a: 1 }; var { [capture(X)]: y } = object;",
-        "X"
-    ));
-}
-
-#[test]
 fn plain_data_var_nested_block_reinitializer_disqualifies_value_inference() {
     let src = r#"
     var X = { a: 1 };
@@ -517,28 +1069,6 @@ fn plain_data_var_for_of_rebind_disqualifies_value_inference() {
 }
 
 #[test]
-fn plain_data_var_uninitialized_decl_alone_is_not_tracked() {
-    // `var X;` with no initializer contributes nothing to the
-    // candidate set. Without a chunk-top plain init, X has no
-    // admission evidence, so reading X.k could see whatever
-    // an external assignment installed.
-    assert!(!is_plain_data("var X;", "X"));
-}
-
-#[test]
-fn plain_data_var_uninitialized_then_initialized_is_tracked() {
-    // `var X;` followed by `var X = { … }` (or `X = { … }`)
-    // contributes the plain init for the binding. The first
-    // no-init decl is hoisting noise; the second declares the
-    // shape. Admits as PlainData.
-    let src = r#"
-    var X;
-    var X = { a: 1 };
-"#;
-    assert!(is_plain_data(src, "X"));
-}
-
-#[test]
 fn plain_data_var_unblocks_embedded_build_env_config_shape() {
     // The gaffer `embeddedBuildEnvConfig` (`var mr = { … }`)
     // shape: bundler-emitted `var` plain-object literal with no
@@ -560,68 +1090,6 @@ fn plain_data_var_unblocks_embedded_build_env_config_shape() {
 }
 
 #[test]
-fn plain_data_ts_enum_iife_arrow_comma_body_is_tracked() {
-    // The minimal arrow-comma-body shape with shadow-named param.
-    // The scanner's new param-scope tracking is what makes this
-    // work — `p.A = "a"` looks like a member write on `p`, but
-    // `p` here is the inner IIFE parameter shadowing the outer
-    // `X`, so the scanner doesn't disqualify the outer X.
-    let src = r#"var X = ((p) => (p.A = "a", p.B = "b", p))({});"#;
-    assert!(is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_canonical_self_assign_short_circuit_is_tracked() {
-    // The canonical TypeScript emit form: the IIFE arg uses the
-    // self-assigning short-circuit `X || (X = {})` to ensure the
-    // arg is a plain object even on first reach. Param is named
-    // the same as the binding (shadow case).
-    let src = r#"var X = ((X) => (X["A"] = "a", X["B"] = "b", X))(X || (X = {}));"#;
-    assert!(is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_or_plain_arg_is_tracked() {
-    // The shorter `X || {}` arg form (esbuild's TS lowering for
-    // const-enums and simple string enums).
-    let src =
-        r#"var ColorName = ((p) => (p["Red"] = "red", p["Green"] = "green", p))(ColorName || {});"#;
-    assert!(is_plain_data(src, "ColorName"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_function_expression_body_is_tracked() {
-    let src = r#"var Color = (function (p) { p.RED = "red"; p.GREEN = "green"; return p; })(Color || {});"#;
-    assert!(is_plain_data(src, "Color"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_must_return_an_object_synchronously() {
-    for src in [
-        "var X = (async (p) => (p.A = 1, p))({});",
-        "var X = (async function (p) { p.A = 1; return p; })({});",
-        "var X = (function* (p) { p.A = 1; return p; })({});",
-    ] {
-        assert!(!is_plain_data(src, "X"), "{src}");
-    }
-}
-
-#[test]
-fn plain_data_ts_enum_iife_reverse_mapping_must_not_write_proto() {
-    let src = r#"var X = ((p) => (p[(p.A = "__proto__")] = "A", p))({});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_self_binding_short_circuit_must_match_decl() {
-    // `Other || {}` could pass an arbitrary existing object into
-    // the IIFE. The enum-init rule is only for the binding being
-    // initialized, whose writes remain local to that binding.
-    let src = r#"var X = ((p) => (p.A = "a", p))(Other || {});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
 fn plain_data_ts_enum_iife_member_reads_classify_pure() {
     // End-to-end: a downstream accessor reading the enum's
     // members classifies pure because the binding admits as
@@ -633,181 +1101,6 @@ fn plain_data_ts_enum_iife_member_reads_classify_pure() {
     let graph = TestGraph::new(src);
     assert!(graph.is_plain_data("Color"));
     assert_eq!(graph.function_rules("isRed"), Some(vec![]));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_degenerate_return_param_is_tracked() {
-    // Edge case: arrow body is just the param (no mutations).
-    // Equivalent to `var X = X || {}` after evaluation.
-    let src = r#"var X = ((p) => p)({});"#;
-    assert!(is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_non_iife_call_is_not_tracked() {
-    // Not an inline arrow callable — calling a chunk-local
-    // function whose body is unknown to the IIFE check.
-    let src = r#"
-    function makeIt(p) { return p; }
-    var X = makeIt({ a: 1 });
-"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_non_literal_arg_is_not_tracked() {
-    // IIFE arg isn't a plain object or `X || plain` — could be
-    // anything at runtime. Reject.
-    let src = r#"var X = ((p) => (p.A = "a", p))(someFn());"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_call_in_body_is_not_tracked() {
-    let src = r#"var X = ((p) => (p.A = "a", observe(p), p))(X || {});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_global_or_other_object_write_is_not_tracked() {
-    assert!(!is_plain_data(
-        r#"var X = ((p) => (globalThis.A = "a", p))(X || {});"#,
-        "X"
-    ));
-    assert!(!is_plain_data(
-        r#"var X = ((p) => (other.A = "a", p))(X || {});"#,
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_computed_unsafe_key_is_not_tracked() {
-    let src = r#"var X = ((p) => (p[key] = "a", p))(X || {});"#;
-    assert!(!is_plain_data(src, "X"));
-    let src = r#"var X = ((p) => (p["__proto__"] = "a", p))(X || {});"#;
-    assert!(!is_plain_data(src, "X"));
-    let src = r#"var X = ((p) => (p.__proto__ = "a", p))(X || {});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_param_escape_is_not_tracked() {
-    let src = r#"var X = ((p) => (leaked = p, p.A = "a", p))(X || {});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_body_does_not_return_param_is_not_tracked() {
-    // Body returns something other than the param — could be a
-    // different object (an external reference, the result of a
-    // call, etc.). Without verifying the returned value is
-    // plain, reject.
-    let src = r#"var X = ((p) => (p.A = "a", other))({});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_define_property_inside_body_is_not_admitted_directly() {
-    // The body has a write that ISN'T `p.K = primLit` — calls
-    // `Object.defineProperty` instead. The IIFE-body check
-    // rejects this shape (only the comma-expression of
-    // property writes is admitted).
-    let src = r#"var X = ((p) => (Object.defineProperty(p, "A", { get: () => io() }), p))({});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_with_outer_member_write_disqualifies() {
-    // Even when admitted as a TS-enum-IIFE candidate, a
-    // chunk-wide member write `X.K = …` outside the IIFE
-    // disqualifies — the scanner's standard write check
-    // applies. The param-scope tracking is narrow: it only
-    // exempts writes INSIDE function/arrow bodies whose
-    // params shadow the candidate name.
-    let src = r#"
-    var X = ((p) => (p.A = "a", p))({});
-    function mut() { X.B = "b"; }
-"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_computed_numeric_key_is_tracked() {
-    // Numeric literal as computed key is admitted as a member
-    // access on a fresh data property.
-    let src = r#"var X = ((p) => (p[0] = "zero", p[1] = "one", p))({});"#;
-    assert!(is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_no_param_function_is_not_tracked() {
-    // No parameter — body has no `p` to mutate; reject.
-    let src = r#"var X = (() => ({ a: 1 }))();"#;
-    // Note: this could be admitted as "returns plain object
-    // literal" in a future extension, but the current rule
-    // requires the single-param shape and rejects this.
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_numeric_reverse_mapping_is_tracked() {
-    // TypeScript's numeric-enum emit produces both a forward
-    // map and a reverse map via the nested-assignment shape:
-    //
-    //     n[(n.A = 0)] = "A"
-    //
-    // The inner `n.A = 0` writes 0 as a data property under
-    // key "A", then evaluates to 0, which the outer assignment
-    // uses as the computed key for the reverse map:
-    // `n[0] = "A"`. Both writes are data-property only — sound.
-    let src = r#"var E = ((n) => (n[(n.A = 0)] = "A", n))(E || {});"#;
-    assert!(is_plain_data(src, "E"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_numeric_reverse_mapping_string_key_form_is_tracked() {
-    // The bracket-key inner form `n[(n["A"] = 0)] = "A"`. Same
-    // soundness story, different syntactic shape for the inner
-    // forward write.
-    let src = r#"var E = ((n) => (n[(n["A"] = 0)] = "A", n))(E || {});"#;
-    assert!(is_plain_data(src, "E"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_nested_key_non_param_object_is_not_tracked() {
-    // The inner assignment must target the SAME param. A nested
-    // write on a different object would put data on a different
-    // object and use the result as the outer key — sound for
-    // X's purity in isolation but not what the rule is meant
-    // to admit, and the recursive check naturally rejects it.
-    let src = r#"var X = ((n) => (n[(other.X = 0)] = "X", n))({});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_nested_key_non_primitive_rhs_is_not_tracked() {
-    // The inner assignment's RHS must be primitive — same
-    // stricter rule as the outer case.
-    let src = r#"var X = ((n) => (n[(n.A = io())] = "A", n))({});"#;
-    assert!(!is_plain_data(src, "X"));
-}
-
-#[test]
-fn plain_data_ts_enum_iife_inner_param_write_doesnt_disqualify_outer_candidate() {
-    // The scanner's param-scope tracking is the key feature
-    // making the shadow case work. This test pins the
-    // behavior directly: a chunk where the outer X is admitted
-    // (via a regular plain-literal init) but a separate IIFE
-    // shadows X as a param and writes to that param — the
-    // outer X must NOT be disqualified by those inner writes.
-    let src = r#"
-    var X = { existing: 1 };
-    (function (X) { X.A = "a"; })({});
-"#;
-    // Outer X has its own plain init AND is admitted; the
-    // inner anonymous IIFE's writes target the param-bound
-    // inner X, not the outer.
-    assert!(is_plain_data(src, "X"));
 }
 
 #[test]
@@ -951,158 +1244,6 @@ fn plain_data_let_with_plain_literal_replacement_is_tracked() {
 }
 
 #[test]
-fn plain_data_let_with_non_literal_rhs_assign_disqualifies() {
-    // A re-bind whose RHS is not a syntactic plain literal could
-    // produce an accessor-bearing value at runtime — `someFn()`
-    // might return `Object.defineProperty(...)`-installed
-    // getters, `other` might be such a value already, `X || {}`
-    // shortcircuits to either operand. Each of these must
-    // disqualify.
-    assert!(!is_plain_data(
-        "let X = { a: 1 }; function reassign() { X = someFn(); }",
-        "X"
-    ));
-    assert!(!is_plain_data(
-        "let X = { a: 1 }; function reassign(other) { X = other; }",
-        "X"
-    ));
-    assert!(!is_plain_data(
-        "let X = { a: 1 }; function reassign() { X = X || {}; }",
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_let_with_accessor_rhs_assign_disqualifies() {
-    // Even though the binding is `let` and the RHS is a literal,
-    // the literal carries a getter — assigning it gives X
-    // accessor channels. Disqualify.
-    assert!(!is_plain_data(
-        "let X = { a: 1 }; function bad() { X = { get a() { return io(); } }; }",
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_let_with_update_disqualifies() {
-    // `X++` rewrites X to a number — definitely not a
-    // plain-literal data shape. Reject.
-    assert!(!is_plain_data(
-        "let X = { a: 1 }; function bad() { X++; }",
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_const_with_accessor_property_is_not_tracked() {
-    // A getter installed in the literal makes `X.a` fire user
-    // code. Reject these initializers — even though the binding
-    // itself is `const`, reads on it are not pure.
-    assert!(!is_plain_data(
-        "const X = { get a() { return io(); } };",
-        "X"
-    ));
-    assert!(!is_plain_data("const X = { set a(v) {}, };", "X"));
-    assert!(!is_plain_data("const X = { m() { return io(); } };", "X"));
-}
-
-#[test]
-fn plain_data_const_with_spread_is_tracked() {
-    // Object/array spread inside the literal init is admitted:
-    // `CopyDataProperties` and array spread both write the
-    // source's *values* via `CreateDataPropertyOrThrow`, which
-    // produces data descriptors regardless of the source's
-    // descriptor shape. The resulting receiver has only data
-    // properties, so member reads on it fire no user code.
-    // The spread itself fires source getters AT INIT — that
-    // impurity belongs to the surrounding statement (classified
-    // independently via `ObjectSpread`/`ArraySpread` rules) and
-    // is orthogonal to whether subsequent reads on the binding
-    // are pure.
-    assert!(is_plain_data("const X = { ...other, a: 1 };", "X"));
-    assert!(is_plain_data("const X = [1, ...other];", "X"));
-}
-
-#[test]
-fn plain_data_const_with_computed_key_is_not_tracked() {
-    // Computed keys evaluate at-init; the resulting property
-    // name can technically be a Symbol that maps to an
-    // accessor on the prototype chain. Conservatively reject.
-    assert!(!is_plain_data("const X = { [k]: 1 };", "X"));
-}
-
-#[test]
-fn plain_data_const_with_proto_key_is_not_tracked() {
-    // `{__proto__: P}` in an object literal SETS the prototype
-    // (ES262 §13.2.5.5). If P has accessor properties, reads on
-    // X fire them. Reject the syntactic form. The bracketed
-    // `{["__proto__"]: P}` does NOT set the prototype, but it's
-    // a computed key (already rejected).
-    assert!(!is_plain_data("const X = { __proto__: other, a: 1 };", "X"));
-    assert!(!is_plain_data(
-        r#"const X = { "__proto__": other, a: 1 };"#,
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_const_function_init_is_not_tracked_as_plain_data() {
-    // `const f = () => …` is tracked as `Function`, not
-    // `PlainData`. We care about the call-purity of f, not
-    // about reading `f.length` etc.
-    assert!(!is_plain_data("const f = (x) => x;", "f"));
-    assert!(!is_plain_data("const f = function() { return 1; };", "f"));
-}
-
-#[test]
-fn plain_data_disqualified_by_member_write() {
-    // Any code in the chunk that writes `X.k = ...` could in
-    // theory go through `Object.defineProperty`-style channels
-    // later. The conservative rule disqualifies the binding
-    // outright — even direct data-property assignment is
-    // rejected.
-    assert!(!is_plain_data("const X = { a: 1 }; X.b = 2;", "X"));
-    // Even when the write lives inside a function body, the
-    // function might be called from anywhere — including before
-    // the read site we're trying to classify. Reject.
-    assert!(!is_plain_data(
-        "const X = { a: 1 }; function mut() { X.a = 9; }",
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_disqualified_by_define_property_call() {
-    // `Object.defineProperty(X, ...)` is the canonical channel
-    // for installing an accessor on a `const`-bound plain
-    // object after init. Any call shape with X as the first arg
-    // disqualifies.
-    assert!(!is_plain_data(
-        r#"const X = { a: 1 }; Object.defineProperty(X, "a", { get: () => io() });"#,
-        "X"
-    ));
-    assert!(!is_plain_data(
-        "const X = { a: 1 }; Object.defineProperties(X, descriptors);",
-        "X"
-    ));
-    assert!(!is_plain_data(
-        "const X = { a: 1 }; Object.setPrototypeOf(X, P);",
-        "X"
-    ));
-    assert!(!is_plain_data(
-        r#"const X = { a: 1 }; Reflect.defineProperty(X, "a", { get: () => io() });"#,
-        "X"
-    ));
-    // Object.assign(target, ...) writes data props to target.
-    // Conservatively rejected so the chunk-wide rule reads
-    // "the binding cell is never written through, period."
-    assert!(!is_plain_data(
-        "const X = { a: 1 }; Object.assign(X, src);",
-        "X"
-    ));
-}
-
-#[test]
 fn plain_data_computed_read_with_opaque_key_is_not_pure() {
     // SOUNDNESS (ToPropertyKey): `TA[n]` runs ToPropertyKey on the
     // key VALUE before the (accessor-free) lookup on the PlainData
@@ -1138,19 +1279,6 @@ fn plain_data_computed_read_with_primitive_key_is_pure() {
     assert!(graph.is_plain_data("TA"));
     assert_eq!(graph.function_rules("readFoo"), Some(vec![]));
     assert_eq!(graph.function_rules("readZero"), Some(vec![]));
-}
-
-#[test]
-fn plain_data_read_with_static_property_is_pure() {
-    // `mr.FUNCTIONS_EMULATOR`: a chunk-local config object
-    // accessed via a non-computed property name. With `mr` as
-    // PlainData, the read is unconditionally pure (no key
-    // sub-expression to validate).
-    let src = r#"
-    const mr = { FUNCTIONS_EMULATOR: false, FOO: 1 };
-    const check = () => mr.FUNCTIONS_EMULATOR;
-"#;
-    assert_eq!(fn_rules(src, "check"), Some(vec![]));
 }
 
 #[test]
@@ -1380,203 +1508,6 @@ fn body_shadowed_pure_member_binding_is_not_pure() {
         graph.function_purity("g").map(|p| rules_of(p)),
         Some(vec![])
     );
-}
-
-#[test]
-fn fn_purity_impure_param_default_makes_function_not_pure() {
-    // Default-value expressions evaluate at call time, exactly
-    // like body code.
-    assert_eq!(
-        fn_rules("const f = (x = (globalThis.boom = 1)) => 1;", "f"),
-        Some(vec![PurityRule::AssignOrUpdate])
-    );
-    assert_eq!(
-        fn_rules("function g(x = io()) { return 1; }", "g"),
-        Some(vec![PurityRule::UnknownCall])
-    );
-}
-
-#[test]
-fn fn_purity_pure_param_default_stays_pure() {
-    assert_eq!(fn_rules("const f = (x = 1) => x;", "f"), Some(vec![]));
-    assert_eq!(fn_rules("const g = (x = []) => x;", "g"), Some(vec![]));
-}
-
-#[test]
-fn fn_purity_destructuring_param_makes_function_not_pure() {
-    // Destructuring a parameter fires getters (object pattern) or
-    // the iterator protocol (array pattern) on the argument.
-    assert_eq!(
-        fn_rules("const f = ({ a }) => a;", "f"),
-        Some(vec![PurityRule::DestructuringPattern])
-    );
-    assert_eq!(
-        fn_rules("const g = ([x]) => x;", "g"),
-        Some(vec![PurityRule::DestructuringPattern])
-    );
-    assert_eq!(
-        fn_rules("function h({ a } = {}) { return a; }", "h"),
-        Some(vec![PurityRule::DestructuringPattern])
-    );
-}
-
-#[test]
-fn fn_purity_rest_param_stays_pure() {
-    // A rest param builds a fresh array from the arguments list —
-    // no user-code path.
-    assert_eq!(fn_rules("const f = (...xs) => xs;", "f"), Some(vec![]));
-}
-
-#[test]
-fn fn_purity_for_of_makes_function_not_pure() {
-    // for-of fires the iterated value's `[Symbol.iterator]`.
-    assert_eq!(
-        fn_rules("function f(xs) { for (const x of xs) {} return 1; }", "f"),
-        Some(vec![PurityRule::IterationProtocol])
-    );
-}
-
-#[test]
-fn fn_purity_for_in_makes_function_not_pure() {
-    // for-in enumeration fires proxy ownKeys/getOwnPropertyDescriptor
-    // traps on the enumerated value.
-    assert_eq!(
-        fn_rules("function f(o) { for (const k in o) {} return 1; }", "f"),
-        Some(vec![PurityRule::IterationProtocol])
-    );
-}
-
-#[test]
-fn fn_purity_plain_loops_stay_pure() {
-    // Plain `while` / C-style `for` introduce no protocol firing
-    // beyond their (independently classified) sub-expressions.
-    assert_eq!(
-        fn_rules(
-            "function f(flag) { while (flag) { flag = false; } return 1; }",
-            "f"
-        ),
-        Some(vec![PurityRule::AssignOrUpdate]) // the assign is impure — control for the loop itself below
-    );
-    assert_eq!(
-        fn_rules("function g(flag) { while (flag) {} return 1; }", "g"),
-        Some(vec![])
-    );
-}
-
-#[test]
-fn fn_purity_destructuring_declarator_makes_function_not_pure() {
-    // `const {a} = o` fires o's getters; `const [x] = o` fires the
-    // iterator protocol.
-    assert_eq!(
-        fn_rules("function f(o) { const { a } = o; return a; }", "f"),
-        Some(vec![PurityRule::DestructuringPattern])
-    );
-    assert_eq!(
-        fn_rules("function g(o) { const [x] = o; return x; }", "g"),
-        Some(vec![PurityRule::DestructuringPattern])
-    );
-    assert_eq!(
-        fn_rules("function h(o) { const a = o; return a; }", "h"),
-        Some(vec![])
-    );
-}
-
-#[test]
-fn plain_data_known_alias_is_checked_for_mutation() {
-    // A local alias preserves the tracked object's identity; a later
-    // write through that alias disqualifies the original binding.
-    assert!(is_plain_data("const X = { a: 1 }; const Y = X;", "X"));
-    assert!(!is_plain_data(
-        r#"const X = { a: 1 }; const Y = X; Object.defineProperty(Y, "a", { get: () => io() });"#,
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_call_arg_escape_disqualifies() {
-    assert!(!is_plain_data("const X = { a: 1 }; f(X);", "X"));
-    assert!(!is_plain_data("const X = { a: 1 }; new Thing(X);", "X"));
-}
-
-#[test]
-fn plain_data_container_value_escape_disqualifies() {
-    assert!(!is_plain_data("const X = { a: 1 }; const arr = [X];", "X"));
-    assert!(!is_plain_data(
-        "const X = { a: 1 }; const o = { x: X };",
-        "X"
-    ));
-    assert!(!is_plain_data("const X = { a: 1 }; const o = { X };", "X"));
-}
-
-#[test]
-fn plain_data_conditional_alias_escape_disqualifies() {
-    // `flag ? X : null` evaluates to X itself — a captured alias.
-    assert!(!is_plain_data(
-        "const X = { a: 1 }; const Y = flag ? X : null;",
-        "X"
-    ));
-    assert!(!is_plain_data(
-        "const X = { a: 1 }; const Y = X || {};",
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_non_capturing_reads_keep_admission() {
-    // The short list of provably non-capturing positions must NOT
-    // disqualify: member receiver, spread source, typeof/!/void,
-    // Object.keys-style single arg, return / concise arrow body,
-    // export specifier.
-    assert!(is_plain_data("const X = { a: 1 }; const v = X.a;", "X"));
-    assert!(is_plain_data(
-        "const X = { a: 1 }; const Y = { ...X };",
-        "X"
-    ));
-    assert!(is_plain_data("const X = [1]; const Y = [...X];", "X"));
-    assert!(is_plain_data(
-        "const X = { a: 1 }; const t = typeof X;",
-        "X"
-    ));
-    assert!(is_plain_data("const X = { a: 1 }; const b = !X;", "X"));
-    assert!(is_plain_data(
-        "const X = { a: 1 }; const ks = Object.keys(X);",
-        "X"
-    ));
-    assert!(is_plain_data(
-        "const X = { a: 1 }; function f() { return X; }",
-        "X"
-    ));
-    assert!(is_plain_data("const X = { a: 1 }; const f = () => X;", "X"));
-    assert!(is_plain_data("const X = { a: 1 }; export { X };", "X"));
-}
-
-#[test]
-fn plain_data_object_keys_escape_exemption_requires_unshadowed_object() {
-    // With `Object` rebound at chunk top, `Object.keys(X)` calls a
-    // user function — the arg is a real escape.
-    assert!(!is_plain_data(
-        "const userland = 1; const Object = userland; const X = { a: 1 }; const ks = Object.keys(X);",
-        "X"
-    ));
-}
-
-#[test]
-fn plain_data_enum_survives_import_specifier_name_collision() {
-    // `import { j as a }` — the IMPORTED side (`j`) is the source
-    // module's export NAME, pure module metadata; the only binding the
-    // statement introduces is the local `a`. Regression: the escape
-    // default used to fire on the imported-name `Ident`, so a chunk
-    // importing any export whose NAME collides with a local PlainData
-    // candidate (here the enum binding `j`) silently lost the
-    // candidate — on real bundles, where vendor chunks export
-    // hundreds of single-letter names, this killed most enum
-    // admissions by name coincidence.
-    let src = r#"
-    import { j as a } from "./vendor.js";
-    var j = ((n) => ((n[(n.A = 0)] = "A"), n))(j || {});
-    const probe = j.A;
-"#;
-    assert!(is_plain_data(src, "j"));
 }
 
 #[test]

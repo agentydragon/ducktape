@@ -73,9 +73,18 @@ For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
 
-Migrations 21–23 add journal blocks, record background compaction progress and allow APB blocks
-of up to 256 entries. See [journal packing and verification](#apb-v1-journal-repacking-and-verification)
-for writer settings, rollback and manual maintenance.
+Migrations 21–24 add journal blocks, record background compaction progress, allow APB blocks
+of up to 256 entries, and index command-admission response metadata. Migration 25 adds an
+attempt-keyed projection for sampling recovery: dispatch
+turn/sequence, source sequences attached to started items, and deduplicated started item IDs. It
+stores no provider payloads or conversation content. Complete projected attempts recover without
+scanning journal blocks; legacy attempts and projections invalidated by an older writer fall back to
+the journal, which remains authoritative. Settlement removes the projection in the same transaction
+that no longer needs it. During a mixed-version roll, an older binary's journal append clears the
+projection's completeness marker so a new owner cannot mistake partial metadata for a complete
+report. Image rollback leaves the journal intact for the older recovery path. See
+[journal packing and verification](#apb-v1-journal-repacking-and-verification) for writer settings,
+rollback and manual maintenance.
 
 `context_source_writes` enables sourced context entries. Deploy the reader to every sampler
 replica before enabling writes. With the setting omitted, the sampler reads both formats and

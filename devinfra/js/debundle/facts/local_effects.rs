@@ -10,7 +10,7 @@ use swc_ecma_ast::*;
 use super::{ChunkValueFlow, StructuralStatementFacts, metadata_decorate_call};
 use analysis_domain::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use analysis_vocabulary::inputs::{KnownEffect, LocalEffectPolicy};
-use purity::{ChunkCodeGraph, classify_expr_purity};
+use purity::{PurityScope, classify_expr_purity};
 
 #[derive(Debug, Default)]
 pub struct LocalEffectContext {
@@ -129,21 +129,14 @@ impl LocalEffectContext {
     pub(crate) fn local_property_write_targets(
         &self,
         item: &ModuleItem,
-        shadowed: &BTreeSet<&'static str>,
-        declared_pure: &BTreeSet<String>,
-        graph: &ChunkCodeGraph,
+        scope: &PurityScope<'_>,
     ) -> BTreeSet<Id> {
         let ModuleItem::Stmt(Stmt::Expr(expr_stmt)) = item else {
             return BTreeSet::new();
         };
         let mut targets = BTreeSet::new();
-        if self.collect_local_property_writes(
-            &expr_stmt.expr,
-            shadowed,
-            declared_pure,
-            graph,
-            &mut targets,
-        ) && !targets.is_empty()
+        if self.collect_local_property_writes(&expr_stmt.expr, scope, &mut targets)
+            && !targets.is_empty()
         {
             targets
         } else {
@@ -154,15 +147,14 @@ impl LocalEffectContext {
     fn collect_local_property_writes(
         &self,
         expr: &Expr,
-        shadowed: &BTreeSet<&'static str>,
-        declared_pure: &BTreeSet<String>,
-        graph: &ChunkCodeGraph,
+        scope: &PurityScope<'_>,
         targets: &mut BTreeSet<Id>,
     ) -> bool {
         match expr.unwrap_parens() {
-            Expr::Seq(seq) => seq.exprs.iter().all(|expr| {
-                self.collect_local_property_writes(expr, shadowed, declared_pure, graph, targets)
-            }),
+            Expr::Seq(seq) => seq
+                .exprs
+                .iter()
+                .all(|expr| self.collect_local_property_writes(expr, scope, targets)),
             // Plain `=` only: a compound assignment (`+=` etc.) also
             // READS the property, and a read on a written-through (so
             // non-PlainData) object may fire a getter.
@@ -177,15 +169,7 @@ impl LocalEffectContext {
                 if !self.declared_bindings.contains(&root) {
                     return false;
                 }
-                if !classify_expr_purity(
-                    &assign.right,
-                    shadowed,
-                    &BTreeSet::new(),
-                    declared_pure,
-                    graph,
-                )
-                .is_pure()
-                {
+                if !classify_expr_purity(&assign.right, scope).is_pure() {
                     return false;
                 }
                 targets.insert(root);
@@ -575,10 +559,7 @@ fn vendor_prune_inline_namespace_iife_target(
     if !local_effect_context.declared_bindings.contains(&target) {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     if function.function.params.len() == 1 {
@@ -627,10 +608,7 @@ fn vendor_prune_for_each_local_effect_target(
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
+    let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
         return None;
     };
     if static_member_name(&member.prop).as_deref() != Some("forEach") {
@@ -656,10 +634,7 @@ fn vendor_prune_static_object_iteration(expr: &Expr) -> bool {
     {
         return false;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return false;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
+    let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
         return false;
     };
     let Expr::Ident(object) = member.obj.unwrap_parens() else {
@@ -805,10 +780,7 @@ pub fn local_namespace_iife_target(call: &CallExpr) -> Option<Id> {
         return None;
     }
     let target = local_namespace_iife_arg_target(&call.args[0].expr)?;
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     if function.function.params.len() != 1 {
@@ -891,10 +863,7 @@ fn local_commonjs_module_iife_target(
     {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     if function.function.params.len() != 1 {
@@ -1011,10 +980,7 @@ fn commonjs_nested_iife_mutates_param(call: &CallExpr, param: &str) -> Option<bo
     if !call.args.is_empty() {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     if !function.function.params.is_empty() {

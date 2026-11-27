@@ -86,8 +86,7 @@ pub(super) fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &s
         ValueExpr::ObjectLiteral(_, properties) => properties.is_empty(),
         ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
             value
-                .result_alternatives()
-                .expect("alternative expression")
+                .branching_alternatives()
                 .iter()
                 .all(|value| same_property_or_fresh(value, alias, property))
         }
@@ -281,10 +280,7 @@ pub(super) fn discarded_synchronous_iife(item: &ModuleItem) -> Option<u32> {
     let Expr::Call(call) = value else {
         return None;
     };
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     (function.ident.is_none()

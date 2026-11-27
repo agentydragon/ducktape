@@ -72,7 +72,8 @@ The open Thread watches the Dispatcher's bounded Session workset. The conversati
 delivering, failed, and unknown commands using ordinary input bubbles and control cards. The browser
 can load originals for visible receipts even before History is available. Loaded History owns
 finished commands. A pending History command shows its unresolved delivery status on the same
-row. The message gutter holds the progress dots, short state, and dismissal. The dots follow
+row. The message gutter holds the progress dots, short state, and dismissal without changing the
+bubble's maximum width. The dots follow
 submission, Dispatcher delivery, runner admission, and the observed effect. Red identifies a
 confirmed error at its boundary. A recorded delivery-attempt error can be red while the outcome
 remains unknown. Unknown outcomes without such an error leave the first unverified stage dashed.
@@ -96,6 +97,12 @@ an exact server revision the notice remains visible. History and saved command d
 Delivery history remains available independently of the History projection and includes previous
 acknowledgements. When an exact revision has expired or was superseded, the interface reports that
 loss of evidence.
+
+History's **Execution failed** has its own Dismiss button for both inputs and control commands.
+It acknowledges the exact outcome cursor for the signed-in operator. The command stays in the
+conversation with a compact failure indicator that still opens the reason. This preference is
+independent of Dispatcher delivery acknowledgements and leaves the History outcome unchanged.
+In the conversation gutter, both kinds of Dismiss button sit right-aligned below the dots and status.
 
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
 The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive

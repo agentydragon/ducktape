@@ -69,7 +69,7 @@ inspect selected tests' configured runtime inputs:
 ```bash
 bbr query 'kind("py_test rule", rdeps(//agentplane/app/..., //agentplane/app/frontend/serving:static_image))'
 bbr query 'somepath(//agentplane/app:test_bridge, //agentplane/app/frontend/serving:static_image)'
-bbr cquery 'set(//agentplane/app:test_bridge //agentplane/app:test_settings //agentplane/app:test_thread_browser)' \
+bbr cquery 'set(//agentplane/app:test_bridge //agentplane/app:test_settings //agentplane/app/browser:test_thread_browser)' \
   --config=rbe --config=ci --output=starlark \
   '--starlark:expr=str(target.label) + " " + str([f.short_path for f in providers(target)["DefaultInfo"].default_runfiles.files.to_list() if "frontend/serving/static_image" in f.short_path])'
 ```

@@ -270,8 +270,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let inputs = self.inputs;
         let Some((body, class_owner)) = kernel_constructor_body(inputs.index, key, &constructor)
         else {
-            let mut nested = self.invoke_checked_constructor(&constructor, &args);
-            self.absorb_construction(&mut nested, outcome);
+            let nested = self.invoke_checked_constructor(&constructor, &args);
+            self.absorb_nested_call(outcome, nested);
             return OrderedConstruction {
                 values: Values::from([self.constructed_instance(key, &args)]),
                 body: None,
@@ -285,7 +285,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .insert(constructor_key);
             self.activate_native_effects(class_owner, Some(constructor_key));
         }
-        let mut nested = self.execute_local_body(
+        let nested = self.execute_local_body(
             body,
             Context::new(),
             Some(arguments),
@@ -298,7 +298,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let effects =
             (nested.complete && !nested.unknown_call).then(|| nested.effect_coverage.clone());
         let values = construct::construct_result(&nested.returns, &instance);
-        self.absorb_construction(&mut nested, outcome);
+        self.absorb_nested_call(outcome, nested);
         match values {
             Some(values) => OrderedConstruction {
                 values,
@@ -319,19 +319,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 body: None,
             },
         }
-    }
-
-    pub(super) fn absorb_construction(&mut self, nested: &mut Outcome, outcome: &mut Outcome) {
-        self.apply_rebind_effects(&nested.effects.rebinds);
-        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-        outcome
-            .executed_owners
-            .extend(std::mem::take(&mut nested.executed_owners));
-        outcome.unknown_call |= nested.unknown_call;
-        outcome.inherit_completeness(
-            nested.complete,
-            std::mem::take(&mut nested.effects.precision_losses),
-        );
     }
 
     /// The application identity of a checked instance: it retains every
@@ -367,7 +354,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             needs_value,
             call_span,
         } = target;
-        let mut nested = self.invoke_selected(
+        let nested = self.invoke_selected(
             key,
             args.to_vec(),
             argument_selections.to_vec(),
@@ -393,11 +380,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if needs_value {
             result_values.extend(nested.returns.iter().cloned());
         }
-        self.apply_rebind_effects(&nested.effects.rebinds);
-        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-        outcome.executed_owners.extend(nested.executed_owners);
-        outcome.unknown_call |= nested.unknown_call;
-        outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+        self.absorb_nested_call(outcome, nested);
     }
 
     /// Runs each local plain function among `targets` for `new`, and
@@ -420,12 +403,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if !self.inputs.index.callables.contains_key(&key) {
                 continue;
             }
-            let mut nested = self.invoke(key, args.to_vec(), captured, false);
-            self.apply_rebind_effects(&nested.effects.rebinds);
-            outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-            outcome.executed_owners.extend(nested.executed_owners);
-            outcome.unknown_call |= nested.unknown_call;
-            outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+            let nested = self.invoke(key, args.to_vec(), captured, false);
+            self.absorb_nested_call(outcome, nested);
         }
     }
 

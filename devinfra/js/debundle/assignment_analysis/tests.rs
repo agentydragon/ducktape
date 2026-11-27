@@ -98,8 +98,7 @@ fn report_graph_restores_declarations_from_the_matching_source_census() {
         "repeated var declaration sites remain separate source units"
     );
 
-    let input = DependencyGraphInput::from_report(report.clone()).expect("report graph");
-    let shared_graph = input.shared_graph();
+    let input = DependencyGraphInput::from_report(report).expect("report graph");
     let restored = input
         .with_source_declarations(&structural_facts)
         .expect("matching parsed source census");
@@ -127,18 +126,6 @@ fn report_graph_restores_declarations_from_the_matching_source_census() {
             .expect("report ordinal joins source census");
         assert_eq!(node.declared, source_fact.declared);
     }
-    assert!(
-        shared_graph
-            .iter_nodes()
-            .all(|node| node.declared.is_empty()),
-        "copy-on-write restoration must not mutate other graph readers"
-    );
-
-    let unshared = DependencyGraphInput::from_report(report)
-        .expect("report graph")
-        .with_source_declarations(&structural_facts)
-        .expect("unshared graph restores the source census");
-    assert_eq!(unshared.graph().num_nodes(), structural_facts.len());
 }
 
 #[test]

@@ -21,7 +21,6 @@ type routeOwners struct {
 	systemStatus    *apphttp.SystemStatusHandler
 	streams         streamhttp.Dependencies
 	traceRelay      http.Handler
-	electric        http.Handler
 }
 
 func registerRoutes(server *httpServer, owners routeOwners) error {
@@ -40,8 +39,5 @@ func registerRoutes(server *httpServer, owners routeOwners) error {
 	}
 	server.RegisterRawRoute("POST /telemetry/v1/traces", owners.traceRelay, true)
 	streamhttp.RegisterRoutes(server, server.DrainDone(), owners.streams)
-	if owners.electric != nil {
-		server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", owners.electric, false)
-	}
 	return nil
 }

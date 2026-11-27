@@ -315,10 +315,7 @@ fn plain_array_source(expr: &Expr) -> Option<Option<String>> {
         Expr::Array(_) => Some(None),
         Expr::Ident(ident) => Some(Some(ident.sym.to_string())),
         Expr::Call(call) => {
-            let Callee::Expr(callee) = &call.callee else {
-                return None;
-            };
-            let Expr::Member(member) = callee.unwrap_parens() else {
+            let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
                 return None;
             };
             if !matches!(
@@ -425,10 +422,7 @@ fn filtered_from(expr: &Expr, arrays: &BTreeSet<String>) -> bool {
     match expr.unwrap_parens() {
         Expr::Ident(source) => arrays.contains(source.sym.as_ref()),
         Expr::Call(call) => {
-            let Callee::Expr(callee) = &call.callee else {
-                return false;
-            };
-            let Expr::Member(member) = callee.unwrap_parens() else {
+            let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
                 return false;
             };
             matches!(&member.prop, MemberProp::Ident(method) if matches!(method.sym.as_ref(), "filter" | "slice"))

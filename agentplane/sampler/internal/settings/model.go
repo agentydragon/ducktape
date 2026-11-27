@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
@@ -148,7 +149,8 @@ type ConnectionConfig struct {
 }
 
 // httpClient builds the connection's own client and connection pool. A service-SVID connection
-// verifies the selected service; external providers use the standard HTTPS verifier. The TLS
+// verifies the selected service; external providers use the standard HTTPS verifier. Requests are
+// traced and carry W3C trace context to the provider or LLM ingress. The TLS
 // config reloads rotated certificates, so the client may be kept for the process lifetime.
 func (c ConnectionConfig) httpClient() (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -159,7 +161,7 @@ func (c ConnectionConfig) httpClient() (*http.Client, error) {
 		}
 		transport.TLSClientConfig = config
 	}
-	return &http.Client{Transport: transport}, nil
+	return &http.Client{Transport: observability.HTTPTransport(transport)}, nil
 }
 
 // ProviderClients holds one HTTP client per configured connection, shared by every Session so

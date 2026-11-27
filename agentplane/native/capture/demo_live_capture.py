@@ -154,7 +154,7 @@ async def run(args: argparse.Namespace) -> None:
         raise ValueError("output must not exist")
     _prepare(args.workspace)
     args.output.mkdir(mode=0o700)
-    for name in ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl", "llm-requests.jsonl", "llm-responses.jsonl"):
+    for name in ("stdin.jsonl", "stdout.jsonl", "stderr.log", "llm-requests.jsonl", "llm-responses.jsonl"):
         (args.output / name).touch(mode=0o600)
     hook_decision = _HOOK_SCENARIOS.get(args.scenario)
     if hook_decision is not None:

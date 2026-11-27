@@ -17,7 +17,6 @@ use apply_projection::{
     project_apply_from_spec, projection_source,
 };
 use preflight::{preflight_output_roots, preflight_roots, validate_transform_spec};
-use probes::audit_options;
 pub use probes::{AnnotationProbe, AnnotationProbeRun, ContractAudit, ContractProbeOutcome};
 use provenance::{canonical_generation_command, provenance_roots};
 pub use selected_ownership::{SelectedOwnershipProgram, SelectedOwnershipProgramKey};
@@ -135,6 +134,29 @@ pub struct TransformRunOptions {
     pub effect_conflicts_chunks: BTreeSet<String>,
     pub full_reports: BTreeSet<FullReportKind>,
     pub full_report_chunks: BTreeSet<String>,
+}
+
+impl TransformRunOptions {
+    /// A dry run with no reports: nothing is emitted, no per-chunk report is
+    /// written, no ownership subset narrows the run. Contract and annotation
+    /// probes run exactly this shape; other callers override the fields their
+    /// command decides.
+    pub fn dry_run() -> Self {
+        Self {
+            ownership_subset: None,
+            ownership_subset_input: None,
+            output: RunOutput::DryRun,
+            artifacts: RunArtifacts::Program,
+            graph_reports: GraphReportSelection::None,
+            keep_going: false,
+            report_dir_override: None,
+            list_template_identifiers: false,
+            effect_conflicts_jsonl: false,
+            effect_conflicts_chunks: BTreeSet::new(),
+            full_reports: BTreeSet::new(),
+            full_report_chunks: BTreeSet::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -307,7 +329,7 @@ pub fn assess_candidate_effect_relocation(
         graph_source.chunk_id()
     );
 
-    let options = audit_options();
+    let options = TransformRunOptions::dry_run();
     let (mut spec, prepared) = prepare_transform(cli, &options, None, Some(analysis.path), None)?;
     let chunk_source = prepared
         .provenance
@@ -412,7 +434,7 @@ pub fn project_analysis_and_apply(
     apply_out: Option<(&Path, &Path)>,
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<()> {
-    let options = audit_options();
+    let options = TransformRunOptions::dry_run();
     let (spec, prepared) = prepare_transform(cli, &options, None, None, None)?;
     if let Some((root, out)) = apply_out {
         project_apply_from_spec(
@@ -874,20 +896,13 @@ mod tests {
     use std::collections::BTreeMap;
     use transform_inputs::load_transform_spec_source;
 
-    const KEEP_GOING_RUN: TransformRunOptions = TransformRunOptions {
-        ownership_subset: None,
-        ownership_subset_input: None,
-        output: RunOutput::Accepted,
-        artifacts: RunArtifacts::Program,
-        graph_reports: GraphReportSelection::None,
-        keep_going: true,
-        report_dir_override: None,
-        list_template_identifiers: false,
-        effect_conflicts_jsonl: false,
-        effect_conflicts_chunks: BTreeSet::new(),
-        full_reports: BTreeSet::new(),
-        full_report_chunks: BTreeSet::new(),
-    };
+    fn keep_going_run() -> TransformRunOptions {
+        TransformRunOptions {
+            output: RunOutput::Accepted,
+            keep_going: true,
+            ..TransformRunOptions::dry_run()
+        }
+    }
 
     // This real-pipeline boundary test changes files between preparation and
     // probing, which a black-box CLI test cannot synchronize without timing.
@@ -1122,7 +1137,7 @@ mod tests {
                     package_roots: HashMap::new(),
                     packages_root: None,
                 },
-                KEEP_GOING_RUN,
+                keep_going_run(),
                 &analysis::diagnostics::Diagnostics::default(),
             )?;
 
@@ -1178,7 +1193,7 @@ mod tests {
             let fixture = existing_outputs_fixture()?;
             let err = run_transform(
                 &fixture.request,
-                KEEP_GOING_RUN,
+                keep_going_run(),
                 &analysis::diagnostics::Diagnostics::default(),
             )
             .expect_err("non-empty output directories should be rejected, not replaced");
@@ -1199,20 +1214,7 @@ mod tests {
             let fixture = existing_outputs_fixture()?;
             run_transform(
                 &fixture.request,
-                TransformRunOptions {
-                    ownership_subset: None,
-                    ownership_subset_input: None,
-                    output: RunOutput::DryRun,
-                    artifacts: RunArtifacts::Program,
-                    graph_reports: GraphReportSelection::None,
-                    keep_going: false,
-                    report_dir_override: None,
-                    list_template_identifiers: false,
-                    effect_conflicts_jsonl: false,
-                    effect_conflicts_chunks: BTreeSet::new(),
-                    full_reports: BTreeSet::new(),
-                    full_report_chunks: BTreeSet::new(),
-                },
+                TransformRunOptions::dry_run(),
                 &analysis::diagnostics::Diagnostics::default(),
             )?;
 

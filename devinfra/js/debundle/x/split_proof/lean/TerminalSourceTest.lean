@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.TerminalSource
+import EsmSplit.CoreJS.InteriorExportNames
 
 open CoreJS CoreJS.TerminalSource
 
@@ -9,6 +10,13 @@ private def row : EsmSplit.LocalExportUnit :=
   ⟨32, (List.range 16).map fun i => (s!"reader{i}", s!"reader{i}")⟩
 private def source : Module := ⟨"entry.mjs", [], (List.range 32).zip statements, row.names⟩
 private def program : Program := ⟨"entry.mjs", [source]⟩
+
+/-- The common source-row contract also applies to the existing terminal #32
+case, without asserting that the row is interior. -/
+example : InteriorExportNames.SourceRow source row := by
+  constructor
+  · rfl
+  · decide
 
 private def refused (input : Program × List EsmSplit.LocalExportUnit) (expected : String) : IO Unit := do
   match check input with

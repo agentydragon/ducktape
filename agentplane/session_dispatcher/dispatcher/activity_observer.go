@@ -69,6 +69,9 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 	}
 	defer stop()
 	if !o.Catalog.WaitSynced(ctx) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		return errors.New("Sandbox inventory did not synchronize")
 	}
 	// This map belongs to the sole queue worker. Stream completion only enqueues its key.
@@ -207,13 +210,25 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 		last = high
 		return nil
 	}
-	if err := scan(); err != nil {
-		return err
+	// A failed scan keeps `last`, so the retry rereads everything it missed.
+	scanBackoff := workqueue.NewTypedItemExponentialFailureRateLimiter[string](500*time.Millisecond, 30*time.Second)
+	var retry <-chan time.Time
+	rescan := func() {
+		if err := scan(); err != nil {
+			slog.Warn("scan activity Sandboxes; retrying", "error", err)
+			retry = time.After(scanBackoff.When("scan"))
+			return
+		}
+		scanBackoff.Forget("scan")
+		retry = nil
 	}
+	rescan()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-retry:
+			rescan()
 		case <-changed:
 			if !o.Hub.Connected() {
 				continue
@@ -222,9 +237,7 @@ func (o *HostActivityObserver) Run(ctx context.Context) error {
 				generation = current
 				last = 0
 			}
-			if err := scan(); err != nil {
-				return err
-			}
+			rescan()
 		}
 	}
 }

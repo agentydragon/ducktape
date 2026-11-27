@@ -33,11 +33,7 @@ from agentplane.system_tests.driver.operator_login import OperatorCredentials
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-# gazelle:include_dep //agentplane/system_tests/suites/mcp:operator_fixtures
-pytest_plugins = (
-    "agentplane.system_tests.deployment.pytest_plugin",
-    "agentplane.system_tests.suites.mcp.operator_fixtures",
-)
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 
 _REQUIRED_TOOLS = {"environments__list", "environments__get", "sessions__create"}
 _UNGRANTED_TOOLS = {

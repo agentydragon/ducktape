@@ -203,10 +203,7 @@ pub(super) fn candidate(function: &Function, symbols: &mut FlowSymbols) -> Optio
             if argument.spread.is_some() || !is_parameter(&argument.expr, &parameter.id) {
                 return None;
             }
-            let Callee::Expr(callee) = &call.callee else {
-                return None;
-            };
-            let Expr::Ident(callee) = callee.unwrap_parens() else {
+            let Some(Expr::Ident(callee)) = js_ast::callee_expr(call) else {
                 return None;
             };
             Some(symbols.binding(callee.to_id()))

@@ -910,18 +910,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.construct_local_class(key, &args)
                     };
                     match constructed {
-                        Ok((mut nested, _)) => {
-                            self.apply_rebind_effects(&nested.effects.rebinds);
-                            outcome.absorb_call_effects(
-                                &mut nested.effects,
-                                self.state.assumption.as_ref(),
-                            );
-                            outcome.executed_owners.extend(nested.executed_owners);
-                            outcome.unknown_call |= nested.unknown_call;
-                            outcome.inherit_completeness(
-                                nested.complete,
-                                nested.effects.precision_losses,
-                            );
+                        Ok((nested, _)) => {
+                            self.absorb_nested_call(outcome, nested);
                         }
                         Err(rejection) => {
                             self.reject_local_construction(key, &args, call, rejection, outcome);

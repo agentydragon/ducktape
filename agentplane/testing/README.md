@@ -24,7 +24,8 @@ here or in the owning service's `testing/`.
   `kubernetes_apiserver()` a control plane of one test's own. `KubernetesApiServer.pod_token` mints Pod-bound SA
   tokens; `dry_run_admitted`/`wait_until_refused` for admission policy.
 - [`kubernetes_apiserver_fixtures.py`](kubernetes_apiserver_fixtures.py): `kubeconfig` (session) + `api_server`
-  (per test) fixtures over the above; import both by name into a conftest.
+  (per test) fixtures over the above; import both by name into a conftest only where the tests beneath use them,
+  else register per module ([STYLE.md § Testing](../../STYLE.md#testing)).
 - [`crd_admission.py`](crd_admission.py): `crd_namespace()` → `CrdAdmission` per kind; create/replace spec/status
   and `rejects_*` asserting a 422 from the API server's schema + CEL.
 - [`kubernetes.py`](kubernetes.py): `CustomObjectsClient` Protocol, typed cast of the dynamic custom-object API (adds

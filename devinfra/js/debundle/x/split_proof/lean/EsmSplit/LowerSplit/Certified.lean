@@ -7,11 +7,10 @@ import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.StructuralCertificate
-import EsmSplit.CoreJS.TerminalConstructor
+import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
 import EsmSplit.LowerSplit.SliceCertificate
-import EsmSplit.LowerSplit.SparseArtifact
 import EsmSplit.ReadDeployment
 
 /-! Certify a proposed split and publish its output or verify the existing tree. -/
@@ -219,6 +218,17 @@ def prepareSliceEligibility (profile : CoreJS.HostProfile) (source providers fil
         let checkedLinks := CoreJS.LinkedBehavior.checkProbePair deployment.before deployment.after
         pure ⟨deployment, decodedSingleton, placed, probe, probed, checkedLinks⟩
 
+/-- Stage the constructor's modules through the shared publication gate. -/
+private def stageConstructed (program : CoreJS.Program) (src : BundleInput)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) :
+    IO (Except CertificationRefusal Unit) := do
+  let programs ← IO.ofExcept (ESTreeEmit.corePrograms program src.source)
+  let part : OutputPart := { programs, source := src.source, input := src.input, work }
+  certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+    pure <| match CoreJS.LinkedInput.checkConstructedOutput files program with
+      | .ok _ => .ok ()
+      | .error reason => .error { reason }
+
 /-- Use the proved ordered-declaration constructor when it accepts. Other inputs
 continue through the existing certified routes; printer refusals remain final. -/
 private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
@@ -226,7 +236,7 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural do return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
-  let .ok (source, _localExports) :=
+  let .ok (source, localExports) :=
     CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
   let [original] := source.modules | return none
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
@@ -237,93 +247,61 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
       | _ => false) do return none
   unless spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
   let .ok constructed := CoreJS.NamedDeclarationSplit.construct source spec | return none
+  -- This dense constructor accounts for executable source units only. Do not
+  -- publish or fall through to another route when original nodes were omitted
+  -- or a standalone export row lacks an authenticated owner.
+  let provenance : Except String Unit := do
+    let nodes ← ESTreeUnits.checkedNodes src.program src.source
+    let _ ← CoreJS.LinkedInput.checkSourceUnitCoverage nodes.size source localExports
+    unless localExports.isEmpty do
+      throw "standalone export rows require source-indexed placement"
+    return ()
+  if let .error reason := provenance then
+    return some (← emitRefusal options.request.label { reason := s!"source provenance: {reason}" } "named-declarations")
   try
-    let programs ← IO.ofExcept (ESTreeEmit.corePrograms constructed.split.program src.source)
-    let part : OutputPart := { programs, source := src.source, input := src.input, work }
-    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun _ =>
-      pure (.ok ())
+    let checked ← stageConstructed constructed.split.program src out work options timings
     match checked with
     | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "named-declarations"
         [("strategy", toJson "compiled-constructor")])
     | .error refusal => return some (← emitRefusal options.request.label refusal "named-declarations")
   catch e => return some (← emitVerdict options.request.label (.error e.toString) "named-declarations")
 
-/-- Source and metadata for the interior-export constructor, obtained from
-the same original AST and source text that the ordinary CLI reads. -/
-private structure InteriorSource where
+/-- Source and original metadata for the indexed local-export constructor. -/
+private structure LocalExportSource where
   source : CoreJS.Program
   row : LocalExportUnit
   bundle : Bundle
 
-private def decodeInteriorSource (original : Json) (sourceText entry : String) : Except String InteriorSource := do
-  let (source, rows) ← CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports original entry
+private def decodeLocalExportSource (original : Json) (sourceText entry : String) : Except String LocalExportSource := do
+  let decoded ← CoreJS.LinkedInput.decodeIndexedSource original sourceText entry
+  let source := decoded.program
   let [m] := source.modules | throw "expected one source module"
-  let [row] := rows | throw "expected one local export row"
+  let [row] := decoded.localExports | throw "expected one local export row"
   unless m.exports == row.names do throw "local export row differs from the public export table"
-  let nodes ← ESTreeUnits.checkedNodes original sourceText
-  let ids := m.body.map Prod.fst
-  let metadata ← SparseArtifact.classify ids nodes
-  unless metadata == [row.ordinal] && decide ((ids ++ metadata).Perm (List.range nodes.size)) do
-    throw "source nodes differ from the executable units and local export row"
-  unless m.body.all (fun (_, stmt) => match stmt with | .decl .const _ _ => true | _ => false) do
-    throw "expected const source declarations"
-  unless (CoreJS.NamedDeclarationSplit.checkDeclarations [] m.body).isSome do
-    throw "expected const declarations with primitive initializers or earlier reads"
-  return ⟨source, row, SparseArtifact.sourceBundle nodes⟩
+  unless m.body.isEmpty || m.body.any (fun (id, _) => id < row.ordinal) do
+    throw "expected an executable declaration before the export row"
+  unless (CoreJS.OrderedConstSyntax.checkBody m.body).isSome &&
+      (CoreJS.OrderedConstSyntax.checkEarlierReads [] m.body).isSome do
+    throw "expected unique const declarations with source primitive initializers and earlier reads"
+  return ⟨source, row, sourceBundle decoded.nodes⟩
 
-/-- Stage the constructor's modules and require the independently reread
-CoreJS graph to match them before publication. -/
-private def stageInterior (program : CoreJS.Program) (src : BundleInput)
-    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) :
-    IO (Except CertificationRefusal Unit) := do
-  let programs ← IO.ofExcept (ESTreeEmit.corePrograms program src.source)
-  let part : OutputPart := { programs, source := src.source, input := src.input, work }
-  certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
-    pure <| match CoreJS.LinkedInput.checkConstructedOutput files program with
-      | .ok _ => .ok ()
-      | .error reason => .error { reason }
-
-/-- Construct only from the original indexed source, bundle and authored
-placement. Emission and readback use the constructor's returned graph. -/
-private def tryInteriorDeclarations (chunk : DeploymentChunk) (src : BundleInput)
+/-- Construct from the actual indexed source, bundle, export row and authored
+placement. Both terminal and interior rows use the same proof and writer. -/
+private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural &&
       options.deploymentOrigin.isNone do return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
-  let .ok input := decodeInteriorSource src.program src.source spec.entry | return none
+  let .ok input := decodeLocalExportSource src.program src.source spec.entry | return none
   let .ok built := CoreJS.IndexedCheckedSplit.construct input.source input.bundle spec input.row .allOutcomes |
     return none
   try
-    match ← stageInterior built.program src out work options timings with
-    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "indexed-interior-exports"
+    match ← stageConstructed built.program src out work options timings with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "indexed-local-exports"
         [("strategy", toJson "compiled-constructor")])
-    | .error refusal => return some (← emitRefusal options.request.label refusal "indexed-interior-exports")
-  catch e => return some (← emitVerdict options.request.label (.error e.toString) "indexed-interior-exports")
-
-/-- Use the terminal-export constructor on the original full bundle and
-unchanged authored placement. The trusted CoreJS printer receives its actual
-constructed program; publication uses the ordinary staged readback gate. -/
-private def tryTerminalDeclarations (chunk : DeploymentChunk) (src : BundleInput)
-    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
-  unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural &&
-      options.deploymentOrigin.isNone do return none
-  let .authored spec := chunk.placement | return none
-  unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
-  let .ok nodes := ESTreeUnits.checkedNodes src.program src.source | return none
-  let .ok input := CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
-  let bundle := SparseArtifact.sourceBundle nodes
-  let .ok built := CoreJS.TerminalConstructor.construct input bundle spec | return none
-  try
-    let programs ← IO.ofExcept (ESTreeEmit.corePrograms built.program src.source)
-    let part : OutputPart := { programs, source := src.source, input := src.input, work }
-    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun _ =>
-      pure (.ok ())
-    match checked with
-    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "terminal-declarations"
-        [("strategy", toJson "compiled-constructor")])
-    | .error refusal => return some (← emitRefusal options.request.label refusal "terminal-declarations")
-  catch e => return some (← emitVerdict options.request.label (.error e.toString) "terminal-declarations")
+    | .error refusal => return some (← emitRefusal options.request.label refusal "indexed-local-exports")
+  catch e => return some (← emitVerdict options.request.label (.error e.toString) "indexed-local-exports")
 
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
@@ -335,8 +313,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
   let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
-  if let some verdict ← tryInteriorDeclarations chunk src out work options timings then return verdict
-  if let some verdict ← tryTerminalDeclarations chunk src out work options timings then return verdict
+  if let some verdict ← tryLocalExports chunk src out work options timings then return verdict
   if let some verdict ← tryNamedDeclarations chunk src out work options timings then return verdict
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
