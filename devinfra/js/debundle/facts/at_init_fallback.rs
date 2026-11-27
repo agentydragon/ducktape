@@ -1,5 +1,6 @@
 use super::*;
 use analysis_domain::builtins::member_call_row;
+use js_ast::item_var_decl;
 use purity::heap::sees_only_element;
 
 /// Plain-array roots an at-init statement iterates only through
@@ -13,7 +14,7 @@ pub fn safe_plain_array_at_init_fallback_sources(
 ) -> BTreeSet<Id> {
     let arrays = PlainArrays { graph };
     let mut out = BTreeSet::new();
-    if let Some(var) = var_decl_of_item(item) {
+    if let Some(var) = item_var_decl(item) {
         for decl in &var.decls {
             let Some(init) = decl.init.as_deref() else {
                 continue;

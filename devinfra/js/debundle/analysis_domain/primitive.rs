@@ -6,10 +6,11 @@
 //! an operation that always throws on its operands yields the empty set, and
 //! callers keep classifying the evaluation's own effects and throws.
 
+use js_ast::item_var_decl;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::builtins::{self, ArgSel, Invocation, Return, Row};
-use crate::item_views::{TopLevelItemView, top_level_initializers, var_decl_of_item};
+use crate::item_views::{TopLevelItemView, top_level_initializers};
 use analysis_model::PrimKinds;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -330,7 +331,7 @@ pub fn collect_binding_prims(
                 declared.push((name, kinds));
             }
         }
-        if let Some(var) = var_decl_of_item(item)
+        if let Some(var) = item_var_decl(item)
             && var.kind == VarDeclKind::Var
         {
             for decl in &var.decls {

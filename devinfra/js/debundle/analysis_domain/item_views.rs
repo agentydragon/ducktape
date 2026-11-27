@@ -2,7 +2,7 @@ use super::*;
 use crate::builtins;
 use binding_targets::{declaration_ids, hoisted_var_ids};
 use inference::{FactContext, IterativeInference, IterativeRules};
-use js_ast::VarDeclShape;
+use js_ast::{VarDeclShape, item_var_decl};
 
 #[derive(Clone)]
 pub enum TopLevelItemView<'a> {
@@ -116,22 +116,11 @@ pub fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'sta
     shadowed
 }
 
-pub fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
-            Decl::Var(var) => Some(var),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 /// `(name, init, kind)` for every chunk-top `const`/`let`/`var` declarator
 /// binding one identifier to a non-function initializer. Comma-list
 /// declarations are pre-split by `top_level_item_views`.
 pub fn top_level_initializers(item: &ModuleItem) -> Vec<(String, &Expr, VarDeclKind)> {
-    let Some(var) = var_decl_of_item(item) else {
+    let Some(var) = item_var_decl(item) else {
         return Vec::new();
     };
     var.decls
@@ -263,7 +252,7 @@ pub fn declares_direct_function(item: &ModuleItem) -> bool {
         {
             true
         }
-        _ => var_decl_of_item(item).is_some_and(|var| {
+        _ => item_var_decl(item).is_some_and(|var| {
             var.decls.len() == 1
                 && matches!(&var.decls[0].name, Pat::Ident(_))
                 && var.decls[0]
@@ -288,7 +277,7 @@ fn async_direct_function_binding(item: &ModuleItem) -> Option<Id> {
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
             Decl::Fn(fn_decl) if fn_decl.function.is_async => Some(fn_decl.ident.to_id()),
-            _ => var_decl_of_item(item).and_then(async_var_function_binding),
+            _ => item_var_decl(item).and_then(async_var_function_binding),
         },
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl)) => match &decl.decl {
             DefaultDecl::Fn(fn_expr) if fn_expr.function.is_async => {
@@ -296,7 +285,7 @@ fn async_direct_function_binding(item: &ModuleItem) -> Option<Id> {
             }
             _ => None,
         },
-        _ => var_decl_of_item(item).and_then(async_var_function_binding),
+        _ => item_var_decl(item).and_then(async_var_function_binding),
     }
 }
 

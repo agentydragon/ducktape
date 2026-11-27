@@ -11,6 +11,7 @@
 use super::*;
 use analysis_domain::allocation_roots::{ArrayOriginCollector, array_candidate_roots_from_origins};
 use analysis_vocabulary::value::{Kind, Value};
+use js_ast::item_var_decl;
 use rustc_hash::{FxHashMap, FxHashSet};
 use value_flow::values::Values;
 
@@ -94,7 +95,7 @@ pub fn annotate_heap_contents(
     let mut checked_factory_arguments = BTreeMap::new();
     let mut native_read_uses = Vec::with_capacity(body.len());
     for (item, fact) in body.iter().zip(facts) {
-        let single_initializer = var_decl_of_item(item.as_module_item()).and_then(|declaration| {
+        let single_initializer = item_var_decl(item.as_module_item()).and_then(|declaration| {
             let [declarator] = declaration.decls.as_slice() else {
                 return None;
             };
@@ -177,7 +178,7 @@ pub fn annotate_heap_contents(
         // Prepare an argument-evaluation projection only for the small direct
         // fresh-record call shape. Its own collector cannot change generic
         // callable summaries, deferred allocations, or native observations.
-        if let Some(span) = var_decl_of_item(item.as_module_item()).and_then(|declaration| {
+        if let Some(span) = item_var_decl(item.as_module_item()).and_then(|declaration| {
             match declaration.decls.as_slice() {
                 [declarator] if matches!(declarator.name, Pat::Ident(_)) => {
                     match declarator.init.as_deref()?.unwrap_parens() {

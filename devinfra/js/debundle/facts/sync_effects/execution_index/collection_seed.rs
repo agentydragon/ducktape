@@ -3,8 +3,9 @@
 use super::{BundleGlobals, ExecutionIndex, GlobalNames};
 use analysis::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
 use analysis::facts::local_effect_targets::metadata_decorate_call;
-use analysis_domain::item_views::{TopLevelItemView, var_decl_of_item};
+use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::inputs::AnalysisInputs;
+use js_ast::item_var_decl;
 use purity::LocalClassConstructionShapes;
 use spec::ReentryFreeOperation;
 use std::collections::{BTreeMap, BTreeSet};
@@ -160,7 +161,7 @@ impl ExecutionIndex {
                     .insert(declaration.class.span.lo.0, id.clone());
                 self.class_ids.insert(id);
             }
-            if let Some(declaration) = var_decl_of_item(item.as_module_item())
+            if let Some(declaration) = item_var_decl(item.as_module_item())
                 && declaration.kind == VarDeclKind::Const
             {
                 for declarator in &declaration.decls {
