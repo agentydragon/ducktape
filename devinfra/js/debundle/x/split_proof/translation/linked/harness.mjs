@@ -164,21 +164,8 @@ export function lower(source, spec, out, extra = [], scope = null) {
   cached.push({ options, result });
   certifiedByFixture.set(fixtureKey(source, spec), cached);
   if (process.env.SPLIT_PROOF_TIMINGS === "1") process.stderr.write(result.stderr);
-  if (scope === null) {
-    if (result.status === "certified") {
-      assert(
-        [
-          "closed-declarations",
-          "linked-programs",
-          "linked-slice-order-kept",
-          "linked-slice-moves",
-          "linked-slice-certified-bindings",
-          "linked-slice-heritage",
-        ].includes(result.scope),
-        `unexpected linked strategy scope ${result.scope}: ${result.log}`
-      );
-    }
-  } else assert.equal(result.scope, scope, result.log);
+  if (result.status === "certified") assert.equal(result.verdict.strategy, "compiled-constructor", result.log);
+  if (scope !== null) assert.equal(result.scope, scope, result.log);
   return { verdict: result.verdict, log: result.log };
 }
 
