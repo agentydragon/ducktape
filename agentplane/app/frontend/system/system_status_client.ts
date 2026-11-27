@@ -1,7 +1,13 @@
 import { fromJsonString } from "@bufbuild/protobuf";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 
-import { GetSystemStatusResponseSchema, SystemComponentState, type SystemComponentStatus } from "../../app_service_pb";
+import {
+  GetJournalStatsResponseSchema,
+  type GetJournalStatsResponse,
+  GetSystemStatusResponseSchema,
+  SystemComponentState,
+  type SystemComponentStatus,
+} from "../../app_service_pb";
 import { createAppServiceClient } from "../transport/app_service_client";
 
 /** A component status whose state is known and whose check time is present. */
@@ -18,4 +24,8 @@ export async function getSystemStatus(): Promise<CheckedComponentStatus[]> {
     if (checkedAt === undefined) throw new Error("System status omitted a component check time.");
     return { ...component, checkedAt };
   });
+}
+
+export async function getJournalStats(): Promise<GetJournalStatsResponse> {
+  return fromJsonString(GetJournalStatsResponseSchema, await appServiceClient.getText("/system/journal-stats"));
 }

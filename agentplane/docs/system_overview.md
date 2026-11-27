@@ -104,6 +104,7 @@ flowchart LR
     browser -->|HTTPS, one origin| httpsGateway
     httpsGateway -->|HTML, assets and service worker| frontend
     httpsGateway -->|API, auth and streams| app
+    app -->|App SVID mTLS: aggregate journal storage measurement| sampler
     app -->|App SVID mTLS via sessions:8080: Dispatcher commands, WatchSessions and archive GetSession| gw
     app -->|App SVID mTLS via environments:8082: EnvironmentService, diagnostics and health| sandboxctl
     app -->|service SVID mTLS: History reads| hs
@@ -426,7 +427,9 @@ flowchart LR
 The sampler's TLS listener trusts the workload bundle and admits exactly
 `spiffe://agentplane/sessions`, the owner stored by the explicit Gateway-account Session rewrite.
 Sessions presents its role certificate and verifies the sampler server SVID.
-Sampler application RPCs require the admitted Sessions service SVID. Bearer settings no longer
+The App measures Sampler and History journal storage every five minutes. The System page reads the last successful measurement for each store from the App cache. Only the App service SVID may call the measurement RPC.
+
+Sampler session RPCs require the admitted Sessions service SVID. Bearer settings no longer
 grant access. Application RPCs use only the TLS listener; port 8081 serves health checks only.
 
 The staging picker gives direct Anthropic models only to the central sampler, keeping them out of the

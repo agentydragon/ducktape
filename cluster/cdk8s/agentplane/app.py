@@ -24,12 +24,13 @@ from cdk8s_plus_34 import (
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
-from agentplane.app.settings import Settings
+from agentplane.app.settings import SamplerStatsPeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, CENTRAL_SAMPLER_URI, MCP_EDGE_URI
 from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
+    central_sampler,
     database,
     egress,
     environment_service,
@@ -112,6 +113,11 @@ class App(Construct):
         # decide them here rather than in each environment's authored config.
         settings.actions_tls = workload_tls.service_client_tls(ACTIONS_URI, client_uri=APP_URI)
         settings.connection_service_tls = workload_tls.service_client_tls(MCP_EDGE_URI, client_uri=APP_URI)
+        if env.central_sampler is not None:
+            settings.sampler_stats = SamplerStatsPeer(
+                target=central_sampler.service(env.namespace).authority,
+                tls=workload_tls.service_client_tls(CENTRAL_SAMPLER_URI, client_uri=APP_URI),
+            )
         config = SettingsFile(
             self,
             "config",
@@ -250,6 +256,7 @@ class App(Construct):
                 runner_gateway.sessions_service(namespace).egress(),
                 environment_service.environments_service(namespace).egress(),
                 history_service.service(namespace).egress(),
+                *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
                 notifications.service(namespace).egress(),
                 policy_controller.tls_service(namespace).egress(),
                 egress.admin(namespace).egress(),
@@ -263,3 +270,12 @@ class App(Construct):
                 database.egress(namespace),
             ],
         )
+        if self.env.central_sampler is not None:
+            sampler = central_sampler.service(namespace)
+            NetworkPolicy(
+                self,
+                "app-sampler-stats",
+                metadata=ApiObjectMetadata(name="app-sampler-stats", namespace=namespace),
+                endpoint_selector=sampler.pods.selector,
+                ingress=[self.service.pods.admit(sampler.pod_port)],
+            )

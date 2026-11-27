@@ -10,6 +10,9 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/app/internal/journalcache"
+	statspb "github.com/agentydragon/ducktape/agentplane/proto/journalstatspb"
+
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
@@ -163,6 +166,15 @@ func Run(ctx context.Context, config settings.Config) error {
 	}
 	defer closeConnections([]*grpc.ClientConn{actionConnection})
 	linkageClient := linkage_servicepb.NewLinkageServiceClient(actionConnection)
+	var samplerStats statspb.JournalStatsServiceClient
+	if peer := config.SamplerStats; peer != nil {
+		conn, err := bearer.Dial(peer.Target, "", 30*time.Second, peer.TLS)
+		if err != nil {
+			return fmt.Errorf("configure sampler journal stats: %w", err)
+		}
+		defer conn.Close()
+		samplerStats = statspb.NewJournalStatsServiceClient(conn)
+	}
 	facadeContext, stopFacades := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacades()
 	consoleConnector, err := sandboxes.NewConsoleConnector(kubeConfig)
@@ -186,7 +198,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected, DrainDone: server.DrainDone(),
 	})
 	appConfigHandler := apphttp.NewAppConfigHandler(config, policySetNames)
-	statusHandler := apphttp.NewSystemStatusHandler(serviceStatus)
+	statusHandler := apphttp.NewSystemStatusHandler(serviceStatus, journalcache.Start(facadeContext, samplerStats, historyReaderClient.JournalStats()))
 	streams := streamhttp.Dependencies{
 		Auth: appAuth, SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
 		Federator: federator, Console: consoleConnector, Logger: logger,

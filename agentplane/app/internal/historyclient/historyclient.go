@@ -6,6 +6,8 @@ import (
 	"errors"
 	"time"
 
+	pb "github.com/agentydragon/ducktape/agentplane/proto/journalstatspb"
+
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
@@ -44,6 +46,10 @@ func New(config Config) (*Client, error) {
 
 func (c *Client) GetSessionSummary(ctx context.Context, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
 	return historypb.NewHistoryServiceClient(c.conn).GetSessionSummary(ctx, request)
+}
+
+func (c *Client) JournalStats() pb.JournalStatsServiceClient {
+	return pb.NewJournalStatsServiceClient(c.conn)
 }
 
 // Close releases the channel when the process shuts down.

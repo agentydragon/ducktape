@@ -15,6 +15,7 @@ from agentplane.log_levels import LogLevels
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
+    CENTRAL_SAMPLER_URI,
     EGRESS_PROXY_URI,
     HISTORY_SERVICE_URI,
     MCP_EDGE_URI,
@@ -94,6 +95,19 @@ class EnvironmentServicePeer(BaseModel):
         return self
 
 
+class SamplerStatsPeer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: str = Field(min_length=1)
+    tls: ClientTLS
+
+    @model_validator(mode="after")
+    def validate_caller(self) -> SamplerStatsPeer:
+        if self.tls.server_uri != CENTRAL_SAMPLER_URI:
+            raise ValueError("sampler_stats must identify the Central Sampler")
+        self.tls.validate_caller(None, APP_URI)
+        return self
+
+
 class Settings(BaseModel):
     """Complete non-secret runtime settings, authored in the mounted YAML file.
 
@@ -135,6 +149,7 @@ class Settings(BaseModel):
     egress_admin_tls: ClientTLS | None = None
     runner_gateway_tls: ClientTLS | None = None
     session_dispatcher_tls: ClientTLS | None = None
+    sampler_stats: SamplerStatsPeer | None = Field(default=None, exclude_if=lambda value: value is None)
     history_service_tls: ClientTLS | None = None
     notifications_tls: ClientTLS | None = None
     actions_tls: ClientTLS | None = None

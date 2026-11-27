@@ -376,6 +376,7 @@ async def test_system_status_page(view: VisualPage, app: AgentplaneFixture, view
     page = view.page
     await _open_phone_navigation(page)
     await page.get_by_role("button", name="System status").click()
+    await expect(page.get_by_role("table", name="sampler journal storage")).to_contain_text("APB v1")
     rows = page.locator(".agentplane-system-status-table tbody tr")
     healthy = rows.filter(has_text=re.compile("Healthy component"))
     down = rows.filter(has_text=re.compile("Down component"))

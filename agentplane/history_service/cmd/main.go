@@ -17,6 +17,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/journalstats"
+	statspb "github.com/agentydragon/ducktape/agentplane/proto/journalstatspb"
+
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
@@ -181,6 +184,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener, identities i
 		}
 	}
 	maps.Copy(methods, historyMethods)
+	statsRule, err := auth.Services([]string{peertls.AppURI})
+	if err != nil {
+		return err
+	}
+	methods[statspb.JournalStatsService_Measure_FullMethodName] = statsRule
 	// Runner writes resolve a live workload SVID; central sampler writes use their exact service actor.
 	pushRule := auth.AnySubject(svids)
 	if c.Ingress.SamplerServiceActor != "" {
@@ -204,6 +212,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener, identities i
 	}
 	options = append(options, grpc.Creds(security))
 	server := grpc.NewServer(options...)
+	statspb.RegisterJournalStatsServiceServer(server, journalstats.History(readDB))
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)

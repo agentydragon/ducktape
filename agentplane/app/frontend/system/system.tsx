@@ -3,8 +3,8 @@ import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { type JSX, useEffect, useState } from "react";
 
 import { displayableError } from "../transport/client";
-import { getSystemStatus, type CheckedComponentStatus } from "./system_status_client";
-import { SystemComponentState } from "../../app_service_pb";
+import { getJournalStats, getSystemStatus, type CheckedComponentStatus } from "./system_status_client";
+import { SystemComponentState, type GetJournalStatsResponse } from "../../app_service_pb";
 import { TimeAgo } from "../ui/time_ago";
 import { TopbarTitle } from "../shell/topbar";
 import "./system.css";
@@ -99,6 +99,126 @@ export function SystemStatus(): JSX.Element {
           </Table.Tbody>
         </Table>
       )}
+      <JournalStorage />
+    </Stack>
+  );
+}
+
+// Keep counts and byte totals exact, including beyond Number.MAX_SAFE_INTEGER.
+function bytes(n: bigint | undefined): string {
+  if (n === undefined) return "Unknown";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+  let scale = 1n;
+  let unit = 0;
+  while (unit + 1 < units.length && n >= scale * 1024n) {
+    scale *= 1024n;
+    unit++;
+  }
+  if (unit === 0) return `${n} B`;
+  const tenths = (10n * n + scale / 2n) / scale;
+  return `${tenths / 10n}.${tenths % 10n} ${units[unit]}`;
+}
+
+function JournalStorage(): JSX.Element {
+  const [stats, setStats] = useState<GetJournalStatsResponse>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number;
+    async function refresh() {
+      try {
+        const next = await getJournalStats();
+        if (!cancelled) {
+          setStats(next);
+          setError(undefined);
+        }
+      } catch (reason) {
+        if (!cancelled) setError(displayableError(reason));
+      } finally {
+        if (!cancelled) timer = window.setTimeout(() => void refresh(), 60_000);
+      }
+    }
+    void refresh();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+  return (
+    <Stack gap="sm">
+      <Title order={2} size="h4">
+        Journal storage
+      </Title>
+      <Text size="sm" c="dimmed">
+        Measured every five minutes. Stored sizes include block headers. APB includes new and compacted blocks.
+      </Text>
+      {error !== undefined && (
+        <Text size="sm" c="red" role="alert">
+          Could not refresh journal storage: {error}
+        </Text>
+      )}
+      {stats === undefined
+        ? error === undefined && <Text size="sm">Loading journal storage…</Text>
+        : (["sampler", "history"] as const).map((store) => {
+            const m = stats[store];
+            const at = m?.measuredAt && timestampDate(m.measuredAt);
+            return (
+              <Stack key={store} gap={4}>
+                <Title order={3} size="sm">
+                  {store === "sampler" ? "Sampler" : "History"}
+                </Title>
+                {m === undefined || at === undefined ? (
+                  <Text size="sm" c="dimmed">
+                    No measurement available
+                  </Text>
+                ) : (
+                  <>
+                    <Text size="sm">
+                      {m.sessions.toLocaleString()} sessions · {m.legacySessions.toLocaleString()} with legacy gzip ·
+                      Measured <TimeAgo value={at} />
+                      {Date.now() - at.getTime() > 10 * 60_000 && " (stale)"}
+                    </Text>
+                    <Table aria-label={store + " journal storage"}>
+                      <Table.Thead>
+                        <Table.Tr>
+                          {["Format", "Blocks", "Stored", "Uncompressed"].map((h) => (
+                            <Table.Th key={h}>{h}</Table.Th>
+                          ))}
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {(
+                          [
+                            ["APB v1", m.apbBlocks, m.apbBytes, m.apbUncompressedBytes],
+                            ["Legacy gzip", m.legacyBlocks, m.legacyBytes, m.legacyUncompressedBytes],
+                            [
+                              "All formats",
+                              m.blocks,
+                              m.storedBytes,
+                              m.classifiedBlocks === m.blocks &&
+                              m.apbUncompressedBytes !== undefined &&
+                              m.legacyUncompressedBytes !== undefined
+                                ? m.apbUncompressedBytes + m.legacyUncompressedBytes
+                                : undefined,
+                            ],
+                          ] as const
+                        ).map(([format, count, stored, raw]) => (
+                          <Table.Tr key={format}>
+                            <Table.Th>{format}</Table.Th>
+                            <Table.Td>{count.toLocaleString()}</Table.Td>
+                            <Table.Td title={stored.toLocaleString() + " bytes"}>{bytes(stored)}</Table.Td>
+                            <Table.Td title={raw === undefined ? undefined : raw.toLocaleString() + " bytes"}>
+                              {bytes(raw)}
+                            </Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  </>
+                )}
+              </Stack>
+            );
+          })}
     </Stack>
   );
 }

@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package agentplane.journalstats;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Read-only aggregate over the receiving service's own journal.
+service JournalStatsService {
+  rpc Measure(google.protobuf.Empty) returns (JournalStats);
+}
+
+message JournalStats {
+  google.protobuf.Timestamp measured_at = 1;
+  uint64 sessions = 2;
+  uint64 blocks = 3;
+  // Encoded payload lengths; excludes database indexes and row overhead.
+  uint64 stored_bytes = 4;
+  uint64 legacy_sessions = 5;
+  uint64 legacy_blocks = 6;
+  uint64 legacy_bytes = 7;
+  uint64 classified_blocks = 8;
+  // All APB v1 blocks, including both newly written and rewritten blocks.
+  uint64 apb_blocks = 9;
+  uint64 apb_bytes = 10;
+  // Absent if any block in that format lacks its uncompressed length.
+  optional uint64 apb_uncompressed_bytes = 11;
+  optional uint64 legacy_uncompressed_bytes = 12;
+}

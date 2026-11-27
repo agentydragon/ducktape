@@ -19,6 +19,7 @@ proto_library(
     name = "app_service_proto",
     srcs = ["app_service.proto"],
     deps = [
+        "//agentplane/proto:journal_stats_proto",
         "//agentplane/proto:session_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_proto",
         "@googleapis//google/api:annotations_proto",
@@ -38,6 +39,7 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/app/appservicepb",
     proto = ":app_service_proto",
     deps = [
+        "//agentplane/proto:journal_stats_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
@@ -50,6 +52,7 @@ ts_proto_library(
     node_modules = "//:node_modules",
     proto = ":app_service_proto",
     deps = [
+        "//agentplane/proto:journal_stats_pb",
         "//agentplane/proto:session_pb",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
         "//google/api:annotations_pb",

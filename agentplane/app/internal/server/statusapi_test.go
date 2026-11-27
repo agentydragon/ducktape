@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/app/internal/journalcache"
+
 	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
@@ -26,7 +28,7 @@ func TestSystemStatusUsesGeneratedProtoJSONAndCallerAuthentication(t *testing.T)
 	fixture := testauth.New(t)
 	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
-	if err := apphttp.NewSystemStatusHandler(checker).RegisterRoutes(server); err != nil {
+	if err := apphttp.NewSystemStatusHandler(checker, new(journalcache.Cache)).RegisterRoutes(server); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)
