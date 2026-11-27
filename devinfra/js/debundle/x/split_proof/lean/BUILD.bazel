@@ -1251,7 +1251,7 @@ test_runner(
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
     deps = [
-        ":corejs_indexed_inline_plan",
+        ":corejs_indexed_inline_constructor",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
@@ -2886,6 +2886,26 @@ lean_proof_test(
         "CoreJS.IndexedInlinePlan.placementOwner",
     ],
     deps = [":corejs_indexed_inline_plan"],
+)
+
+lean_library(
+    name = "corejs_indexed_inline_constructor",
+    srcs = ["EsmSplit/CoreJS/IndexedInlineConstructor.lean"],
+    deps = [
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_plan",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_inline_constructor_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedInlineConstructor"],
+    required_theorems = [
+        "CoreJS.IndexedInlineConstructor.construct",
+        "CoreJS.IndexedInlineConstructor.dense_program",
+    ],
+    deps = [":corejs_indexed_inline_constructor"],
 )
 
 lean_library(

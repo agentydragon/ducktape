@@ -143,6 +143,7 @@ import {
   ReadThreadEntitiesResponseSchema,
   ThreadCommandOutcome,
   ThreadCommandSchema,
+  ThreadEntityKind,
   ThreadConfirmedInputSchema,
   ThreadFeedStatus,
   ThreadItemSchema,
@@ -3499,8 +3500,12 @@ routes.push(
   [
     "GET",
     /^\/upstream\/app\/v1\/threads\/([^/]+)\/notice-acknowledgements$/,
-    (match) => ({
-      acknowledgements: (noticeAcknowledgements.get(match[1]) ?? []).filter(({ notice }) => notice.receiptVersion),
+    (match, query) => ({
+      acknowledgements: (noticeAcknowledgements.get(match[1]) ?? []).filter(({ notice }) =>
+        query.get("executionFailures") === "true"
+          ? notice.outcomeCursor !== undefined
+          : notice.receiptVersion !== undefined
+      ),
     }),
   ],
   [
@@ -3570,6 +3575,24 @@ routes.push(
     (match, _query, _signal, body) => {
       if (body === undefined) throw new Error("ReadThreadEntities must use a JSON request body");
       const request = fromJson(ReadThreadEntitiesRequestSchema, JSON.parse(body) as JsonValue);
+      if (request.window.case === "keys") {
+        const ids = new Set(
+          request.window.value.keys
+            .filter(({ entityKind }) => entityKind === ThreadEntityKind.COMMAND)
+            .map(({ entityId }) => entityId)
+        );
+        const entities = threadEntityRows(match[1])
+          .filter((row) => row.entity_kind === "command" && ids.has(String(row.entity_id)))
+          .map((row) => ({
+            sessionId: match[1],
+            projectionEpoch: CONVERSATION_EPOCH,
+            entityId: row.entity_id,
+            cursor: row.cursor,
+            revisionCursor: row.revision_cursor,
+            command: row.state,
+          }));
+        return Response.json({ ...threadScope(match[1]), entities });
+      }
       if (
         request.projectionEpoch !== "" ||
         request.window.case !== "range" ||

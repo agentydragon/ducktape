@@ -76,11 +76,20 @@ func (s *Store) FindNoticeAcknowledgements(ctx context.Context, scope NoticeScop
 // ListNoticeAcknowledgements returns at most limit+1 records, newest insert first.
 // The immutable ID distinguishes simultaneous acknowledgements across browser tabs.
 func (s *Store) ListNoticeAcknowledgements(ctx context.Context, scope NoticeScope, before *int64, limit int) ([]NoticeAcknowledgement, error) {
+	return s.listAcknowledgements(ctx, scope, before, limit, `SELECT acknowledgement_id,command_id,receipt_version,0::bigint,acknowledged_at
+		FROM command_notice_acknowledgement`)
+}
+
+func (s *Store) ListExecutionFailureAcknowledgements(ctx context.Context, scope NoticeScope, before *int64, limit int) ([]NoticeAcknowledgement, error) {
+	return s.listAcknowledgements(ctx, scope, before, limit, `SELECT acknowledgement_id,command_id,0::bigint,outcome_cursor,acknowledged_at
+		FROM execution_failure_acknowledgement`)
+}
+
+func (s *Store) listAcknowledgements(ctx context.Context, scope NoticeScope, before *int64, limit int, selectRows string) ([]NoticeAcknowledgement, error) {
 	if limit < 1 || limit > MaxNoticePage {
 		return nil, fmt.Errorf("expected a page of 1 to %d notices", MaxNoticePage)
 	}
-	query := `SELECT acknowledgement_id,command_id,receipt_version,0::bigint,acknowledged_at
-		FROM command_notice_acknowledgement WHERE thread_id=$1 AND operator_issuer=$2 AND operator_subject=$3`
+	query := selectRows + ` WHERE thread_id=$1 AND operator_issuer=$2 AND operator_subject=$3`
 	// Include the cursor record so we can verify its ownership in the same snapshot.
 	// The token itself contains only its immutable row ID.
 	rowLimit := limit + 1

@@ -102,8 +102,5 @@ theorem placement (S : EsmSplit.Spec) (x y z : String) (a b : Literal)
           [(0, c.left), (2, S.entry), (1, c.right)] from .swap _ _ _).trans
         (.cons _ (show [(2, S.entry), (1, c.right)].Perm [(1, c.right), (2, S.entry)] from .swap _ _ _))
 
-#print axioms placement
-#print axioms sameExports
-#print axioms outcomes
 
 end CoreJS.LiteralReorderExact

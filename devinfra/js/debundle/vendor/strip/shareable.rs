@@ -2,41 +2,39 @@ use swc_ecma_ast::*;
 
 use super::item_analysis::static_member_name;
 
-pub(super) fn is_shareable_intrinsic_alias_var(var: &VarDecl) -> bool {
+/// Declaration shape every shareable-`var` predicate below requires: a
+/// non-empty declaration whose every declarator binds one plain identifier to
+/// an initializer the caller accepts. Vendor stripping hoists these
+/// declarations into shared modules by name, so a destructured binding or a
+/// declaration that is only partly shareable has to stay in its own module.
+fn shareable_uniform_declaration(
+    var: &VarDecl,
+    initializer_is_shareable: impl Fn(&Expr) -> bool,
+) -> bool {
     !var.decls.is_empty()
         && var.decls.iter().all(|decl| {
             matches!(&decl.name, Pat::Ident(_))
-                && decl
-                    .init
-                    .as_deref()
-                    .is_some_and(is_shareable_intrinsic_alias_expr)
+                && decl.init.as_deref().is_some_and(&initializer_is_shareable)
         })
+}
+
+pub(super) fn is_shareable_intrinsic_alias_var(var: &VarDecl) -> bool {
+    shareable_uniform_declaration(var, is_shareable_intrinsic_alias_expr)
 }
 
 pub(super) fn is_shareable_literal_var(var: &VarDecl) -> bool {
-    !var.decls.is_empty()
-        && var.decls.iter().all(|decl| {
-            matches!(&decl.name, Pat::Ident(_))
-                && decl.init.as_deref().is_some_and(is_primitive_literal_expr)
-        })
+    shareable_uniform_declaration(var, is_primitive_literal_expr)
 }
 
 pub(super) fn is_shareable_function_var(var: &VarDecl) -> bool {
-    !var.decls.is_empty()
-        && var.decls.iter().all(|decl| {
-            matches!(&decl.name, Pat::Ident(_))
-                && matches!(
-                    decl.init.as_deref(),
-                    Some(Expr::Fn(_)) | Some(Expr::Arrow(_))
-                )
-        })
+    shareable_uniform_declaration(var, |expr| matches!(expr, Expr::Fn(_) | Expr::Arrow(_)))
 }
 
 pub(super) fn is_empty_object_var(var: &VarDecl) -> bool {
-    !var.decls.is_empty() && var.decls.iter().all(|decl| {
-        matches!(&decl.name, Pat::Ident(_))
-            && matches!(decl.init.as_deref(), Some(Expr::Object(object)) if object.props.is_empty())
-    })
+    shareable_uniform_declaration(
+        var,
+        |expr| matches!(expr, Expr::Object(object) if object.props.is_empty()),
+    )
 }
 
 pub(super) fn is_primitive_literal_expr(expr: &Expr) -> bool {
@@ -98,14 +96,7 @@ pub(super) fn is_shareable_vite_map_deps_var(var: &VarDecl) -> bool {
 }
 
 pub(super) fn is_shareable_global_object_fallback_var(var: &VarDecl) -> bool {
-    !var.decls.is_empty()
-        && var.decls.iter().all(|decl| {
-            matches!(&decl.name, Pat::Ident(_))
-                && decl
-                    .init
-                    .as_deref()
-                    .is_some_and(is_global_object_fallback_expr)
-        })
+    shareable_uniform_declaration(var, is_global_object_fallback_expr)
 }
 
 fn is_global_object_fallback_expr(expr: &Expr) -> bool {

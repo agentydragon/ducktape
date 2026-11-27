@@ -12,7 +12,7 @@ use binding_targets::public_export_name;
 use js_ast::{
     ParsedJsModule, emit_js_module, import_decl_module_item, is_binding_identifier,
     member_property, module_export_name_node, named_export_module_item, named_export_specifier,
-    named_import_specifier, parse_js_module,
+    named_import_specifier, parse_js_module, synthesized_string_argument,
 };
 use spec::vendor_marks::BundledPartialSwapPackage;
 
@@ -84,14 +84,7 @@ pub(super) fn generate_named_from_json_default_wrapper(
                 obj: Box::new(Expr::Ident(Ident::new_no_ctxt("JSON".into(), DUMMY_SP))),
                 prop: member_property("parse"),
             }))),
-            args: vec![ExprOrSpread {
-                spread: None,
-                expr: Box::new(Expr::Lit(Lit::Str(Str {
-                    span: DUMMY_SP,
-                    value: json.into(),
-                    raw: None,
-                }))),
-            }],
+            args: vec![synthesized_string_argument(json)],
             type_args: None,
         }),
     ));

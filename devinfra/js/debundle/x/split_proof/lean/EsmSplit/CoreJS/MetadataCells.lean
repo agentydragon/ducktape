@@ -217,13 +217,5 @@ theorem import_distinct {S : EsmSplit.Spec} (valid : EsmSplit.Valid B S P)
   subst b
   exact declareTops_bundleEnv_disjoint allocated different a sa sb
 
-#print axioms bundle_decl_cell
-#print axioms frame_keys
-#print axioms scope_lookup_none
-#print axioms scope_lookup_decl
-#print axioms split_import_original_cell
-#print axioms module_scope_cells
-#print axioms import_alias
-#print axioms import_distinct
 
 end CoreJS.MetadataCells

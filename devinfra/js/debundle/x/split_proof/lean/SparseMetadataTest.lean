@@ -180,16 +180,5 @@ theorem abrupt_region_counterexamples :
     · cbv
     · constructor <;> cbv
 
-#print axioms sparse_order_kept
-#print axioms sparse_all_outcomes
-#print axioms sparse_exports
-#print axioms sparse_placement
-#print axioms wrong_order_observed
-#print axioms terminal_region_counterexample
-#print axioms terminal_exports
-#print axioms terminal_normal_transfer_fails
-#print axioms terminal_fuel_counterexample
-#print axioms hoisted_region_counterexample
-#print axioms abrupt_region_counterexamples
 
 end SparseMetadataExamples

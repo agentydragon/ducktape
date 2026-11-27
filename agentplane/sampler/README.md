@@ -239,6 +239,11 @@ Compare `output_bytes` with `stored_bytes`; `packed_bytes` counts block payloads
 The size comparison covers a completed page: an interrupted multi-transaction page can still have
 temporary standalone suffix rows until replay resumes.
 
+For a block format migration, add `--from-first-legacy-block` to start at the first block
+whose header is not APB v1. A retry skips the already converted prefix without locking it.
+`skipped_through` reports the skipped cursor; event and byte counts cover only the suffix.
+This does not verify the prefix: compare the full journal replay separately.
+
 Preview a canary, then apply the same scope:
 
 ```text

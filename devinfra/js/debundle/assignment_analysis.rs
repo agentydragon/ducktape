@@ -23,10 +23,8 @@ use crate::realizability::{
     TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
     check_realizability_with_schedule, effect_translation_assess, translation_validate,
 };
-use crate::validation::{
-    AssignmentReport, AssignmentValidation, validate_assignment_with_priority,
-    validation_from_verdict,
-};
+use crate::validation::report::{AssignmentReport, AssignmentValidation};
+use crate::validation::{validate_assignment_with_priority, validation_from_verdict};
 use esm_schedule::{EsmImportSchedule, ImportScheduleError};
 
 #[cfg(test)]

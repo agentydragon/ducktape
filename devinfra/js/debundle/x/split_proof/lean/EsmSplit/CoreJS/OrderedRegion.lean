@@ -126,11 +126,5 @@ theorem planned_runs_with_exports (ss : List Stmt) (bundle : EsmSplit.Bundle) (s
   rw [runProgram_singleModuleMetadata _ (zip_range_sorted ss) name exports w fuel]
   exact planned_runs ss bundle spec valid footprints ordered w fuel
 
-#print axioms sameUnits_capture
-#print axioms planned_scopes
-#print axioms matching_link
-#print axioms planned_link
-#print axioms planned_runs
-#print axioms planned_runs_with_exports
 
 end CoreJS.OrderedRegion

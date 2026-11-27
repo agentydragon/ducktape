@@ -85,7 +85,6 @@ export function CommandProgress({
   subject,
   reason,
   details,
-  acknowledged = false,
   local = false,
   unsent = false,
 }: {
@@ -93,7 +92,6 @@ export function CommandProgress({
   subject: CommandSubject;
   reason?: string | null;
   details?: ReactNode;
-  acknowledged?: boolean;
   /** This browser actually retained the command; server-only rows cannot claim that. */
   local?: boolean;
   /** Only the browser owns a command that has not been attempted over HTTP yet. */
@@ -149,13 +147,6 @@ export function CommandProgress({
         ))}
       </span>
     );
-  if (stage === "failed" && acknowledged) {
-    return (
-      <CommandDetails summary={labels.failed} reason={reasonLabel} label={indicator}>
-        {!reasonLabel && "No failure reason was recorded."}
-      </CommandDetails>
-    );
-  }
   if (
     terminalFailure ||
     deliveryError ||
@@ -215,12 +206,10 @@ export function CommandProgress({
 function CommandDetails({
   summary,
   reason,
-  label = summary,
   children,
 }: {
   summary: string;
   reason: string | null | undefined;
-  label?: ReactNode;
   children: ReactNode;
 }): JSX.Element {
   const [mode, setMode] = useState<"hover" | "activated" | null>(null);
@@ -276,7 +265,7 @@ function CommandDetails({
             if (event.key === "Escape") dismiss();
           }}
         >
-          {label}
+          {summary}
         </button>
       </Popover.Target>
       <Popover.Dropdown

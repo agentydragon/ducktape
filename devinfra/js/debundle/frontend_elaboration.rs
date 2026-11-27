@@ -7,9 +7,13 @@ mod elaboration;
 #[path = "frontend_elaboration/source_ast.rs"]
 pub mod source_ast;
 
+pub use elaboration::chunk_preparation::eligible_member_indices;
+pub use elaboration::member_claims::{MemberClaimInput, project_member_claims};
+pub use elaboration::resolved_ownership::{
+    CanonicalOwnership, ClaimSelector, OwnershipClaim, resolve_ownership,
+};
+pub use elaboration::source_sites::select_one_declared_binding;
 pub use elaboration::{
-    CanonicalOwnership, ClaimSelector, FrontendChunk, FrontendChunkInput, FrontendElaboration,
-    FrontendSpecInputs, MemberClaimInput, MemberClaimProjection, OwnershipClaim,
-    ResolvedMemberSite, complete_analysis_spec, elaborate, eligible_member_indices,
-    project_analysis, project_member_claims, resolve_ownership, select_one_declared_binding,
+    FrontendChunk, FrontendChunkInput, FrontendElaboration, FrontendSpecInputs,
+    MemberClaimProjection, ResolvedMemberSite, complete_analysis_spec, elaborate, project_analysis,
 };

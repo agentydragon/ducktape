@@ -17,7 +17,7 @@ use clap::{ArgGroup, Args as ClapArgs};
 use graph::ProgramGraphReport;
 use graph::report::BindingReport;
 use graph_provenance::{CurrentRoots, GraphProvenance};
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use peel::plan::LimitSectionReport;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

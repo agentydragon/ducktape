@@ -127,7 +127,7 @@ pub struct GateListArgs {
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
-    pub format: Option<peel::OutputFormat>,
+    pub format: Option<peel::output_format::OutputFormat>,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -155,7 +155,7 @@ pub struct GateDescribeArgs {
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
-    pub format: Option<peel::OutputFormat>,
+    pub format: Option<peel::output_format::OutputFormat>,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -168,7 +168,7 @@ pub struct GateCutArgs {
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
-    pub format: Option<peel::OutputFormat>,
+    pub format: Option<peel::output_format::OutputFormat>,
 }
 
 /// A bounded, source-backed trace for one requested binding. Paths are
@@ -201,7 +201,7 @@ pub struct GateDiagnoseArgs {
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
-    pub format: Option<peel::OutputFormat>,
+    pub format: Option<peel::output_format::OutputFormat>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -445,7 +445,7 @@ fn run_diagnose(
         coverage_scope: GateDiagnoseCoverageScope::CallbackFactoryNamespaceWritesAndCallArguments,
         traces: returned,
     };
-    let format = peel::OutputFormat::resolve(args.format);
+    let format = peel::output_format::OutputFormat::resolve(args.format);
     command_output::write_report(&report, format, output, infallible(render_diagnose_text))
         .context("writing gate diagnose output")
 }
@@ -856,7 +856,7 @@ fn run_list(args: GateListArgs, output: &mut dyn std::io::Write) -> Result<()> {
             })
             .collect(),
     };
-    let format = peel::OutputFormat::resolve(args.format);
+    let format = peel::output_format::OutputFormat::resolve(args.format);
     if command_output::write_ndjson_list(&report.blocking_sccs, format, output)? {
         return Ok(());
     }
@@ -942,7 +942,7 @@ fn run_describe(
         inert_commuting_edges: entry.inert_commuting_edges.clone(),
         sequenced_source_inspections,
     };
-    let format = peel::OutputFormat::resolve(args.format);
+    let format = peel::output_format::OutputFormat::resolve(args.format);
     command_output::write_report(&report, format, output, infallible(render_describe_text))
         .context("writing gate describe output")
 }
@@ -992,7 +992,7 @@ fn run_cut(args: GateCutArgs, output: &mut dyn std::io::Write) -> Result<()> {
         cut: entry.cut.clone(),
         inert_commuting_edges: entry.inert_commuting_edges.clone(),
     };
-    let format = peel::OutputFormat::resolve(args.format);
+    let format = peel::output_format::OutputFormat::resolve(args.format);
     if command_output::write_ndjson_list(&report.cut, format, output)? {
         return Ok(());
     }

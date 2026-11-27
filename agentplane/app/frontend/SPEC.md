@@ -99,9 +99,10 @@ acknowledgements. When an exact revision has expired or was superseded, the inte
 loss of evidence.
 
 History's **Execution failed** has its own Dismiss button for both inputs and control commands.
-It acknowledges the exact outcome cursor for the signed-in operator. The command stays in the
-conversation with a compact failure indicator that still opens the reason. This preference is
-independent of Dispatcher delivery acknowledgements and leaves the History outcome unchanged.
+It acknowledges the exact outcome cursor for the signed-in operator and removes the entire command
+row from the conversation. **Delivery history → Dismissed execution failures** lists these
+acknowledgements and their retained History evidence, including earlier dismissals. This preference
+is independent of Dispatcher delivery acknowledgements and leaves the History outcome unchanged.
 In the conversation gutter, both kinds of Dismiss button sit right-aligned below the dots and status.
 
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.

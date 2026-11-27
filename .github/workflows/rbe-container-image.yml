@@ -66,12 +66,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      pin_tag: ${{ steps.build.outputs.pin_tag }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
-      - uses: ./.github/actions/ghcr-build-push
+      - uses: ./.github/actions/oci-build-push
         id: build
         with:
           image: ${{ env.RBE_CONTAINER_IMAGE }}
@@ -107,45 +107,14 @@ jobs:
         with:
           installables: ".#prettier"
 
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
       - name: Pin rbe_container
-        run: |
-          DIGEST=$(docker manifest inspect "$RBE_CONTAINER_IMAGE:${{ needs.build.outputs.pin_tag }}" --verbose | \
-            python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
-          python3 devinfra/update_image_pin.py rbe_container --digest "$DIGEST" --image "$RBE_CONTAINER_IMAGE"
+        run: python3 devinfra/update_image_pin.py rbe_container --digest "${{ needs.build.outputs.digest }}" --image "$RBE_CONTAINER_IMAGE"
 
-      - name: Commit and push
-        env:
-          APP_TOKEN: ${{ steps.app.outputs.token }}
-          APP_SLUG: ${{ steps.app.outputs.app_slug }}
-          APP_USER_ID: ${{ steps.app.outputs.user_id }}
-        run: |
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
-
-          git add devinfra/image_pins.json
-
-          if git diff --cached --quiet; then
-            echo "rbe_container pin already up to date"
-            exit 0
-          fi
-
-          git commit -m "chore: pin rbe_container image digest"
-
-          BRANCH="${GITHUB_REF_NAME}"
-          if ! git pull --rebase origin "$BRANCH"; then
-            echo "::error::Rebase failed"
-            git status
-            exit 1
-          fi
-
-          set +x
-          for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
-            git config --local --unset-all "$key"
-          done
-          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"
+      - name: Push the pin update as the automation App
+        uses: ./.github/actions/commit-and-push-as-app
+        with:
+          token: ${{ steps.app.outputs.token }}
+          app_slug: ${{ steps.app.outputs.app_slug }}
+          user_id: ${{ steps.app.outputs.user_id }}
+          paths: devinfra/image_pins.json
+          message: "chore: pin rbe_container image digest"

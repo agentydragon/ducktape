@@ -1,6 +1,7 @@
 //! Read exact source units from the canonical solve without planning a split.
 
-use super::{FrontendChunkInput, solve_selectors};
+use super::FrontendChunkInput;
+use super::chunk_preparation::solve_selectors;
 use anyhow::{Context, Result, ensure};
 use artifact::ChunkBundle;
 use source_identity::SourceUnitOrdinal;

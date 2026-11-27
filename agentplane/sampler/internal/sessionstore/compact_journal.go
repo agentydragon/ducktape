@@ -37,11 +37,12 @@ var (
 
 // JournalCompactionOptions controls pacing and bounded maintenance runs.
 type JournalCompactionOptions struct {
-	MaxBlocksPerTxn   int // Zero selects DefaultJournalBlocksPerTxn.
-	BatchDelay        time.Duration
-	PauseFile         string
-	ContentionRetries int
-	RetryDelay        time.Duration
+	FromFirstLegacyBlock bool
+	MaxBlocksPerTxn      int // Zero selects DefaultJournalBlocksPerTxn.
+	BatchDelay           time.Duration
+	PauseFile            string
+	ContentionRetries    int
+	RetryDelay           time.Duration
 }
 
 // JournalCompactionResult records the fixed opening watermark and the work completed
@@ -49,7 +50,7 @@ type JournalCompactionOptions struct {
 type JournalCompactionResult struct {
 	Events, Blocks, StoredBytes, PackedBytes int64
 	OutputBytes, RetainedLegacyBlocks        int64
-	OpeningCursor                            uint64
+	OpeningCursor, SkippedThrough            uint64
 	Batches                                  int64
 	Completed                                bool
 	LockHoldTotal, LockHoldMax               time.Duration
@@ -133,6 +134,25 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 	}
 	state := journalRepackState{opening: opening}
 	result.OpeningCursor = state.opening
+
+	if options.FromFirstLegacyBlock {
+		// Seek from the physical layout on each invocation: an interrupted write
+		// may have committed more or fewer blocks than its last progress log.
+		// Start at unknown versions too, so the normal decoder can reject them.
+		var first sql.NullInt64
+		if err := s.db.QueryRowContext(ctx, `SELECT min(first_sequence) FROM sampler_event_block
+			WHERE session_id=$1 AND first_sequence<=$2 AND substring(payload FROM 1 FOR 4)<>decode('41504201','hex')`,
+			sessionID, opening).Scan(&first); err != nil {
+			return result, err
+		}
+		if !first.Valid {
+			result.SkippedThrough = opening
+			result.Completed = true
+			return result, nil
+		}
+		state.through = uint64(first.Int64 - 1)
+		result.SkippedThrough = state.through
+	}
 
 	var pending []repackPlan
 	lastProgress := time.Now()

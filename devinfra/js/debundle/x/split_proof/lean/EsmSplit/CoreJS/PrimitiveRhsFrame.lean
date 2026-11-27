@@ -139,9 +139,5 @@ example (s : State W) :
 
 #guard (check (fun _ => true) (.assign (.var "x") (.bool true))).isNone
 
-#print axioms checked_inert
-#print axioms lexical_outcome
-#print axioms inert_logical
-#print axioms eval_inert
 
 end CoreJS.PrimitiveRhs

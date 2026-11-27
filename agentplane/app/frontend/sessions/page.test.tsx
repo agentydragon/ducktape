@@ -2642,7 +2642,7 @@ it.each([
 });
 
 it.each([Operation.SUBMIT_INPUT, Operation.CHANGE_MODEL])(
-  "dismisses only the exact History failure for %s and keeps its reason",
+  "hides the exact dismissed History failure for %s across reloads",
   async (operation) => {
     const stored: { commandId: string; outcomeCursor: string }[] = [];
     deliveryRequest = (url, init) => {
@@ -2666,13 +2666,10 @@ it.each([Operation.SUBMIT_INPUT, Operation.CHANGE_MODEL])(
     const row = pendingRow(before, "test-entity");
     await act(async () => buttonIn(row, "Dismiss")!.click());
     expect(stored).toEqual([{ commandId: "test-entity", outcomeCursor: "37" }]);
-    expect(row.querySelector(".transcript-user-bubble")).not.toBeNull();
-    expect(row.querySelector('[role="alert"]')).toBeNull();
-    expect(buttonIn(row, "Dismiss")).toBeUndefined();
-    expect((await openDeliveryDetails(row)).textContent).toContain("Harness stopped");
+    expect(row.isConnected).toBe(false);
 
     const reopened = await render(state(37n));
-    expect(buttonIn(pendingRow(reopened, "test-entity"), "Dismiss")).toBeUndefined();
+    expect(reopened.querySelector('[data-command-id="test-entity"]')).toBeNull();
     const updated = await render(state(38n));
     expect(buttonIn(pendingRow(updated, "test-entity"), "Dismiss")).toBeDefined();
   }

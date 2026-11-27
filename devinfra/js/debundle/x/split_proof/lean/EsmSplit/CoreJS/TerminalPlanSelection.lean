@@ -70,6 +70,5 @@ theorem selected_owners {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spe
     rw [owners.2.2.2.1] at h
     exact (by simpa using h : entry.name = owner).symm
 
-#print axioms selected_owners
 
 end CoreJS.TerminalPlanSelection
