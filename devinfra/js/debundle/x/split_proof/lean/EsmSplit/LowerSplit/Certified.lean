@@ -11,7 +11,6 @@ import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
 import EsmSplit.LowerSplit.SliceCertificate
-import EsmSplit.LowerSplit.SparseArtifact
 import EsmSplit.ReadDeployment
 
 /-! Certify a proposed split and publish its output or verify the existing tree. -/
@@ -338,7 +337,7 @@ private def decodeLocalExportSource (original : Json) (sourceText entry : String
   unless (CoreJS.OrderedConstSyntax.checkBody m.body).isSome &&
       (CoreJS.OrderedConstSyntax.checkEarlierReads [] m.body).isSome do
     throw "expected unique const declarations with source primitive initializers and earlier reads"
-  return ⟨source, row, SparseArtifact.sourceBundle decoded.nodes⟩
+  return ⟨source, row, sourceBundle decoded.nodes⟩
 
 /-- Stage the constructor's modules through the shared publication gate. -/
 private def stageLocalExports (program : CoreJS.Program) (src : BundleInput)

@@ -4,7 +4,7 @@ import EsmSplit.CoreJS.TerminalConstructor
 import EsmSplit.CoreJS.TerminalFootprints
 import EsmSplit.CoreJS.IndexedSourceSchedule
 import EsmSplit.CoreJS.IndexedCheckedSplit
-import EsmSplit.LowerSplit.SparseArtifact
+import EsmSplit.LowerSplit.Input
 import EsmSplit.Cli
 
 open Lean (Json)
@@ -39,7 +39,7 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   let checked ← IO.ofExcept (TerminalConstructorInput.check (p, rows))
   let _ := TerminalConstructorInput.all_const checked
   let _ := TerminalConstructorInput.source_shape checked
-  let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle decoded.nodes
+  let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
   let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
   let plan := EsmSplit.mkPlan bundle spec
   let statements := checked.terminal.source.body.map Prod.snd
@@ -92,7 +92,7 @@ private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := 
   let input ← decode j
   let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes j sourceText)
   let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
-  match TerminalConstructor.construct input (EsmSplit.LowerSplit.SparseArtifact.sourceBundle nodes) spec with
+  match TerminalConstructor.construct input (EsmSplit.LowerSplit.sourceBundle nodes) spec with
   | .error "terminal export row must be the final original source unit" => pure ()
   | _ => throw (IO.userError "a real omitted debugger statement was not refused")
 
@@ -105,7 +105,7 @@ private def checkSparse (j : Json) (specText : String) : IO Unit := do
   require (row.ordinal == 1 && row.names == [("exposed", "seed")]) "interior export or alias changed"
   require (m.body.map Prod.fst == [0, 2]) "interior export shifted executable identities"
   require (m.exports == [("exposed", "seed")]) "interior public binding changed"
-  let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle decoded.nodes
+  let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
   let request ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
   let evidence ← IO.ofExcept (IndexedSourceSchedule.check decoded bundle request)
   require (evidence.sequence.units.map IndexedSourceSchedule.SourceUnit.ordinal == [0, 1, 2])
@@ -148,7 +148,7 @@ private def checkAliases (j : Json) : IO Unit := do
   require (empty.ordinal == 2 && empty.names.isEmpty) "empty export list was omitted"
   require (m.body.map Prod.fst == [0, 3]) "export metadata became executable"
   require (m.exports == pairs) "alias export table changed"
-  let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle decoded.nodes
+  let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
   let sequence ← IO.ofExcept (IndexedSourceSchedule.checkSequence decoded bundle)
   require (sequence.units.map IndexedSourceSchedule.SourceUnit.ordinal == [0, 1, 2, 3])
     "source classification changed ordinals around an empty export row"
