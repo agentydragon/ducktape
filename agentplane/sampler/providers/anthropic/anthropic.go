@@ -1,8 +1,6 @@
 package anthropic
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -194,45 +192,19 @@ func (r Response) Audit() *Audit {
 }
 
 func Sample(ctx context.Context, client *http.Client, baseURL, credential string, config Config, wire []byte, evidence protocol.EvidenceSink, compaction bool, hooks protocol.ProviderHooks) (*Response, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/v1/messages", bytes.NewReader(wire))
+	response, err := providerio.Post(ctx, client, providerio.Request{
+		URL: strings.TrimRight(baseURL, "/") + "/v1/messages", Body: wire,
+		Headers:  []map[string]string{Headers(config), {"x-api-key": credential}},
+		Provider: "Anthropic", RequestIDHeader: "request-id",
+	}, evidence, hooks)
 	if err != nil {
 		return nil, err
 	}
-	for name, value := range Headers(config) {
-		request.Header.Set(name, value)
-	}
-	request.Header.Set("x-api-key", credential)
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, providerio.ProviderTransportError(ctx, err)
-	}
-	defer response.Body.Close()
-	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
-	head := protocol.HTTPResponseHead{HTTPStatus: response.StatusCode, ProviderRequestID: response.Header.Get("request-id"), ContentType: response.Header.Get("content-type")}
-	if evidence != nil {
-		if err := protocol.RecordProviderEvidence(ctx, evidence, head, false); err != nil {
-			return nil, err
-		}
-		if hooks.ResponseHeadRecorded != nil {
-			hooks.ResponseHeadRecorded()
-		}
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, err := io.ReadAll(io.LimitReader(reader, protocol.MaxProviderStreamBytes))
-		if err != nil {
-			return nil, providerio.ProviderTransportError(ctx, err)
-		}
-		return nil, providerio.ProviderStatusError(response, "Anthropic", map[string]any{
-			"http_status": head.HTTPStatus, "provider_request_id": head.ProviderRequestID, "content_type": head.ContentType, "body": string(body),
-		})
-	}
-	result, err := ReadStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction, hooks)
-	if err != nil {
-		err = providerio.ProviderContextError(ctx, err)
-	}
+	defer response.Close()
+	result, err := ReadStream(ctx, response.Body, evidence, compaction, hooks)
 	if result != nil {
-		result.HTTPStatus = response.StatusCode
-		result.ProviderRequestID = response.Header.Get("request-id")
+		result.HTTPStatus = response.Head.HTTPStatus
+		result.ProviderRequestID = response.Head.ProviderRequestID
 	}
 	return result, err
 }
@@ -533,30 +505,11 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 
 		return nil
 	}
-	lineReader := bufio.NewReader(reader)
-	var lines []string
-	for {
-		line, readErr := lineReader.ReadString('\n')
-		if len(line) > 0 {
-			line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-			if strings.HasPrefix(line, "data:") {
-				lines = append(lines, strings.TrimLeft(line[5:], " \t"))
-			} else if line == "" && len(lines) > 0 {
-				eventErr := dispatch(strings.Join(lines, "\n"))
-				lines = nil
-				if errors.Is(eventErr, errProviderComplete) {
-					return result, nil
-				}
-				if eventErr != nil {
-					return nil, eventErr
-				}
-			}
-		}
-		if readErr != nil {
-			if !errors.Is(readErr, io.EOF) {
-				return nil, providerio.ProviderTransportError(ctx, readErr)
-			}
-			return nil, &protocol.ProviderTransientError{Cause: errors.New("Anthropic stream ended before message_stop")}
-		}
+	switch err := providerio.ReadSSE(ctx, reader, dispatch); {
+	case errors.Is(err, errProviderComplete):
+		return result, nil
+	case err != nil:
+		return nil, err
 	}
+	return nil, &protocol.ProviderTransientError{Cause: errors.New("Anthropic stream ended before message_stop")}
 }

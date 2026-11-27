@@ -1,8 +1,6 @@
 package responses
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,8 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
-
-const maxProviderErrorBytes = 1024 * 1024
 
 const codexReasoningSummary = "auto"
 
@@ -167,68 +163,24 @@ func Headers(config Config, compaction bool) map[string]string {
 func Sample(ctx context.Context, client *http.Client, baseURL, authorization string, encoded []byte, config Config,
 	evidence protocol.EvidenceSink, attribution map[string]string, compaction bool, hooks protocol.ProviderHooks,
 ) (*Response, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/v1/responses", bytes.NewReader(encoded))
+	response, err := providerio.Post(ctx, client, providerio.Request{
+		URL: strings.TrimRight(baseURL, "/") + "/v1/responses", Body: encoded,
+		Headers:  []map[string]string{Headers(config, compaction), attribution, {"Authorization": authorization}},
+		Provider: "provider", RequestIDHeader: "x-request-id",
+	}, evidence, hooks)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("Content-Type", "application/json")
-	if authorization != "" {
-		request.Header.Set("Authorization", authorization)
-	}
-	for name, value := range Headers(config, compaction) {
-		if name != "content-type" {
-			request.Header.Set(name, value)
-		}
-	}
-	for name, value := range attribution {
-		request.Header.Set(name, value)
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, providerio.ProviderTransportError(ctx, err)
-	}
-	defer response.Body.Close()
-	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
-	providerRequestID := response.Header.Get("x-request-id")
-	if evidence != nil {
-		if err := protocol.RecordProviderEvidence(ctx, evidence, protocol.HTTPResponseHead{
-			HTTPStatus: response.StatusCode, ProviderRequestID: providerRequestID, ContentType: response.Header.Get("content-type"),
-		}, false); err != nil {
-			return nil, err
-		}
-		if hooks.ResponseHeadRecorded != nil {
-			hooks.ResponseHeadRecorded()
-		}
-	}
-	if response.StatusCode >= http.StatusBadRequest {
-		body, readErr := io.ReadAll(io.LimitReader(reader, protocol.MaxProviderStreamBytes))
-		if readErr != nil {
-			return nil, providerio.ProviderTransportError(ctx, readErr)
-		}
-		if len(body) > maxProviderErrorBytes {
-			body = append(body[:maxProviderErrorBytes], []byte("[truncated]")...)
-		}
-		return nil, providerio.ProviderStatusError(response, "provider", map[string]any{"http_status": response.StatusCode, "body": string(body)})
-	}
-	result, err := readStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, hooks)
-	if err != nil {
-		return nil, providerio.ProviderContextError(ctx, err)
-	}
-	return result, nil
+	defer response.Close()
+	return readStream(ctx, response.Body, evidence, hooks)
 }
 
 func readStream(ctx context.Context, reader io.Reader, evidence protocol.EvidenceSink, hooks protocol.ProviderHooks) (*Response, error) {
 	result := &Response{}
-	lineReader := bufio.NewReader(reader)
-	var dataLines []string
 	seenItemTransitions := map[string]struct{}{}
 	var projector observationProjector
-	dispatch := func() error {
-		if len(dataLines) == 0 {
-			return nil
-		}
-		event, err := decodeProviderEvent(strings.Join(dataLines, "\n"))
-		dataLines = nil
+	dispatch := func(data string) error {
+		event, err := decodeProviderEvent(data)
 		if err != nil {
 			return err
 		}
@@ -306,27 +258,11 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		}
 		return eventErr
 	}
-	for {
-		line, err := lineReader.ReadString('\n')
-		if len(line) > 0 {
-			line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-			if strings.HasPrefix(line, "data:") {
-				dataLines = append(dataLines, strings.TrimLeft(line[5:], " \t"))
-			} else if line == "" {
-				if dispatchErr := dispatch(); dispatchErr != nil {
-					if errors.Is(dispatchErr, errProviderComplete) {
-						return result, nil
-					}
-					return nil, dispatchErr
-				}
-			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return nil, providerio.ProviderTransportError(ctx, err)
-		}
+	switch err := providerio.ReadSSE(ctx, reader, dispatch); {
+	case errors.Is(err, errProviderComplete):
+		return result, nil
+	case err != nil:
+		return nil, err
 	}
 	return nil, &protocol.ProviderTransientError{Cause: errors.New("provider stream ended without response.completed")}
 }
