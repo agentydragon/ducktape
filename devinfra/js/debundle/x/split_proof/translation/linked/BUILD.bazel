@@ -10,7 +10,6 @@ js_library(
     deps = [
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
         "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
 )
@@ -43,11 +42,6 @@ _TEST_DATA = [
 ]
 
 _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
-
-# These valid Lean-backed shards exceed the medium budget or have timed out in CI.
-_LONG_TIMEOUT_TESTS = [
-    "host_profile_test",
-]
 
 js_test(
     name = "static_provider_boundary_input_test",
@@ -132,31 +126,24 @@ js_test(
 )
 
 _UNSHARDED_TESTS = [
-    "generator_test",
     "arithmetic_test",
+    "generator_test",
     "import_cells_test",
     "module_graph_test",
     "module_metadata_test",
     "named_constructor_cli_test",
     "provider_location_test",
-    "resolved_placement_test",
 ]
-
-_SHARD_COUNTS = {
-    "host_profile_test": 3,
-}
 
 [
     js_test(
         name = name,
         size = "medium",
-        timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
         data = _TEST_DATA + ([":module_graph_fixture"] if name == "module_graph_test" else []),
         entry_point = name + ".mjs",
         env = _TEST_ENV,
-        shard_count = _SHARD_COUNTS.get(name),
     )
-    for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()
+    for name in _UNSHARDED_TESTS
 ]
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.

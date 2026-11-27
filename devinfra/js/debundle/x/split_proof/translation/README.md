@@ -156,47 +156,6 @@ binding identity. Its validation target parses, scope-checks and runs generated
 inheritance chains, constructs the leaf, and observes every member through it
 or its constructor. [Validation test](ast_generator_validation_test.mjs)
 
-### Shift emitter fuzzing
-
-[`shift_fuzz_test.mjs`](shift_fuzz_test.mjs) tries randomized two-module
-assignments with the real `lowersplit` emitter. Its ES2019 Shift module and
-script grammars supply candidates, parsed by Acorn as modules. The harness skips
-import/export declarations and early errors. It compares original and accepted
-emitted code in separate bounded Node VM contexts with seeded randomness,
-captured console output and primitive top-level observations. It counts accepted
-plans whose source throws as `acceptedThrowing` and omits their comparison
-under P4. The test requires an accepted reorder and retains the source, ASTs,
-spec, emitted tree, seed and observations on mismatch.
-
-`shift_fuzz_test` and `shift_script_fuzz_test` run routine module- and script-grammar
-samples. `shift_fuzz_second_seed_test` is opt-in. Override the sample with:
-
-```sh
-bbr test //devinfra/js/debundle/x/split_proof/translation:shift_fuzz_test --test_arg=--seed --test_arg=4000 --test_arg=--count --test_arg=256
-```
-
-The undeclared output `syntax-coverage-<seed>.json` counts candidate exclusions
-and accepted plans by syntax family. Each plan contributes once per feature.
-`Ok` counts require successful baseline evaluation. Reordered counts use the
-emitter's statement order. `acceptedSameInSide` means the syntax was placed in a
-side module. These counters measure placement, and a zero describes the sample.
-
-`shift_modern_fuzz_test` composes optional chaining, nullish coalescing and
-class-field reads around generated literals. A fresh non-enumerable, read-only
-VM global marks executed expressions and returns their values unchanged. The
-test compares the markers separately from console output and requires each
-modern form to execute in a successful accepted reorder. The harness skips
-inputs with global-reflection or dynamic-code constructs and disables VM code
-generation. The marker and wrapper allocations are trusted instrumentation.
-[`modern_syntax.mjs`](modern_syntax.mjs)
-
-The initial 96-seed run had no observed mismatches. Successful accepted
-reorders executed optional chaining in three programs, nullish coalescing in
-two and class-field reads in two.
-
-The VM comparison covers the recorded observations. Arbitrary heap state and
-object identity are outside that comparison.
-
 ## What the generators cover
 
 [`COVERAGE.md`](COVERAGE.md) records a historical generator sample. New reports count the syntax and standard function calls of programs that complete. They also report how the compiled Lean analyzer classifies each standalone syntax witness during module initialization, including unknown operations and exhausted analysis budgets.

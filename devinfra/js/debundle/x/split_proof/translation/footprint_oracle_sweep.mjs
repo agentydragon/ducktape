@@ -14,7 +14,7 @@ import { GENERATORS } from "./coverage_audit.mjs";
 import { checkProgram } from "./footprint_oracle.mjs";
 
 // The fuzzers' generated bundles satisfy premise P3 (the world adds no accessors or hooks); Shift's programs are run with
-// no premise beyond the always-on ones, as `shift_fuzz_test` does.
+// no premise beyond the always-on ones.
 const P3 = new Set(["templates", "callback", "ast", "full"]);
 
 /** Check `programs` (`{ name, source }`), `jobs` at a time; the tally of what the oracle saw. */
