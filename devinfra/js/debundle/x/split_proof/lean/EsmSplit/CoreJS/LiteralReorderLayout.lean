@@ -117,9 +117,5 @@ def sourceLink (w : World) (entry x y z : String) (a b : ExactLiteralMove.Litera
     rw [tops, loaded, regions]
     cbv⟩
 
-#print axioms source_loaded
-#print axioms sourceLink
-#print axioms check
-#print axioms checked
 
 end CoreJS.LiteralReorderLayout

@@ -103,7 +103,6 @@ theorem allocOnlyClassMembers_literal {ms : List ClassMember} (h : allocOnlyClas
       cases key <;> simp_all [allocOnlyClassMembers, literalClassMembers]
     | staticBlock body => simp [allocOnlyClassMembers] at h
 
-#print axioms allocOnlyClassMembers_literal
 
 theorem Expr.argument_of_allocOnly {e : Expr} (h : e.allocOnly = true) : e.argument = (false, e) := by
   cases e <;> first | rfl | simp [Expr.allocOnly] at h
@@ -145,12 +144,6 @@ theorem allocOnly_class_nonliteralKey_rejected :
 theorem allocOnly_derivedClass_rejected :
     (Expr.derived "Derived" false (.var "Base") [] none).allocOnly = false := rfl
 
-#print axioms allocOnly_class_staticField_accepted
-#print axioms allocOnly_class_staticField_effect_rejected
-#print axioms allocOnly_class_staticComputedField_rejected
-#print axioms allocOnly_class_staticBlock_rejected
-#print axioms allocOnly_class_instanceField_accepted
-#print axioms allocOnly_class_instanceComputedField_rejected
 
 mutual
 /-- The names an allocation-only expression reads when it runs. Functions and instance

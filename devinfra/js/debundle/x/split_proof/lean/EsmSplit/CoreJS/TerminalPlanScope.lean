@@ -201,9 +201,5 @@ theorem const_planned_links {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit
   have scopes := scopes_from_link after frames before.ready identities allocated'
   exact ⟨frames, before, after, allocated, names, linked, scopes, ready, same, schedule, outcomes⟩
 
-#print axioms module_agreement
-#print axioms planned_link
-#print axioms scopes_from_link
-#print axioms const_planned_links
 
 end CoreJS.TerminalPlanScope

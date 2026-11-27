@@ -316,19 +316,6 @@ function ConversationBody({
   const confirmedIds = new Set(
     entities.flatMap((row) => (row.entity.case === "confirmedInput" ? row.entity.value.originCommandIds : []))
   );
-  const rows = historyRows(
-    entities
-      .filter(
-        (row) =>
-          row.entity.case === "item" ||
-          row.entity.case === "confirmedInput" ||
-          row.entity.case === "lifecycle" ||
-          (row.entity.case === "command" &&
-            ((pendingSentMessage(row) && !confirmedIds.has(row.entityId)) ||
-              row.entity.value.operation !== Operation.SUBMIT_INPUT))
-      )
-      .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
-  );
   const localCommands = commands.local.commands;
   const deliveryAttention = delivery.attention;
   const inline = inlineDispatches(delivery);
@@ -384,6 +371,25 @@ function ConversationBody({
   );
   const executionFailures = Array.from(projectedCommands.values()).flatMap((row) => executionNotice(row) ?? []);
   const executionAttention = useNoticeAcknowledgements(threadId, executionFailures);
+  const dismissedExecutionIds = new Set(
+    executionFailures
+      .filter((notice) => executionAttention.state(notice).acknowledged)
+      .map((notice) => notice.commandId)
+  );
+  const rows = historyRows(
+    entities
+      .filter(
+        (row) =>
+          row.entity.case === "item" ||
+          row.entity.case === "confirmedInput" ||
+          row.entity.case === "lifecycle" ||
+          (row.entity.case === "command" &&
+            !dismissedExecutionIds.has(row.entityId) &&
+            ((pendingSentMessage(row) && !confirmedIds.has(row.entityId)) ||
+              row.entity.value.operation !== Operation.SUBMIT_INPUT))
+      )
+      .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
+  );
   const projectedProgress = new Map<string, JSX.Element | null>(
     inline
       .filter((item) => {
@@ -425,6 +431,7 @@ function ConversationBody({
         deliver={commands.deliver}
         localNotice={localNotice}
         executionProgress={executionProgress}
+        dismissedExecutionIds={dismissedExecutionIds}
       />
       {localCommands.length > 0 && (
         <LocalControlCommands

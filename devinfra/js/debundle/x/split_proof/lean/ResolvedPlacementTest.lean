@@ -163,8 +163,6 @@ def test : IO Unit := do
   | .error "source must be an import-free entry with consecutive unit identities starting at zero" => pure ()
   | _ => throw (IO.userError "the unchanged production splitter should refuse sparse IDs")
 
-#print axioms proveSparse
-#print axioms provePriorDense
 
 end ResolvedPlacementTest
 

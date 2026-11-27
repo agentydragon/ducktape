@@ -1251,9 +1251,11 @@ test_runner(
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
     deps = [
+        ":corejs_indexed_inline_constructor",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
+        ":lowersplit_input",
         ":named_declaration_split",
         ":planner",
     ],
@@ -2800,6 +2802,7 @@ lean_proof_test(
         "CoreJS.IndexedReorder.inline_tables",
         "CoreJS.IndexedReorder.run_of_schedule",
         "CoreJS.IndexedReorder.same_inline_exports",
+        "CoreJS.IndexedReorder.same_inline_exports_of_declarations",
     ],
     deps = [":corejs_indexed_reorder"],
 )
@@ -2859,6 +2862,50 @@ lean_proof_test(
         "CoreJS.IndexedCheckedSplit.construct_sound",
     ],
     deps = [":corejs_indexed_checked_split"],
+)
+
+lean_library(
+    name = "corejs_indexed_inline_plan",
+    srcs = ["EsmSplit/CoreJS/IndexedInlinePlan.lean"],
+    deps = [
+        ":corejs_indexed_input_checks",
+        ":corejs_indexed_reorder",
+        ":corejs_indexed_source_schedule",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_inline_plan_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedInlinePlan"],
+    required_theorems = [
+        "CoreJS.IndexedInlinePlan.checkSource",
+        "CoreJS.IndexedInlinePlan.check",
+        "CoreJS.IndexedInlinePlan.allOutcomes",
+        "CoreJS.IndexedInlinePlan.sameExports",
+        "CoreJS.IndexedInlinePlan.placementOwner",
+    ],
+    deps = [":corejs_indexed_inline_plan"],
+)
+
+lean_library(
+    name = "corejs_indexed_inline_constructor",
+    srcs = ["EsmSplit/CoreJS/IndexedInlineConstructor.lean"],
+    deps = [
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_plan",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_inline_constructor_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedInlineConstructor"],
+    required_theorems = [
+        "CoreJS.IndexedInlineConstructor.construct",
+        "CoreJS.IndexedInlineConstructor.dense_program",
+    ],
+    deps = [":corejs_indexed_inline_constructor"],
 )
 
 lean_library(

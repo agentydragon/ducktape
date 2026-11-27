@@ -132,8 +132,5 @@ theorem construct_sound {source : Program} {request : EsmSplit.Spec} (result : C
       result.split.sound.1.2.1.trans (result.placement.map Prod.fst).symm,
       result.split.sound.1.2.2.trans result.placement.symm⟩
 
-#print axioms checkDeclarations
-#print axioms construct
-#print axioms construct_sound
 
 end CoreJS.NamedDeclarationSplit

@@ -392,15 +392,5 @@ theorem authored_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.P
     (member : (id, owner) ∈ CoreJS.PlanPlacement.assignments P) : S.claimants B id = [owner] :=
   CoreJS.PlanPlacement.authored_owner faithful member
 
-#print axioms split_indexed_loaded_perm
-#print axioms split_indexed_tops_of_perm
-#print axioms split_indexed_regions_of_perm
-#print axioms split_indexed_loaded_flat
-#print axioms split_indexed_find
-#print axioms moduleOfIndexed_body_lookup
-#print axioms split_indexed_loaded_ids
-#print axioms loaded_ids_of_order_kept
-#print axioms loaded_row_lookup
-#print axioms authored_owner
 
 end CoreJS.SparseProjectedOrder

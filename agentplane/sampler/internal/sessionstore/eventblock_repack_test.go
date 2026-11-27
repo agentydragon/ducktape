@@ -720,3 +720,25 @@ func TestRepackedBlockInventoryColumns(t *testing.T) {
 		t.Fatal("APB block missing from format and size inventory")
 	}
 }
+
+func TestRepackResumesAtFirstLegacyBlock(t *testing.T) {
+	store := newTestStore(t)
+	store.eventBlockProfile = eventblock.DefaultProfile(64)
+	session := openSessionForStore(t, store, "")
+	appendAPBTestJournalThrough(t, store, session.ID, 96)
+	replaceRowsWithBlock(t, store, session.ID, 1, 32, false)
+	replaceRowsWithBlock(t, store, session.ID, 33, 64, true)
+	want := eventFrames(t, store, session.ID, 1, 96)
+	options := JournalCompactionOptions{FromFirstLegacyBlock: true}
+	for _, apply := range []bool{false, true} {
+		result, err := store.CompactJournalWithOptions(t.Context(), session.ID, apply, options)
+		if err != nil || !result.Completed || result.SkippedThrough != 32 || result.Events != 64 || result.RetainedLegacyBlocks != 0 {
+			t.Fatalf("apply=%v result=%+v error=%v", apply, result, err)
+		}
+	}
+	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 96), want)
+	result, err := store.CompactJournalWithOptions(t.Context(), session.ID, true, options)
+	if err != nil || !result.Completed || result.SkippedThrough != 96 || result.Batches != 0 {
+		t.Fatalf("repeat touched an already migrated journal: %+v %v", result, err)
+	}
+}

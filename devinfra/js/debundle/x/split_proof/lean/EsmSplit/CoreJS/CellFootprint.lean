@@ -365,8 +365,5 @@ theorem CellFootprint.inRegion_commute {rd wr rd' wr' : Addr → Prop} {m : M W 
     rw [hs, hu, q.apply_setRegion (p.apply s) 0, p.apply_setRegion (q.apply s) 0, hpatch]
   exact hm'.trans (congrArg (Res.ok a) hstate.symm)
 
-#print axioms CellFootprint.bind
-#print axioms CellFootprint.commute
-#print axioms CellFootprint.inRegion_commute
 
 end CoreJS

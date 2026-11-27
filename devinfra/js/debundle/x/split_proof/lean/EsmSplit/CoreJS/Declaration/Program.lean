@@ -102,6 +102,5 @@ theorem run_eq_single (W : World) (fuel : Nat) (groups : List DeclarationGroup) 
   dsimp only [attach]
   rw [DeclarationGroup.initFunctions_compileGroups, M.pure_bind, DeclarationGroup.runGroups_eq]
 
-#print axioms run_eq_single
 
 end CoreJS.DeclarationProgram

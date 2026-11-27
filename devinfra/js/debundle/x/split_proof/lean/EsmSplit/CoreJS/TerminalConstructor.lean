@@ -114,10 +114,5 @@ theorem original_units {input B S} (result : Construction input B S) :
     result.valid result.entry result.found (by rw [result.units]; simp)
   exact ⟨all.1, all.2.2.2.2⟩
 
-#print axioms Construction.program
-#print axioms construct
-#print axioms sound
-#print axioms selected_owners
-#print axioms original_units
 
 end CoreJS.TerminalConstructor

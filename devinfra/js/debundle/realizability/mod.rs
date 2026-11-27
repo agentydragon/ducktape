@@ -68,7 +68,7 @@ pub use translation_validation::{
 ///   binding pair) lifts the violation.
 ///
 /// [`SccCore`] documents the rendered/wire projections of the same
-/// shape ([`crate::validation::CycleReport`],
+/// shape ([`crate::validation::report::CycleReport`],
 /// [`graph::report::QuotientSccReport`]).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SccDiagnosis {

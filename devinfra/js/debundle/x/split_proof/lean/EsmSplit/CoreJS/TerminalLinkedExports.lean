@@ -45,6 +45,5 @@ theorem linked_table {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} 
   intro pair member
   exact bindings pair member
 
-#print axioms linked_table
 
 end CoreJS.TerminalLinkedExports

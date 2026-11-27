@@ -123,7 +123,12 @@ pub(super) fn run(
         SnapshotCommand::Create(args) => create(args, current)?,
         SnapshotCommand::Verify(args) => verify(&args.directory)?,
     };
-    command_output::write_report(&outcome, peel::OutputFormat::Json, output, |_, _| Ok(()))?;
+    command_output::write_report(
+        &outcome,
+        peel::output_format::OutputFormat::Json,
+        output,
+        |_, _| Ok(()),
+    )?;
     Ok(())
 }
 

@@ -241,12 +241,5 @@ theorem row_link_outcomes_of_order_kept {body : List (Nat × Stmt)} {B : EsmSpli
   rw [SparseProjectedOrder.split_indexed_regions_eq_source kept,
     IndexedEntryLink.singleton_source_regions singleton, sourceBody]
 
-#print axioms indexed_run_same_of_order_kept
-#print axioms row_link_outcomes_of_order_kept
-#print axioms indexed_run_same
-#print axioms indexed_scopes_agree
-#print axioms indexed_units_agree
-#print axioms imported_exact
-#print axioms module_statement_agree
 
 end CoreJS.IndexedUnitsAgree

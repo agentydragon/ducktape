@@ -646,7 +646,6 @@ theorem checkConstructedOutput_sound {files : Json} {constructed : Program}
   | ok witness => exact witness.down
   | error reason => simp [h, Except.isOk, Except.toBool] at accepted
 
-#print axioms checkConstructedOutput_sound
 
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use

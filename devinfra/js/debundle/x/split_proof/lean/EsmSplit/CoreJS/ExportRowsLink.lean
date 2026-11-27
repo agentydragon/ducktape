@@ -210,13 +210,5 @@ theorem rows_resolved_from_mkPlan {body : List (Nat × Stmt)} {B : EsmSplit.Bund
   rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind sourceRows
     planEntry unitMatches orderedRows (EsmSplit.PlanGlue.mkPlan_no_extra_glue planEntry covered) sourceDefs
 
-#print axioms rowAt_some
-#print axioms selected_row
-#print axioms row_alias_live_cell
-#print axioms rows_scope_cells
-#print axioms rows_resolved_from_plan
-#print axioms rows_resolved_from_mkPlan
-#print axioms indexed_module_dense
-#print axioms indexed_program_dense
 
 end CoreJS.ExportRows

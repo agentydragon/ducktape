@@ -2521,7 +2521,7 @@ not the module level. A large SCC closing through one
 constraining `(mod_A, mod_B)` edge surfaces as "binding `a` in
 `mod_A` reads binding `b` in `mod_B` at-init; move them together,"
 not "you have a cycle of many modules." See
-[validation.rs::render_cycle_summary](../validation.rs) for the
+[`render_cycle_summary`](../validation/render.rs) for the
 binding-pair blame format.
 
 ### Corollary: the role of the validator
@@ -3234,7 +3234,7 @@ debundler normally does not rewrite program structure. Lazy read edges still emi
 Pass 2 checks whether the remaining graph admits a valid concrete import
 schedule.
 
-`render_cycle_summary` (<../validation.rs>) names the binding pairs to
+`render_cycle_summary` (<../validation/render.rs>) names the binding pairs to
 colocate, per blocking SCC.
 
 ## Architecture

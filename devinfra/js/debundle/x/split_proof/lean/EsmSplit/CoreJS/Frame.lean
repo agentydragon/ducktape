@@ -691,10 +691,5 @@ theorem decl_allocOnly {e : Expr} (h : e.allocOnly = true) (fuel : Nat) (env : E
       refine keeps_bind_but (allocOnly_extends h n env s) fun v s1 hb1 => ?_
       exact keepsBut_bind_inert (initVar_keepsBut env x v hb1) fun _ => inert_pure _
 
-#print axioms allocOnly_extends
-#print axioms decl_allocOnly
-#print axioms evalMembers_literal_keeps
-#print axioms staticInitializers_allocOnly
-#print axioms evalStaticInitializers_keeps
 
 end CoreJS

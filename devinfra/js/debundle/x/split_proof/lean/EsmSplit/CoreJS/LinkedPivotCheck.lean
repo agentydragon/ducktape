@@ -192,7 +192,6 @@ theorem pivotFrameOk_sound {w : World} {ready : State w} {pre crossed : List Pre
   exact ⟨accessOk_outsideRegion ok.1, by
     simpa only [List.map_append] using isolatedUnits_of_check ok.2⟩
 
-#print axioms pivotFrameOk_sound
 
 def checkPivot {w : World} (ready : State w)
     (pre crossed : List PreparedUnit) (pivot : LinkedUnit) :

@@ -233,7 +233,6 @@ theorem sparseArray_nodes {A : HeapNode → Prop} (root : A (.obj arrayProto))
     · exact safe item.1 (List.fst_mem_of_mem_zipIdx hitem) node hnode
     · cases hnode
 
-#print axioms sparseArray_nodes
 
 theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))

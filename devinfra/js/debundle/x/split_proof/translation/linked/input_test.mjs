@@ -38,6 +38,41 @@ const orders = [
   [5, 2, 3, 1],
 ];
 const cases = [{ kind: "linked", input: linked(), expected: orders }];
+const inlineLexicalSource = "let seed = 7; let ready = seed + 2; export let result = ready;\n";
+const inlineLexicalSpec = {
+  entry: "entry.mjs",
+  modules: { "entry.mjs": ["#1", "#2"], "worker.mjs": ["#0"] },
+  order: ["worker.mjs"],
+  sequential: true,
+};
+cases.push({
+  kind: "indexedInlinePlan",
+  input: {
+    source: parse(inlineLexicalSource),
+    sourceText: inlineLexicalSource,
+    spec: inlineLexicalSpec,
+  },
+  expected: [
+    [0, 1, 2],
+    [0, 1, 2],
+    [
+      [1, "entry.mjs"],
+      [2, "entry.mjs"],
+      [0, "worker.mjs"],
+    ],
+    true,
+    ["result"],
+  ],
+});
+cases.push({
+  kind: "indexedInlinePlan",
+  input: {
+    source: parse(inlineLexicalSource),
+    sourceText: inlineLexicalSource,
+    spec: { ...inlineLexicalSpec, modules: { ...inlineLexicalSpec.modules, "entry.mjs": ["#1", "#2", "#1"] } },
+  },
+  expected: /each executable row must be selected exactly once/,
+});
 cases.push({
   kind: "singletonPlacement",
   input: linked(),
@@ -311,5 +346,5 @@ const outputs = JSON.parse(result.stdout);
 assert.equal(outputs.length, cases.length);
 for (const [i, { expected }] of cases.entries()) {
   if (expected instanceof RegExp) assert.match(outputs[i].error, expected);
-  else assert.deepEqual(outputs[i], { output: expected });
+  else assert.deepEqual(outputs[i], { output: expected }, `fixture ${i}: ${JSON.stringify(outputs[i])}`);
 }

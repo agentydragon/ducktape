@@ -210,6 +210,5 @@ theorem CheckedProbePair.sameExports {source candidate : Program} (pair : Checke
   rw [exportsMatch_from_checked (pair.before.forWorld w) (pair.after.forWorld w)]
   exact exportsMatched
 
-#print axioms CheckedProbePair.sameExports
 
 end CoreJS.LinkedBehavior
