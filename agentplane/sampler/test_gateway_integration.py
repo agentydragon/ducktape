@@ -44,6 +44,8 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.postgres import create_temporary_database
 from testing.sqlalchemy_engines import postgres_async_engine
 
+# gazelle:include_dep //agentplane/env/runtime/execution/testing:executor_companion
+pytest_plugins = ("agentplane.env.runtime.execution.testing.executor_companion",)
 logger = logging.getLogger(__name__)
 
 

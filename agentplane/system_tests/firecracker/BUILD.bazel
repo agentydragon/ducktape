@@ -57,6 +57,7 @@ py_library(
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
         ":runtime",
+        "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/deployment:virtualization",
         "@pypi//pytest",
     ],

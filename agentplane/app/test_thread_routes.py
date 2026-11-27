@@ -17,6 +17,9 @@ from agentplane.session_dispatcher.dispatcher.api.session import session_dispatc
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 
 # These plugins provide the real App, Dispatcher, History, Sandbox, and Go Runtime fixtures.
+# gazelle:include_dep //agentplane/app/testing:integration_fixtures
+# gazelle:include_dep //agentplane/app/testing:runtime_fixtures
+pytest_plugins = ("agentplane.app.testing.integration_fixtures", "agentplane.app.testing.runtime_fixtures")
 
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 

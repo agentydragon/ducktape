@@ -1,4 +1,4 @@
-"""Real sampler fixtures: the Go sampler against the scripted provider and a real Postgres."""
+"""Real sampler fixtures; the provider is the external scripted boundary."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -7,15 +7,10 @@ from pathlib import Path
 import pytest
 from python.runfiles import Runfiles
 
-from agentplane.env.runtime.execution.testing.executor_companion import executor_companion
-from agentplane.sampler.settings import Settings
-from agentplane.sampler.testing import Endpoint, settings
-from agentplane.sampler.testing_store import Store
 from agentplane.testing.codex_fixtures import ExecutorServer, code_mode_host, codex_binary, database_url
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
-from testing.sqlalchemy_engines import postgres_async_engine
 
 
 @pytest.fixture
@@ -44,25 +39,3 @@ async def executor_server() -> AsyncIterator[ExecutorServer]:
 @pytest.fixture
 async def execution_target(executor_server: ExecutorServer) -> str:
     return executor_server.url
-
-
-@pytest.fixture
-async def endpoint() -> AsyncIterator[Endpoint]:
-    async with Endpoint() as endpoint:
-        yield endpoint
-
-
-@pytest.fixture
-def config(
-    database_url: str, endpoint: Endpoint, execution_target: str, codex_binary: str, code_mode_host: str
-) -> Settings:
-    """Settings that sample from `endpoint` and execute through the shared adapter."""
-    return settings(
-        database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
-    )
-
-
-@pytest.fixture
-async def store(database_url: str) -> AsyncIterator[Store]:
-    async with postgres_async_engine(database_url) as engine:
-        yield Store(engine)

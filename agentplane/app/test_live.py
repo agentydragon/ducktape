@@ -34,6 +34,9 @@ from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispa
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
+# gazelle:include_dep //agentplane/app/testing:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.integration_fixtures",)
+
 
 @pytest.fixture
 async def seeded(namespace: SandboxNamespace) -> None:

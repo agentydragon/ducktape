@@ -52,6 +52,8 @@ from testing.asgi import serve_app_in_loop
 
 # gazelle:include_dep @pypi//protobuf
 
+# gazelle:include_dep //agentplane/app/testing:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.integration_fixtures",)
 
 Row = dict[str, Any]
 Message = dict[str, Any]

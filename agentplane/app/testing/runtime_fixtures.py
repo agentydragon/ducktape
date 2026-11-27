@@ -1,4 +1,4 @@
-"""The production Go Runtime as a fixture; it consumes `agentplane.env.e2e.testing.fixtures`."""
+"""Opt-in fixtures for tests that need the production Go Runtime."""
 
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from agentplane.env.e2e.testing.config import RunnerTestConfig
-from agentplane.env.e2e.testing.failure_journal import FailureEvidence
+from agentplane.env.e2e.testing.failure_journal import FailureEvidence, pytest_runtest_makereport
+from agentplane.env.e2e.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.e2e.testing.runtime_with_history import run_runtime_with_history
@@ -43,3 +44,16 @@ async def runner(
         yield started
         if (evidence := FailureEvidence.for_failed_call(request)) is not None:
             await evidence.preserve_runner(started)
+
+
+__all__ = [
+    "config",
+    "endpoint",
+    "harness",
+    "model",
+    "pytest_runtest_makereport",
+    "runner",
+    "runner_gateway",
+    "spec",
+    "workspace",
+]

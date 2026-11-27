@@ -24,6 +24,8 @@ from util.db_url import render_postgresql_url
 
 # gazelle:include_dep @pypi//protobuf
 
+# gazelle:include_dep //agentplane/app/testing:integration_fixtures
+pytest_plugins = ("agentplane.app.testing.integration_fixtures",)
 
 _SLOT = "electric_slot_agentplane_history"
 _WAL_CAP_BYTES = 1024 * 1024

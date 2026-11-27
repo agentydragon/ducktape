@@ -23,6 +23,8 @@ from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.scenarios import cert_manager_reissue, egress_native, workload_trust
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 

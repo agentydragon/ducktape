@@ -8,7 +8,7 @@ isolation boundary, measurements by cache state and alternatives to the current 
 
 The disposable stack used by the [CI system test suites](../README.md): the Agentplane services on a
 bare k3s inside the suite's own RBE action (no Cilium), which PR CI runs like any test.
-[`pytest_plugin.py`](pytest_plugin.py) holds the fixtures, registered by [`suites/conftest.py`](../suites/conftest.py), that start it and publish it as
+[`pytest_plugin.py`](pytest_plugin.py) is the pytest plugin that starts it and publishes it as
 the deployment under test, with LLM ingress forwarding to the scenario's scripted model on the node.
 Pod suites include the deployment package's `environment_tools_harnesses_image`, which carries both pinned harnesses.
 

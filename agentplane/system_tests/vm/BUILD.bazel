@@ -830,6 +830,7 @@ py_library(
     deps = [
         ":guest_logs",
         ":runtime",
+        "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/deployment:virtualization",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",

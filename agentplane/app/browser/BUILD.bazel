@@ -21,7 +21,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/app/testing:browser_certificate",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:http2_proxy",
@@ -52,7 +51,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/app/frontend/testing:history_interactions",
         "//agentplane/app/testing:browser_certificate",
         "//agentplane/app/testing:history",
@@ -99,7 +97,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/app/frontend/testing:history_interactions",
         "//agentplane/app/testing:thread_browser",
         "//agentplane/app/testing:thread_view_marks",
@@ -119,7 +116,12 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        "//agentplane/app/testing:gateway_fixtures",
+        "//agentplane/app/testing:integration_fixtures",
         "//agentplane/app/testing:thread_browser",
         "//agentplane/app/testing:thread_browser_backends",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/testing:kubernetes_apiserver_fixtures",
+        "//testing:postgres_fixtures",
     ],
 )

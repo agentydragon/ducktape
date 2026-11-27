@@ -17,7 +17,9 @@ from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_SVID_SECRET
 from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.scenarios import dispatcher
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
 # gazelle:include_dep @pypi//protobuf
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 
 
 @pytest.fixture

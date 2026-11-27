@@ -191,6 +191,8 @@ py_library(
     srcs = ["kubernetes_apiserver_fixtures.py"],
     visibility = [
         "//agentplane/app:__pkg__",
+        "//agentplane/app/browser:__pkg__",
+        "//agentplane/app/testing:__pkg__",
         "//agentplane/env/e2e:__pkg__",
         "//agentplane/history_service/fold:__pkg__",
         "//agentplane/sampler:__pkg__",

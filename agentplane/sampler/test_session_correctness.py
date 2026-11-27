@@ -33,6 +33,9 @@ from agentplane.sampler.testing import Endpoint, create_request, service, submit
 from agentplane.sampler.testing_store import IntentSnapshot, Store
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep //agentplane/sampler:testing_fixtures
+pytest_plugins = ("agentplane.sampler.testing_fixtures",)
+
 ResponseT = TypeVar("ResponseT")
 
 

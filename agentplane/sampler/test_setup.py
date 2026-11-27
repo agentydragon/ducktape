@@ -28,6 +28,9 @@ from agentplane.sampler.testing import (
 )
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep //agentplane/sampler:testing_fixtures
+pytest_plugins = ("agentplane.sampler.testing_fixtures",)
+
 
 class SetupEndpoint(Endpoint):
     def __init__(self, completion: Path):

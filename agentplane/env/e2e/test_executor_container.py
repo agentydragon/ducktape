@@ -41,6 +41,8 @@ from third_party.containers import debian_slim
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps.
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep //agentplane/env/runtime/execution/testing:executor_companion
+pytest_plugins = ("agentplane.env.runtime.execution.testing.executor_companion",)
 
 pytestmark = pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
 

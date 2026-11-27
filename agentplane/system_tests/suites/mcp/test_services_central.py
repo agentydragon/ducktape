@@ -12,6 +12,10 @@ from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import central_sampler
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+# gazelle:include_dep //agentplane/system_tests/driver:native_fixtures
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.driver.native_fixtures")
+
 
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
