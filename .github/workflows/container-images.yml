@@ -35,6 +35,7 @@ permissions:
 
 env:
   FREECAD_IMAGE: ghcr.io/${{ github.repository_owner }}/freecad-test
+  RTL_TCP_IMAGE: git.allegedly.works/ducktape-ci/rtl-tcp
 
 jobs:
   freecad-image:
@@ -48,7 +49,7 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - uses: ./.github/actions/ghcr-build-push
+      - uses: ./.github/actions/oci-build-push
         id: build
         with:
           image: ${{ env.FREECAD_IMAGE }}
@@ -70,25 +71,13 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Login to Forgejo registry
-        env:
-          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
-          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
-        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
-
-      - name: Build and push
-        env:
-          IMAGE: git.allegedly.works/ducktape-ci/rtl-tcp
-        run: |
-          set -euo pipefail
-          ts="$(date -u +%Y%m%d%H%M%S)"
-          pin_tag="${GITHUB_REF_NAME}-${ts}-${GITHUB_SHA:0:7}"
-          docker buildx build \
-            --push \
-            --tag "$IMAGE:$GITHUB_SHA" \
-            --tag "$IMAGE:$pin_tag" \
-            --tag "$IMAGE:latest" \
-            x/rtl_tcp
+      - uses: ./.github/actions/oci-build-push
+        with:
+          image: ${{ env.RTL_TCP_IMAGE }}
+          registry: git.allegedly.works
+          login_username: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          login_password: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
+          context: x/rtl_tcp
 
   # `pin-digests` pushes via the ducktape-automation GitHub App so the commit
   # bypasses the main-protection ruleset (github-actions can't bypass on

@@ -1,9 +1,9 @@
-name: GHCR Build and Push
-description: Compute image tags, login to GHCR, and build+push a Docker image.
+name: OCI Build and Push
+description: Compute image tags, log in to the target registry, and build+push a Docker image.
 
 inputs:
   image:
-    description: Full image name (e.g. ghcr.io/agentydragon/foo)
+    description: Full image name, registry host included (e.g. ghcr.io/agentydragon/foo)
     required: true
   context:
     description: Docker build context path
@@ -12,6 +12,18 @@ inputs:
     description: Path to Dockerfile (optional; defaults to {context}/Dockerfile)
     required: false
     default: ""
+  registry:
+    description: Registry host to log in to; the host part of "image"
+    required: false
+    default: ghcr.io
+  login_username:
+    description: Registry user; GHCR callers keep the default
+    required: false
+    default: ${{ github.actor }}
+  login_password:
+    description: Password or token for "login_username"; GHCR callers keep the default
+    required: false
+    default: ${{ github.token }}
   cache_from:
     description: Docker build cache source (e.g. type=registry,ref=image:buildcache)
     required: false
@@ -25,6 +37,9 @@ outputs:
   pin_tag:
     description: The branch-timestamp-sha7 tag (useful for Flux ImagePolicy)
     value: ${{ steps.meta.outputs.pin_tag }}
+  digest:
+    description: Digest Buildx pushed, so a later job can pin it without querying the registry
+    value: ${{ steps.build.outputs.digest }}
 
 runs:
   using: composite
@@ -43,17 +58,18 @@ runs:
         echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
         echo "pin_tag=$PINNED_TAG" >> "$GITHUB_OUTPUT"
 
-    - name: Login to GHCR
+    - name: Log in to the registry
       uses: docker/login-action@v4
       with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ github.token }}
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.login_username }}
+        password: ${{ inputs.login_password }}
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v4
 
     - name: Build and push
+      id: build
       uses: docker/build-push-action@v7
       with:
         context: ${{ inputs.context }}

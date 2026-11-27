@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
-      - uses: ./.github/actions/ghcr-build-push
+      - uses: ./.github/actions/oci-build-push
         id: build
         with:
           image: ${{ env.RBE_CONTAINER_IMAGE }}
