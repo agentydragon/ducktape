@@ -1675,6 +1675,7 @@ lean_library(
         ":corejs_indexed_source_facts",
         ":corejs_linked_input",
         ":corejs_resolved_placement",
+        ":corejs_static_provider_construction",
         ":corejs_terminal_source",
         ":estree_emit",
         ":literal_reorder_construct",
@@ -1682,6 +1683,34 @@ lean_library(
         ":ordered_const_syntax",
         ":terminal_export_placement",
     ],
+)
+
+lean_library(
+    name = "corejs_static_provider_construction",
+    srcs = ["EsmSplit/CoreJS/StaticProviderConstruction.lean"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_deployment_placement",
+        ":corejs_link_world",
+        ":corejs_plan_placement",
+        ":corejs_static_provider_linking",
+        ":lowersplit_input",
+        ":module_path",
+        ":shared_provider_boundary",
+        ":split",
+    ],
+)
+
+lean_proof_test(
+    name = "static_provider_construction_axioms_test",
+    modules = ["EsmSplit.CoreJS.StaticProviderConstruction"],
+    required_theorems = [
+        "CoreJS.StaticProviderConstruction.construct",
+        "CoreJS.StaticProviderConstruction.Construction.authoredOwner",
+        "CoreJS.StaticProviderConstruction.Construction.guarantees",
+        "CoreJS.StaticProviderConstruction.Construction.readbackGuarantees",
+    ],
+    deps = [":corejs_static_provider_construction"],
 )
 
 lean_proof_test(

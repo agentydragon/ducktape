@@ -9,6 +9,7 @@ import EsmSplit.CoreJS.LiteralReorderConstruct
 import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.ResolvedPlacement
 import EsmSplit.CoreJS.OrderedConstSyntax
+import EsmSplit.CoreJS.StaticProviderConstruction
 import EsmSplit.CoreJS.TerminalExportPlacement
 import EsmSplit.CoreJS.TerminalSource
 import EsmSplit.ESTreeEmit
@@ -61,6 +62,54 @@ private def stageConstructed (program : CoreJS.Program) (src : BundleInput)
     pure <| match CoreJS.ConstructedOutput.checkConstructedOutput files program with
       | .ok _ => .ok ()
       | .error reason => .error { reason }
+
+/-- Resolve one import from the directory of the actual raw entry. The
+authenticated classifier uses a root-level entry, so restrict this route to
+root-level entry names too. The provider travels through the existing byte
+comparison gate, while the generated modules are independently parsed. -/
+private def runStaticProvider (chunk : DeploymentChunk) (spec : Spec) (src : BundleInput)
+    (classified : CoreJS.LinkedInput.DecodedSource) (out work : System.FilePath)
+    (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
+  let refuse := fun reason => noConstructor options.request.label s!"static provider: {reason}"
+  unless chunk.source.extension == some "mjs" && spec.entry.endsWith ".mjs" &&
+      !spec.entry.contains '/' do
+    return ← refuse "expected a raw .mjs source and a root-level entry route"
+  let .ok request := CoreJS.StaticProviderConstruction.providerRequest classified |
+    return ← refuse "expected one relative named import"
+  try
+    let actual ← IO.FS.realPath chunk.source
+    let some root := actual.parent | return ← refuse "source does not have a directory"
+    unless actual.extension == some "mjs" && root / request.source != actual do
+      return ← refuse "provider must be a distinct raw .mjs file"
+    let providers ← readModules root work #[request.source]
+    let providerAst ← IO.ofExcept (providers.getObjVal? request.source)
+    let providerText ← IO.ofExcept (providerAst.getObjValAs? String "sourceText")
+    let provider ← IO.ofExcept (CoreJS.AuthenticatedSource.decodeIndexedSource providerAst providerText request.source)
+    let built ← match CoreJS.StaticProviderConstruction.construct classified provider spec with
+      | .ok built => pure built
+      | .error reason => return ← refuse reason
+    let programs ← IO.ofExcept
+      (ESTreeEmit.programs classified.nodes (sourceBundle classified.nodes)
+        (CoreJS.StaticProviderConstruction.printerPlan built) src.source spec.entry)
+    let part : OutputPart := { programs, source := src.source, input := src.input, work }
+    let result ← certifyOutput (α := Unit) [part] providers out work options.checkOnly timings fun files =>
+      pure do
+        let observed ← files.getObj? |>.mapError (fun reason => ({ reason } : CertificationRefusal))
+        -- The gate has just checked these exact provider bytes; only generated
+        -- modules need fresh annotations in the returned file map.
+        let complete := Json.mkObj ((request.source, providerAst) :: observed.toList)
+        let ⟨same⟩ ← (CoreJS.ConstructedOutput.checkConstructedOutput complete built.program).mapError
+          fun reason => ({ reason } : CertificationRefusal)
+        let _proof := fun observed
+            (decoded : CoreJS.ConstructedOutput.decodeConstructedOutput complete built.program = .ok observed) =>
+          built.readbackGuarantees (Except.ok.inj (decoded.symm.trans same))
+        return ()
+    match result with
+    | .ok _ =>
+      emitVerdict options.request.label (.ok .allOutcomes) "shared-static-provider"
+        [("strategy", toJson "compiled-constructor")]
+    | .error why => emitRefusal options.request.label why "shared-static-provider"
+  catch e => refuse e.toString
 
 private def tryInlineDeclarations (chunk : DeploymentChunk) (src : BundleInput)
     (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.AuthenticatedSource.IndexedSource)
@@ -191,6 +240,8 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
   if let .authored spec := chunk.placement then
     if spec.sequential then
       if let .ok classified := CoreJS.AuthenticatedSource.decodeSourceClassification src.program src.source spec.entry then
+        if !classified.source.imports.isEmpty then
+          return ← runStaticProvider chunk spec src classified out work options timings
         if let some verdict ← rejectDuplicateTerminalSelectors chunk classified options then return verdict
         let indexed := CoreJS.AuthenticatedSource.checkIndexedSource classified
         if let some verdict ← tryLocalExports chunk src classified indexed out work options timings then return verdict
