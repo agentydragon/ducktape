@@ -692,8 +692,7 @@ pub(super) fn build_final_module_report(
                 binding_source_units,
                 file: plan.target_file.clone(),
                 member_names,
-                path: spec::ModulePath::parse(&plan.target_path, "")
-                    .expect("plan target_path is a canonical module path"),
+                path: spec::ModulePath::from_pipeline_target(&plan.target_path),
                 source_unit_ids,
                 residual: plan.role == ModuleRole::Unassigned,
             }

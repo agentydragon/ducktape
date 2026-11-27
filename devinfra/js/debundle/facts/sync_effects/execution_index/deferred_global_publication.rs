@@ -86,8 +86,7 @@ pub(super) fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &s
         ValueExpr::ObjectLiteral(_, properties) => properties.is_empty(),
         ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
             value
-                .result_alternatives()
-                .expect("alternative expression")
+                .branching_alternatives()
                 .iter()
                 .all(|value| same_property_or_fresh(value, alias, property))
         }
