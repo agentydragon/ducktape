@@ -1,6 +1,6 @@
-// Package streams owns the app's raw streaming and generated backend facades. It consumes narrow
-// upstream, auth, inventory and console dependencies, and returns browser streams or forwarded
-// HTTP responses. It preserves each facade's route allowlist, method and caller policy, operator
+// Package streams owns the app's raw streaming and generated backend facades and the Electric
+// thread-sync relay. It consumes narrow upstream, auth, inventory and console dependencies, and
+// returns browser streams or forwarded HTTP responses. It preserves each facade's route allowlist, method and caller policy, operator
 // logout revocation, request and drain cancellation, and existing SSE and HTTP wire output. The
 // caller registrar supplies authentication; backends keep their own state and authority.
 package streams
@@ -57,11 +57,14 @@ type Dependencies struct {
 	ConnectionHTTP   Upstream
 	HistoryHTTP      Upstream
 	NotificationHTTP Upstream
-	Console          sandboxes.ConsoleSource
-	Logger           *slog.Logger
+	// Electric is the thread-sync shape relay; nil leaves thread sync unrouted.
+	Electric http.Handler
+	Console  sandboxes.ConsoleSource
+	Logger   *slog.Logger
 }
 
-// RegisterRoutes installs raw upstream facades and the console stream through the caller boundary.
+// RegisterRoutes installs raw upstream facades, the console stream and Electric thread sync through
+// the caller boundary.
 func RegisterRoutes(server httpapi.RouteRegistrar, drainDone <-chan struct{}, dependencies Dependencies) {
 	routes := newStreamingRoutes(drainDone, dependencies)
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
@@ -82,6 +85,9 @@ func RegisterRoutes(server httpapi.RouteRegistrar, drainDone <-chan struct{}, de
 	}
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		server.RegisterRawRoute(method+" /upstream/history/{path...}", http.HandlerFunc(routes.historyFacade), false)
+	}
+	if dependencies.Electric != nil {
+		server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", http.HandlerFunc(routes.electric), false)
 	}
 }
 
@@ -143,20 +149,35 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
 		return
 	}
-	var ctx context.Context
-	var cancel context.CancelFunc
-	if session, ok := auth.SessionFromContext(request.Context()); ok && session.Login != nil {
-		var err error
-		ctx, cancel, err = r.operatorLifetime(request)
-		if err != nil {
-			httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
-			return
-		}
-	} else {
-		ctx, cancel = r.requestLifetime(request)
+	ctx, cancel, err := r.callerLifetime(request)
+	if err != nil {
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
+		return
 	}
 	defer cancel()
 	r.forwardFacade(w, request, ctx, r.deps.EnvironmentHTTP, path, "")
+}
+
+// callerLifetime ends a browser session's stream at drain or logout, and a bearer caller's
+// stream at drain or request end.
+func (r *streamingRoutes) callerLifetime(request *http.Request) (context.Context, context.CancelFunc, error) {
+	if session, ok := auth.SessionFromContext(request.Context()); ok && session.Login != nil {
+		return r.operatorLifetime(request)
+	}
+	ctx, cancel := r.requestLifetime(request)
+	return ctx, cancel, nil
+}
+
+// electric relays Electric shape requests, including live long-polls and SSE, under the
+// caller's lifetime.
+func (r *streamingRoutes) electric(w http.ResponseWriter, request *http.Request) {
+	ctx, cancel, err := r.callerLifetime(request)
+	if err != nil {
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
+		return
+	}
+	defer cancel()
+	r.deps.Electric.ServeHTTP(w, request.WithContext(ctx))
 }
 
 func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Request) {
@@ -233,7 +254,13 @@ func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Req
 			w.Header().Set("Agentplane-Cache-Account", base64.RawURLEncoding.EncodeToString(account))
 		}
 	}
-	r.forwardFacade(w, request, request.Context(), r.deps.HistoryHTTP, path, "")
+	ctx, cancel, err := r.callerLifetime(request)
+	if err != nil {
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
+		return
+	}
+	defer cancel()
+	r.forwardFacade(w, request, ctx, r.deps.HistoryHTTP, path, "")
 }
 
 func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Request, upstream Upstream, label string) {

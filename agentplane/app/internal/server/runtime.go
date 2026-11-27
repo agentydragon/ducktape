@@ -187,17 +187,16 @@ func Run(ctx context.Context, config settings.Config) error {
 	})
 	appConfigHandler := apphttp.NewAppConfigHandler(config, policySetNames)
 	statusHandler := apphttp.NewSystemStatusHandler(serviceStatus)
-	var electricHandler http.Handler
+	streams := streamhttp.Dependencies{
+		Auth: appAuth, SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
+		Federator: federator, Console: consoleConnector, Logger: logger,
+	}
 	if config.ElectricURL != "" {
 		electric, electricErr := electricproxy.NewElectricProxy(baseClient, config.ElectricURL, threadEpochStore{history: history})
 		if electricErr != nil {
 			return fmt.Errorf("configure Electric thread sync: %w", electricErr)
 		}
-		electricHandler = electric.Handler()
-	}
-	streams := streamhttp.Dependencies{
-		Auth: appAuth, SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
-		Federator: federator, Console: consoleConnector, Logger: logger,
+		streams.Electric = electric.Handler()
 	}
 	if err := configureFacades(facadeContext, config, &streams); err != nil {
 		return err
@@ -205,7 +204,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err := registerRoutes(server, routeOwners{
 		appConfig: appConfigHandler, sessions: sessionHandlers, threads: threadMetadata,
 		operatorLinkage: linkageClient, systemStatus: statusHandler,
-		traceRelay: traceRelayHandler(), electric: electricHandler, streams: streams,
+		traceRelay: traceRelayHandler(), streams: streams,
 	}); err != nil {
 		return err
 	}
