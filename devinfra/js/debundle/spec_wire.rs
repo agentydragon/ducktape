@@ -17,8 +17,8 @@ use contracts::{
     encode_value_input_contract,
 };
 use selectors::{
-    decode_binding_annotation, decode_binding_selector, decode_logical_module,
-    encode_binding_annotation, encode_binding_selector, encode_logical_module,
+    decode_binding_annotation_map, decode_binding_selector, decode_logical_module,
+    encode_binding_annotation_map, encode_binding_selector, encode_logical_module,
 };
 use spec_wire_proto::debundle::spec as pb;
 use std::collections::{BTreeMap, BTreeSet};
@@ -508,11 +508,7 @@ pub fn encode_chunk_renames(value: &spec::ChunkRenames) -> pb::ChunkRenames {
             .iter()
             .map(encode_chunk_rename_member)
             .collect(),
-        annotations: value
-            .annotations
-            .iter()
-            .map(|(key, annotation)| (key.clone(), encode_binding_annotation(annotation)))
-            .collect(),
+        annotations: encode_binding_annotation_map(&value.annotations),
     }
 }
 
@@ -523,11 +519,7 @@ pub fn decode_chunk_renames(v: pb::ChunkRenames) -> Result<spec::ChunkRenames> {
             .into_iter()
             .map(decode_chunk_rename_member)
             .collect::<Result<_>>()?,
-        annotations: v
-            .annotations
-            .into_iter()
-            .map(|(key, annotation)| Ok((key, decode_binding_annotation(annotation)?)))
-            .collect::<Result<_>>()?,
+        annotations: decode_binding_annotation_map(v.annotations)?,
     })
 }
 
