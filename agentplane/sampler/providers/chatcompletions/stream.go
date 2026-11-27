@@ -1,7 +1,6 @@
 package chatcompletions
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -60,43 +59,20 @@ type frame struct {
 func (frame) Kind() eventpb.ExecutionProgress_Kind { return eventpb.ExecutionProgress_KIND_PROVIDER }
 
 func Sample(ctx context.Context, client *http.Client, baseURL, authorization string, body []byte, evidence protocol.EvidenceSink, attribution map[string]string, compaction bool, hooks protocol.ProviderHooks) (*Result, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+Path, bytes.NewReader(body))
+	response, err := providerio.Post(ctx, client, providerio.Request{
+		URL: strings.TrimRight(baseURL, "/") + Path, Body: body,
+		Headers:  []map[string]string{Headers(), attribution, {"Authorization": authorization}},
+		Provider: "provider", RequestIDHeader: "x-request-id",
+	}, evidence, hooks)
 	if err != nil {
 		return nil, err
 	}
-	for name, value := range Headers() {
-		request.Header.Set(name, value)
-	}
-	for name, value := range attribution {
-		request.Header.Set(name, value)
-	}
-	if authorization != "" {
-		request.Header.Set("Authorization", authorization)
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, providerio.ProviderTransportError(ctx, err)
-	}
-	defer response.Body.Close()
-	head := protocol.HTTPResponseHead{
-		HTTPStatus: response.StatusCode, ProviderRequestID: response.Header.Get("x-request-id"), ContentType: response.Header.Get("content-type"),
-	}
-	if err := protocol.RecordProviderEvidence(ctx, evidence, head, false); err != nil {
-		return nil, err
-	}
-	if hooks.ResponseHeadRecorded != nil {
-		hooks.ResponseHeadRecorded()
-	}
-	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
-	if response.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(io.LimitReader(reader, 1024*1024))
-		if err != nil {
-			return nil, providerio.ProviderTransportError(ctx, err)
-		}
-		return nil, providerio.ProviderStatusError(response, "provider", map[string]any{"http_status": response.StatusCode, "body": string(body)})
-	}
-	return readStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction, hooks)
+	defer response.Close()
+	return readStream(ctx, response.Body, evidence, compaction, hooks)
 }
+
+// errStreamDone stops the SSE reader at the [DONE] sentinel.
+var errStreamDone = errors.New("Chat Completions stream done")
 
 type stream struct {
 	compaction    bool
@@ -110,37 +86,26 @@ type stream struct {
 
 func readStream(ctx context.Context, reader io.Reader, evidence protocol.EvidenceSink, compaction bool, hooks protocol.ProviderHooks) (*Result, error) {
 	state := stream{compaction: compaction}
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 16*1024), protocol.MaxProviderStreamBytes)
-	var lines []string
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "data:") {
-			lines = append(lines, strings.TrimPrefix(line[5:], " "))
-			continue
-		}
-		if line != "" || len(lines) == 0 {
-			continue
-		}
-		data := strings.Join(lines, "\n")
-		lines = lines[:0]
+	err := providerio.ReadSSE(ctx, reader, func(data string) error {
 		if data == "[DONE]" {
-			return state.finish(ctx, evidence)
+			return errStreamDone
 		}
 		semanticProgress, err := state.consume(ctx, []byte(data), evidence)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if semanticProgress && hooks.Progress != nil {
-			if err := hooks.Progress(); err != nil {
-				return nil, err
-			}
+			return hooks.Progress()
 		}
+		return nil
+	})
+	switch {
+	case errors.Is(err, errStreamDone):
+		return state.finish(ctx, evidence)
+	case err != nil:
+		return nil, err
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, providerio.ProviderTransportError(ctx, err)
-	}
-	return nil, providerio.ProviderTransportError(ctx, errors.New("Chat Completions stream ended before [DONE]"))
+	return nil, &protocol.ProviderTransientError{Cause: errors.New("Chat Completions stream ended before [DONE]")}
 }
 
 func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence protocol.EvidenceSink) (bool, error) {

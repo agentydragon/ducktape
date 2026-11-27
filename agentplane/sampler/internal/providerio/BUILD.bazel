@@ -6,6 +6,7 @@ go_library(
     name = "providerio",
     srcs = [
         "errors.go",
+        "stream.go",
         "timeouts.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/providerio",
@@ -16,7 +17,10 @@ go_library(
 
 go_test(
     name = "providerio_test",
-    srcs = ["providerio_test.go"],
+    srcs = [
+        "providerio_test.go",
+        "stream_test.go",
+    ],
     embed = [":providerio"],
     deps = [
         "//agentplane/sampler/protocol",
