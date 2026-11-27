@@ -166,18 +166,9 @@ impl InitializationCensus {
                         variable.kind == VarDeclKind::Const
                             && !variable.declare
                             && declarator.init.as_deref().is_some_and(|initializer| {
-                                matches!(
-                                    initializer.unwrap_parens(),
-                                    Expr::Fn(_)
-                                        | Expr::Arrow(_)
-                                        | Expr::Lit(
-                                            Lit::Str(_)
-                                                | Lit::Bool(_)
-                                                | Lit::Null(_)
-                                                | Lit::Num(_)
-                                                | Lit::BigInt(_)
-                                        )
-                                )
+                                let initializer = initializer.unwrap_parens();
+                                matches!(initializer, Expr::Fn(_) | Expr::Arrow(_))
+                                    || js_ast::is_primitive_literal(initializer)
                             })
                     });
             }
