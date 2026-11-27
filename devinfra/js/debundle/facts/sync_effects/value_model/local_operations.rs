@@ -47,12 +47,7 @@ impl LocalCallee {
                 Some(Self::Creation(creation))
             }
             Expr::Member(member) => {
-                let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
-                    return None;
-                };
-                let MemberProp::Ident(property) = &member.prop else {
-                    return None;
-                };
+                let (receiver, property) = ident_member(member)?;
                 Some(Self::Member {
                     receiver: receiver.to_id(),
                     property: property.sym.to_string(),
@@ -325,6 +320,20 @@ fn value_contains_keyed_collection_new(value: &ValueExpr) -> bool {
         | ValueExpr::NonCallable(_)
         | ValueExpr::Unknown => false,
     }
+}
+
+/// One plain `receiver.property` read or write: both sides bare identifiers,
+/// with the parentheses around the receiver ignored. A computed or string key
+/// and a member of a call or a chain are a different lowering, so they stay
+/// where they are matched.
+fn ident_member(member: &MemberExpr) -> Option<(&Ident, &IdentName)> {
+    let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+        return None;
+    };
+    let MemberProp::Ident(property) = &member.prop else {
+        return None;
+    };
+    Some((receiver, property))
 }
 
 fn simple_binding(pattern: &Pat) -> Option<Id> {
@@ -659,12 +668,7 @@ impl LocalExpression {
                 })
             }
             Expr::Member(member) => {
-                let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
-                    return None;
-                };
-                let MemberProp::Ident(property) = &member.prop else {
-                    return None;
-                };
+                let (receiver, property) = ident_member(member)?;
                 Some(Self::ReadField {
                     receiver: receiver.to_id(),
                     property: property.sym.to_string(),
@@ -706,12 +710,7 @@ impl LocalExpression {
                                 span: assignment.span,
                             });
                         }
-                        let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
-                            return None;
-                        };
-                        let MemberProp::Ident(property) = &member.prop else {
-                            return None;
-                        };
+                        let (receiver, property) = ident_member(member)?;
                         // `__proto__` is the Object.prototype accessor, not an
                         // own data slot.
                         if property.sym == "__proto__" {
