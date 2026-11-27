@@ -684,6 +684,10 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 	if _, err := queueStore.Settle(ctx, "test-second", claimSessionOwner(t, queueStore, id), []dispatcherpb.DeliveryState{store.QueueState}, store.FailedState, reason, nil); err != nil {
 		t.Fatal(err)
 	}
+	// Another Session's deletion leaves this traversal intact.
+	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id='foreign'"); err != nil {
+		t.Fatal(err)
+	}
 	last := page(first.NextPageToken, 2)
 	if len(last.Dispatches) != 2 || last.Dispatches[0].GetCommandId() != "test-second" || last.Dispatches[0].GetReason() != reason || last.Dispatches[0].GetReceiptVersion() <= oldVersion ||
 		last.Dispatches[1].GetCommandId() != "test-first" || last.NextPageToken != "" || last.Coverage != dispatcherpb.ListSessionDispatchesResponse_RETAINED_DISPATCH_ROWS {
@@ -692,10 +696,13 @@ func TestSessionDispatchPagesRespectReadAuthorityAndImmutableSubmissionOrder(t *
 	if _, err := queueStore.DB.ExecContext(ctx, "DELETE FROM dispatch WHERE command_id='test-first'"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: id, PageToken: first.NextPageToken}); status.Code(err) != codes.OutOfRange {
+		t.Fatalf("continued across own deletion: %v", err)
+	}
 	if _, err := queueStore.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=now()-interval '2 days'"); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := queueStore.PruneDispatchTombstones(ctx); err != nil || count != 1 {
+	if count, err := queueStore.PruneDispatchTombstones(ctx); err != nil || count != 2 {
 		t.Fatalf("prune: %d, %v", count, err)
 	}
 	if _, err := peers.component.ListSessionDispatches(authoritySVIDContext(t), &dispatcherpb.ListSessionDispatchesRequest{SessionId: id, PageToken: first.NextPageToken}); status.Code(err) != codes.OutOfRange {

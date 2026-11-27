@@ -44,9 +44,11 @@ func (s *Store) ReadDispatchPage(ctx context.Context, sessionID string, caller C
 			FROM dispatch WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3
 			AND ($4::bigint=0 OR position<$4)`
 		params := []any{sessionID, name, uid, cursor.Before, limit + 1}
+		// Only this Session's deletions can remove a row from the traversal. A tombstone version is allocated
+		// at deletion, so the global prune floor passes the frontier only once the traversal outlives retention.
 		var deleted bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM dispatch_tombstone WHERE version>$1)
-				OR (SELECT pruned_through>$1 FROM dispatch_watch_retention WHERE singleton)`, cursor.Frontier).Scan(&deleted); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM dispatch_tombstone WHERE session_id=$2 AND version>$1)
+				OR (SELECT pruned_through>$1 FROM dispatch_watch_retention WHERE singleton)`, cursor.Frontier, sessionID).Scan(&deleted); err != nil {
 			return err
 		}
 		if deleted {
