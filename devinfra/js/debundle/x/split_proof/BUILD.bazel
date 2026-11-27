@@ -712,6 +712,17 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "corejs_linked_input_census",
+    srcs = ["EsmSplit/CoreJS/LinkedInputCensus.lean"],
+    deps = [
+        ":corejs_from_estree",
+        ":corejs_linked_input",
+        ":corejs_opaque_input",
+        ":estree_units",
+    ],
+)
+
 lean_proof_test(
     name = "constructed_output_axioms_test",
     allow_empty = True,
@@ -2008,6 +2019,7 @@ lean_library(
     deps = [
         ":corejs_fragment",
         ":corejs_linked_input",
+        ":corejs_linked_input_census",
         ":corejs_run",
         ":corejs_stable_intrinsic_descriptor",
     ],

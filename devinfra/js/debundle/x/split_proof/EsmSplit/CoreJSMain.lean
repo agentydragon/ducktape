@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.Run
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.LinkedInputCensus
 import EsmSplit.CoreJS.Fragment
 import EsmSplit.CoreJS.StableIntrinsicDescriptor
 
@@ -7,7 +8,7 @@ import EsmSplit.CoreJS.StableIntrinsicDescriptor
 neither inert nor allocation-only applies, not that execution has a known effect.
 Opaque is an overlapping count; refused units stay in the denominator. -/
 private def moveCensus (source : Lean.Json) (profile : CoreJS.HostProfile) : Except String Lean.Json := do
-  let units ← CoreJS.LinkedInput.censusUnits source profile
+  let units ← CoreJS.LinkedInputCensus.censusUnits source profile
   let mut inert : Nat := 0
   let mut allocate : Nat := 0
   let mut opaqueCount : Nat := 0
@@ -69,10 +70,10 @@ def main (args : List String) : IO UInt32 := do
     match Lean.Json.parse (← IO.FS.readFile contract) >>= censusProfile with
     | .ok profile => runCensus file profile moveCensus
     | .error why => IO.eprintln why; pure 1
-  | ["--lowering-census", file] => runCensus file .empty CoreJS.LinkedInput.concreteCensus
+  | ["--lowering-census", file] => runCensus file .empty CoreJS.LinkedInputCensus.concreteCensus
   | ["--lowering-census", file, "--host-contract", contract] =>
     match Lean.Json.parse (← IO.FS.readFile contract) >>= censusProfile with
-    | .ok profile => runCensus file profile CoreJS.LinkedInput.concreteCensus
+    | .ok profile => runCensus file profile CoreJS.LinkedInputCensus.concreteCensus
     | .error why => IO.eprintln why; pure 1
   | ["--ast", file] =>
     for line in (← IO.FS.lines file) do
