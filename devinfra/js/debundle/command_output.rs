@@ -1,6 +1,6 @@
 //! Command output formatting and stdout emission.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use peel::OutputFormat;
 use serde::Serialize;
 use std::io::{self, Write};
@@ -138,6 +138,43 @@ pub fn write_ndjson_list<T: Serialize, W: Write + ?Sized>(
     }
     output.flush().map_err(ReportOutputError::Flush)?;
     Ok(true)
+}
+
+/// Shared tail of every report subcommand: resolve `format` (tty-aware default),
+/// render `report`, and tag IO errors with `context`.
+pub fn emit_report<T, F>(
+    output: &mut dyn Write,
+    format: Option<OutputFormat>,
+    report: &T,
+    text_render: F,
+    context: &'static str,
+) -> Result<()>
+where
+    T: serde::Serialize,
+    F: FnOnce(&T, &mut String) -> Result<()>,
+{
+    write_report(report, OutputFormat::resolve(format), output, text_render).context(context)
+}
+
+/// One flattened, tagged NDJSON row. Each caller owns its section order and payload schema.
+pub fn write_section<T: serde::Serialize>(
+    output: &mut dyn Write,
+    section: &str,
+    payload: &T,
+) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct Line<'a, T> {
+        section: &'a str,
+        #[serde(flatten)]
+        payload: &'a T,
+    }
+    write_report(
+        &Line { section, payload },
+        OutputFormat::Ndjson,
+        output,
+        |_, _| Ok(()),
+    )
+    .context("writing NDJSON section")
 }
 
 #[cfg(test)]

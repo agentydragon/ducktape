@@ -16,7 +16,7 @@ use serde::Serialize;
 use std::io::Write;
 use transform_inputs::load_transform_spec_source;
 
-use crate::emit_report;
+use command_output::emit_report;
 
 #[derive(Debug, Args)]
 pub(super) struct StaticImportsArgs {

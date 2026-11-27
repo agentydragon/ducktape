@@ -15,7 +15,7 @@ use spec::{ChunkExportPurity, RetainedCallbackSignature};
 use tempfile::NamedTempFile;
 use transform_inputs::load_transform_spec_source;
 
-use crate::{emit_report, write_section};
+use command_output::{emit_report, write_section};
 
 #[derive(Debug, Args)]
 pub(super) struct AuditContractsArgs {

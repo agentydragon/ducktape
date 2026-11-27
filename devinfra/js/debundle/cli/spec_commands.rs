@@ -2,10 +2,9 @@
 use crate::contract_audit::{AuditContractsArgs, run as run_audit_contracts};
 use crate::propose_commutations::ProposeCommutationsArgs;
 use crate::validate::{ValidateArgs, run_validate_cmd};
-use crate::{emit_report, write_section};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
-use command_output::{infallible, write_report};
+use command_output::{emit_report, infallible, write_report, write_section};
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;

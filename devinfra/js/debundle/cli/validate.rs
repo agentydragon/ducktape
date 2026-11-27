@@ -20,10 +20,9 @@ use std::fmt::Write as _;
 use std::path::Path;
 use transform_command::TransformArgs;
 
-use crate::write_section;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
-use command_output::write_report;
+use command_output::{write_report, write_section};
 use graph::CommutingStatementsDiagnostic;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::OutputFormat;

@@ -46,7 +46,7 @@ use spec::{ModulePath, ResolvedMemberSelector};
 use spec_modules::{collect_module_files, module_path_from_file};
 use swc_atoms::Atom;
 
-use crate::emit_report;
+use command_output::emit_report;
 use graph_compatibility::GraphCompatibilityScope;
 use graph_provenance::CurrentRoots;
 

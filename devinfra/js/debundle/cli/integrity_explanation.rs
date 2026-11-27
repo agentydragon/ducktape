@@ -1,7 +1,6 @@
 //! `debundle explain-integrity`: which census witnesses leave a native
 //! integrity slot unknown, from the saved graph and its program graph.
 
-use crate::emit_report;
 use analysis::facts::standard_globals::is_standard_global;
 use analysis_domain::integrity::{CensusExplanation, SlotName, SlotReach};
 use analysis_vocabulary::execution_evidence::{
@@ -14,6 +13,7 @@ use analysis_vocabulary::report_schema::{
 };
 use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Args as ClapArgs};
+use command_output::emit_report;
 use graph::ProgramGraphReport;
 use graph::report::BindingReport;
 use graph_provenance::{CurrentRoots, GraphProvenance};

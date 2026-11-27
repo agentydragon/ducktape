@@ -1,6 +1,5 @@
 //! `bindings` command arguments, dispatch, and presentation. Spec edits live
 //! in `binding`; this module adapts the CLI to that shared editing API.
-use crate::emit_report;
 use anyhow::{Context, Result};
 use binding::{
     BindingsListFilters, Move, Rename, parse_batch_json, parse_move_triple, rename_binding,
@@ -8,7 +7,7 @@ use binding::{
 };
 use candidate_assessment::CandidateEffectAssessmentArgs;
 use clap::{Args as ClapArgs, Subcommand};
-use command_output::infallible;
+use command_output::{emit_report, infallible};
 use comment::{BindingCommentArgs, run_binding_comment_cmd};
 use edit_gate::GraphEditArgs;
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
