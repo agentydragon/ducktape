@@ -812,6 +812,35 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_callable_default_provider",
+    srcs = ["EsmSplit/CoreJS/CallableDefaultProvider.lean"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_constructed_output",
+        ":corejs_deployment_placement",
+        ":corejs_indexed_exported_function",
+        ":corejs_plan_placement",
+        ":corejs_static_provider_linking",
+        ":estree_emit",
+        ":lowersplit_input",
+        ":shared_provider_boundary",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_callable_default_provider_axioms_test",
+    modules = ["EsmSplit.CoreJS.CallableDefaultProvider"],
+    required_theorems = [
+        "CoreJS.CallableDefaultProvider.Certificate.allOutcomes",
+        "CoreJS.CallableDefaultProvider.Certificate.externalObservation",
+        "CoreJS.CallableDefaultProvider.Certificate.publicCells",
+        "CoreJS.CallableDefaultProvider.Construction.authoredOwner",
+        "CoreJS.CallableDefaultProvider.Construction.checkReadback",
+    ],
+    deps = [":corejs_callable_default_provider"],
+)
+
+lean_library(
     name = "corejs_linked_certificate_quote_corejs",
     srcs = ["EsmSplit/CoreJS/LinkedCertificate/QuoteCoreJS.lean"],
     deps = [":corejs_linked_behavior"],
@@ -4412,4 +4441,21 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.LinkedPrimitiveAwaitProof"],
     required_theorems = ["CoreJS.LinkedPrimitiveAwait.StagedImmediate.drains"],
     deps = [":corejs_linked_primitive_await_proof"],
+)
+
+test_runner(
+    name = "callable_default_provider_test_runner",
+    src = "CallableDefaultProviderTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":corejs_callable_default_provider",
+        ":split_files",
+    ],
+)
+
+alias(
+    name = "callable_default_provider_test_module_io",
+    testonly = True,
+    actual = "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
 )

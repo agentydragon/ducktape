@@ -274,3 +274,17 @@ js_test(
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
     tags = ["manual"],
 )
+
+js_test(
+    name = "callable_default_provider_test",
+    data = [
+        ":node_modules/lodash-es",
+        "//devinfra/js/debundle/x/split_proof:callable_default_provider_test_module_io",
+        "//devinfra/js/debundle/x/split_proof:callable_default_provider_test_runner",
+    ],
+    entry_point = "callable_default_provider_test.mjs",
+    env = {
+        "CALLABLE_PROVIDER_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:callable_default_provider_test_runner)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof:callable_default_provider_test_module_io)",
+    },
+)
