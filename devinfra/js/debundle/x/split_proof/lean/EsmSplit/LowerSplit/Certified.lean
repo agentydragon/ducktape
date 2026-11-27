@@ -360,8 +360,10 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         -- Accessor calls during a property read need their own slice proof.
         let blockers := eligibility.replayBlockers
         if blockers.contains .objectAccessor && blockers.contains .propertyRead then
-          return .error { reason := "compiled slice does not cover a potentially invoking property read",
-            reasonCode := some "slice_accessor_read" }
+          return .error {
+            reason := "compiled slice does not cover a potentially invoking property read"
+            reasonCode := some "slice_accessor_read"
+          }
         match ← timePhase timings "compiled_slice" fun _ =>
             IO.lazyPure fun _ => certifySlice profile program providers files P B S eligibility with
         | .error refusal => pure (.error refusal)
