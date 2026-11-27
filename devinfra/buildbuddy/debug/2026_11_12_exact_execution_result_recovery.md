@@ -194,3 +194,75 @@ The JUnit reports two tests, zero failures, errors or skips:
 `test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner`.
 The physical action passed, while Bazel lost its response stream and the whole
 gate stayed red. No action was replayed or resubmitted to recover this evidence.
+
+## Native Bazel accepted-operation control, 2026-11-13 UTC
+
+[Tracking issue #16025](https://github.com/agentydragon/ducktape/issues/16025)
+keeps the natural false-red result-delivery failure open. The pinned
+[Bazel 9.2.0 implementation](https://github.com/bazelbuild/bazel/blob/9.2.0/src/main/java/com/google/devtools/build/lib/remote/GrpcRemoteExecutor.java)
+already changes from Execute to WaitExecution after receiving a nonterminal
+Operation. Before its first Operation it retries Execute; NOT_FOUND during
+observation also clears the operation. Thus adding another reattachment
+implementation or blindly increasing `--remote_retries=1` would not establish a
+repair and could weaken the deliberate cancellation replay bound.
+
+A bounded [loopback diagnostic proxy](../diagnostics/execution_stream_fault/README.md)
+forwards to the real hosted execution service and interrupts a stream only after
+forwarding a nonterminal Operation. It does not submit work independently. With
+Bazel 9.2.0 and `--remote_retries=1`, the
+[first native control](https://app.buildbuddy.io/invocation/a2ad40aa-df96-4908-ad6a-4107e8a0e007)
+passed its one remote TestRunner in 3.330 s. Its native gRPC log records one
+Execute response followed by status INTERNAL (13), then one WaitExecution of
+that same operation, six updates, and a terminal result with RPC status zero.
+The exact execution ID was:
+
+```text
+/uploads/dc3cacb0-4087-44cf-a269-9f0db5969c5c/blobs/1f8794c11804e2d2c91f9b3547e6ff6f9f899e4d069de6ce5cda9333595b838d/499
+```
+
+This is the only physical TestRunner ID for that target; the other 833 Execute
+calls were build actions returning completed responses. There was no Execute
+replay for the interrupted TestRunner. The first Go log reported PASS but its
+non-verbose JUnit was empty, so it supplies an action/transport verdict, not a
+case count. A
+[second explicit-case control](https://app.buildbuddy.io/invocation/fef8a50b-86bc-4c73-82a4-212fbf9c9bb9)
+used `-test.v -test.run=TestExecutionWaitCommandCredentialsAndOutput`; its JUnit
+contains that one passing case, zero failures/errors/skips. The proxy again saw
+exactly one Execute, one WaitExecution, and a terminal update for the same ID:
+
+```text
+/uploads/1f0b5501-a8d4-4e35-bed4-ce86a42f0a71/blobs/7eb9bfff3ffb57b1e132fe36a5828f349e754f12ccc13552ae8afe04532f6a3c/501
+```
+
+These controls reject an unconditional absence of native reattachment. They do
+not reproduce the natural Firecracker failure: the proxy returns gRPC INTERNAL,
+not a literal HTTP/2 RST_STREAM, and the original invocation did not retain a
+native RPC log. Both controls use effective source `4415ac2544` plus only the
+scoped diagnostic tool; native Bazel and the tested bbapi code were unchanged.
+Raw native logs stay private, mode 0600. Only reviewed operation/status/counts
+are published. The next natural recurrence needs narrowly enabled native
+`--remote_grpc_log` retained privately and summarized for Execute/WaitExecution,
+first Operation, statuses and retry consumption; compare that sequence with the
+exact hosted execution/provider trace before changing retry or recovery policy.
+
+A [two-reset control](https://app.buildbuddy.io/invocation/1a459975-abdb-4670-bed6-378beeb40d40)
+then interrupted Execute after its first nonterminal Operation and interrupted
+WaitExecution after its first update. Native Bazel exhausted the existing
+one-retry budget and reported Exit 34, INTERNAL, no TestResult and `NO STATUS`.
+The proxy recorded exactly one Execute and one WaitExecution, both naming:
+
+```text
+/uploads/d1365bec-2964-46bb-8ec8-32b1283637ec/blobs/7eb9bfff3ffb57b1e132fe36a5828f349e754f12ccc13552ae8afe04532f6a3c/501
+```
+
+Read-only `bb execution get` recovered that same action with a real result,
+default OK status and zero exit code. JUnit
+`967ca6b68eb1e65893060afb71ea783b322743223e60cf4fe874ebb5c56c0f46/367`
+contains the one intended passing Go case, zero failures/errors/skips. No action
+was resubmitted for recovery. This establishes one sufficient mechanism for a
+physically passing action and a red native gate: two observer interruptions can
+exhaust the deliberate retry cap. It does not establish that two interruptions
+occurred in PR #15995; its missing native RPC sequence is still the boundary.
+A pre-first-Operation reset was not injected into a live accepted action: native
+source already demonstrates its Execute retry path, and the needed discriminator
+for this incident is the observed operation/retry sequence, not more submission.
