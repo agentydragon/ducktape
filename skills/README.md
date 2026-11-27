@@ -11,7 +11,7 @@ Each skill is its own `.skill` zip built by the `skill_package` macro (`defs.bzl
   flat directory of `<name>/` subdirs (`skills-tar`); `nix/home/skills.nix` links it
   into each agent home (`~/.claude/skills/`, `~/.gemini/skills/`,
   `~/.codex/skills/`, …).
-- **Claude Code Web**: the `devtools` profile's `ducktapePkgs.skills` assembles the
+- **Claude Code Web**: the `devtools` profile's `skills` package (`nix/flake/packages.nix`) assembles the
   same artifacts at `share/claude-hooks/skills/`; `devinfra/claude/web_setup.sh`
   symlinks each into `~/.claude/skills/`, preserving Anthropic's defaults.
 

@@ -2,13 +2,14 @@
   description = "agentydragon's NixOS, home-manager, and development configurations";
 
   inputs = {
-    # NixOS 26.05 stable release
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
-
-    fenix = {
-      url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # The devshell flake (nix/flake.nix) pins nixpkgs, nixpkgs-unstable and
+    # fenix in nix/flake.lock; direnv loads it as `path:./nix` so a reload never
+    # hashes or copies the whole repo. After bumping them there, run
+    # `nix flake update devshell` here; checks.devshell-lock-sync enforces it.
+    devshell.url = "path:./nix";
+    nixpkgs.follows = "devshell/nixpkgs";
+    nixpkgs-unstable.follows = "devshell/nixpkgs-unstable";
+    fenix.follows = "devshell/fenix";
 
     nix-fast-build = {
       url = "github:Mic92/nix-fast-build/1.6.0";
@@ -21,9 +22,6 @@
       url = "github:openclaw/nix-openclaw";
       inputs.nixpkgs.follows = "nixpkgs-unstable";
     };
-
-    # Unstable for packages that need frequent updates (e.g., claude-code)
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     # Master for packages that temporarily need changes newer than
     # nixos-unstable. Keep consumers narrow instead of moving whole hosts to
@@ -93,37 +91,23 @@
     }@inputs:
     let
       system = "x86_64-linux";
-      codexAwsLcOverlay = _final: prev: {
-        codex = prev.codex.overrideAttrs (old: {
-          # aws-lc-sys otherwise probes OpenSSL first and rejects its headers.
-          # AWS-LC's headers and libraries live in separate Nix outputs, and
-          # its headers are nested under include/aws-lc.
-          # The unstable Codex recipe also lacks the system libraries demanded
-          # by Nix's cargo hook; master already declares most of these.
-          buildInputs = old.buildInputs ++ [
-            prev.aws-lc
-            prev.oniguruma
-            prev.sqlite
-            prev.zstd.dev
-          ];
-          env = old.env // {
-            AWS_LC_SYS_SYSTEM_DIR = prev.symlinkJoin {
-              name = "codex-aws-lc-system";
-              paths = [
-                prev.aws-lc.out
-                prev.aws-lc.dev
-              ];
-              postBuild = ''
-                ln -s aws-lc/openssl "$out/include/openssl"
-              '';
-            };
-          };
-        });
+      packageSets = import ./nix/flake/package_sets.nix {
+        inherit
+          nixpkgs
+          nixpkgs-unstable
+          fenix
+          system
+          ;
       };
-      pkgs = import nixpkgs {
-        inherit system;
-        config.allowUnfree = true;
-      };
+      inherit (packageSets)
+        codexAwsLcOverlay
+        pkgs
+        pkgsUnstable
+        artifacts
+        ruffLatest
+        ducktapePkgs
+        devTools
+        ;
       # Keep the experimental BuildBuddy Remote Runner NixOS configuration and
       # output definitions with the experiment; the root flake only registers them.
       buildbuddyRemoteRunnerNixosOutputs =
@@ -131,70 +115,6 @@
           {
             inherit nixpkgs self system;
           };
-      artifactData = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
-      rawArtifactOverrides = builtins.getEnv "DUCKTAPE_ARTIFACT_OVERRIDES";
-      artifactOverrides =
-        if rawArtifactOverrides == "" then { } else builtins.fromJSON rawArtifactOverrides;
-      # PR overrides may include new artifacts that have not been published and
-      # pinned yet. Keep their original filename from the local build output; for
-      # published artifacts, use the pin URL's basename as usual.
-      artifactSpecs =
-        artifactData.pins
-        // builtins.mapAttrs (
-          name: path: (artifactData.pins.${name} or { }) // { overridePath = path; }
-        ) artifactOverrides;
-
-      # Keep the developer Ruff binary aligned with the repository's pinned
-      # Python and Bazel toolchains while nixpkgs catches up.
-      ruffLatest = pkgs.stdenvNoCC.mkDerivation {
-        pname = "ruff";
-        version = "0.17.4";
-        src = pkgs.fetchurl {
-          url = "https://github.com/astral-sh/ruff/releases/download/0.17.4/ruff-x86_64-unknown-linux-gnu.tar.gz";
-          hash = "sha256-OrKzSurNvB6lxSnNvaPgV5JjPVhyKBI/0J87Wg+ssno=";
-        };
-        nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-        buildInputs = [ pkgs.stdenv.cc.cc.lib ];
-        dontBuild = true;
-        dontConfigure = true;
-        dontCheck = true;
-        installPhase = ''
-          install -Dm755 ruff $out/bin/ruff
-        '';
-        meta.mainProgram = "ruff";
-      };
-
-      # CI-released artifact pins (nix/artifact-pins.json), updated by sync-pins.yml.
-      # Use Nixpkgs fetchurl derivations, not builtins.fetchurl: hosts behind
-      # restricted egress can substitute these fixed-output paths from Attic
-      # instead of doing evaluator-time downloads from GitHub Releases.
-      #
-      # PR-time overrides may replace published artifacts or supply new ones
-      # before release.yml publishes them and sync-pins.yml creates their pins.
-      # nix-wheel-check.yml supplies artifacts built from this PR. Requires
-      # --impure (getEnv).
-      # Empty in normal use; behaviour is identical to the pre-override flake.
-      artifacts = builtins.mapAttrs (
-        name: spec:
-        if spec ? overridePath then
-          # Preserve the local artifact's basename. Wheel installers validate
-          # the archive filename against its embedded .dist-info directory.
-          builtins.path {
-            path = /. + spec.overridePath;
-            name = baseNameOf spec.overridePath;
-          }
-        else
-          pkgs.fetchurl {
-            inherit (spec) url;
-            name =
-              let
-                asset = baseNameOf spec.url;
-              in
-              if pkgs.lib.hasSuffix ".whl" asset || pkgs.lib.hasSuffix ".zip" asset then asset else "source";
-            hash = "sha256-${spec.sha256}";
-          }
-      ) artifactSpecs;
-
       # Each skill ships as its own `skill-<name>` release artifact. Assemble the
       # per-skill `.skill` zips (each already rooted under `<name>/`) into one flat
       # directory of `<name>/` subdirs. Registry: skills/skills_registry.json.
@@ -209,12 +129,6 @@
           "mkdir $out\n"
           + pkgs.lib.concatMapStringsSep "\n" (s: "bsdtar -xf ${artifacts."skill-${s.name}"} -C $out") skills
         );
-
-      pkgsUnstable = import nixpkgs-unstable {
-        inherit system;
-        config.allowUnfree = true;
-        overlays = [ codexAwsLcOverlay ];
-      };
 
       pkgsMaster = import nixpkgs-master {
         inherit system;
@@ -394,32 +308,14 @@
           ++ extraModules;
         };
       inherit (pkgs) lib;
-      ducktapePkgs = import ./nix/packages {
-        inherit
-          lib
-          pkgs
-          pkgsUnstable
-          artifacts
-          ;
-      };
       # gaffer-private's drivectl/drivefs, fetched purely as store paths from
       # cache.allegedly.works/gaffer (no source eval). Empty until gaffer CI's
       # first push populates ./nix/gaffer-pins.json.
       gafferPkgs = import ./nix/packages/gaffer.nix { };
-      devTools = import ./nix/flake/devtools.nix {
-        inherit
-          pkgs
-          pkgsUnstable
-          ducktapePkgs
-          ruffLatest
-          ;
-        rustToolchain = fenix.packages.${system}.stable;
-      };
       inherit (devTools)
         localOnlyPackages
         buildBuddyRunnerTools
         preCommitPackages
-        systemLibs
         devToolPackages
         ;
     in
@@ -441,15 +337,9 @@
         in
         atticTargets;
 
-      # Development shell — enter via `nix develop` or direnv (`use flake`).
+      # Same derivation as the devshell flake's (nix/flake.nix), which direnv loads.
       devShells.${system} = {
-        default = pkgs.mkShell {
-          # Keep each Python CLI's dependencies in its own wrapper, not the shared shell.
-          dontAddPythonPath = "1";
-          packages = devToolPackages ++ localOnlyPackages ++ systemLibs.packages;
-          inherit (systemLibs) buildInputs;
-          LD_LIBRARY_PATH = systemLibs.libraryPath;
-        };
+        default = packageSets.devShell;
         ai-usage = import ./x/ai_sub_value/shell.nix {
           inherit pkgs;
           baseShell = self.devShells.${system}.default;
@@ -475,6 +365,12 @@
 
         gemini-cli-integration = import ./nix/home/tests/gemini-cli-integration.nix {
           inherit pkgs;
+        };
+
+        devshell-lock-sync = import ./nix/flake/devshell-lock-sync.nix {
+          inherit pkgs;
+          rootLock = builtins.fromJSON (builtins.readFile ./flake.lock);
+          devshellLock = builtins.fromJSON (builtins.readFile ./nix/flake.lock);
         };
       }
       // import ./nix/flake/artifact-checks.nix {
