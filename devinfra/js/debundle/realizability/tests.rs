@@ -597,7 +597,7 @@ fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
     let report = crate::validation::validate_assignment(&graph, &assignment, &|module| {
         spec::ModulePath::parse(&format!("m{}", module.0), "").unwrap()
     });
-    let cycles: Vec<(Vec<&str>, crate::validation::BlockingRejection)> = report
+    let cycles: Vec<(Vec<&str>, crate::validation::report::BlockingRejection)> = report
         .cycles
         .iter()
         .map(|cycle| {
@@ -612,11 +612,11 @@ fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
         [
             (
                 vec!["m5", "m6"],
-                crate::validation::BlockingRejection::MutualConstrainingCycle
+                crate::validation::report::BlockingRejection::MutualConstrainingCycle
             ),
             (
                 vec!["m1", "m2", "m4"],
-                crate::validation::BlockingRejection::TdzAfterCollapsingPassOne
+                crate::validation::report::BlockingRejection::TdzAfterCollapsingPassOne
             ),
         ],
     );

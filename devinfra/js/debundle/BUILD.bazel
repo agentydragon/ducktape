@@ -462,6 +462,8 @@ _GATE_SRCS = [
     "realizability/translation_validation.rs",
     "report_builders.rs",
     "validation.rs",
+    "validation/render.rs",
+    "validation/report.rs",
 ]
 
 _GATE_DEPS = [
