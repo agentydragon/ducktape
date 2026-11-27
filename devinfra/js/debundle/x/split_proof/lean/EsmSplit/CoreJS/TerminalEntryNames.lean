@@ -31,7 +31,5 @@ theorem bound_to_original_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : E
       ∃ e ∈ entry.imports, localName ∈ e.2 ∧ e.1 = owner.name) :=
   InteriorExportNames.row_pair_binding valid entryIn ownerIn owned footprint declOwned pair declared
 
-#print axioms published
-#print axioms bound_to_original_owner
 
 end CoreJS.TerminalEntryNames

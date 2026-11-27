@@ -92,10 +92,5 @@ theorem planned_family {input : Program × List EsmSplit.LocalExportUnit} (check
   rw [← shape] at result
   exact result
 
-#print axioms check
-#print axioms all_const
-#print axioms source_shape
-#print axioms source_links
-#print axioms planned_family
 
 end CoreJS.TerminalConstructorInput

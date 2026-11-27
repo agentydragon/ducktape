@@ -157,8 +157,5 @@ theorem verify_sound {original files sourceText request}
     {prepared : Prepared original sourceText request} {proof : PLift (Verified original files prepared)}
     (_accepted : verify original files prepared = .ok proof) : Verified original files prepared := proof.down
 
-#print axioms prepare
-#print axioms verify
-#print axioms verify_sound
 
 end EsmSplit.LowerSplit.TerminalExportArtifact

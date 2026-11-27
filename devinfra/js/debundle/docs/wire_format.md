@@ -94,7 +94,7 @@ and gzip `.gz` files by extension. The discovery step of `modules propose
 Residual placement loads the full program graph as gzip. `explain-integrity`
 reads its program graph as gzip and requires gzip for the chunk graph when
 invoked without `--slot`.
-[Residual placement](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/peel/plan.rs) · [Integrity explanation](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/cli/integrity_explanation.rs)
+[Residual placement](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/peel/explain.rs) · [Integrity explanation](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/cli/integrity_explanation.rs)
 
 Sections that are the same for every chunk are written once per run, as
 `program_graph.json.gz` at the report root (`reports/tree/` beside the chunk

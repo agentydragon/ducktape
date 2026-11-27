@@ -61,7 +61,7 @@ struct CommentArgs {
     /// Output format for read mode. Default `text` on tty, `json`
     /// on pipe.
     #[arg(long, value_enum)]
-    format: Option<peel::OutputFormat>,
+    format: Option<peel::output_format::OutputFormat>,
 
     /// Validate (or simulate) but do not modify any file.
     #[arg(long)]
@@ -104,7 +104,7 @@ pub fn run_binding_comment_cmd(
         mode,
         args.comment.dry_run,
     )?;
-    let format = peel::OutputFormat::resolve(args.comment.format);
+    let format = peel::output_format::OutputFormat::resolve(args.comment.format);
     write_comment_outcome(output, &outcome, format)
 }
 
@@ -166,10 +166,10 @@ enum Locator<'a> {
 fn write_comment_outcome(
     output: &mut dyn std::io::Write,
     outcome: &CommentOutcome,
-    format: peel::OutputFormat,
+    format: peel::output_format::OutputFormat,
 ) -> Result<()> {
     match format {
-        peel::OutputFormat::Text => {
+        peel::output_format::OutputFormat::Text => {
             // Text keeps the bare-line shape: an unset comment prints an
             // empty line. The null/"" distinction lives in JSON.
             command_output::write_line(
@@ -177,7 +177,7 @@ fn write_comment_outcome(
                 format_args!("{}", outcome.comment.as_deref().unwrap_or("")),
             )?;
         }
-        peel::OutputFormat::Json | peel::OutputFormat::Ndjson => {
+        peel::output_format::OutputFormat::Json | peel::output_format::OutputFormat::Ndjson => {
             let locator = match outcome.kind {
                 OutcomeKind::Binding => Locator::Binding(&outcome.locator),
                 OutcomeKind::Module => Locator::Module(&outcome.locator),
@@ -187,9 +187,12 @@ fn write_comment_outcome(
                 comment: outcome.comment.as_deref(),
                 action: outcome.action,
             };
-            command_output::write_report(&payload, peel::OutputFormat::Ndjson, output, |_, _| {
-                Ok(())
-            })?;
+            command_output::write_report(
+                &payload,
+                peel::output_format::OutputFormat::Ndjson,
+                output,
+                |_, _| Ok(()),
+            )?;
         }
     }
     Ok(())
@@ -240,7 +243,7 @@ pub fn run_module_comment_cmd(
         mode,
         args.comment.dry_run,
     )?;
-    let format = peel::OutputFormat::resolve(args.comment.format);
+    let format = peel::output_format::OutputFormat::resolve(args.comment.format);
     write_comment_outcome(output, &outcome, format)
 }
 

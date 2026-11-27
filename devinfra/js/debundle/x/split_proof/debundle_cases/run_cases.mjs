@@ -48,9 +48,9 @@ const option = (name, fallback) => {
 };
 const casesRoot = path.resolve(here, option("cases", "../../../e2e/cases"));
 const filter = option("filter", "");
-const checkCertificates = args.includes("--check-certificates");
+if (args.includes("--check-certificates")) throw new Error("--check-certificates has been retired; use --certify");
 if (args.includes("--strategy-census")) throw new Error("--strategy-census has been retired");
-const certification = checkCertificates || args.includes("--certify");
+const certification = args.includes("--certify");
 const outFile = path.resolve(
   option(
     "out",
@@ -408,9 +408,7 @@ function runCase(dir, specName, expected, id) {
 }
 
 const regression = args.includes("--regression");
-const baselinePath = path.resolve(
-  option("baseline", path.join(here, checkCertificates ? "results/certificates.jsonl" : "results/cases.jsonl"))
-);
+const baselinePath = path.resolve(option("baseline", path.join(here, "results/cases.jsonl")));
 if ((regression || certification) && outFile === baselinePath)
   throw new Error("--regression needs an --out distinct from its baseline");
 const baseline =
@@ -421,8 +419,8 @@ const baseline =
         .map((line) => JSON.parse(line))
     : [];
 if (certification && regression) throw new Error("diagnostic --regression and --certify are separate runs");
-let selected = baseline.filter((r) => r.outcome === (checkCertificates ? "certified" : "agree-accept"));
-if (checkCertificates && process.env.TEST_SHARD_STATUS_FILE) {
+let selected = baseline.filter((r) => r.outcome === "agree-accept");
+if (certification && process.env.TEST_SHARD_STATUS_FILE) {
   writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
   selected = selected.filter(
     (_, i) => i % Number(process.env.TEST_TOTAL_SHARDS) === Number(process.env.TEST_SHARD_INDEX)
@@ -450,7 +448,10 @@ writeFileSync(outFile, `${lines.map((row) => JSON.stringify(row)).join("\n")}\n`
 console.log(`${lines.length} cases -> ${outFile}`);
 if (certification) {
   if (!filter && cohort.size) throw new Error("missing cohort cases: " + [...cohort].join(", "));
-  const failures = lines.filter((r) => r.outcome !== "certified" && (checkCertificates || r.outcome !== "rejected"));
+  console.log(
+    `certified: ${lines.filter((r) => r.outcome === "certified").length}; refused: ${lines.filter((r) => r.outcome === "rejected").length}`
+  );
+  const failures = lines.filter((r) => r.outcome !== "certified" && r.outcome !== "rejected");
   for (const row of failures) console.error(JSON.stringify(row));
   if (!lines.length || failures.length) process.exitCode = 1;
 }

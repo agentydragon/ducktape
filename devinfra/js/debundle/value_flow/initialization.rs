@@ -1,6 +1,7 @@
 //! Closed source declarations, separate from possible values and reached prefixes.
 
 use super::*;
+use js_ast::{item_decl, item_var_decl};
 
 /// Eligibility to publish a body summary is not evidence that a particular
 /// read reached an initialized cell. Class declarations remain evaluation-time
@@ -101,12 +102,8 @@ impl InitializationCensus {
         owner: SourceUnitOrdinal,
         symbols: &mut FlowSymbols,
     ) {
-        let declaration = match item {
-            ModuleItem::Stmt(Stmt::Decl(declaration)) => Some(declaration),
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => Some(&export.decl),
-            _ => None,
-        };
-        let variable = analysis_domain::item_views::var_decl_of_item(item);
+        let declaration = item_decl(item);
+        let variable = item_var_decl(item);
         let single_variable = variable.and_then(|variable| {
             let [declarator] = variable.decls.as_slice() else {
                 return None;

@@ -54,9 +54,14 @@ export async function getCommandNoticeAcknowledgements(
 export async function listCommandNoticeAcknowledgements(
   threadId: string,
   pageToken: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  executionFailures = false
 ): Promise<CommandNoticeAcknowledgements> {
-  const query = new URLSearchParams({ pageSize: String(PAGE_SIZE), ...(pageToken && { pageToken }) });
+  const query = new URLSearchParams({
+    pageSize: String(PAGE_SIZE),
+    ...(pageToken && { pageToken }),
+    ...(executionFailures && { executionFailures: "true" }),
+  });
   const payload = await fetchJson(`${path(threadId)}?${query}`, { signal, headers: { Accept: "application/json" } });
   return fromJson(CommandNoticeAcknowledgementsSchema, payload, { ignoreUnknownFields: true });
 }

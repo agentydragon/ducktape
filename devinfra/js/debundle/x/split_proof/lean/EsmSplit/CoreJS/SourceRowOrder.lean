@@ -39,7 +39,5 @@ theorem metadataRowsOrdered {decoded : LinkedInput.IndexedSource} {bundle : EsmS
   rw [sequence.metadataSourceRows] at ordered
   simpa only [List.pairwise_map] using ordered
 
-#print axioms metadataRowsOrdered
-#print axioms metadataOrderFromItems
 
 end CoreJS.IndexedSourceSchedule

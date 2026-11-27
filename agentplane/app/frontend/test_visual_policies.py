@@ -862,10 +862,10 @@ async def test_actions_raw_switches(view: VisualPage, app: AgentplaneFixture) ->
 async def test_sandbox_egress_watch(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=egress_log")
     page = view.page
-    await expect(page.get_by_text("ServiceAccount agentplane-visual/ready-sandbox", exact=False)).to_be_visible()
+    await expect(page.get_by_text("Requests made as Identity referenced-identity", exact=False)).to_be_visible()
     if viewport == MOBILE:
         await expect(
-            page.get_by_text("Egress decisions for ready-sandbox are unavailable", exact=False)
+            page.get_by_text("Egress decisions for Identity referenced-identity are unavailable", exact=False)
         ).to_be_visible()
     else:
         await expect(page.get_by_text("example.invalid", exact=False)).to_be_visible()

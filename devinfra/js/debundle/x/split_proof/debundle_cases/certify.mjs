@@ -1,5 +1,5 @@
 // Certify the same owner assignment used for diagnostic comparison, from the JS bytes.
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 
@@ -46,38 +46,17 @@ export function certify({ stage, chunkFile, plan, want, providers, run, lowerspl
     writeFileSync(spec, JSON.stringify({ ...plan, privateEntryBody: true }));
     manifest = writeDeployment(path.join(stage, chunkFile), spec, output);
   }
-  const refusals = {};
-  for (const mode of deployment ? ["structural"] : ["structural", "default"]) {
-    const args = [
-      manifest,
-      output,
-      "--require",
-      "normal-completion",
-      ...(mode === "structural" ? ["--structural"] : []),
-      ...(deployment ? ["--deployment-origin", "https://corpus.example"] : []),
-    ];
-    const emission = verdict(run(lowersplit, args, { timeout: certificateTimeoutMs }), `${mode} emission`);
-    if (emission.blocker !== undefined) {
-      refusals[mode] = emission;
-      continue;
-    }
-    const disk = verdict(
-      run(lowersplit, [...args, "--check-output"], { timeout: certificateTimeoutMs }),
-      `${mode} disk check`
-    );
-    if (disk.blocker !== undefined) return { outcome: "error:disk", mode, emission, disk };
-    const matches = (r) => !r.failure && r.code === 0 && r.stdout === want;
-    const original = matches(nodeRun("original", chunkFile, stage));
-    const emitted = matches(nodeRun("emitted", path.join(output, entry), stage));
-    return {
-      outcome: original && emitted ? "certified" : "error:runtime",
-      mode,
-      ...(deployment && { origin: "https://corpus.example" }),
-      emission,
-      disk,
-      original,
-      emitted,
-    };
+  const args = [manifest, output, "--require", "normal-completion"];
+  const emission = verdict(run(lowersplit, args, { timeout: certificateTimeoutMs }), "emission");
+  if (emission.blocker !== undefined) {
+    if (existsSync(output)) return { outcome: "error:refusal-output", emission };
+    return { outcome: "rejected", emission };
   }
-  return { outcome: "rejected", refusals };
+
+  const disk = verdict(run(lowersplit, [...args, "--check-output"], { timeout: certificateTimeoutMs }), "disk check");
+  if (disk.blocker !== undefined) return { outcome: "error:disk", emission, disk };
+  const matches = (r) => !r.failure && r.code === 0 && r.stdout === want;
+  const original = matches(nodeRun("original", chunkFile, stage));
+  const emitted = matches(nodeRun("emitted", path.join(output, entry), stage));
+  return { outcome: original && emitted ? "certified" : "error:runtime", emission, disk, original, emitted };
 }

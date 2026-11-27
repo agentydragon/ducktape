@@ -5,13 +5,15 @@ use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use command_output::infallible;
 use graph_provenance::VerifiedGraphSourceContext;
-use peel::plan::ExplainSession;
-use peel::{
-    AtomicGroupsArgs, CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainArgs,
-    ExplainDirection, GraphSummaryArgs, OutputFormat, PatchPlanArgs, SelectionKind,
-    SourceSelectionArgs, run_atomic_groups_report, run_graph_summary_report, run_patch_plan_report,
-    run_source_selection_report,
+use peel::explain::ExplainSession;
+use peel::explain::{DEFAULT_DESCRIBE_LIMIT, ExplainArgs, ExplainDirection};
+use peel::output_format::OutputFormat;
+use peel::patch_plan::{PatchPlanArgs, run_patch_plan_report};
+use peel::plan::{
+    AtomicGroupsArgs, CommonArgs as PeelCommonArgs, GraphSummaryArgs, run_atomic_groups_report,
+    run_graph_summary_report,
 };
+use peel::selection::{SelectionKind, SourceSelectionArgs, run_source_selection_report};
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
 use source_input::resolve_chunk_source_file;
@@ -156,7 +158,7 @@ pub(super) enum SourceView {
 #[derive(Debug, Serialize)]
 struct InspectSourceReport {
     #[serde(skip_serializing_if = "Option::is_none")]
-    query: Option<peel::plan::QueryReport>,
+    query: Option<peel::selection::QueryReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     selected_source_unit_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -413,7 +415,7 @@ pub(super) fn run_describe(
     }
     #[derive(Serialize)]
     struct BatchReport {
-        results: Vec<peel::ExplainReport>,
+        results: Vec<peel::explain::ExplainReport>,
     }
     emit_report(
         output,
@@ -465,7 +467,8 @@ pub(super) fn run_inspect_source(
         report.query = Some(selected.query);
         report.selected_source_unit_count = Some(selected.source_unit_ids.len());
         report.unknown_binding_ids = selected.unknown_binding_ids;
-        let mut by_file: BTreeMap<String, Vec<peel::SelectedSourceUnitSource>> = BTreeMap::new();
+        let mut by_file: BTreeMap<String, Vec<peel::selection::SelectedSourceUnitSource>> =
+            BTreeMap::new();
         for source_unit in selected.source_units {
             by_file
                 .entry(source_unit.resolved_path.clone())
@@ -806,7 +809,7 @@ fn render_bounded_report(
     }
 }
 
-fn render_atomic_groups_text(report: &peel::AtomicGroupsReport, out: &mut String) {
+fn render_atomic_groups_text(report: &peel::plan::AtomicGroupsReport, out: &mut String) {
     out.push_str(&format!("{} atomic group(s)\n", report.atomic_groups.len()));
     for atomic_group in &report.atomic_groups {
         let bindings: Vec<&str> = atomic_group
@@ -823,7 +826,7 @@ fn render_atomic_groups_text(report: &peel::AtomicGroupsReport, out: &mut String
     }
 }
 
-fn render_patch_plan_text(report: &peel::PatchPlanReport, out: &mut String) {
+fn render_patch_plan_text(report: &peel::patch_plan::PatchPlanReport, out: &mut String) {
     out.push_str(&format!(
         "{} patch set(s): {} complete, {} split, {} unknown bindings\n",
         report.summary.total_patch_sets,
@@ -836,7 +839,7 @@ fn render_patch_plan_text(report: &peel::PatchPlanReport, out: &mut String) {
     }
 }
 
-fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String) {
+fn render_graph_summary_text(report: &peel::plan::GraphSummaryReport, out: &mut String) {
     out.push_str(&format!(
         "source_units={} edges={} atomic_groups={} residual_atomic_groups={}\n",
         report.source_unit_count,
@@ -846,7 +849,7 @@ fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String
     ));
 }
 
-fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
+fn render_explain_text(report: &peel::explain::ExplainReport, out: &mut String) {
     for source_unit in report
         .source_units
         .iter()
@@ -946,7 +949,7 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
     }
 }
 
-fn render_edge_census(rows: &[peel::plan::EdgeCensusRow]) -> String {
+fn render_edge_census(rows: &[peel::explain::EdgeCensusRow]) -> String {
     if rows.is_empty() {
         return "none".to_string();
     }

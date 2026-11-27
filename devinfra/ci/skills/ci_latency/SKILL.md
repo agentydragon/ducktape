@@ -191,6 +191,11 @@ worktree with the Nix devshell loaded. Dependencies: Bash, GNU coreutils, jq, gh
 network/sandbox rules. These scripts read APIs; they do not rerun/cancel jobs or
 change scanning settings.
 
+Start a PR-feedback census from the cluster's stored GitHub webhooks
+([CDviz recipes](references/cdviz.md)): per-head arrival clocks from
+`opened`/`synchronize`, job attempts and receipt times for a week in one query.
+Use the Actions API for what it lacks (check runs on fork heads, logs, pre-2026-11-06 history).
+
 For a specific slowdown choose an explicit UTC window, initially 60–90 minutes.
 For the general question of what _recent PRs_ experience, also sample a longer
 period (e.g. several days to a week, split API windows below the search cap).
@@ -429,7 +434,8 @@ Measure clocks for **one PR head SHA at a time**, including superseded heads as
 separate/censored observations:
 
 - **Start:** new commit pushed to the PR head, or earliest observed head-change
-  webhook if push timestamp is unavailable (label the proxy). For an existing PR,
+  webhook if push timestamp is unavailable (label the proxy). CDviz stores that webhook's
+  clock and its receipt time (`imported_at`). For an existing PR,
   PR creation time is not a substitute for that head's commit time.
 - **Ready to auto-merge:** earliest _observed_ time that all actual policy gates
   for this SHA are satisfied, including required checks, applicable review and

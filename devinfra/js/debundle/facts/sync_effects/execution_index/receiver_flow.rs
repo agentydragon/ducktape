@@ -289,11 +289,12 @@ pub(super) fn evaluate_receiver_value(
                 result.fact.opaque = true;
             }
         }
-        ValueExpr::Undefined | ValueExpr::NonCallable(_) => {
-            result.fact.safe = true;
-            result.fact.complete = true;
-        }
-        ValueExpr::Primitive(_)
+        // One arm for every result that cannot denote an object. The variants
+        // stay written out because this match has no fallback: a new value kind
+        // has to say what it does to receiver safety.
+        ValueExpr::Undefined
+        | ValueExpr::NonCallable(_)
+        | ValueExpr::Primitive(_)
         | ValueExpr::StrictEquality(..)
         | ValueExpr::LogicalNot(_)
         | ValueExpr::Void(_) => {

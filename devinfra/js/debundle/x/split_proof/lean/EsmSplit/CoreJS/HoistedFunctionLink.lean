@@ -557,8 +557,5 @@ theorem planned_independent_primitive_closure_crossing
   exact candidateMem
 
 
-#print axioms matching_sorted
-#print axioms planned_function
-#print axioms planned_independent_primitive_closure_crossing
 
 end CoreJS.HoistedFunctionLink

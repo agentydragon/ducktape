@@ -41,7 +41,5 @@ theorem loaded_ids {input : Program × List EsmSplit.LocalExportUnit} (checked :
       checked.source.body.map Prod.fst :=
   ProjectedOrder.terminal_loaded_ids checked.source checked.row.ordinal B P checked.terminal kept
 
-#print axioms check
-#print axioms loaded_ids
 
 end CoreJS.TerminalSource

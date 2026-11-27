@@ -26,7 +26,9 @@ use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand}
 use command_output::{ReportOutputError, write_report};
 use graph_provenance::{CurrentRoots, GraphMismatch};
 use lowering::FullReportKind;
-use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs};
+use peel::output_format::OutputFormat;
+use peel::patch_plan::PatchPlanArgs;
+use peel::plan::{AtomicGroupsArgs, GraphSummaryArgs};
 use pipeline::{
     GATE_REJECTED_EXIT_CODE, GateRejected, RunArtifacts, RunOutput, TransformRunOptions,
     run_transform_with_projection,
@@ -651,7 +653,7 @@ fn emit_query_failure(
         QueryFailureReason::Io
     } else if error.chain().any(|cause| {
         cause
-            .downcast_ref::<peel::plan::SourceUnitNotFound>()
+            .downcast_ref::<peel::selection::SourceUnitNotFound>()
             .is_some()
     }) {
         QueryFailureReason::SourceUnitNotFound

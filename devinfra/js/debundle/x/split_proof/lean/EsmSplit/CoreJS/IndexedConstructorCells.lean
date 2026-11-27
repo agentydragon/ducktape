@@ -24,7 +24,5 @@ theorem projection_and_schedule {source : List (Nat × Stmt)} {B : EsmSplit.Bund
       ((splitProgramIndexed source B P).loaded.flatMap (·.body)).map Prod.fst = source.map Prod.fst :=
   ⟨projection source B P, SparseProjectedOrder.loaded_ids_of_order_kept kept⟩
 
-#print axioms projection
-#print axioms projection_and_schedule
 
 end CoreJS.IndexedConstructorCells

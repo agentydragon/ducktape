@@ -16,8 +16,8 @@ use swc_ecma_ast::{
 
 use binding_targets::{binding_name_strings, top_level_binding_name_strings};
 use js_ast::{
-    emit_module_source, parse_js_module, source_unit_ordinal_for_statement, split_var_declarators,
-    statements_for_source_unit_ordinals,
+    VarDeclShape, emit_module_source, parse_js_module, source_unit_ordinal_for_statement,
+    split_var_declarators, statements_for_source_unit_ordinals,
 };
 
 /// A parsed JavaScript source file together with its original text and path.
@@ -440,13 +440,9 @@ fn top_level_var_decl(item: &ModuleItem) -> Option<(&VarDecl, bool)> {
 }
 
 fn single_declarator_item(var: &VarDecl, declarator: &VarDeclarator, exported: bool) -> ModuleItem {
-    let declaration = Decl::Var(Box::new(VarDecl {
-        span: declarator.span,
-        ctxt: var.ctxt,
-        kind: var.kind,
-        declare: var.declare,
-        decls: vec![declarator.clone()],
-    }));
+    let declaration = Decl::Var(Box::new(
+        VarDeclShape::of(var).with_decls(declarator.span, vec![declarator.clone()]),
+    ));
     if exported {
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
             span: declarator.span,

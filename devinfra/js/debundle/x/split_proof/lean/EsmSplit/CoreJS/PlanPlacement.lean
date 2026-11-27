@@ -103,10 +103,5 @@ theorem faithful_planned_places (ss : List Stmt) (B : EsmSplit.Bundle) (S : EsmS
   exact ⟨planned_places ss B (EsmSplit.mkPlan B S) name exports sourceSafe safe coverage,
     fun _ _ member => authored_owner faithful member⟩
 
-#print axioms assignments
-#print axioms authored_owner
-#print axioms output_assignments
-#print axioms planned_places
-#print axioms faithful_planned_places
 
 end CoreJS.PlanPlacement

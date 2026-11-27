@@ -133,7 +133,6 @@ theorem placement (x y z : Name) (a b : Literal)
     · conv => lhs; cbv
       decide
 
-#print axioms placement
 
 /-- The complete public entry table resolves to the original live cell. -/
 theorem sameExports (x y z : Name) (a b : Literal)
@@ -212,7 +211,6 @@ theorem authored_owners {original request} (c : Construction original request) :
       spec.claimants (bundle c.x c.y c.z) 2 = ["entry.mjs"] := ⟨rfl, rfl, rfl⟩
   simpa only [← c.requestEq] using owners
 
-#print axioms authored_owners
 
 /-- Accepted constructions carry actual authored placement, all public live
 cells, and complete outcomes in every world and at every fuel. -/
@@ -230,13 +228,5 @@ theorem sound {original request} (c : Construction original request) :
     simpa only [← c.sourceEq, ← programEq] using
       outcomes c.x c.y c.z c.a c.b c.distinctXY c.distinctXZ c.distinctYZ c.shape w fuel
 
-#print axioms construct
-#print axioms sound
-#print axioms sameExports
-#print axioms checkPlan
-#print axioms fixture_plan
-#print axioms outcomes
-#print axioms sourceLink
-#print axioms outputLink
 
 end CoreJS.LiteralReorderLink

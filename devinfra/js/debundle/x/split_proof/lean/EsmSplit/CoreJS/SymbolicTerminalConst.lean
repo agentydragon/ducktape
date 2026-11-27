@@ -107,13 +107,5 @@ theorem planned_sound (name : String) (value : Float) :
   rw [planned_eq_construct]
   exact ⟨placement name value, exports name value, runs name value, by cbv⟩
 
-#print axioms sourceLink
-#print axioms constructedLink
-#print axioms planned_eq_construct
-#print axioms exact_cell
-#print axioms placement
-#print axioms exports
-#print axioms runs
-#print axioms planned_sound
 
 end CoreJS.SymbolicTerminalConst

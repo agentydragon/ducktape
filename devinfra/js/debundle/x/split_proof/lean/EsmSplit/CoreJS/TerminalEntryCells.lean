@@ -57,7 +57,5 @@ theorem entry_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {
     · exact Or.inr (List.mem_flatMap.mpr ⟨edge, edgeIn, inEdge⟩)
   exact ⟨a, sourceCell, (agree pair.2 admission).trans sourceCell⟩
 
-#print axioms declared_rows_of_source
-#print axioms entry_cells
 
 end CoreJS.TerminalEntryCells

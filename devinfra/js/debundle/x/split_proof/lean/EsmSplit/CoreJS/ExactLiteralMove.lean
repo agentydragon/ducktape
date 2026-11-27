@@ -351,9 +351,6 @@ theorem resolvedPlan {W : World} {original : Program} {ss : List Stmt}
   rw [sourceUnits]
   exact resolvedMoves env fn c0 c1 h0 h1 distinct tail
 
-#print axioms resolvedPlan
-#print axioms resolvedMoves
-#print axioms resolvedExecution
 
 end CorpusCrossing
 
@@ -488,34 +485,8 @@ theorem read_before_initialization :
         "cannot access 'a' before initialization" := by
   constructor <;> cbv
 
-#print axioms throw_after_swap
-#print axioms read_not_admitted
-#print axioms read_before_initialization
-#print axioms authoredPlacement
-#print axioms authoredOrder
-#print axioms authoredAllOutcomes
-#print axioms sameExports
 
 end AuthoredFixture
 
-#print axioms linked_distinct
-#print axioms swap_from_link
-#print axioms run_function
-#print axioms swap_literal_function
-#print axioms swap_function_in_context
-#print axioms preserve_plan
-#print axioms reorder_exact
-#print axioms swap_in_context
-#print axioms swap_literals
-#print axioms literal_closed
-#print axioms eval_logical_literal
-#print axioms eval_logical_literal_skipped
-#print axioms eval_logical_literal_selected
-#print axioms eval_logical_literal_low_fuel
-#print axioms logical_skipped_footprint
-#print axioms logical_skipped_env_independent
-#print axioms run_logical_skipped
-#print axioms swap_skipped_literal
-#print axioms run_literal
 
 end CoreJS.ExactLiteralMove

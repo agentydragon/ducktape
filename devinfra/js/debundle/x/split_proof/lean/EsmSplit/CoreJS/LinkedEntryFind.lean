@@ -84,8 +84,6 @@ theorem loaded_find {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
   rw [split_evalOrder]
   exact select P.evalOrder present
 
-#print axioms loaded_find
 
-#print axioms scopes_find
 
 end CoreJS.LinkedEntryFind

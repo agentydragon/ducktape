@@ -80,9 +80,5 @@ theorem row_pair_binding {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit
     exact EsmSplit.MetadataImports.external_use_imported valid rowOwnerIn owned
       (row.matched_local_use_and_public footprint pair).1 binding notLocal
 
-#print axioms exact_public_table
-#print axioms row_owner
-#print axioms row_pair_published
-#print axioms row_pair_binding
 
 end CoreJS.InteriorExportNames

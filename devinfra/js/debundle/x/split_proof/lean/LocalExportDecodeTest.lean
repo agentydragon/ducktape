@@ -86,9 +86,14 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   | _ => throw (IO.userError "a non-const original statement was not refused")
 
 private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := do
-  match LinkedInput.decodeIndexedSource j sourceText "entry.mjs" with
+  let classification ← IO.ofExcept (LinkedInput.decodeSourceClassification j sourceText "entry.mjs")
+  require (classification.sourceItems.map LinkedInput.SourceItem.ordinal == List.range 34)
+    "decoded source classification omitted or renumbered the debugger slot"
+  require (classification.sourceItems.filterMap LinkedInput.SourceItem.omitted? == [33])
+    "decoded source classification lost the skipped debugger marker"
+  match LinkedInput.checkIndexedSource classification with
   | .error "unsupported omitted source node 33" => pure ()
-  | _ => throw (IO.userError "the source decoder did not refuse the omitted debugger")
+  | _ => throw (IO.userError "the checked constructor did not refuse the classified debugger")
   let input ← decode j
   let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes j sourceText)
   let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
@@ -97,7 +102,9 @@ private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := 
   | _ => throw (IO.userError "a real omitted debugger statement was not refused")
 
 private def checkSparse (j : Json) (specText : String) : IO Unit := do
-  let decoded ← decodeIndexed j
+  let sourceText ← IO.ofExcept (j.getObjValAs? String "sourceText")
+  let classification ← IO.ofExcept (LinkedInput.decodeSourceClassification j sourceText "entry.mjs")
+  let decoded ← IO.ofExcept (LinkedInput.checkIndexedSource classification)
   let p := decoded.program
   let rows := decoded.localExports
   let m ← onlyModule p
@@ -109,11 +116,9 @@ private def checkSparse (j : Json) (specText : String) : IO Unit := do
   let request ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
   let evidence ← IO.ofExcept (IndexedSourceSchedule.check decoded bundle request)
   let _sourceFacts := IndexedSourceSchedule.sourceInductionFacts evidence.sequence
+  let _noSkippedSlots := IndexedSourceSchedule.noOmittedSourceRows evidence.sequence
   require (evidence.sequence.units.map IndexedSourceSchedule.SourceUnit.ordinal == [0, 1, 2])
     "complete source schedule dropped or shifted an original ordinal"
-  require (evidence.sequence.units.map IndexedSourceSchedule.SourceUnit.nodeEncoding ==
-      decoded.nodes.toList.map Lean.Json.compress)
-    "source classification lost or changed an original AST node"
   require (evidence.sequence.units.filterMap IndexedSourceSchedule.SourceUnit.executable? == [0, 2])
     "executable projection differs from the original source IDs"
   require (evidence.sequence.units.filterMap IndexedSourceSchedule.SourceUnit.localExport? ==
@@ -156,11 +161,9 @@ private def checkAliases (j : Json) : IO Unit := do
   let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
   let sequence ← IO.ofExcept (IndexedSourceSchedule.checkSequence decoded bundle)
   let _sourceFacts := IndexedSourceSchedule.sourceInductionFacts sequence
+  let _noSkippedSlots := IndexedSourceSchedule.noOmittedSourceRows sequence
   require (sequence.units.map IndexedSourceSchedule.SourceUnit.ordinal == [0, 1, 2, 3])
     "source classification changed ordinals around an empty export row"
-  require (sequence.units.map IndexedSourceSchedule.SourceUnit.nodeEncoding ==
-      decoded.nodes.toList.map Lean.Json.compress)
-    "multi-row classification lost or changed an original AST node"
   require (sequence.units.filterMap IndexedSourceSchedule.SourceUnit.executable? ==
       m.body.map Prod.fst)
     "multi-row classification changed executable source ordinals"

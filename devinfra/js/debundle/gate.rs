@@ -38,14 +38,17 @@ pub use realizability::{
     assignment_constraining_cycles, check_realizability_with_priority,
     check_realizability_with_schedule, project_assignment_constraints,
 };
-pub use validation::{
+pub use validation::render::{
+    initializer_reason, render_atomic_group_conflict_summary, render_binding_pairs,
+    render_cycle_summary,
+};
+pub use validation::report::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,
-    BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport, initializer_reason,
-    render_atomic_group_conflict_summary, render_binding_pairs, render_cycle_summary,
-    validate_assignment_with_priority, validate_assignment_with_schedule,
+    BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport,
 };
 #[cfg(test)]
 pub use validation::{validate_assignment, validate_assignment_with_verdict};
+pub use validation::{validate_assignment_with_priority, validate_assignment_with_schedule};
 
 /// A `define_logical_module` member whose `binding.name` did not
 /// resolve to a top-level declaration in the chunk. Collected across chunks

@@ -15,10 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use analysis_vocabulary::inputs::AnalysisAssumptions;
+use analysis_vocabulary::inputs::AnalysisImportedPrimitiveArraySpreadInput;
 use analysis_vocabulary::inputs::LocalEffectPolicy;
-pub use analysis_vocabulary::inputs::{
-    AnalysisImportedPrimitiveArrayOperand, AnalysisImportedPrimitiveArraySpreadInput,
-};
 use analysis_vocabulary::inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
 use anyhow::{Context, Result, ensure};
 use graph::GraphOptions;

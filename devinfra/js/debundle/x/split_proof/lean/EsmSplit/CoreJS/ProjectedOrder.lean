@@ -232,20 +232,5 @@ theorem run_same {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     runProgram w fuel (Program.single ss) = runProgram w fuel (splitProgram ss B P) :=
   CoreJS.run_same (holds_statements coverage).1 (holds_statements coverage).2 scopes fuel
 
-#print axioms numbered_filter
-#print axioms numbered_ids
-#print axioms checkTerminalOnly
-#print axioms terminal_body
-#print axioms loaded_ids
-#print axioms scopes_modules
-#print axioms linked_ids
-#print axioms terminal_loaded_ids
-#print axioms terminal_linked_ids
-#print axioms authored_executable_owner
-#print axioms full_order_incompatible
-#print axioms split_tops
-#print axioms split_regions
-#print axioms holds_statements
-#print axioms run_same
 
 end CoreJS.ProjectedOrder

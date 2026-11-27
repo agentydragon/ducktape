@@ -379,13 +379,5 @@ theorem certifyDecoded_sameExports {profile : HostProfile} {source providers fil
     SameExports input.deployment.before input.deployment.after :=
   certificate.sameExports
 
-#print axioms ProviderLinkCertificate.before_aliases_resolve
-#print axioms ProviderLinkCertificate.after_aliases_resolve
-#print axioms ProviderLinkCertificate.provider_export_is_the_same_live_cell
-#print axioms ProviderLinkCertificate.imported_bindings_share_provider_live_cell
-#print axioms ProviderLinkCertificate.provider_is_unique_in_both_module_lists
-#print axioms ProviderLinkCertificate.entry_is_unique_in_both_module_lists
-#print axioms DecodedProviderCertificate.sameExports
-#print axioms certifyDecoded_sameExports
 
 end CoreJS.StaticProviderLinking

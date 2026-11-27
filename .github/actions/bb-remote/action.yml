@@ -66,10 +66,6 @@ inputs:
       override the pinned image from image_pins.json.
     required: false
     default: ""
-  disk_bytes:
-    description: "Runner disk size in bytes (EstimatedFreeDiskBytes)"
-    required: false
-    default: "100000000000"
   compute_units:
     description: "Runner vCPU count (EstimatedComputeUnits)"
     required: false
@@ -102,9 +98,6 @@ inputs:
     default: ""
 
 outputs:
-  log_path:
-    description: "Path to the captured bb remote log on the GitHub Actions runner"
-    value: ${{ steps.bb-remote.outputs.log_path }}
   linkage_json_path:
     description: "Path to the emitted bb remote linkage JSON on the GitHub Actions runner"
     value: ${{ steps.bb-remote.outputs.linkage_json_path }}
@@ -127,7 +120,6 @@ runs:
         INPUT_ENV_OVERRIDES: ${{ inputs.env_overrides }}
         INPUT_RUNNER_CONTAINER_IMAGE: ${{ inputs.runner_container_image }}
         INPUT_RBE_CONTAINER_IMAGE: ${{ inputs.rbe_container_image }}
-        INPUT_DISK_BYTES: ${{ inputs.disk_bytes }}
         INPUT_COMPUTE_UNITS: ${{ inputs.compute_units }}
         INPUT_RUNNER_RECYCLING_KEY: ${{ inputs.runner_recycling_key }}
         INPUT_LINKAGE_ROLES: ${{ inputs.linkage_roles }}
@@ -149,7 +141,6 @@ runs:
         LOG_PATH="${RUNNER_TEMP:-/tmp}/bb-remote-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${safe_job}.log"
         LINKAGE_JSON_PATH="${RUNNER_TEMP:-/tmp}/bb-remote-linkage-${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-0}-${safe_job}.json"
         mkdir -p "$(dirname "$LOG_PATH")"
-        echo "log_path=$LOG_PATH" >> "$GITHUB_OUTPUT"
         echo "linkage_json_path=$LINKAGE_JSON_PATH" >> "$GITHUB_OUTPUT"
 
         ENV_ARGS=()
@@ -179,7 +170,6 @@ runs:
         BB_REMOTE_COMMAND=(
           bb remote
           --disable_retry=true
-          --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"
           --runner_exec_properties=EstimatedComputeUnits="$INPUT_COMPUTE_UNITS"
         )
         if [[ -n "$INPUT_RUNNER_RECYCLING_KEY" ]]; then

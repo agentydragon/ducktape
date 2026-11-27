@@ -110,11 +110,5 @@ theorem Checked.lexical_uninitialized {original : Program} (c : Checked original
     cases sourceEq
     exact CoreJS.LexicalFunctionSource.lexical_uninitialized w cell writeName readName initial param writeBody readBody init exports cw cr wr
 
-#print axioms execute_let_undefined
-#print axioms check
-#print axioms Checked.link
-#print axioms Checked.lexical_uninitialized
-#print axioms sourceLink
-#print axioms lexical_uninitialized
 
 end CoreJS.LexicalFunctionSource

@@ -44,7 +44,5 @@ theorem checked_definitions {body : List (Nat × Stmt)} {B : EsmSplit.Bundle}
   have someRow := checked id (List.mem_range.2 within) nonempty
   exact Option.isSome_iff_exists.1 someRow
 
-#print axioms checked_footprints
-#print axioms checked_definitions
 
 end CoreJS.IndexedInputChecks

@@ -13,7 +13,8 @@ use module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use peel::assignment::{
     AssignmentPlan, AssignmentProblem, AssignmentSnapshot, SourceUnitAssignment, accepted,
 };
-use peel::{CommonArgs, OutputFormat, ProposeArgs};
+use peel::output_format::OutputFormat;
+use peel::plan::{CommonArgs, ProposeArgs};
 use std::fs;
 use std::path::{Path, PathBuf};
 

@@ -590,8 +590,10 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.IndexedSourceSchedule"],
     required_theorems = [
+        "CoreJS.LinkedInput.sourceItemOrdinalsPermProjections",
         "CoreJS.IndexedSourceSchedule.checkSequence",
         "CoreJS.IndexedSourceSchedule.sourceInductionFacts",
+        "CoreJS.IndexedSourceSchedule.noOmittedSourceRows",
         "CoreJS.IndexedSourceSchedule.check",
         "CoreJS.IndexedSourceSchedule.constructedRows",
         "CoreJS.IndexedSourceSchedule.constructedPlacementOwner",
@@ -747,6 +749,7 @@ lean_proof_test(
     ],
     required_theorems = [
         "CoreJS.OrderedRegion.matching_link",
+        "CoreJS.OrderedRegion.matching_link_with_frames",
         "CoreJS.OrderedRegion.planned_link",
         "CoreJS.OrderedRegion.planned_runs",
         "CoreJS.OrderedRegion.planned_runs_with_exports",
@@ -1126,15 +1129,17 @@ lean_library(
     ],
     deps = [
         ":corejs_certificate_probe",
+        ":corejs_checked_split",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
+        ":corejs_resolved_placement",
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
         ":lowersplit_input",
         ":lowersplit_support",
-        ":named_declaration_split",
         ":ordered_const_syntax",
         ":planner",
     ],
@@ -1284,7 +1289,7 @@ test_runner(
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
     deps = [
-        ":corejs_indexed_inline_plan",
+        ":corejs_indexed_inline_constructor",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
@@ -2922,6 +2927,27 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_indexed_inline_constructor",
+    srcs = ["EsmSplit/CoreJS/IndexedInlineConstructor.lean"],
+    deps = [
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_inline_plan",
+        ":corejs_runtime",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_inline_constructor_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedInlineConstructor"],
+    required_theorems = [
+        "CoreJS.IndexedInlineConstructor.construct",
+        "CoreJS.IndexedInlineConstructor.dense_program",
+    ],
+    deps = [":corejs_indexed_inline_constructor"],
+)
+
+lean_library(
     name = "lexical_function_source",
     srcs = ["EsmSplit/CoreJS/LexicalFunctionSource.lean"],
     deps = [":corejs_single_module"],
@@ -2970,6 +2996,7 @@ lean_library(
     deps = [
         ":corejs_export_rows",
         ":corejs_indexed_entry_link",
+        ":ordered_region",
         ":plan_glue",
     ],
 )
@@ -2984,6 +3011,7 @@ lean_proof_test(
         "CoreJS.ExportRows.rowAt_some",
         "CoreJS.ExportRows.row_alias_live_cell",
         "CoreJS.ExportRows.rows_resolved_from_plan",
+        "CoreJS.ExportRows.rows_same_exports_from_source_link",
         "CoreJS.ExportRows.rows_resolved_from_mkPlan",
         "CoreJS.ExportRows.selected_row",
         "CoreJS.ExportRows.rows_scope_cells",

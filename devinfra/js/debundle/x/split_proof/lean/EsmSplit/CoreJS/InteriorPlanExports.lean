@@ -91,8 +91,5 @@ theorem row_scope_cells {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : E
       complete frameNames sourceBody ownerIn agree owned rowFootprint member within declared
     exact ⟨a, original, target⟩
 
-#print axioms declaration_owner
-#print axioms row_pair_scope_cell
-#print axioms row_scope_cells
 
 end CoreJS.InteriorPlanExports

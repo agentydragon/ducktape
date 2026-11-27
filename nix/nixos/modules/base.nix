@@ -21,6 +21,11 @@
 
   # Nix settings - enable flakes
   nix = {
+    # Nix >= 2.35 hashes local flake sources in place instead of copying the whole
+    # checkout to the store on every devshell reload (NixOS/nix#15711).
+    # CLEANUP(added 2026-11-26): drop once the pinned channel's `pkgs.nix` is >= 2.35
+    #   (nixos-26.05 ships 2.34).
+    package = pkgs.nixVersions.latest;
     settings = {
       experimental-features = [
         "nix-command"

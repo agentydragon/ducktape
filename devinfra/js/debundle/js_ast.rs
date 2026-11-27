@@ -5,7 +5,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use binding_targets::declaration_name_strings;
-use swc_atoms::Atom;
+use swc_atoms::{Atom, Wtf8Atom};
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{
@@ -513,6 +513,42 @@ pub fn split_var_declarators(item: &ModuleItem) -> Option<&[VarDeclarator]> {
     }
 }
 
+/// What a variable declaration carries independently of its declarator list:
+/// the syntax context, the `var`/`let`/`const` kind and the TypeScript `declare`
+/// flag. Splitting a comma list moves its declarators out, so a rewrite that
+/// rebuilds one declaration per declarator reads them from this record instead
+/// of the half-moved declaration.
+pub struct VarDeclShape {
+    pub span: Span,
+    pub ctxt: SyntaxContext,
+    pub kind: VarDeclKind,
+    pub declare: bool,
+}
+
+impl VarDeclShape {
+    pub fn of(var: &VarDecl) -> Self {
+        Self {
+            span: var.span,
+            ctxt: var.ctxt,
+            kind: var.kind,
+            declare: var.declare,
+        }
+    }
+
+    /// A declaration rebuilt around a different declarator list. `span` belongs
+    /// to the caller: a single-declarator view takes the surviving declarator's
+    /// span, while a residual comma list keeps the declaration's.
+    pub fn with_decls(&self, span: Span, decls: Vec<VarDeclarator>) -> VarDecl {
+        VarDecl {
+            span,
+            ctxt: self.ctxt,
+            kind: self.kind,
+            declare: self.declare,
+            decls,
+        }
+    }
+}
+
 /// The source keyword for a `VarDeclKind` (`var` / `let` / `const`).
 /// SWC's `VarDeclKind` is a foreign type, so strum can't derive this;
 /// shared here so the spelling lives in one place.
@@ -807,11 +843,7 @@ pub fn import_decl_module_item(specifiers: Vec<ImportSpecifier>, src: &str) -> M
     ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
         span: DUMMY_SP,
         specifiers,
-        src: Box::new(Str {
-            span: DUMMY_SP,
-            value: src.into(),
-            raw: None,
-        }),
+        src: Box::new(synthesized_str(src)),
         type_only: false,
         with: None,
         phase: ImportPhase::Evaluation,
@@ -832,16 +864,35 @@ fn is_identifier_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
 }
 
+/// A string literal synthesized for emission: it has no source span to point at
+/// and records no source text, since the emitter prints the value it carries.
+pub fn synthesized_str(value: impl Into<Wtf8Atom>) -> Str {
+    Str {
+        span: DUMMY_SP,
+        value: value.into(),
+        raw: None,
+    }
+}
+
+/// The same synthesized literal as an expression.
+pub fn synthesized_string_literal(value: impl Into<Wtf8Atom>) -> Expr {
+    Expr::Lit(Lit::Str(synthesized_str(value)))
+}
+
+/// The same synthesized literal as a non-spread call argument.
+pub fn synthesized_string_argument(value: impl Into<Wtf8Atom>) -> ExprOrSpread {
+    ExprOrSpread {
+        spread: None,
+        expr: Box::new(synthesized_string_literal(value)),
+    }
+}
+
 /// A ModuleExportName accepts reserved words and string names, unlike a binding.
 pub fn module_export_name_node(name: &str) -> ModuleExportName {
     if is_identifier_name(name) {
         ModuleExportName::Ident(Ident::new_no_ctxt(name.into(), DUMMY_SP))
     } else {
-        ModuleExportName::Str(Str {
-            span: DUMMY_SP,
-            value: name.into(),
-            raw: None,
-        })
+        ModuleExportName::Str(synthesized_str(name))
     }
 }
 
@@ -851,11 +902,7 @@ pub fn member_property(name: &str) -> MemberProp {
     } else {
         MemberProp::Computed(ComputedPropName {
             span: DUMMY_SP,
-            expr: Box::new(Expr::Lit(Lit::Str(Str {
-                span: DUMMY_SP,
-                value: name.into(),
-                raw: None,
-            }))),
+            expr: Box::new(synthesized_string_literal(name)),
         })
     }
 }
@@ -893,13 +940,7 @@ pub fn named_export_module_item(
     ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
         span: DUMMY_SP,
         specifiers,
-        src: source.map(|source| {
-            Box::new(Str {
-                span: DUMMY_SP,
-                value: source.into(),
-                raw: None,
-            })
-        }),
+        src: source.map(|source| Box::new(synthesized_str(source))),
         type_only: false,
         with: None,
     }))
@@ -941,14 +982,7 @@ pub fn new_url_expr(source: &str) -> Expr {
         ctxt: SyntaxContext::empty(),
         callee: Box::new(Expr::Ident(Ident::new_no_ctxt("URL".into(), DUMMY_SP))),
         args: Some(vec![
-            ExprOrSpread {
-                spread: None,
-                expr: Box::new(Expr::Lit(Lit::Str(Str {
-                    span: DUMMY_SP,
-                    value: source.into(),
-                    raw: None,
-                }))),
-            },
+            synthesized_string_argument(source),
             ExprOrSpread {
                 spread: None,
                 expr: Box::new(Expr::Member(MemberExpr {

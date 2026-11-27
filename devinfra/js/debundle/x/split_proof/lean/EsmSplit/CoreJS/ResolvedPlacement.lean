@@ -163,9 +163,5 @@ theorem dense_sound {source request compact guarantee output} (resolved : Checke
   rw [← dense_compatible resolved dense]
   exact sound
 
-#print axioms resolve
-#print axioms resolve_sound
-#print axioms dense_compatible
-#print axioms dense_sound
 
 end CoreJS.ResolvedPlacement

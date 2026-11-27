@@ -1,6 +1,12 @@
 import { Button, Divider, Group, Modal, ScrollArea, Stack, Tabs, Text } from "@mantine/core";
 import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { create } from "@bufbuild/protobuf";
 import type { CommandNoticeAcknowledgement, CommandNoticeRevision } from "../../app_service_pb";
+import {
+  ReadSessionEventsRequestSchema,
+  ThreadCommandOutcome,
+  type ThreadEntity,
+} from "../../../history_service/api/history/history_service_pb";
 import type {
   Dispatch,
   DispatchWorksetItem,
@@ -8,10 +14,10 @@ import type {
 import { displayableError } from "../transport/client";
 import { TopbarActions } from "../shell/topbar";
 import { TimeAgo } from "../ui/time_ago";
-import { listSessionDispatches } from "./client";
+import { listSessionDispatches, readThreadCommands, threadObservationEntry } from "./client";
 import { isDeliveryIssue, noticeKey } from "./command_notice_attention";
 import { listCommandNoticeAcknowledgements } from "./command_notice_client";
-import { storedCommandLabel, deliveryStateLabel } from "./delivery_labels";
+import { storedCommandLabel, deliveryStateLabel, deliveryOperationLabel } from "./delivery_labels";
 import { readSelectedDispatchReceipts, worksetItemFromReceipt, type ReadDispatchReceipts } from "./dispatch_workset";
 import { AcknowledgeDeliveryIssue, ReceiptDetails, useDispatchOriginals } from "./delivery_notice";
 import { StoredCommandDetails } from "./stored_command_details";
@@ -326,6 +332,153 @@ function AcknowledgedIssues({ delivery }: { delivery: ThreadDeliveryState }) {
   );
 }
 
+interface ArchivedExecutionFailure {
+  notice: CommandNoticeRevision;
+  acknowledgedAt: CommandNoticeAcknowledgement["acknowledgedAt"];
+  command?: ThreadEntity;
+}
+
+async function dismissedExecutions(
+  sessionId: string,
+  pageToken: string,
+  signal: AbortSignal
+): Promise<Page<ArchivedExecutionFailure>> {
+  const { acknowledgements, nextPageToken } = await listCommandNoticeAcknowledgements(
+    sessionId,
+    pageToken,
+    signal,
+    true
+  );
+  const commands = await readThreadCommands(
+    sessionId,
+    [...new Set(acknowledgements.flatMap(({ notice }) => (notice ? [notice.commandId] : [])))],
+    signal
+  );
+  const byId = new Map(commands.map((row) => [row.entityId, row]));
+  return {
+    rows: acknowledgements.flatMap(({ notice, acknowledgedAt }) =>
+      notice?.outcomeCursor === undefined ? [] : [{ notice, acknowledgedAt, command: byId.get(notice.commandId) }]
+    ),
+    nextPageToken,
+  };
+}
+
+async function historyObservation(sessionId: string, cursor: bigint, signal: AbortSignal) {
+  const response = await threadObservationEntry(
+    create(ReadSessionEventsRequestSchema, { sessionId, afterCursor: cursor - 1n, limit: 1 }),
+    signal
+  );
+  return response.entries[0]?.event?.observation;
+}
+
+function ReadFailureEvidence({ label, read }: { label: string; read: (signal: AbortSignal) => Promise<string> }) {
+  const [result, setResult] = useState<{ text?: string; error?: string }>({});
+  const [loading, setLoading] = useState(false);
+  const current = useRef<AbortController | null>(null);
+  useEffect(() => () => current.current?.abort(), []);
+  const show = () => {
+    const request = new AbortController();
+    current.current = request;
+    setLoading(true);
+    read(request.signal)
+      .then(
+        (text) => {
+          if (!request.signal.aborted) setResult({ text });
+        },
+        (error: unknown) => {
+          if (!request.signal.aborted) setResult({ error: displayableError(error) });
+        }
+      )
+      .finally(() => {
+        if (!request.signal.aborted) setLoading(false);
+      });
+  };
+  return (
+    <Stack align="flex-start" gap={2}>
+      {result.text !== undefined ? (
+        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+          {result.text}
+        </Text>
+      ) : (
+        <Button size="compact-xs" variant="subtle" loading={loading} onClick={show}>
+          {label}
+        </Button>
+      )}
+      {result.error && (
+        <Text size="xs" role="status">
+          {result.error}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function DismissedExecutionFailures({ sessionId }: { sessionId: string }): JSX.Element {
+  return (
+    <PagedHistory
+      sessionId={sessionId}
+      load={dismissedExecutions}
+      renderRows={(rows) =>
+        rows.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            No dismissed execution failures.
+          </Text>
+        ) : (
+          rows.map(({ notice, acknowledgedAt, command }) => {
+            const result = command?.entity.case === "command" ? command.entity.value : undefined;
+            const exactFailure =
+              result?.outcome === ThreadCommandOutcome.FAILED && result.outcomeCursor === notice.outcomeCursor;
+            const stamp = timestampLabel(acknowledgedAt);
+            return (
+              <Stack key={`${notice.commandId}:${notice.outcomeCursor}`} gap={2} style={{ overflowWrap: "anywhere" }}>
+                <Divider />
+                <Text size="sm" fw={500}>
+                  {result ? deliveryOperationLabel(result.operation) : notice.commandId} · Execution failed
+                </Text>
+                {stamp && (
+                  <Text size="xs" c="dimmed">
+                    Dismissed <TimeAgo value={stamp} />
+                  </Text>
+                )}
+                {result?.requestedValue && <Text size="sm">{result.requestedValue}</Text>}
+                {exactFailure ? (
+                  <Text size="xs" style={{ whiteSpace: "pre-wrap" }}>
+                    {result.outcomeReason || "No failure reason was recorded."}
+                  </Text>
+                ) : (
+                  <ReadFailureEvidence
+                    label="Show failure reason"
+                    read={async (signal) => {
+                      const outcome = await historyObservation(sessionId, notice.outcomeCursor!, signal);
+                      if (outcome?.case !== "commandFailed" || outcome.value.commandId !== notice.commandId) {
+                        throw new Error("History no longer has the exact failure.");
+                      }
+                      return outcome.value.reason || "No failure reason was recorded.";
+                    }}
+                  />
+                )}
+                {result?.inputRef && command && (
+                  <ReadFailureEvidence
+                    label="Show original command"
+                    read={async (signal) => {
+                      const admission = await historyObservation(sessionId, command.cursor, signal);
+                      const original = admission?.case === "commandAdmitted" ? admission.value.command : undefined;
+                      if (original?.commandId !== notice.commandId || original.operation.case !== "submitInput") {
+                        throw new Error("History no longer has the original input.");
+                      }
+                      return original.operation.value.text;
+                    }}
+                  />
+                )}
+              </Stack>
+            );
+          })
+        )
+      }
+    />
+  );
+}
+
 /** There is no conversation overflow menu until its first History window arrives. */
 export function DeliveryHistoryFallback({ onOpen }: { onOpen: () => void }): JSX.Element {
   return (
@@ -359,12 +512,16 @@ export function CommandDeliveryHistory({
           <Tabs.List mb="sm">
             <Tabs.Tab value="receipts">Retained receipts</Tabs.Tab>
             <Tabs.Tab value="acknowledged">Acknowledged</Tabs.Tab>
+            <Tabs.Tab value="executions">Dismissed execution failures</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel value="receipts">
             <RetainedDispatches delivery={delivery} />
           </Tabs.Panel>
           <Tabs.Panel value="acknowledged">
             <AcknowledgedIssues delivery={delivery} />
+          </Tabs.Panel>
+          <Tabs.Panel value="executions">
+            <DismissedExecutionFailures sessionId={delivery.sessionId} />
           </Tabs.Panel>
         </Tabs>
       )}
