@@ -2,6 +2,7 @@ use super::*;
 use crate::builtins;
 use binding_targets::{declaration_ids, hoisted_var_ids};
 use inference::{FactContext, IterativeInference, IterativeRules};
+use js_ast::VarDeclShape;
 
 #[derive(Clone)]
 pub enum TopLevelItemView<'a> {
@@ -42,13 +43,7 @@ pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
         match item {
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() > 1 => {
                 for (declarator_index, decl) in var.decls.iter().enumerate() {
-                    let single = VarDecl {
-                        span: decl.span,
-                        ctxt: var.ctxt,
-                        kind: var.kind,
-                        declare: var.declare,
-                        decls: vec![decl.clone()],
-                    };
+                    let single = VarDeclShape::of(var).with_decls(decl.span, vec![decl.clone()]);
                     let item_view = ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(single))));
                     out.push(TopLevelItemView::Owned {
                         item: item_view,
@@ -63,13 +58,8 @@ pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
                 match &export_decl.decl {
                     Decl::Var(var) if var.decls.len() > 1 => {
                         for (declarator_index, decl) in var.decls.iter().enumerate() {
-                            let single = VarDecl {
-                                span: decl.span,
-                                ctxt: var.ctxt,
-                                kind: var.kind,
-                                declare: var.declare,
-                                decls: vec![decl.clone()],
-                            };
+                            let single =
+                                VarDeclShape::of(var).with_decls(decl.span, vec![decl.clone()]);
                             let item_view =
                                 ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
                                     span: decl.span,

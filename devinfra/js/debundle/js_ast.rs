@@ -513,6 +513,42 @@ pub fn split_var_declarators(item: &ModuleItem) -> Option<&[VarDeclarator]> {
     }
 }
 
+/// What a variable declaration carries independently of its declarator list:
+/// the syntax context, the `var`/`let`/`const` kind and the TypeScript `declare`
+/// flag. Splitting a comma list moves its declarators out, so a rewrite that
+/// rebuilds one declaration per declarator reads them from this record instead
+/// of the half-moved declaration.
+pub struct VarDeclShape {
+    pub span: Span,
+    pub ctxt: SyntaxContext,
+    pub kind: VarDeclKind,
+    pub declare: bool,
+}
+
+impl VarDeclShape {
+    pub fn of(var: &VarDecl) -> Self {
+        Self {
+            span: var.span,
+            ctxt: var.ctxt,
+            kind: var.kind,
+            declare: var.declare,
+        }
+    }
+
+    /// A declaration rebuilt around a different declarator list. `span` belongs
+    /// to the caller: a single-declarator view takes the surviving declarator's
+    /// span, while a residual comma list keeps the declaration's.
+    pub fn with_decls(&self, span: Span, decls: Vec<VarDeclarator>) -> VarDecl {
+        VarDecl {
+            span,
+            ctxt: self.ctxt,
+            kind: self.kind,
+            declare: self.declare,
+            decls,
+        }
+    }
+}
+
 /// The source keyword for a `VarDeclKind` (`var` / `let` / `const`).
 /// SWC's `VarDeclKind` is a foreign type, so strum can't derive this;
 /// shared here so the spelling lives in one place.
