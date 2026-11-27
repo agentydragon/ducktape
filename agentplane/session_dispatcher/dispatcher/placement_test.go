@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
@@ -20,29 +20,20 @@ func testPlacement(spec *sessionpb.SessionSpec, sandboxName, sandboxUID string) 
 	return placement.PlacementOf(spec)
 }
 
-func createSession(s *store.Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *auth.Account) (*store.Session, error) {
-	testPlacement(spec, sandboxName, sandboxUID)
-	return s.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller,
-		store.SessionExecution{Identity: testExecutionIdentity()}, testStoreCaller(wakeCaller))
+func createSession(s *store.Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string) (*store.Session, error) {
+	return createSessionForCaller(s, ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, testExecutionIdentity(), testStoreCaller())
 }
 
 func testExecutionIdentity() *identitypb.Identity {
 	return &identitypb.Identity{Name: "dispatcher-test-identity", Uid: "00000000-0000-4000-8000-00000000a000"}
 }
 
-func testStoreCaller(wakeCaller *auth.Account) store.ServiceAccountCaller {
-	actor := serviceAccountIdentityFor(auth.Account{Namespace: "dispatcher-test", Name: "store-fixture"}, "dispatcher-test-actor-uid")
-	effective := actor
-	if wakeCaller != nil {
-		effective = serviceAccountIdentityFor(*wakeCaller, "dispatcher-test-effective-uid")
-	}
-	attribution := &store.AdmissionAttribution{Actor: actor, EffectiveCaller: effective}
-	return store.ServiceAccountCaller{ServiceAccountIdentity: effective, Privileged: true, Attribution: attribution}
-}
+// testStoreCaller is the privileged component caller store fixtures write as.
+func testStoreCaller() store.ServiceCaller { return store.ServiceCaller{SPIFFEID: peertls.AppURI} }
 
-func createSessionForCaller(s *store.Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *auth.Account, executionIdentity *identitypb.Identity, caller store.ServiceAccountCaller) (*store.Session, error) {
-	testPlacement(spec, sandboxName, sandboxUID)
-	return s.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, store.SessionExecution{Identity: executionIdentity}, caller)
+func createSessionForCaller(s *store.Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, executionIdentity *identitypb.Identity, caller store.Caller) (*store.Session, error) {
+	return s.CreateSessionWithAdmissionCheck(ctx, sessionID, sandboxName, sandboxUID, testPlacement(spec, sandboxName, sandboxUID),
+		spec, setupScript, store.SessionExecution{Identity: executionIdentity}, caller, nil)
 }
 
 func expireSessionLease(t *testing.T, queueStore *store.Store, owner store.SessionOwner) {

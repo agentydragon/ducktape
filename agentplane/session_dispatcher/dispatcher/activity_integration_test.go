@@ -27,12 +27,12 @@ func TestActivityLeaseAndStreamEpochFence(t *testing.T) {
 	uid := uuid.NewString()
 	attached, dormant, missing, central := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
 	for _, id := range []string{attached, dormant, missing} {
-		if _, err := createSession(store, ctx, id, "shared-host", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(store, ctx, id, "shared-host", uid, &sessionpb.SessionSpec{}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	centralSpec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "shared-host", Uid: uid}}}}}
-	if _, err := createSession(store, ctx, central, "shared-host", uid, centralSpec, nil, nil); err != nil {
+	if _, err := createSession(store, ctx, central, "shared-host", uid, centralSpec, nil); err != nil {
 		t.Fatal(err)
 	}
 	first, err := store.AcquireActivity(ctx, uid)

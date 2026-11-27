@@ -24,7 +24,7 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	store, databaseURL := testStoreWithURL(t, 3)
-	row, err := enqueueWithSession(t, store, ctx, "test-cleanup-no-lease-session", "test-cleanup-sandbox", sandboxUID, input("test-cleanup-command", "test input"), nil)
+	row, err := enqueueWithSession(t, store, ctx, "test-cleanup-no-lease-session", "test-cleanup-sandbox", sandboxUID, input("test-cleanup-command", "test input"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 func TestSessionLeaseExpiryFencesAttemptsSettlementAndRecovery(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
-	row, err := enqueueWithSession(t, store, ctx, "test-lease-session", "test-lease-sandbox", sandboxUID, input("test-lease-command", "test input"), nil)
+	row, err := enqueueWithSession(t, store, ctx, "test-lease-session", "test-lease-sandbox", sandboxUID, input("test-lease-command", "test input"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestSessionLeaseHandoffRecoversOnlyOwnedSession(t *testing.T) {
 	const recoveringID, siblingID = "test-recover-session", "test-live-session"
 	var stale SessionOwner
 	for _, id := range []string{recoveringID, siblingID} {
-		if _, err := createSession(store, ctx, id, "test-shared-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(store, ctx, id, "test-shared-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil); err != nil {
 			t.Fatal(err)
 		}
 		owner := claimSessionOwner(t, store, id)
@@ -172,7 +172,7 @@ func TestSessionLeaseDoesNotRequireAnEnvironment(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
 	const id = "test-session-without-environment"
-	if _, err := createSession(store, ctx, id, "test-deleted-environment", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(store, ctx, id, "test-deleted-environment", sandboxUID, &sessionpb.SessionSpec{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.EndSandbox(ctx, sandboxUID); err != nil {
@@ -197,10 +197,10 @@ func TestPendingScanRecoversStrandedWorkWithoutLeaseRows(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
 	const openingID, commandSessionID = "test-stranded-opening", "test-stranded-command-session"
-	if _, err := createSession(store, ctx, openingID, "test-stranded-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(store, ctx, openingID, "test-stranded-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil); err != nil {
 		t.Fatal(err)
 	}
-	row, err := enqueueWithSession(t, store, ctx, commandSessionID, "test-stranded-sandbox", sandboxUID, input("test-stranded-command", "test input"), nil)
+	row, err := enqueueWithSession(t, store, ctx, commandSessionID, "test-stranded-sandbox", sandboxUID, input("test-stranded-command", "test input"))
 	if err != nil {
 		t.Fatal(err)
 	}

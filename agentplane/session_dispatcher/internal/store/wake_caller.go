@@ -17,11 +17,7 @@ func WakeCaller(attribution Attribution) lifecycle.WakeCaller {
 			return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
 		}
 		return lifecycle.ServiceWakeCaller{SPIFFEID: attribution.ActorSPIFFEID}
-	case *AdmissionAttribution:
-		return lifecycle.AccountWakeCaller{Account: attribution.EffectiveCaller}
 	case *IdentityAttribution:
-		return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
-	case *DelegatedIdentityAttribution:
 		return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
 	default:
 		return nil

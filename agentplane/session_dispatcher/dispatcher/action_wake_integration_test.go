@@ -95,12 +95,12 @@ func TestActionAttributedSendUsesActionsBrokerForIdleSuspendedSandbox(t *testing
 					Action:        store.ActionCorrelation{RequestID: "fake-action-request", ExecutionID: "fake-action-execution"},
 				},
 			}
-			if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, string(sandbox.UID), spec, nil, nil,
-				store.SessionExecution{Identity: identity}, caller); err != nil {
+			if _, err := createSessionForCaller(queueStore, ctx, sessionID, sandbox.Name, string(sandbox.UID), spec, nil,
+				identity, caller); err != nil {
 				t.Fatal("create Action-owned Session:", err)
 			}
-			row, err := queueStore.EnqueueForCaller(ctx, sessionID, sandbox.Name, string(sandbox.UID),
-				input(commandID, "fake action send"), nil, caller)
+			row, err := queueStore.Enqueue(ctx, sessionID, sandbox.Name, string(sandbox.UID),
+				input(commandID, "fake action send"), caller)
 			if err != nil {
 				t.Fatal("enqueue Action-attributed send:", err)
 			}

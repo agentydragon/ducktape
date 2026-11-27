@@ -8,10 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
@@ -19,9 +17,6 @@ import (
 )
 
 const sandboxUID = "00000000-0000-4000-8000-000000000001"
-
-// caller supplies the legacy account provenance and namespace used by retained-row fixtures.
-var caller = auth.Account{Namespace: "test-callers", Name: "test-app"}
 
 func testStore(t *testing.T, cap int) *Store {
 	t.Helper()
@@ -90,10 +85,10 @@ func input(id, value string) *commandpb.Command {
 }
 
 // enqueueWithSession seeds an already materialized Session for tests of command delivery.
-func enqueueWithSession(t *testing.T, store *Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *auth.Account) (*Dispatch, error) {
+func enqueueWithSession(t *testing.T, store *Store, ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command) (*Dispatch, error) {
 	t.Helper()
 	if _, err := store.GetSession(ctx, sessionID); errors.Is(err, ErrNotFound) {
-		if _, err := createSession(store, ctx, sessionID, sandboxName, sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(store, ctx, sessionID, sandboxName, sandboxUID, &sessionpb.SessionSpec{}, nil); err != nil {
 			return nil, err
 		}
 		if _, err := store.DB.ExecContext(ctx, "UPDATE session SET state_value=$2 WHERE session_id=$1", sessionID, SessionAcceptedState); err != nil {
@@ -102,16 +97,13 @@ func enqueueWithSession(t *testing.T, store *Store, ctx context.Context, session
 	} else if err != nil {
 		return nil, err
 	}
-	return store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, testStoreCaller(wakeCaller))
+	return store.Enqueue(ctx, sessionID, sandboxName, sandboxUID, command, testStoreCaller())
 }
 
-func wakeBudgetCaller(namespace, name, uid string) *identitypb.ServiceAccountIdentity {
-	return serviceAccountIdentityFor(auth.Account{Namespace: namespace, Name: name}, uid)
-}
-
-// wakeKey is the budget key the lifecycle manager derives for a ServiceAccount caller.
-func wakeKey(caller *identitypb.ServiceAccountIdentity) wake.WakeBudgetKey {
-	return wake.WakeBudgetKey{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(), UID: caller.GetUid()}
+// identityWakeKey is the budget key the lifecycle manager derives for an Identity caller of
+// Sandboxes in namespace.
+func identityWakeKey(namespace, name, uid string) wake.WakeBudgetKey {
+	return wake.WakeBudgetKey{Namespace: namespace, Name: name, UID: uid}
 }
 
 // reserveWakeAttemptAsPreviousWriter reproduces the SQL shape deployed before
@@ -120,14 +112,14 @@ func wakeKey(caller *identitypb.ServiceAccountIdentity) wake.WakeBudgetKey {
 func reserveWakeAttemptAsPreviousWriter(
 	ctx context.Context,
 	store *Store,
-	caller *identitypb.ServiceAccountIdentity,
+	caller wake.WakeBudgetKey,
 	sandboxUID string,
 	generation int64,
 ) (time.Duration, error) {
 	var retryAfter time.Duration
 	err := transaction(ctx, store.DB, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
-			"dispatcher-wake:"+caller.GetAccount().GetNamespace()+":"+caller.GetAccount().GetName())
+			"dispatcher-wake:"+caller.Namespace+":"+caller.Name)
 		if err != nil {
 			return err
 		}
@@ -142,7 +134,7 @@ func reserveWakeAttemptAsPreviousWriter(
 		var exists bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wake_attempt
 			WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3 AND wake_generation=$4)`,
-			caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), sandboxUID, generation).Scan(&exists); err != nil {
+			caller.Namespace, caller.Name, sandboxUID, generation).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -152,7 +144,7 @@ func reserveWakeAttemptAsPreviousWriter(
 		var oldest sql.NullTime
 		if err := tx.QueryRowContext(ctx, `SELECT count(*),min(attempted_at) FROM wake_attempt
 			WHERE caller_namespace=$1 AND caller_name=$2 AND attempted_at>$3`,
-			caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), windowStart).Scan(&count, &oldest); err != nil {
+			caller.Namespace, caller.Name, windowStart).Scan(&count, &oldest); err != nil {
 			return err
 		}
 		if count >= WakeLimit {
@@ -167,22 +159,22 @@ func reserveWakeAttemptAsPreviousWriter(
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO wake_attempt
 			(caller_namespace,caller_name,sandbox_uid,wake_generation,attempted_at)
-			VALUES ($1,$2,$3,$4,$5)`, caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), sandboxUID, generation, now)
+			VALUES ($1,$2,$3,$4,$5)`, caller.Namespace, caller.Name, sandboxUID, generation, now)
 		return err
 	})
 	return retryAfter, err
 }
 
-func assertWakeAttemptCount(t *testing.T, store *Store, caller *identitypb.ServiceAccountIdentity, sandboxUID string, want int) {
+func assertWakeAttemptCount(t *testing.T, store *Store, caller wake.WakeBudgetKey, sandboxUID string, want int) {
 	t.Helper()
 	var count int
 	if err := store.DB.QueryRow(`SELECT count(*) FROM wake_attempt
 		WHERE caller_namespace=$1 AND caller_name=$2 AND sandbox_uid=$3`,
-		caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), sandboxUID).Scan(&count); err != nil {
+		caller.Namespace, caller.Name, sandboxUID).Scan(&count); err != nil {
 		t.Fatal("count wake attempts:", err)
 	}
 	if count != want {
-		t.Fatalf("wake attempt count for %s/%s sandbox %s = %d, want %d", caller.GetAccount().GetNamespace(), caller.GetAccount().GetName(), sandboxUID, count, want)
+		t.Fatalf("wake attempt count for %s/%s sandbox %s = %d, want %d", caller.Namespace, caller.Name, sandboxUID, count, want)
 	}
 }
 
