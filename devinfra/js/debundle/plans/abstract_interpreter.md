@@ -530,7 +530,7 @@ its cost.
   <synchronous_execution_fallback.md> for the remaining proof boundary.
 - Preserve conservative reads after skipped code, including getters and
   replaced descriptors. The stale-property fix is a contract control, not an
-  open migration task (`synchronous_precision_report_test.rs`).
+  open migration task (`e2e/synchronous_precision_report/own_data_reads.rs`).
 - Preserve `at_init_s_chain_dataflow_test`, `soundness_at_init_value_flow_test`,
   `collections_test::set_iterable_reentry`, `collections_test::stable_array_spread`
   and the fallback-report controls

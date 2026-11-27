@@ -531,7 +531,7 @@ graph-only `modules_*`/`bindings_*` acceptances that became
 **Headline witnesses.** Only two tests show `legacy_gate_accepts == false`
 together with an accepted effect verdict and Node parity
 (`translation_validation_differential_test.rs` error-preserving swap,
-`native_operation_input_test.rs` seven-swap case). Each Wave 3 slice that
+`native_operation_input/` seven-swap case). Each Wave 3 slice that
 claims recovered acceptance adds one such witness for its family.
 
 ## Exit gates

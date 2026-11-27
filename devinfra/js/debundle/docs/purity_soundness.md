@@ -891,7 +891,7 @@ syntax, which alone never exempts an unsettled object.
 
 The incomplete statement's global reach preserves its own ordering constraints;
 it does not prove a later property's value or descriptor. The synthetic CLI
-controls in `e2e/synchronous_precision_report_test.rs` cover reads after skipped
+controls in `e2e/synchronous_precision_report/` cover reads after skipped
 mutations and an unrelated object that remains settled.
 `analyze/at_init_fallback_tests.rs` pins the skipped-code routes against plain-array
 element settlement.

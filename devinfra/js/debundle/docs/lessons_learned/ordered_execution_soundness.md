@@ -42,7 +42,7 @@ kernel; this note records the failure each rule prevents, so a later
   changed them.
 - **Skipped code is not escape.** Tainting every object an incomplete statement
   read made later own-data reads lose completeness
-  (`synchronous_precision_report_test::incomplete_local_call_preserves_unrelated_own_data_reads`).
+  (`synchronous_precision_report_test::own_data_reads::incomplete_local_call_preserves_unrelated_own_data_reads`).
   `unsettled_objects` (possibly changed by skipped code) and `tainted_objects`
   (escaped to unknown code) have different consumers, and
   `unknown_contents` invalidates values without implying a possible

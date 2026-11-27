@@ -150,6 +150,11 @@ debundle_graph_e2e_test(
 
 debundle_graph_e2e_test(
     name = "native_operation_input_test",
+    srcs = glob(
+        ["native_operation_input/*.rs"],
+        exclude = ["native_operation_input/mod.rs"],
+    ),
+    source = "native_operation_input/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle/analysis_domain",
@@ -340,6 +345,11 @@ debundle_graph_e2e_test(name = "effect_tv_class_construction_test")
 
 debundle_graph_e2e_test(
     name = "effect_tv_conditional_logical_test",
+    srcs = glob(
+        ["effect_tv_conditional_logical/*.rs"],
+        exclude = ["effect_tv_conditional_logical/mod.rs"],
+    ),
+    source = "effect_tv_conditional_logical/mod.rs",
     deps = [
         "@crates//:serde_json",
     ],
@@ -541,7 +551,14 @@ debundle_graph_e2e_test(
     ],
 )
 
-debundle_e2e_test(name = "soundness_at_init_value_flow_test")
+debundle_e2e_test(
+    name = "soundness_at_init_value_flow_test",
+    srcs = glob(
+        ["soundness_at_init_value_flow/*.rs"],
+        exclude = ["soundness_at_init_value_flow/mod.rs"],
+    ),
+    source = "soundness_at_init_value_flow/mod.rs",
+)
 
 debundle_graph_e2e_test(
     name = "unknown_call_export_reachability_test",
@@ -735,6 +752,11 @@ debundle_graph_e2e_test(
 
 debundle_graph_e2e_test(
     name = "local_record_factory_contract_test",
+    srcs = glob(
+        ["local_record_factory_contract/*.rs"],
+        exclude = ["local_record_factory_contract/mod.rs"],
+    ),
+    source = "local_record_factory_contract/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle/analysis_vocabulary",
@@ -1220,6 +1242,11 @@ debundle_graph_e2e_test(
 
 debundle_graph_e2e_test(
     name = "synchronous_precision_report_test",
+    srcs = glob(
+        ["synchronous_precision_report/*.rs"],
+        exclude = ["synchronous_precision_report/mod.rs"],
+    ),
+    source = "synchronous_precision_report/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle/graph",

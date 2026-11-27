@@ -25,7 +25,7 @@ Both controls preserve the original program's observed initialization order.
 Failed native premises already expose their defining mutation witnesses (the
 contract is in `SPEC.md` § Native integrity inputs; query behavior is in
 `docs/cli.md#native-integrity-guards`; neutral checks are in
-`e2e/native_operation_input_test.rs`). The open work is to prove receiver
+`e2e/native_operation_input/`). The open work is to prove receiver
 identity for ordinary source-owned global slots. A sound certificate must
 establish:
 
