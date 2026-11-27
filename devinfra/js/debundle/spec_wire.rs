@@ -71,17 +71,19 @@ pub fn unique_set<T: Ord>(items: impl IntoIterator<Item = Result<T>>) -> Result<
     Ok(result)
 }
 
-/// Wire messages carry keyed maps, and moving one across the wire is one step
-/// repeated per entry: keep the key, run the entry codec on the value. Both sides
-/// stay generic over the containers the message uses, so no map type is fixed
-/// here; `encode` and `decode` are the entry codecs.
-pub fn encode_map<Key, Value, Wire, Input, Output>(
-    values: &Input,
-    encode: impl Fn(&Value) -> Wire,
+/// A representation change over a keyed map is one step repeated per entry: keep
+/// the key, run the entry codec on the value. Saved snapshots and wire messages
+/// both do it this way. Both sides stay generic over the containers in play, so no
+/// map type is fixed here; `encode` and `decode` are the entry codecs, and they may
+/// keep state - a saved purity table assigns ids as entries arrive.
+pub fn encode_map<'a, Key, Value, Wire, Input, Output>(
+    values: &'a Input,
+    mut encode: impl FnMut(&'a Value) -> Wire,
 ) -> Output
 where
-    for<'a> &'a Input: IntoIterator<Item = (&'a Key, &'a Value)>,
-    Key: Clone,
+    &'a Input: IntoIterator<Item = (&'a Key, &'a Value)>,
+    Key: Clone + 'a,
+    Value: 'a,
     Output: FromIterator<(Key, Wire)>,
 {
     values
@@ -90,15 +92,16 @@ where
         .collect()
 }
 
-/// `encode_map` for messages whose entry codec can refuse, which is how
-/// analysis-input codecs report an out-of-domain value.
-pub fn try_encode_map<Key, Value, Wire, Input, Output>(
-    values: &Input,
-    encode: impl Fn(&Value) -> Result<Wire>,
+/// `encode_map` for entry codecs that can refuse, which is how analysis-input
+/// codecs report an out-of-domain value.
+pub fn try_encode_map<'a, Key, Value, Wire, Input, Output>(
+    values: &'a Input,
+    mut encode: impl FnMut(&'a Value) -> Result<Wire>,
 ) -> Result<Output>
 where
-    for<'a> &'a Input: IntoIterator<Item = (&'a Key, &'a Value)>,
-    Key: Clone,
+    &'a Input: IntoIterator<Item = (&'a Key, &'a Value)>,
+    Key: Clone + 'a,
+    Value: 'a,
     Output: FromIterator<(Key, Wire)>,
 {
     values
@@ -107,11 +110,11 @@ where
         .collect()
 }
 
-/// The decode side of `encode_map`: the wire map is consumed, so keys move
-/// instead of cloning, and an entry codec can refuse.
+/// The decode side of `encode_map`: the saved or wire map is consumed, so keys
+/// move instead of cloning, and an entry codec can refuse.
 pub fn decode_map<Key, Value, Wire, Input, Output>(
     values: Input,
-    decode: impl Fn(Wire) -> Result<Value>,
+    mut decode: impl FnMut(Wire) -> Result<Value>,
 ) -> Result<Output>
 where
     Input: IntoIterator<Item = (Key, Wire)>,
