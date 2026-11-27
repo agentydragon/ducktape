@@ -174,3 +174,8 @@ hubble:
 
 operator:
   dnsPolicy: ClusterFirstWithHostNet
+  # Wait for a surge on another host before removing an available operator.
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
