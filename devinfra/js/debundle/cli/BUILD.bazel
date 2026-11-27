@@ -108,10 +108,10 @@ rust_library(
     deps = [
         ":candidate_assessment",
         ":edit_gate",
+        ":graph_edit",
         ":outcome",
         "//devinfra/js/debundle:command_diagnostics",
         "//devinfra/js/debundle:gate",
-        "//devinfra/js/debundle:pipeline",
         "//devinfra/js/debundle/selectors/resolution:selector_outcome",
         "//devinfra/js/debundle/spec",
         "//devinfra/js/debundle/spec:spec_modules",

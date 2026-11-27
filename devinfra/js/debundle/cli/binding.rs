@@ -31,7 +31,8 @@ use spec::{LogicalModule, ModulePath, SourceMatchBindingDetail, is_residual_name
 use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
 use yaml_edit::write_yaml_atomic;
 
-use edit_gate::{CheckedImportOrder, Gate, ModuleDocs, load_module_docs, post_edit_spec_from_docs};
+use edit_gate::{Gate, ModuleDocs, load_module_docs};
+use graph_edit::{CandidateDocs, EditCheck, EditPlan, GraphEdit, OutcomeRule};
 use outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 /// The source of a binding's current spec identity.
@@ -878,51 +879,34 @@ pub fn run_bindings_assign(
     // post-batch docs — the same `ModuleFile` claims model `debundle
     // run` loads, so canonical source_matches[] claims gate
     // identically. Runs before any file is written.
-    let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
-        let priority = gate.import_priority_for_spec(
-            modules_root,
-            &post_edit_spec_from_docs(&docs, &to_delete)?,
-        )?;
-        Some(context.assess(stderr, modules_root, &docs, &to_delete, &priority)?)
-    } else {
-        None
-    };
-    if let Some(assessment) = &effect_relocation_assessment {
-        pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
+    let edit = GraphEdit {
+        verb: MutationVerb::Assign,
+        modules_root,
+        dry_run,
+        check: EditCheck::Claims(gate),
+        assessment: effect_assessment_context,
     }
-    let checked_order = if !no_moves {
-        gate.check(stderr, modules_root, || {
-            post_edit_spec_from_docs(&docs, &to_delete)
-        })?
-    } else {
-        CheckedImportOrder::Unchanged
-    };
-
-    let (mut files_written, files_deleted) =
-        apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
-    checked_order.write(dry_run, &mut files_written)?;
+    .run(
+        stderr,
+        SnapshotEdit {
+            original: &original_docs,
+            docs: &docs,
+            deleted: &to_delete,
+        },
+        if no_moves {
+            OutcomeRule::EmptyRequest
+        } else {
+            OutcomeRule::Write
+        },
+    )?;
     Ok(AssignOutcome {
-        outcome: MutationOutcome::ownership_edit(
-            MutationVerb::Assign,
-            if no_moves {
-                MutationAction::Noop
-            } else {
-                MutationAction::for_write(dry_run)
-            },
-            if no_moves {
-                GateOutcome::NotRequired
-            } else {
-                GateOutcome::from(&gate)
-            },
-            effect_relocation_assessment.as_ref(),
-            files_written,
-            files_deleted,
-        ),
+        outcome: edit.outcome,
         moves_applied: plan.len(),
-        effect_assessment_unavailable: effect_relocation_assessment
+        effect_assessment_unavailable: edit
+            .effect_relocation_assessment
             .is_none()
             .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
-        effect_relocation_assessment,
+        effect_relocation_assessment: edit.effect_relocation_assessment,
     })
 }
 
@@ -1038,6 +1022,26 @@ pub fn drained_source_modules(
         })
         .cloned()
         .collect()
+}
+
+/// An edit planned on one module snapshot, persisted by [`apply_doc_changes`].
+pub struct SnapshotEdit<'a> {
+    pub original: &'a ModuleDocs,
+    pub docs: &'a ModuleDocs,
+    pub deleted: &'a BTreeSet<String>,
+}
+
+impl EditPlan for SnapshotEdit<'_> {
+    fn documents(&self) -> Option<CandidateDocs<'_>> {
+        Some(CandidateDocs {
+            docs: self.docs,
+            deleted: self.deleted,
+        })
+    }
+
+    fn write(self, dry_run: bool) -> Result<(Vec<String>, Vec<String>)> {
+        apply_doc_changes(self.original, self.docs, self.deleted, dry_run)
+    }
 }
 
 /// Persist the post-batch docs: write every surviving changed file
@@ -1261,53 +1265,34 @@ pub fn run_bindings_unassign(
         .collect();
     let to_delete = drained_source_modules(&docs, &move_sources);
 
-    // Assess the exact typed post-edit documents before the legacy gate or any
-    // writes. The pipeline resolves this candidate through the same canonical
-    // selector and emitter-planning path as `run --analysis`.
-    let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
-        let priority = gate.import_priority_for_spec(
-            modules_root,
-            &post_edit_spec_from_docs(&docs, &to_delete)?,
-        )?;
-        Some(context.assess(stderr, modules_root, &docs, &to_delete, &priority)?)
-    } else {
-        None
-    };
-
-    // Step 5: gate the in-memory post-batch spec (cycles +
+    // Step 5: assess, then gate the in-memory post-batch spec (cycles +
     // atom-split) before any file is written. Built from the mutated
     // docs through the run pipeline's claims model, so source_matches[]
     // claims in surviving modules stay claimed.
-    let checked_order = if !no_symbols {
-        gate.check(stderr, modules_root, || {
-            post_edit_spec_from_docs(&docs, &to_delete)
-        })?
-    } else {
-        CheckedImportOrder::Unchanged
-    };
-
-    let (mut files_written, files_deleted) =
-        apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
-    checked_order.write(dry_run, &mut files_written)?;
+    let edit = GraphEdit {
+        verb: MutationVerb::Unassign,
+        modules_root,
+        dry_run,
+        check: EditCheck::Claims(gate),
+        assessment: effect_assessment_context,
+    }
+    .run(
+        stderr,
+        SnapshotEdit {
+            original: &original_docs,
+            docs: &docs,
+            deleted: &to_delete,
+        },
+        if no_symbols {
+            OutcomeRule::EmptyRequest
+        } else {
+            OutcomeRule::Write
+        },
+    )?;
     Ok(UnassignOutcome {
-        outcome: MutationOutcome::ownership_edit(
-            MutationVerb::Unassign,
-            if no_symbols {
-                MutationAction::Noop
-            } else {
-                MutationAction::for_write(dry_run)
-            },
-            if no_symbols {
-                GateOutcome::NotRequired
-            } else {
-                GateOutcome::from(&gate)
-            },
-            effect_relocation_assessment.as_ref(),
-            files_written,
-            files_deleted,
-        ),
+        outcome: edit.outcome,
         unassigned: plan.len(),
-        effect_relocation_assessment,
+        effect_relocation_assessment: edit.effect_relocation_assessment,
     })
 }
 
