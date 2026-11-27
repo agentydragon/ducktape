@@ -48,6 +48,39 @@ assert.match(readFileSync(path.join(negationOut, "worker.mjs"), "utf8"), /const 
 assert.equal((await import(pathToFileURL(path.join(negationOut, "entry.mjs")))).result, false);
 assert.equal(split({ source, spec, out: negationOut, require: "all-outcomes", checkOutput: true }).status, "certified");
 
+// Logical initializers use the same authored #0/#1 placement and exact reread.
+writeFileSync(spec, JSON.stringify(placement));
+for (const [label, originalSource, expected] of [
+  ["logical-and", "const seed = true; export const result = seed && 7;\n", 7],
+  ["logical-or", "const seed = 0; export const result = seed || 7;\n", 7],
+  ["logical-nullish", "const seed = null; export const result = seed ?? 7;\n", 7],
+  ["logical-mixed", "const seed = 0; export const result = (seed ?? 1) || 7;\n", 7],
+  ["logical-and-skipped", "const seed = false; export const result = seed && 7;\n", false],
+  ["logical-or-skipped", "const seed = true; export const result = seed || 7;\n", true],
+  ["logical-nullish-skipped", "const seed = 0; export const result = seed ?? 7;\n", 0],
+  ["logical-skipped-read", "const seed = 7; export const result = false && seed;\n", false],
+]) {
+  writeFileSync(source, originalSource);
+  const logicalOut = path.join(root, label);
+  const logical = split({ source, spec, out: logicalOut, require: "all-outcomes" });
+  assert.equal(logical.status, "certified", logical.log);
+  assert.equal(logical.scope, "named-declarations", logical.log);
+  assert.equal(logical.verdict.strategy, "compiled-constructor", logical.log);
+  assert.equal((await import(pathToFileURL(path.join(logicalOut, "entry.mjs")))).result, expected);
+  const checked = split({ source, spec, out: logicalOut, require: "all-outcomes", checkOutput: true });
+  assert.equal(checked.status, "certified", checked.log);
+  const entryFile = path.join(logicalOut, "entry.mjs");
+  const original = readFileSync(entryFile, "utf8");
+  if (label === "logical-skipped-read") assert.match(original, /import\s*\{\s*seed\s*\}/);
+  const altered =
+    label === "logical-skipped-read" ? original.replace(/\bseed(?=\s*;)/, "8") : original.replace(/7(?=\s*;)/, "8");
+  assert.notEqual(altered, original);
+  writeFileSync(entryFile, altered);
+  const tampered = split({ source, spec, out: logicalOut, require: "all-outcomes", checkOutput: true });
+  assert.equal(tampered.status, "refused", tampered.log);
+  assert.equal(readFileSync(entryFile, "utf8"), altered);
+}
+
 // Earlier-binding binary expressions in initialized lexical declarations use the compiled proof.
 writeFileSync(source, "let seed = 7; let ready = seed + 2; export let result = ready;\n");
 const arithmeticLetPlacement = {

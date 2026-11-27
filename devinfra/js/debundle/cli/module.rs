@@ -27,8 +27,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
+use command_output::infallible;
 use graph_provenance::VerifiedGraphSourceContext;
-use peel::output_format::OutputFormat;
 use spec::LogicalModule;
 use spec::member_selectors::MemberSelectorSpec;
 use spec_modules::{
@@ -39,11 +39,11 @@ use yaml_edit::write_yaml_atomic;
 
 use candidate_assessment::CandidateEffectAssessmentArgs;
 use edit_gate::{
-    GraphEditArgs, PostEditSpec, load_module_docs, post_delete_spec, post_edit_spec_from_docs,
+    GraphEditArgs, ModuleDocs, PostEditSpec, load_module_docs, post_delete_spec,
+    post_edit_spec_from_docs,
 };
-use outcome::{
-    GateOutcome, MutationAction, MutationOutcome, MutationVerb, emit_gate_rejection_json,
-};
+use graph_edit::{CandidateDocs, EditCheck, EditPlan, GraphEdit, OutcomeRule};
+use outcome::{MutationAction, MutationOutcome, MutationVerb, report_edit};
 
 #[derive(Debug, ClapArgs)]
 pub struct MergeArgs {
@@ -151,17 +151,6 @@ pub enum MergeConflict {
     },
 }
 
-impl MergeSummary {
-    /// Render the one-line stdout summary.
-    pub fn summary_line(&self) -> String {
-        format!(
-            "merged {} source(s) into {}",
-            self.merged_sources.len(),
-            self.target.display()
-        )
-    }
-}
-
 /// Top-level `debundle modules delete` argument shape.
 #[derive(Debug, ClapArgs)]
 pub struct DeleteArgs {
@@ -185,28 +174,6 @@ pub struct DeleteArgs {
     pub force: bool,
 }
 
-/// Summary returned by [`delete_modules`].
-#[derive(Debug, Clone)]
-pub struct DeleteSummary {
-    /// Absolute paths of the YAML files that were deleted (or, in
-    /// `dry-run` mode, would have been deleted).
-    pub deleted: Vec<PathBuf>,
-    /// Whether the call was a dry-run (no files were actually
-    /// touched). When `true`, `deleted` lists the would-be paths.
-    pub dry_run: bool,
-}
-
-impl DeleteSummary {
-    /// Render the one-line stdout summary.
-    pub fn summary_line(&self) -> String {
-        if self.dry_run {
-            format!("dry-run: would delete {} file(s)", self.deleted.len())
-        } else {
-            format!("deleted {} file(s)", self.deleted.len())
-        }
-    }
-}
-
 /// Public entry point for the merge verb. Used by the top-level
 /// `debundle modules merge` command.
 ///
@@ -225,15 +192,26 @@ pub fn run_merge(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    if merge.edit.no_verify {
-        command_diagnostics::write_diagnostic(
-            stderr,
-            format_args!(
-                "warning: --no-verify skips the realizability gate; the merge YAML splice will \
-             not be re-checked for cross-module cycles."
-            ),
-        )?;
-    }
+    let format = merge.edit.format;
+    let report = merge_report(stderr, merge, source_context, analysis_engine_sha256);
+    report_edit(
+        output,
+        stderr,
+        MutationVerb::Merge,
+        format,
+        report,
+        MergeReport::outcome,
+        infallible(|report: &MergeReport, text| text.push_str(&report.text_line())),
+    )
+}
+
+fn merge_report(
+    stderr: &mut (dyn std::io::Write + Send),
+    merge: MergeArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<MergeReport> {
+    merge.edit.warn_no_verify(stderr, "the merge YAML splice")?;
     let gate = merge.edit.gate(source_context)?;
     let is_batch = merge.batch.is_some();
     let modules_root = if is_batch {
@@ -263,125 +241,146 @@ pub fn run_merge(
         merge
             .effect_assessment
             .resolve(&merge.edit, source_context, analysis_engine_sha256)?;
-    let (candidate_docs, effect_relocation_assessment) =
-        if let Some(context) = effect_context.as_ref() {
-            let docs = post_merge_docs(&modules_root, &plans)?;
-            let priority = gate.import_priority_for_spec(
-                &modules_root,
-                &post_edit_spec_from_docs(&docs, &BTreeSet::new())?,
-            )?;
-            let assessment = context
-                .assess(
-                    stderr,
-                    &merge.edit.modules_root,
-                    &docs,
-                    &BTreeSet::new(),
-                    &priority,
-                )
-                .context("candidate effect assessment failed")?;
-            (Some(docs), Some(assessment))
-        } else {
-            (None, None)
-        };
-    let validation = if let Some(docs) = candidate_docs.as_ref() {
-        gate.check(stderr, &modules_root, || {
-            post_edit_spec_from_docs(docs, &BTreeSet::new())
-        })
-    } else {
-        gate.check(stderr, &modules_root, || {
-            post_merge_spec(&modules_root, &plans)
-        })
-    };
-    let checked_order = validation.map_err(|err| {
-        emit_gate_rejection_json(output, MutationVerb::Merge, merge.edit.format, err)
-    })?;
-    if !merge.edit.dry_run {
-        // Every target is written before any source is deleted. Per-file writes
-        // are atomic; this is not a crash-atomic multi-file transaction.
-        for plan in &plans {
-            plan.write_target()?;
-        }
-        for plan in &plans {
-            for source in &plan.summary.merged_sources {
-                fs::remove_file(source)
-                    .with_context(|| format!("deleting merged source {}", source.display()))?;
-            }
-        }
-    }
-    let action = if merge.edit.dry_run {
-        MutationAction::DryRun
-    } else {
-        MutationAction::Applied
-    };
-    let mut files_written = plans
+    let documents = effect_context
+        .is_some()
+        .then(|| post_merge_docs(&modules_root, &plans))
+        .transpose()?;
+    let targets: Vec<_> = plans
         .iter()
         .map(|plan| plan.summary.target.display().to_string())
         .collect();
-    checked_order.write(merge.edit.dry_run, &mut files_written)?;
-    let outcome = MutationOutcome::ownership_edit(
-        MutationVerb::Merge,
-        action,
-        GateOutcome::from(&gate),
-        effect_relocation_assessment.as_ref(),
-        files_written,
-        plans
-            .iter()
-            .flat_map(|p| &p.summary.merged_sources)
-            .map(|p| p.display().to_string())
-            .collect(),
-    );
-    outcome.warn_if_unassessed_write(stderr)?;
-    match OutputFormat::resolve(merge.edit.format) {
-        OutputFormat::Text => {
-            if is_batch {
-                command_output::write_line(
-                    output,
-                    format_args!("{action}: {} merge target(s)", plans.len()),
-                )?;
-                return Ok(());
-            }
-            let summary = &plans[0].summary;
-            if merge.edit.dry_run {
-                command_output::write_line(
-                    output,
-                    format_args!(
-                        "dry-run: would merge {} source(s) into {}",
-                        summary.merged_sources.len(),
-                        summary.target.display()
-                    ),
-                )?;
-            } else {
-                command_output::write_line(output, format_args!("{}", summary.summary_line()))?;
-            }
-        }
-        format if is_batch => {
-            let targets = plans
-                .iter()
-                .map(|p| p.summary.target.display().to_string())
-                .collect();
-            command_output::write_report(
-                &MergeBatchOutcome {
-                    outcome,
-                    targets,
-                    effect_relocation_assessment,
-                },
-                format,
-                output,
-                |_, _| Ok(()),
-            )?;
-        }
-        format => command_output::write_report(
-            &MergeOutcome {
-                outcome,
-                target: plans[0].summary.target.display().to_string(),
-                effect_relocation_assessment,
-            },
-            format,
-            output,
-            |_, _| Ok(()),
-        )?,
+    // A batch may be empty; only a single merge reports its source count.
+    let merged_sources = plans
+        .first()
+        .map_or(0, |plan| plan.summary.merged_sources.len());
+    let edit = GraphEdit {
+        verb: MutationVerb::Merge,
+        modules_root: &modules_root,
+        dry_run: merge.edit.dry_run,
+        check: EditCheck::Claims(gate),
+        assessment: effect_context.as_ref(),
     }
-    Ok(())
+    .run(
+        stderr,
+        MergeEdit {
+            modules_root: &modules_root,
+            plans,
+            documents,
+            deleted: BTreeSet::new(),
+        },
+        OutcomeRule::Write,
+    )?;
+    Ok(if is_batch {
+        MergeReport::Batch(MergeBatchOutcome {
+            outcome: edit.outcome,
+            targets,
+            effect_relocation_assessment: edit.effect_relocation_assessment,
+        })
+    } else {
+        MergeReport::Single {
+            report: MergeOutcome {
+                outcome: edit.outcome,
+                target: targets.into_iter().next().expect("one merge plan"),
+                effect_relocation_assessment: edit.effect_relocation_assessment,
+            },
+            merged_sources,
+        }
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum MergeReport {
+    Single {
+        #[serde(flatten)]
+        report: MergeOutcome,
+        /// Text output only.
+        #[serde(skip)]
+        merged_sources: usize,
+    },
+    Batch(MergeBatchOutcome),
+}
+
+impl MergeReport {
+    fn outcome(&self) -> &MutationOutcome {
+        match self {
+            Self::Single { report, .. } => &report.outcome,
+            Self::Batch(batch) => &batch.outcome,
+        }
+    }
+
+    fn text_line(&self) -> String {
+        match self {
+            Self::Single {
+                report,
+                merged_sources,
+            } if report.outcome.action == MutationAction::DryRun => format!(
+                "dry-run: would merge {merged_sources} source(s) into {}",
+                report.target
+            ),
+            Self::Single {
+                report,
+                merged_sources,
+            } => format!("merged {merged_sources} source(s) into {}", report.target),
+            Self::Batch(batch) => format!(
+                "{}: {} merge target(s)",
+                batch.outcome.action,
+                batch.targets.len()
+            ),
+        }
+    }
+}
+
+/// A merge's file plan: every target is written before any source is
+/// deleted. Per-file writes are atomic; this is not a crash-atomic
+/// multi-file transaction.
+struct MergeEdit<'a> {
+    modules_root: &'a Path,
+    plans: Vec<MergePlan>,
+    /// Built only for a candidate assessment.
+    documents: Option<ModuleDocs>,
+    deleted: BTreeSet<String>,
+}
+
+impl EditPlan for MergeEdit<'_> {
+    fn documents(&self) -> Option<CandidateDocs<'_>> {
+        self.documents.as_ref().map(|docs| CandidateDocs {
+            docs,
+            deleted: &self.deleted,
+        })
+    }
+
+    fn post_spec(&self) -> Result<PostEditSpec> {
+        match self.documents() {
+            Some(candidate) => candidate.post_spec(),
+            None => post_merge_spec(self.modules_root, &self.plans),
+        }
+    }
+
+    fn write(self, dry_run: bool) -> Result<(Vec<String>, Vec<String>)> {
+        if !dry_run {
+            for plan in &self.plans {
+                plan.write_target()?;
+            }
+            for plan in &self.plans {
+                for source in &plan.summary.merged_sources {
+                    fs::remove_file(source)
+                        .with_context(|| format!("deleting merged source {}", source.display()))?;
+                }
+            }
+        }
+        Ok((
+            self.plans
+                .iter()
+                .map(|plan| plan.summary.target.display().to_string())
+                .collect(),
+            self.plans
+                .iter()
+                .flat_map(|plan| &plan.summary.merged_sources)
+                .map(|source| source.display().to_string())
+                .collect(),
+        ))
+    }
 }
 
 /// The complete prospective edit. Preview and the gate inspect this exact
@@ -717,15 +716,33 @@ pub fn run_delete(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    if args.edit.no_verify {
-        command_diagnostics::write_diagnostic(
-            stderr,
-            format_args!(
-                "warning: --no-verify skips the realizability gate; the deletion will not be \
-             re-checked for cross-module cycles."
-            ),
-        )?;
-    }
+    let format = args.edit.format;
+    let report = delete_report(stderr, args, source_context, analysis_engine_sha256);
+    report_edit(
+        output,
+        stderr,
+        MutationVerb::Delete,
+        format,
+        report,
+        |report: &DeleteOutcome| &report.outcome,
+        infallible(|report: &DeleteOutcome, text| {
+            let deleted = report.outcome.files_deleted.len();
+            text.push_str(&if report.outcome.action == MutationAction::DryRun {
+                format!("dry-run: would delete {deleted} file(s)")
+            } else {
+                format!("deleted {deleted} file(s)")
+            })
+        }),
+    )
+}
+
+fn delete_report(
+    stderr: &mut (dyn std::io::Write + Send),
+    args: DeleteArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+) -> Result<DeleteOutcome> {
+    args.edit.warn_no_verify(stderr, "the deletion")?;
 
     let paths_abs: Vec<PathBuf> = args
         .paths
@@ -774,86 +791,77 @@ pub fn run_delete(
     let effect_context =
         args.effect_assessment
             .resolve(&args.edit, source_context, analysis_engine_sha256)?;
-    let (candidate_docs, deleted_module_paths, effect_paths_abs, effect_relocation_assessment) =
-        if let Some(context) = effect_context.as_ref() {
-            let docs = load_module_docs(&args.edit.modules_root)?;
-            let delete_plan = resolve_delete_plan(&docs, &paths_abs)?;
-            let gate = args.edit.gate(source_context)?;
-            let priority = gate.import_priority_for_spec(
-                &args.edit.modules_root,
-                &post_edit_spec_from_docs(&docs, &delete_plan.module_paths)?,
-            )?;
-            let assessment = context
-                .assess(
-                    stderr,
-                    &args.edit.modules_root,
-                    &docs,
-                    &delete_plan.module_paths,
-                    &priority,
-                )
-                .context("candidate effect assessment failed")?;
-            (
-                Some(docs),
-                Some(delete_plan.module_paths),
-                Some(delete_plan.entry_paths),
-                Some(assessment),
-            )
-        } else {
-            (None, None, None, None)
-        };
-    let delete_paths = effect_paths_abs.as_deref().unwrap_or(&paths_abs);
-
-    // Even empty owners appear in entry fanout and the declared priority.
-    // Validate their removal and stage the priority update before deleting.
-    let (gate_outcome, checked_order) = {
-        let gate = args.edit.gate(source_context)?;
-        let validation = if let (Some(docs), Some(deleted_module_paths)) =
-            (candidate_docs.as_ref(), deleted_module_paths.as_ref())
-        {
-            gate.check(stderr, &args.edit.modules_root, || {
-                post_edit_spec_from_docs(docs, deleted_module_paths)
-            })
-        } else {
-            gate.check(stderr, &args.edit.modules_root, || {
-                post_delete_spec(&args.edit.modules_root, delete_paths)
-            })
-        };
-        let checked_order = validation.map_err(|err| {
-            emit_gate_rejection_json(output, MutationVerb::Delete, args.edit.format, err)
-        })?;
-        (GateOutcome::from(&gate), checked_order)
-    };
-
-    let summary = delete_modules(delete_paths, args.edit.dry_run)?;
-    let mut files_written = Vec::new();
-    checked_order.write(args.edit.dry_run, &mut files_written)?;
-    let delete_outcome = DeleteOutcome {
-        outcome: MutationOutcome::ownership_edit(
-            MutationVerb::Delete,
-            if summary.dry_run {
-                MutationAction::DryRun
-            } else {
-                MutationAction::Applied
-            },
-            gate_outcome,
-            effect_relocation_assessment.as_ref(),
-            files_written,
-            summary
-                .deleted
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect(),
-        ),
-        effect_relocation_assessment,
-    };
-    delete_outcome.outcome.warn_if_unassessed_write(stderr)?;
-    match OutputFormat::resolve(args.edit.format) {
-        OutputFormat::Text => {
-            command_output::write_line(output, format_args!("{}", summary.summary_line()))?
+    let edit = if effect_context.is_some() {
+        let docs = load_module_docs(&args.edit.modules_root)?;
+        let plan = resolve_delete_plan(&docs, &paths_abs)?;
+        DeleteEdit {
+            modules_root: &args.edit.modules_root,
+            paths: plan.entry_paths,
+            documents: Some((docs, plan.module_paths)),
         }
-        format => command_output::write_report(&delete_outcome, format, output, |_, _| Ok(()))?,
+    } else {
+        DeleteEdit {
+            modules_root: &args.edit.modules_root,
+            paths: paths_abs,
+            documents: None,
+        }
+    };
+    // Even empty owners appear in entry fanout and the declared priority.
+    // The check validates their removal and stages the priority update.
+    let edit = GraphEdit {
+        verb: MutationVerb::Delete,
+        modules_root: &args.edit.modules_root,
+        dry_run: args.edit.dry_run,
+        check: EditCheck::Claims(args.edit.gate(source_context)?),
+        assessment: effect_context.as_ref(),
     }
-    Ok(())
+    .run(stderr, edit, OutcomeRule::Write)?;
+    Ok(DeleteOutcome {
+        outcome: edit.outcome,
+        effect_relocation_assessment: edit.effect_relocation_assessment,
+    })
+}
+
+/// A deletion's file plan. With an assessment, `paths` are the physical
+/// entries [`resolve_delete_plan`] mapped to the candidate's logical modules.
+struct DeleteEdit<'a> {
+    modules_root: &'a Path,
+    paths: Vec<PathBuf>,
+    /// Candidate documents and deleted logical modules, built only for an
+    /// assessment.
+    documents: Option<(ModuleDocs, BTreeSet<String>)>,
+}
+
+impl EditPlan for DeleteEdit<'_> {
+    fn documents(&self) -> Option<CandidateDocs<'_>> {
+        self.documents
+            .as_ref()
+            .map(|(docs, deleted)| CandidateDocs { docs, deleted })
+    }
+
+    fn post_spec(&self) -> Result<PostEditSpec> {
+        match self.documents() {
+            Some(candidate) => candidate.post_spec(),
+            None => post_delete_spec(self.modules_root, &self.paths),
+        }
+    }
+
+    /// Best-effort atomic (collect-then-remove), but cannot roll back a
+    /// partial removal if the filesystem fails midway.
+    fn write(self, dry_run: bool) -> Result<(Vec<String>, Vec<String>)> {
+        if !dry_run {
+            for path in &self.paths {
+                fs::remove_file(path).with_context(|| format!("deleting {}", path.display()))?;
+            }
+        }
+        Ok((
+            Vec::new(),
+            self.paths
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect(),
+        ))
+    }
 }
 
 /// A requested assessment resolves each path to one physical directory entry,
@@ -934,30 +942,6 @@ fn directory_entry_identity(path: &Path) -> Result<PathBuf> {
         )
     })?;
     Ok(parent.join(filename))
-}
-
-/// Delete the given absolute paths (or, in `dry_run` mode, simply
-/// return what would be deleted).
-///
-/// The caller is responsible for resolving relative paths and for
-/// the empty/non-empty + gate decision; this function is the
-/// filesystem half of `run_delete`.
-pub fn delete_modules(paths: &[PathBuf], dry_run: bool) -> Result<DeleteSummary> {
-    if dry_run {
-        return Ok(DeleteSummary {
-            deleted: paths.to_vec(),
-            dry_run: true,
-        });
-    }
-    let mut deleted: Vec<PathBuf> = Vec::new();
-    for p in paths {
-        fs::remove_file(p).with_context(|| format!("deleting {}", p.display()))?;
-        deleted.push(p.clone());
-    }
-    Ok(DeleteSummary {
-        deleted,
-        dry_run: false,
-    })
 }
 
 fn resolve_module_file(root: &Path, path: &Path) -> PathBuf {

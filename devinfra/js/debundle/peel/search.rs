@@ -3,7 +3,7 @@
 use serde::Serialize;
 use spec::ModulePath;
 
-use super::assignment::{AssignmentProblem, SourceUnitAssignment};
+use super::assignment::SourceUnitAssignment;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -84,11 +84,4 @@ pub struct SearchReport {
     pub changes: Vec<SourceUnitAssignment>,
     #[serde(skip)]
     pub import_order: Vec<ModulePath>,
-}
-
-pub fn search(
-    problem: &AssignmentProblem<'_>,
-    options: &SearchOptions,
-) -> anyhow::Result<SearchReport> {
-    super::placement::search(problem, options)
 }

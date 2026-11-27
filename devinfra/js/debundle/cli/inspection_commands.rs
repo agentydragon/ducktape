@@ -273,9 +273,7 @@ fn describe_ids(args: &DescribeArgs) -> Result<Vec<String>> {
 }
 
 pub(super) fn validate_describe_query(args: &DescribeArgs) -> Result<ValidatedDescribeQuery> {
-    if args.limit == Some(0) {
-        bail!("--limit must be greater than zero; use --all for exhaustive results");
-    }
+    crate::ensure_explicit_limit(args.limit, args.all)?;
     let ids = describe_ids(args)?;
     // Preserve the early unsupported-prefix check. The verified, chunk-scoped
     // module index is built after provenance preflight in `run_describe`.

@@ -164,6 +164,13 @@ private def coreExpr (shadowed : Bool) (expr : CoreJS.Expr) (operand := false) :
       | .ge => pure ">="
     return node "BinaryExpression" [("operator", .str operator),
       ("left", ← coreExpr shadowed left true), ("right", ← coreExpr shadowed right true)]
+  | .logical op left right => do
+    let operator ← match op with
+      | .and => pure "&&"
+      | .or => pure "||"
+      | .nullish => pure "??"
+    return node "LogicalExpression" [("operator", .str operator),
+      ("left", ← coreExpr shadowed left true), ("right", ← coreExpr shadowed right true)]
   | _ => throw "unsupported CoreJS initializer for direct printing"
 
 private def coreStatement (shadowed : Bool) : CoreJS.Stmt → Except String Json

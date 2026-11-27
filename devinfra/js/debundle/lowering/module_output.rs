@@ -678,8 +678,7 @@ fn build_module_output(
     let source_unit_ids = context
         .assignment_analysis
         .inputs()
-        .source_unit_report_ids_for_bindings(binding_ids.iter())
-        .expect("module report bindings belong to the analysis chunk");
+        .report_source_unit_ids_for_bindings(binding_ids.iter());
     // Module-level `comment:` from the spec lands at the very top of
     // the emitted file (above the lowerer's pragma block), separated
     // from the pragmas by a blank `//` line so the human-readable

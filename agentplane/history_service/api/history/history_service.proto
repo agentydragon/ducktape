@@ -11,6 +11,7 @@ import "agentplane/proto/event_log.proto";
 import "agentplane/proto/session.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 
 service HistoryService {
@@ -494,7 +495,14 @@ message WatchSessionSummariesRequest {
 }
 
 // A fresh snapshot is sent on each connection. Session IDs are bounded as in BatchGetSessionSummaries.
-message SelectedSessionSummaries { repeated string session_ids = 1; }
+message SelectedSessionSummaries {
+  repeated string session_ids = 1;
+  // The `SessionSummary` fields to send, as proto field paths such as `last_event_at` or
+  // `attached.spec.model`. A summary frame is sent only when one of these fields changes, and carries
+  // the current value of each; `session_id` is always sent. Unknown paths and paths through a repeated
+  // field, and an empty set, are INVALID_ARGUMENT.
+  google.protobuf.FieldMask field_mask = 2;
+}
 
 message WatchSessionSummariesResponse {
   oneof observation {
