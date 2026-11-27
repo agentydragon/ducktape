@@ -171,6 +171,21 @@ private def singletonSourceShape (input : Json) : Except String Json := do
     Json.mkObj [("name", toJson m.name), ("body", toJson (m.body.map fun (id, stmt) =>
       (id, stmt.bindings.map Prod.fst))), ("exports", toJson m.exports)]))]
 
+/-- Inspect authenticated source units before any constructor-specific admission checks. -/
+private def sourceClassification (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let text ← source.getObjValAs? String "sourceText"
+  let entry ← input.getObjValAs? String "entry"
+  let classified ← CoreJS.AuthenticatedSource.decodeSourceClassification source text entry
+  let m := classified.source
+  return Json.mkObj [
+    ("imports", toJson (m.imports.map fun i => (i.source, i.names))),
+    ("exports", toJson m.exports),
+    ("units", toJson (classified.sourceItems.map CoreJS.LinkedInput.SourceItem.ordinal)),
+    ("body", toJson (m.body.map fun (id, stmt) => Json.mkObj [
+      ("id", toJson id), ("bindings", toJson (stmt.bindings.map Prod.fst)), ("free", toJson stmt.free),
+      ("functionDeclaration", toJson (match stmt with | .funDecl _ => true | _ => false))]))]
+
 /-- Check the actual indexed decoder, source-derived planner bundle and
 authored order-kept request for a top-level lexical inline export. -/
 private def indexedInlinePlan (input : Json) : Except String Json := do
@@ -202,6 +217,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "structuralSparseHole" => pure (structuralSparseHole (← fixture.getObjVal? "input"))
       | "singletonSourceShape" => pure (singletonSourceShape (← fixture.getObjVal? "input"))
+      | "sourceClassification" => pure (sourceClassification (← fixture.getObjVal? "input"))
       | "inlineConstructor" => pure (inlineConstructor (← fixture.getObjVal? "input"))
       | "indexedInlinePlan" => pure (indexedInlinePlan (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))

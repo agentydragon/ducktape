@@ -1,0 +1,9 @@
+{
+  "entry": "_baseSortedUniq.js",
+  "order": ["sorted-uniq.mjs"],
+  "modules": {
+    "sorted-uniq.mjs": ["#1"],
+    "_baseSortedUniq.js": ["#0", "#2"]
+  },
+  "sequential": true
+}
