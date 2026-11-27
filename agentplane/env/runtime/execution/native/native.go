@@ -255,6 +255,10 @@ type Session struct {
 	attachments      int
 	expiry           *time.Timer
 	expiryGeneration uint64
+	// starting reserves process IDs whose Start is launching without mu held.
+	starting map[string]struct{}
+	// starts counts in-flight Starts; close waits for them so it also cleans up what they publish.
+	starts sync.WaitGroup
 }
 type process struct {
 	mu                 sync.Mutex
@@ -347,7 +351,7 @@ func (s *Server) OpenSession(resume string) (*Session, error) {
 		return nil, err
 	}
 	id := hex.EncodeToString(idb)
-	session := &Session{id: id, server: s, processes: make(map[string]*process), files: make(map[string]*os.File), attachments: 1, changed: make(chan struct{})}
+	session := &Session{id: id, server: s, processes: make(map[string]*process), starting: make(map[string]struct{}), files: make(map[string]*os.File), attachments: 1, changed: make(chan struct{})}
 	s.sessions[id] = session
 	return session, nil
 }
@@ -472,6 +476,9 @@ func (s *Session) close() {
 		return
 	}
 	s.closed = true
+	s.mu.Unlock()
+	s.starts.Wait()
+	s.mu.Lock()
 	ps := make([]*process, 0, len(s.processes))
 	for _, p := range s.processes {
 		ps = append(ps, p)
@@ -545,34 +552,22 @@ func (s *Session) Start(r StartRequest) error {
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return errors.New("session closed")
-	}
-	if len(s.processes) >= s.server.limits.MaxProcessesPerSession {
-		return errors.New("process limit reached")
-	}
-	if _, ok := s.processes[r.ProcessID]; ok {
-		return ErrProcessExists
-	}
 	if len(r.ProcessID) > 256 {
 		return fmt.Errorf("%w: process ID too long", ErrInvalidRequest)
 	}
-	for {
-		n := s.server.processCount.Load()
-		if n >= int64(s.server.limits.MaxProcesses) {
-			return errors.New("global process limit reached")
-		}
-		if s.server.processCount.CompareAndSwap(n, n+1) {
-			break
-		}
+	if err := s.reserve(r.ProcessID); err != nil {
+		return err
 	}
+	// The ID stays reserved while PATH lookup and the launcher run without s.mu.
 	started := false
 	defer func() {
 		if !started {
+			s.mu.Lock()
+			delete(s.starting, r.ProcessID)
+			s.mu.Unlock()
 			s.server.processCount.Add(-1)
 		}
+		s.starts.Done()
 	}()
 	executable := r.Argv[0]
 	if !strings.ContainsRune(executable, '/') {
@@ -692,7 +687,11 @@ func (s *Session) Start(r StartRequest) error {
 	if stderr != nil {
 		p.readers = append(p.readers, stderr)
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	started = true
+	delete(s.starting, r.ProcessID)
+	// A close that began during the launch waits on s.starts and then reclaims this process.
 	s.processes[r.ProcessID] = p
 	s.signalChange()
 	var reads sync.WaitGroup
@@ -719,6 +718,36 @@ func (s *Session) Start(r StartRequest) error {
 		p.notify()
 		p.mu.Unlock()
 	}()
+	return nil
+}
+
+// reserve claims a process ID and a global process slot for one Start.
+func (s *Session) reserve(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return errors.New("session closed")
+	}
+	if len(s.processes)+len(s.starting) >= s.server.limits.MaxProcessesPerSession {
+		return errors.New("process limit reached")
+	}
+	if _, ok := s.processes[id]; ok {
+		return ErrProcessExists
+	}
+	if _, ok := s.starting[id]; ok {
+		return ErrProcessExists
+	}
+	for {
+		n := s.server.processCount.Load()
+		if n >= int64(s.server.limits.MaxProcesses) {
+			return errors.New("global process limit reached")
+		}
+		if s.server.processCount.CompareAndSwap(n, n+1) {
+			break
+		}
+	}
+	s.starting[id] = struct{}{}
+	s.starts.Add(1)
 	return nil
 }
 
@@ -882,14 +911,15 @@ func (s *Session) reclaim(id string, p *process) {
 		s.mu.Unlock()
 		return
 	}
-	p.requestReapLocked()
 	delete(s.processes, id)
+	// Releasing a managed process is a slow external call; other processes must not wait on s.mu.
+	s.mu.Unlock()
+	p.requestReapLocked()
 	p.outputDisabled = true
 	s.server.outputBytes.Add(-int64(p.bytes))
 	p.bytes = 0
 	p.chunks = nil
 	p.mu.Unlock()
-	s.mu.Unlock()
 	p.disposeWrites()
 }
 
