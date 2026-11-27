@@ -679,288 +679,93 @@ impl ExecutionIndex {
             return;
         }
         for input in selected {
-            let request = &input.evidence.spec_location;
-            if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
-                self.native_operation_input_errors.push(error);
-                continue;
-            }
-            if input.evidence.operation
-                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
-            {
-                let candidates: Vec<_> = self
-                    .hoisted_bindings
-                    .keys()
-                    .filter(|binding| binding.0.as_ref() == input.selected_binding)
-                    .filter(|binding| {
-                        self.hoisted_bindings
-                            .get(*binding)
-                            .and_then(|key| self.callable_spans.get(key))
-                            .is_some_and(|span| input.selected_statement_span.contains(*span))
-                    })
-                    .collect();
-                let [binding] = candidates.as_slice() else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} must select exactly one direct top-level function declaration"
-                    ));
-                    continue;
-                };
-                let Some(call) =
-                    self.direct_freeze_return_call(binding, input.selected_statement_span)
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} requires a nonasync top-level function whose sole statement directly returns one unshadowed Object.freeze call"
-                    ));
-                    continue;
-                };
-                let mut evidence = input.evidence.clone();
-                evidence.selected_binding = input.selected_binding.clone();
-                self.native_operation_input_evidence
-                    .insert(call.span.into(), evidence.clone());
-                self.resolved_native_operation_inputs
-                    .push(ResolvedNativeOperationInput {
-                        evidence,
-                        binding: (*binding).clone(),
-                        selected_statement_span: input.selected_statement_span,
-                        declaration_span: self.callable_spans[&self.hoisted_bindings[*binding]],
-                        initializer_span: call.span,
-                        call_span: call.span,
-                        initializer_ordinal: call.owner,
-                    });
-                continue;
-            }
-            let candidates: Vec<_> = self
-                .binding_declaration_writes
-                .iter()
-                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-                .flat_map(|(binding, writes)| {
-                    writes.iter().filter_map(move |write| {
-                        (write.simple_identifier
-                            && write.direct_top_level
-                            && input.selected_statement_span.contains(write.binding_span))
-                        .then_some((binding.clone(), write.clone()))
-                    })
-                })
-                .collect();
-            let [(binding, declaration)] = candidates.as_slice() else {
-                self.native_operation_input_errors.push(format!(
-                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                    input.selected_binding,
-                    candidates.len()
-                ));
-                continue;
-            };
-            if matches!(
-                input.evidence.operation,
-                NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-            ) {
-                let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} must select a direct supported Set constructor initializer"
-                    ));
-                    continue;
-                };
-                let ValueExpr::Binding(constructor) = callee.as_ref() else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} must select a direct uncomputed Set identifier"
-                    ));
-                    continue;
-                };
-                if !self.is_unshadowed_primitive_set_initializer(declaration, constructor) {
-                    self.native_operation_input_errors
-                        .push(format!(
-                            "{request} requires a direct unshadowed new Set([primitive literals or earlier stable primitive bindings]) operation with one dense nonspread array literal"
-                        ));
-                    continue;
-                }
-                let Some(call) = self.top_calls[declaration.owner.0]
-                    .iter()
-                    .find(|call| CallSite::from(call.span) == *call_site)
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer resolves to a direct top-level constructor site"
-                    ));
-                    continue;
-                };
-                if call.kind != CallKind::New || call.has_spread || call.caller.is_some() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} must select an ordinary direct nonspread constructor site"
-                    ));
-                    continue;
-                }
-                let mut evidence = input.evidence.clone();
-                evidence.selected_binding = input.selected_binding.clone();
-                self.native_operation_input_evidence
-                    .insert(*call_site, evidence.clone());
-                self.resolved_native_operation_inputs
-                    .push(ResolvedNativeOperationInput {
-                        evidence,
-                        binding: binding.clone(),
-                        selected_statement_span: input.selected_statement_span,
-                        declaration_span: declaration.binding_span,
-                        initializer_span: declaration.initializer_span.unwrap_or(call.span),
-                        call_span: call.span,
-                        initializer_ordinal: declaration.owner,
-                    });
-                continue;
-            }
-            let binding = (*binding).clone();
-            let declaration = (*declaration).clone();
-            if declaration.initializer.is_none() {
-                self.native_operation_input_errors.push(format!(
-                    "{request} selected `{}` without an initializer",
-                    input.selected_binding
-                ));
-                continue;
-            }
-            let Some(initializers) =
-                native_operation_initializers(&declaration, input.evidence.operation)
-            else {
-                let object_shape = if input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty)
-                {
-                    ", or an object containing only direct empty Map data fields"
-                } else {
-                    ""
-                };
-                self.native_operation_input_errors.push(format!(
-                    "{request} must select a direct top-level binding initialized by a {}{object_shape}",
-                    native_operation_call_name(input.evidence.operation)
-                ));
-                continue;
-            };
-            if declaration.empty_map_object_sites.is_some()
-                && self.binding_declaration_writes[&binding].len() != 1
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} must select one unambiguous canonical object binding declaration"
-                ));
-                continue;
-            }
-            for (callee, args, call_site) in initializers {
-                let call = match self.direct_native_initializer_call(
-                    input.evidence.operation,
-                    &declaration,
-                    call_site,
-                ) {
-                    Ok(call) => call,
-                    Err(reason) => {
-                        self.native_operation_input_errors
-                            .push(format!("{request} {reason}"));
-                        continue;
-                    }
-                };
-                if let Some(reason) = self.native_operation_call_shape_error(
-                    input.evidence.operation,
-                    callee,
-                    args,
-                    call_site,
-                    call,
-                ) {
-                    self.native_operation_input_errors
-                        .push(format!("{request} {reason}"));
-                    continue;
-                }
-                let call_span = call.span;
-                let mut evidence = input.evidence.clone();
-                evidence.selected_binding = input.selected_binding.clone();
-                self.native_operation_input_evidence
-                    .insert(call_site, evidence.clone());
-                self.resolved_native_operation_inputs
-                    .push(ResolvedNativeOperationInput {
-                        evidence,
-                        binding: binding.clone(),
-                        selected_statement_span: input.selected_statement_span,
-                        declaration_span: declaration.binding_span,
-                        initializer_span: declaration.initializer_span.unwrap_or(call_span),
-                        call_span,
-                        initializer_ordinal: declaration.owner,
-                    });
-            }
+            self.validate_selected_native_operation_input(input);
         }
 
         for input in resolved {
-            let request = &input.evidence.spec_location;
-            if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
-                self.native_operation_input_errors.push(error);
-                continue;
-            }
-            if input.evidence.operation
-                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+            self.revalidate_resolved_native_operation_input(input);
+        }
+
+        self.drop_conflicting_native_operation_inputs();
+    }
+
+    fn validate_selected_native_operation_input(&mut self, input: &SelectedNativeOperationInput) {
+        let request = &input.evidence.spec_location;
+        if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
+            self.native_operation_input_errors.push(error);
+            return;
+        }
+        if input.evidence.operation
+            == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+        {
+            self.resolve_selected_object_freeze_input(input);
+            return;
+        }
+        let candidates: Vec<_> = self
+            .binding_declaration_writes
+            .iter()
+            .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
+            .flat_map(|(binding, writes)| {
+                writes.iter().filter_map(move |write| {
+                    (write.simple_identifier
+                        && write.direct_top_level
+                        && input.selected_statement_span.contains(write.binding_span))
+                    .then_some((binding.clone(), write.clone()))
+                })
+            })
+            .collect();
+        let [(binding, declaration)] = candidates.as_slice() else {
+            self.native_operation_input_errors.push(format!(
+                "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
+                input.selected_binding,
+                candidates.len()
+            ));
+            return;
+        };
+        if matches!(
+            input.evidence.operation,
+            NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+        ) {
+            self.resolve_selected_set_input(input, binding, declaration);
+            return;
+        }
+        let binding = (*binding).clone();
+        let declaration = (*declaration).clone();
+        if declaration.initializer.is_none() {
+            self.native_operation_input_errors.push(format!(
+                "{request} selected `{}` without an initializer",
+                input.selected_binding
+            ));
+            return;
+        }
+        let Some(initializers) =
+            native_operation_initializers(&declaration, input.evidence.operation)
+        else {
+            let object_shape = if input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty)
             {
-                let is_same = self
-                    .direct_freeze_return_call(&input.binding, input.selected_statement_span)
-                    .is_some_and(|call| {
-                        call.span == input.call_span
-                            && call.owner == input.initializer_ordinal
-                            && input.declaration_span
-                                == self.callable_spans[&self.hoisted_bindings[&input.binding]]
-                            && input.initializer_span == call.span
-                            && input.binding.0.as_ref() == input.evidence.selected_binding
-                    });
-                if !is_same {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer identifies the same direct unshadowed Object.freeze return call"
-                    ));
-                    continue;
-                }
-                self.native_operation_input_evidence
-                    .insert(input.call_span.into(), input.evidence.clone());
-                self.resolved_native_operation_inputs.push(input.clone());
-                continue;
-            }
-            let Some([declaration]) = self
-                .binding_declaration_writes
-                .get(&input.binding)
-                .map(Vec::as_slice)
-            else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer resolves to one canonical binding declaration"
-                ));
-                continue;
+                ", or an object containing only direct empty Map data fields"
+            } else {
+                ""
             };
-            if matches!(
-                input.evidence.operation,
-                NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-            ) {
-                let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer selects a direct Set constructor initializer"
-                    ));
-                    continue;
-                };
-                let is_same = matches_resolved_native_initializer(input, declaration, *call_site)
-                    && matches!(callee.as_ref(), ValueExpr::Binding(constructor)
-                        if self.is_unshadowed_primitive_set_initializer(declaration, constructor));
-                if !is_same {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer identifies the same direct unshadowed Set initializer"
-                    ));
-                    continue;
-                }
-                self.native_operation_input_evidence
-                    .insert(*call_site, input.evidence.clone());
-                self.resolved_native_operation_inputs.push(input.clone());
-                continue;
-            }
-            let Some((callee, args, call_site)) =
-                native_operation_initializers(declaration, input.evidence.operation).and_then(
-                    |initializers| {
-                        initializers
-                            .into_iter()
-                            .find(|(_, _, site)| *site == CallSite::from(input.call_span))
-                    },
-                )
-            else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer selects the same direct native initializer site"
-                ));
-                continue;
-            };
+            self.native_operation_input_errors.push(format!(
+                "{request} must select a direct top-level binding initialized by a {}{object_shape}",
+                native_operation_call_name(input.evidence.operation)
+            ));
+            return;
+        };
+        if declaration.empty_map_object_sites.is_some()
+            && self.binding_declaration_writes[&binding].len() != 1
+        {
+            self.native_operation_input_errors.push(format!(
+                "{request} must select one unambiguous canonical object binding declaration"
+            ));
+            return;
+        }
+        for (callee, args, call_site) in initializers {
             let call = match self.direct_native_initializer_call(
                 input.evidence.operation,
-                declaration,
+                &declaration,
                 call_site,
             ) {
                 Ok(call) => call,
@@ -977,23 +782,243 @@ impl ExecutionIndex {
                 call_site,
                 call,
             ) {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer identifies the selected operation: {reason}"
-                ));
+                self.native_operation_input_errors
+                    .push(format!("{request} {reason}"));
                 continue;
             }
-            let is_same = matches_resolved_native_initializer(input, declaration, call_site);
+            let call_span = call.span;
+            let mut evidence = input.evidence.clone();
+            evidence.selected_binding = input.selected_binding.clone();
+            self.native_operation_input_evidence
+                .insert(call_site, evidence.clone());
+            self.resolved_native_operation_inputs
+                .push(ResolvedNativeOperationInput {
+                    evidence,
+                    binding: binding.clone(),
+                    selected_statement_span: input.selected_statement_span,
+                    declaration_span: declaration.binding_span,
+                    initializer_span: declaration.initializer_span.unwrap_or(call_span),
+                    call_span,
+                    initializer_ordinal: declaration.owner,
+                });
+        }
+    }
+
+    fn resolve_selected_object_freeze_input(&mut self, input: &SelectedNativeOperationInput) {
+        let request = &input.evidence.spec_location;
+        let candidates: Vec<_> = self
+            .hoisted_bindings
+            .keys()
+            .filter(|binding| binding.0.as_ref() == input.selected_binding)
+            .filter(|binding| {
+                self.hoisted_bindings
+                    .get(*binding)
+                    .and_then(|key| self.callable_spans.get(key))
+                    .is_some_and(|span| input.selected_statement_span.contains(*span))
+            })
+            .collect();
+        let [binding] = candidates.as_slice() else {
+            self.native_operation_input_errors.push(format!(
+                "{request} must select exactly one direct top-level function declaration"
+            ));
+            return;
+        };
+        let Some(call) = self.direct_freeze_return_call(binding, input.selected_statement_span)
+        else {
+            self.native_operation_input_errors.push(format!(
+                "{request} requires a nonasync top-level function whose sole statement directly returns one unshadowed Object.freeze call"
+            ));
+            return;
+        };
+        let mut evidence = input.evidence.clone();
+        evidence.selected_binding = input.selected_binding.clone();
+        self.native_operation_input_evidence
+            .insert(call.span.into(), evidence.clone());
+        self.resolved_native_operation_inputs
+            .push(ResolvedNativeOperationInput {
+                evidence,
+                binding: (*binding).clone(),
+                selected_statement_span: input.selected_statement_span,
+                declaration_span: self.callable_spans[&self.hoisted_bindings[*binding]],
+                initializer_span: call.span,
+                call_span: call.span,
+                initializer_ordinal: call.owner,
+            });
+    }
+
+    fn resolve_selected_set_input(
+        &mut self,
+        input: &SelectedNativeOperationInput,
+        binding: &Id,
+        declaration: &BindingDeclarationWrite,
+    ) {
+        let request = &input.evidence.spec_location;
+        let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref() else {
+            self.native_operation_input_errors.push(format!(
+                "{request} must select a direct supported Set constructor initializer"
+            ));
+            return;
+        };
+        let ValueExpr::Binding(constructor) = callee.as_ref() else {
+            self.native_operation_input_errors.push(format!(
+                "{request} must select a direct uncomputed Set identifier"
+            ));
+            return;
+        };
+        if !self.is_unshadowed_primitive_set_initializer(declaration, constructor) {
+            self.native_operation_input_errors
+                .push(format!(
+                    "{request} requires a direct unshadowed new Set([primitive literals or earlier stable primitive bindings]) operation with one dense nonspread array literal"
+                ));
+            return;
+        }
+        let Some(call) = self.top_calls[declaration.owner.0]
+            .iter()
+            .find(|call| CallSite::from(call.span) == *call_site)
+        else {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer resolves to a direct top-level constructor site"
+            ));
+            return;
+        };
+        if call.kind != CallKind::New || call.has_spread || call.caller.is_some() {
+            self.native_operation_input_errors.push(format!(
+                "{request} must select an ordinary direct nonspread constructor site"
+            ));
+            return;
+        }
+        let mut evidence = input.evidence.clone();
+        evidence.selected_binding = input.selected_binding.clone();
+        self.native_operation_input_evidence
+            .insert(*call_site, evidence.clone());
+        self.resolved_native_operation_inputs
+            .push(ResolvedNativeOperationInput {
+                evidence,
+                binding: binding.clone(),
+                selected_statement_span: input.selected_statement_span,
+                declaration_span: declaration.binding_span,
+                initializer_span: declaration.initializer_span.unwrap_or(call.span),
+                call_span: call.span,
+                initializer_ordinal: declaration.owner,
+            });
+    }
+
+    fn revalidate_resolved_native_operation_input(&mut self, input: &ResolvedNativeOperationInput) {
+        let request = &input.evidence.spec_location;
+        if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
+            self.native_operation_input_errors.push(error);
+            return;
+        }
+        if input.evidence.operation
+            == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+        {
+            let is_same = self
+                .direct_freeze_return_call(&input.binding, input.selected_statement_span)
+                .is_some_and(|call| {
+                    call.span == input.call_span
+                        && call.owner == input.initializer_ordinal
+                        && input.declaration_span
+                            == self.callable_spans[&self.hoisted_bindings[&input.binding]]
+                        && input.initializer_span == call.span
+                        && input.binding.0.as_ref() == input.evidence.selected_binding
+                });
             if !is_same {
                 self.native_operation_input_errors.push(format!(
-                    "{request} no longer identifies the same direct unshadowed native initializer"
+                    "{request} no longer identifies the same direct unshadowed Object.freeze return call"
                 ));
-                continue;
+                return;
             }
             self.native_operation_input_evidence
-                .insert(call_site, input.evidence.clone());
+                .insert(input.call_span.into(), input.evidence.clone());
             self.resolved_native_operation_inputs.push(input.clone());
+            return;
         }
+        let Some([declaration]) = self
+            .binding_declaration_writes
+            .get(&input.binding)
+            .map(Vec::as_slice)
+        else {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer resolves to one canonical binding declaration"
+            ));
+            return;
+        };
+        if matches!(
+            input.evidence.operation,
+            NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+        ) {
+            let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
+            else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer selects a direct Set constructor initializer"
+                ));
+                return;
+            };
+            let is_same = matches_resolved_native_initializer(input, declaration, *call_site)
+                && matches!(callee.as_ref(), ValueExpr::Binding(constructor)
+                    if self.is_unshadowed_primitive_set_initializer(declaration, constructor));
+            if !is_same {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer identifies the same direct unshadowed Set initializer"
+                ));
+                return;
+            }
+            self.native_operation_input_evidence
+                .insert(*call_site, input.evidence.clone());
+            self.resolved_native_operation_inputs.push(input.clone());
+            return;
+        }
+        let Some((callee, args, call_site)) =
+            native_operation_initializers(declaration, input.evidence.operation).and_then(
+                |initializers| {
+                    initializers
+                        .into_iter()
+                        .find(|(_, _, site)| *site == CallSite::from(input.call_span))
+                },
+            )
+        else {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer selects the same direct native initializer site"
+            ));
+            return;
+        };
+        let call = match self.direct_native_initializer_call(
+            input.evidence.operation,
+            declaration,
+            call_site,
+        ) {
+            Ok(call) => call,
+            Err(reason) => {
+                self.native_operation_input_errors
+                    .push(format!("{request} {reason}"));
+                return;
+            }
+        };
+        if let Some(reason) = self.native_operation_call_shape_error(
+            input.evidence.operation,
+            callee,
+            args,
+            call_site,
+            call,
+        ) {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer identifies the selected operation: {reason}"
+            ));
+            return;
+        }
+        let is_same = matches_resolved_native_initializer(input, declaration, call_site);
+        if !is_same {
+            self.native_operation_input_errors.push(format!(
+                "{request} no longer identifies the same direct unshadowed native initializer"
+            ));
+            return;
+        }
+        self.native_operation_input_evidence
+            .insert(call_site, input.evidence.clone());
+        self.resolved_native_operation_inputs.push(input.clone());
+    }
 
+    fn drop_conflicting_native_operation_inputs(&mut self) {
         let original_len = self.resolved_native_operation_inputs.len();
         let mut references = BTreeMap::new();
         let mut sites = BTreeSet::new();
