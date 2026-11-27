@@ -55,6 +55,10 @@ for (const [label, originalSource, expected] of [
   ["logical-or", "const seed = 0; export const result = seed || 7;\n", 7],
   ["logical-nullish", "const seed = null; export const result = seed ?? 7;\n", 7],
   ["logical-mixed", "const seed = 0; export const result = (seed ?? 1) || 7;\n", 7],
+  ["logical-and-skipped", "const seed = false; export const result = seed && 7;\n", false],
+  ["logical-or-skipped", "const seed = true; export const result = seed || 7;\n", true],
+  ["logical-nullish-skipped", "const seed = 0; export const result = seed ?? 7;\n", 0],
+  ["logical-skipped-read", "const seed = 7; export const result = false && seed;\n", false],
 ]) {
   writeFileSync(source, originalSource);
   const logicalOut = path.join(root, label);
@@ -67,7 +71,9 @@ for (const [label, originalSource, expected] of [
   assert.equal(checked.status, "certified", checked.log);
   const entryFile = path.join(logicalOut, "entry.mjs");
   const original = readFileSync(entryFile, "utf8");
-  const altered = original.replace(/7(?=\s*;)/, "8");
+  if (label === "logical-skipped-read") assert.match(original, /import\s*\{\s*seed\s*\}/);
+  const altered =
+    label === "logical-skipped-read" ? original.replace(/\bseed(?=\s*;)/, "8") : original.replace(/7(?=\s*;)/, "8");
   assert.notEqual(altered, original);
   writeFileSync(entryFile, altered);
   const tampered = split({ source, spec, out: logicalOut, require: "all-outcomes", checkOutput: true });
