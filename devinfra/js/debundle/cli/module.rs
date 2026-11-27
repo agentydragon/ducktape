@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
+use command_output::infallible;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::output_format::OutputFormat;
 use spec::LogicalModule;
@@ -327,56 +328,47 @@ pub fn run_merge(
             .collect(),
     );
     outcome.warn_if_unassessed_write(stderr)?;
-    match OutputFormat::resolve(merge.edit.format) {
-        OutputFormat::Text => {
-            if is_batch {
-                command_output::write_line(
-                    output,
-                    format_args!("{action}: {} merge target(s)", plans.len()),
-                )?;
-                return Ok(());
-            }
-            let summary = &plans[0].summary;
-            if merge.edit.dry_run {
-                command_output::write_line(
-                    output,
-                    format_args!(
-                        "dry-run: would merge {} source(s) into {}",
-                        summary.merged_sources.len(),
-                        summary.target.display()
-                    ),
-                )?;
-            } else {
-                command_output::write_line(output, format_args!("{}", summary.summary_line()))?;
-            }
-        }
-        format if is_batch => {
-            let targets = plans
-                .iter()
-                .map(|p| p.summary.target.display().to_string())
-                .collect();
-            command_output::write_report(
-                &MergeBatchOutcome {
-                    outcome,
-                    targets,
-                    effect_relocation_assessment,
-                },
-                format,
-                output,
-                |_, _| Ok(()),
-            )?;
-        }
-        format => command_output::write_report(
-            &MergeOutcome {
+    let format = OutputFormat::resolve(merge.edit.format);
+    if is_batch {
+        let targets = plans
+            .iter()
+            .map(|p| p.summary.target.display().to_string())
+            .collect();
+        command_output::write_report(
+            &MergeBatchOutcome {
                 outcome,
-                target: plans[0].summary.target.display().to_string(),
+                targets,
                 effect_relocation_assessment,
             },
             format,
             output,
-            |_, _| Ok(()),
-        )?,
+            infallible(|_, text| {
+                text.push_str(&format!("{action}: {} merge target(s)", plans.len()))
+            }),
+        )?;
+        return Ok(());
     }
+    let summary = &plans[0].summary;
+    command_output::write_report(
+        &MergeOutcome {
+            outcome,
+            target: summary.target.display().to_string(),
+            effect_relocation_assessment,
+        },
+        format,
+        output,
+        infallible(|_, text| {
+            text.push_str(&if merge.edit.dry_run {
+                format!(
+                    "dry-run: would merge {} source(s) into {}",
+                    summary.merged_sources.len(),
+                    summary.target.display()
+                )
+            } else {
+                summary.summary_line()
+            })
+        }),
+    )?;
     Ok(())
 }
 
@@ -839,12 +831,12 @@ pub fn run_delete(
         effect_relocation_assessment,
     };
     delete_outcome.outcome.warn_if_unassessed_write(stderr)?;
-    match OutputFormat::resolve(args.edit.format) {
-        OutputFormat::Text => {
-            command_output::write_line(output, format_args!("{}", summary.summary_line()))?
-        }
-        format => command_output::write_report(&delete_outcome, format, output, |_, _| Ok(()))?,
-    }
+    command_output::write_report(
+        &delete_outcome,
+        OutputFormat::resolve(args.edit.format),
+        output,
+        infallible(|_, text| text.push_str(&summary.summary_line())),
+    )?;
     Ok(())
 }
 
