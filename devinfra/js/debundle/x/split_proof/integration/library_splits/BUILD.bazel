@@ -4,6 +4,25 @@ load("//devinfra/lint:linters.bzl", "eslint_test")
 
 npm_link_all_packages(name = "node_modules")
 
+js_test(
+    name = "lodash_is_length_test",
+    size = "small",
+    data = [
+        "lodash_is_length/default_export_list.mjs",
+        "lodash_is_length/default_expression.mjs",
+        "lodash_is_length/misplaced_export.json",
+        "lodash_is_length/split.json",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/lodash-es",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "lodash_is_length_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
+)
+
 js_binary(
     name = "prepare",
     data = glob(["entries/*.mjs"]) + [
@@ -100,6 +119,7 @@ js_library(
     srcs = glob([
         "*.mjs",
         "entries/*.mjs",
+        "lodash_is_length/*.mjs",
     ]),
 )
 
