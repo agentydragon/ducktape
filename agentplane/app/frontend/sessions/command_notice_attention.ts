@@ -18,7 +18,7 @@ export function noticeKey(receipt: Receipt): string {
 }
 
 function revisionKey(notice: CommandNoticeRevision): string {
-  return notice.outcomeCursor > 0n
+  return notice.outcomeCursor !== undefined
     ? JSON.stringify([notice.commandId, "execution", notice.outcomeCursor.toString()])
     : noticeKey(notice);
 }

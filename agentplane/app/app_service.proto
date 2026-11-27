@@ -203,8 +203,8 @@ message ThreadMetadataTarget {
 message CommandNoticeRevision {
   string command_id = 1;
   // Exactly one of receipt_version and outcome_cursor must be positive.
-  int64 receipt_version = 2;
-  int64 outcome_cursor = 3;
+  optional int64 receipt_version = 2;
+  optional int64 outcome_cursor = 3;
 }
 
 message CommandNoticeAcknowledgement {
