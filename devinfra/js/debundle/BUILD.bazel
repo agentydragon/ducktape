@@ -1139,7 +1139,12 @@ rust_prost_library(
 
 rust_library(
     name = "spec_wire",
-    srcs = ["spec_wire.rs"],
+    srcs = [
+        "spec_wire.rs",
+        "spec_wire/contracts.rs",
+        "spec_wire/selectors.rs",
+        "spec_wire/vendor_marks.rs",
+    ],
     edition = "2024",
     deps = [
         ":spec_wire_rust_proto",
