@@ -623,3 +623,35 @@ func TestRepackPreservesSmallerLegacySource(t *testing.T) {
 	}
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, through), want)
 }
+
+func TestRepackRetriesOnlyItsOwnDeadline(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	run := func(ctx context.Context, query string) error {
+		_, err := store.withJournalSessionLock(ctx, session.ID, func(txCtx context.Context, tx *sql.Tx, _ uint64) error {
+			_, err := tx.ExecContext(txCtx, query)
+			return err
+		})
+		return err
+	}
+	if err := run(t.Context(), "SELECT pg_sleep(5)"); !errors.Is(err, ErrJournalBusy) {
+		t.Fatalf("local hold deadline: %v", err)
+	}
+	if err := run(t.Context(), `DO $$ BEGIN RAISE EXCEPTION USING ERRCODE='57014', MESSAGE='external cancellation'; END $$`); err == nil || errors.Is(err, ErrJournalBusy) {
+		t.Fatalf("external cancellation was lost or marked retryable: %v", err)
+	}
+	store.DB().SetMaxOpenConns(1)
+	conn, err := store.DB().Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := run(t.Context(), "SELECT 1"); !errors.Is(err, ErrJournalBusy) {
+		t.Fatalf("local deadline waiting for connection: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	if err := run(ctx, "SELECT 1"); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrJournalBusy) {
+		t.Fatalf("caller's deadline: %v", err)
+	}
+}
