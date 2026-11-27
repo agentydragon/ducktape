@@ -129,7 +129,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend/transport:client",
-        "//agentplane/app/frontend/transport:stream_reader",
+        "//agentplane/app/frontend/transport:watch_collection",
         "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/app/frontend/ui:inline_name",
         "//agentplane/mcp_edge/api/connection:connection_service_pb",

@@ -114,8 +114,8 @@ ts_library(
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:query",
         "//agentplane/app/frontend/transport:response_fields",
-        "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend/transport:stream_status",
+        "//agentplane/app/frontend/transport:watch_collection",
         "//agentplane/app/frontend/ui:icons",
     ],
 )
@@ -155,6 +155,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
+        "//agentplane/app/frontend/actions/testing:proto_fixtures",
         "//agentplane/app/frontend/transport:response_fields",
         "//agentplane/app/frontend/transport:stream_status",
         "//agentplane/proto:identity_pb",

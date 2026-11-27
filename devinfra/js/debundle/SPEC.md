@@ -671,7 +671,7 @@ enumeration. Write and flush errors fail the run. Missing report roots and
 accepted dry runs that suppress reports refuse an explicit export request;
 rejected dry runs retain their existing report policy and can export.
 Repeatable `--effect-conflicts-chunk` requires the export flag and validates
-names against configured materialized chunks. It filters only S4 JSONL sinks:
+names against configured materialized chunks. It filters only `debundle_apply` JSONL sinks:
 source inputs, analysis/census selection, graphs and bounded summaries are
 unchanged. With no filter every materialized chunk can export.
 The Bazel pipeline exposes the same opt-in through `effect_conflicts_jsonl`

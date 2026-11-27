@@ -5,11 +5,17 @@ import {
   ListPushSubscriptionsResponseSchema,
   WatchPushSubscriptionsResponseSchema,
   type PushSubscription,
+  type PushSubscriptionChunk,
 } from "../../../../action_service/api/web_push/web_push_service_pb";
 import { Button, Code, Group, Paper, Stack, Switch, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { displayableError, fetchJson, HttpError } from "../../transport/client";
-import { type StreamConnection } from "../../transport/stream_reader";
+import {
+  useWatchCollection,
+  type CollectionConfig,
+  type CollectionFrame,
+  type CollectionWatchHandlers,
+} from "../../transport/watch_collection";
 import { followWatch } from "../../transport/watch_stream";
 
 import { notificationPreviewsEnabled, setNotificationPreviewsEnabled } from "./preview_preference";
@@ -33,44 +39,28 @@ async function pushJson(path: string, init?: RequestInit): Promise<JsonValue> {
   }
 }
 
+const DEVICES: CollectionConfig<PushSubscription, string> = {
+  kind: "Push subscription",
+  key: (subscription) => subscription.endpoint,
+  removal: { key: (endpoint) => endpoint },
+};
+
+function followDevices(
+  handlers: CollectionWatchHandlers<CollectionFrame<PushSubscription, PushSubscriptionChunk, string>>
+): () => void {
+  return followWatch(`${PUSH_PATH}/subscriptions:watch`, {
+    ...handlers,
+    onFrame: (result) => {
+      const { frame } = fromJson(WatchPushSubscriptionsResponseSchema, result);
+      handlers.onFrame(frame.case === "removedEndpoint" ? { case: "removed", value: frame.value } : frame);
+    },
+  });
+}
+
+const deviceChunk = (chunk: PushSubscriptionChunk): PushSubscription[] => chunk.pushSubscriptions;
+
 export function PushSettings(): JSX.Element {
-  const [devices, setDevices] = useState<PushSubscription[] | null>(null);
-  const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
-  useEffect(() => {
-    let snapshot: PushSubscription[] = [];
-    return followWatch(`${PUSH_PATH}/subscriptions:watch`, {
-      onOpen: () => {
-        snapshot = [];
-      },
-      onConnection: setConnection,
-      onFrame: (result) => {
-        const message = fromJson(WatchPushSubscriptionsResponseSchema, result as JsonValue);
-        switch (message.frame.case) {
-          case "snapshot":
-            snapshot.push(...message.frame.value.pushSubscriptions);
-            break;
-          case "snapshotComplete":
-            setDevices(snapshot);
-            break;
-          case "upsert": {
-            const changed = message.frame.value;
-            setDevices((current) => [
-              ...(current ?? []).filter((value) => value.endpoint !== changed.endpoint),
-              changed,
-            ]);
-            break;
-          }
-          case "removedEndpoint":
-            setDevices((current) => (current ?? []).filter((value) => value.endpoint !== message.frame.value));
-            break;
-          case "reconnectRequired":
-            break;
-          case undefined:
-            throw new Error("Push subscription watch returned an empty frame.");
-        }
-      },
-    });
-  }, []);
+  const { items: devices, connection, reset: setDevices } = useWatchCollection(DEVICES, followDevices, deviceChunk);
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

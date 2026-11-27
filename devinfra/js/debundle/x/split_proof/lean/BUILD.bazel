@@ -2386,6 +2386,14 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.ExactLiteralMove"],
     required_theorems = [
         "CoreJS.ExactLiteralMove.literal_closed",
+        "CoreJS.ExactLiteralMove.eval_logical_literal",
+        "CoreJS.ExactLiteralMove.eval_logical_literal_skipped",
+        "CoreJS.ExactLiteralMove.eval_logical_literal_selected",
+        "CoreJS.ExactLiteralMove.eval_logical_literal_low_fuel",
+        "CoreJS.ExactLiteralMove.logical_skipped_footprint",
+        "CoreJS.ExactLiteralMove.logical_skipped_env_independent",
+        "CoreJS.ExactLiteralMove.run_logical_skipped",
+        "CoreJS.ExactLiteralMove.swap_skipped_literal",
         "CoreJS.ExactLiteralMove.run_literal",
         "CoreJS.ExactLiteralMove.swap_literals",
         "CoreJS.ExactLiteralMove.linked_distinct",
@@ -2838,6 +2846,28 @@ lean_proof_test(
         "CoreJS.ExportRows.rows_scope_cells",
     ],
     deps = [":corejs_export_rows_link"],
+)
+
+lean_library(
+    name = "corejs_export_rows_order",
+    srcs = ["EsmSplit/CoreJS/ExportRowsOrder.lean"],
+    deps = [
+        ":corejs_export_rows_link",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_export_rows_order_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ExportRowsOrder"],
+    required_theorems = [
+        "CoreJS.ExportRows.rowAt_found",
+        "CoreJS.ExportRows.mkPlan_select_source_rows",
+        "CoreJS.ExportRows.select_ordered_rows",
+        "EsmSplit.mkPlan_module_ordered",
+    ],
+    deps = [":corejs_export_rows_order"],
 )
 
 lean_proof_test(

@@ -71,11 +71,16 @@ func (s *Store) transaction(ctx context.Context, operation string, f func(contex
 		// Migration 25's trigger invalidates a sampling recovery projection when an older
 		// binary appends a journal row. This transaction is running the projection-aware
 		// writer, which records dispatch and source-linked item metadata atomically.
-		if _, err := tx.ExecContext(ctx, `SELECT set_config('agentplane.sampler_indexed_recovery_writer', 'on', TRUE)`); err != nil {
+		if err := markIndexedRecoveryWriter(ctx, tx); err != nil {
 			return err
 		}
 		return f(ctx, tx)
 	})
+}
+
+func markIndexedRecoveryWriter(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `SELECT set_config('agentplane.sampler_indexed_recovery_writer', 'on', TRUE)`)
+	return err
 }
 
 func notify(ctx context.Context, tx *sql.Tx) error {

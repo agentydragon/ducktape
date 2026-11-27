@@ -398,7 +398,6 @@ function ControlCommandBubble({
       rowAttributes={{ "data-command-id": id }}
       bubbleAttributes={{
         className: "agentplane-control-command-bubble transcript-inspection-owner",
-        "data-has-action": action ? "true" : undefined,
         "data-model-change": modelChange ? "true" : undefined,
         onClick: entity ? revealEvidenceOnTap : undefined,
       }}

@@ -259,10 +259,21 @@ export class TestNdjsonWatch {
   readonly response: Response;
   readonly url: string;
   readonly signal: AbortSignal | undefined;
+  /** Whether this stream already sent its one snapshot. */
+  snapshotSent = false;
 
   static waitForOpen(url: string): Promise<TestNdjsonWatch> {
     const opened = TestNdjsonWatch.opened.get(url);
     if (opened !== undefined) return Promise.resolve(opened);
+    return new Promise((resolve) => {
+      const waiters = TestNdjsonWatch.openWaiters.get(url) ?? [];
+      waiters.push(resolve);
+      TestNdjsonWatch.openWaiters.set(url, waiters);
+    });
+  }
+
+  /** The next watch opened on `url`, even when one is already open there. */
+  static waitForNext(url: string): Promise<TestNdjsonWatch> {
     return new Promise((resolve) => {
       const waiters = TestNdjsonWatch.openWaiters.get(url) ?? [];
       waiters.push(resolve);
@@ -300,6 +311,7 @@ export class TestNdjsonWatch {
 
   sendActionRequests(value: readonly ActionRequest[]): void {
     if (this.controller === undefined) return;
+    this.snapshotSent = true;
     this.controller.enqueue(
       this.encoder.encode(
         `${JSON.stringify({ result: actionRequestsSnapshotProtoJson(value) })}\n${JSON.stringify({ result: actionRequestsSnapshotCompleteProtoJson() })}\n`
@@ -309,6 +321,7 @@ export class TestNdjsonWatch {
 
   sendActionGroups(value: readonly ActionGroup[]): void {
     if (this.controller === undefined) return;
+    this.snapshotSent = true;
     this.controller.enqueue(
       this.encoder.encode(
         `${JSON.stringify({ result: actionGroupsSnapshotProtoJson(value) })}\n${JSON.stringify({ result: actionGroupsSnapshotCompleteProtoJson() })}\n`
@@ -318,6 +331,7 @@ export class TestNdjsonWatch {
 
   sendMcpLinkages(value: readonly McpServerLinkage[]): void {
     if (this.controller === undefined) return;
+    this.snapshotSent = true;
     this.controller.enqueue(
       this.encoder.encode(
         `${JSON.stringify({ result: mcpLinkagesSnapshotProtoJson(value) })}\n${JSON.stringify({ result: mcpLinkagesSnapshotCompleteProtoJson() })}\n`
@@ -412,8 +426,25 @@ export async function mount(node: ReactNode): Promise<HTMLDivElement> {
   return container;
 }
 
-/** Pushes one snapshot down the latest stream, or the one opened on `url`; a string goes as the
- * frame's raw data. */
+/** Ends the watch open on `url` as a planned renewal does, and returns the one the page opens next. */
+export async function reopen(url: string): Promise<TestNdjsonWatch> {
+  const ended = TestNdjsonWatch.opened.get(url);
+  if (ended === undefined) throw new Error(`No watch is open for ${url}`);
+  const next = TestNdjsonWatch.waitForNext(url);
+  return act(async () => {
+    ended.sendRaw(JSON.stringify({ result: { reconnectRequired: {} } }));
+    ended.close();
+    await vi.waitFor(() => {
+      if (!ended.signal?.aborted) throw new Error("The ended watch was not released.");
+    });
+    // Skip the reconnect backoff.
+    window.dispatchEvent(new Event("online"));
+    return next;
+  });
+}
+
+/** Pushes one snapshot down the latest stream, or the one opened on `url`, on a fresh stream once
+ * that one sent its snapshot; a string goes as the frame's raw data. */
 export async function send(value: string | readonly ActionFixture[], url?: string): Promise<void> {
   let watchUrl =
     url === undefined
@@ -432,6 +463,9 @@ export async function send(value: string | readonly ActionFixture[], url?: strin
     watchUrl ??= url === undefined ? ACTION_REQUEST_WATCH : undefined;
     if (watchUrl !== undefined) watch = await TestNdjsonWatch.waitForOpen(watchUrl);
   }
+  // A stream sends one snapshot; a new one comes on the next stream.
+  if (watch !== undefined && watchUrl !== undefined && typeof value !== "string" && watch.snapshotSent)
+    watch = await reopen(watchUrl);
   if (watch !== undefined && typeof value !== "string") {
     await act(async () => {
       if (watchUrl === ACTION_GROUP_WATCH) {
