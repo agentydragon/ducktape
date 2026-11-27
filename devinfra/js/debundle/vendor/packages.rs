@@ -47,6 +47,19 @@ fn read_installed_package_metadata(package_name: &str, package_root: &Path) -> R
     )?)
 }
 
+/// A package root must exist before debundle reads anything under it. Both
+/// ways of getting one - an explicit override and a path derived from the
+/// packages root - can point at a directory that is not there.
+fn require_existing_package_root(package_name: &str, root: &Path) -> Result<()> {
+    if root.exists() {
+        return Ok(());
+    }
+    bail!(
+        "Package root not found for {package_name}: {}",
+        root.display()
+    );
+}
+
 fn resolve_package_root(
     package_name: &str,
     package_roots: &HashMap<String, PathBuf>,
@@ -54,12 +67,7 @@ fn resolve_package_root(
 ) -> Result<PathBuf> {
     if let Some(mapped) = package_roots.get(package_name) {
         let root = absolutize(mapped)?;
-        if !root.exists() {
-            bail!(
-                "Package root not found for {package_name}: {}",
-                root.display()
-            );
-        }
+        require_existing_package_root(package_name, &root)?;
         return Ok(root);
     }
     if !package_roots.is_empty() && packages_root.is_none() {
@@ -80,12 +88,7 @@ fn resolve_package_root(
         &packages_root,
         &format!("Package {package_name} escapes packages root"),
     )?;
-    if !package_root.exists() {
-        bail!(
-            "Package root not found for {package_name}: {}",
-            package_root.display()
-        );
-    }
+    require_existing_package_root(package_name, &package_root)?;
     Ok(package_root)
 }
 
