@@ -331,6 +331,5 @@ theorem certifySlice_sound (profile : CoreJS.HostProfile) (source providers file
     (result : Σ kind, PLift (SliceStatementFor profile source providers files P B S kind)) :
     SliceStatementFor profile source providers files P B S result.1 := result.2.down
 
-#print axioms certifySlice_sound
 
 end EsmSplit.LowerSplit

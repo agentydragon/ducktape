@@ -141,7 +141,6 @@ theorem nestedDependencyExtension (initializer : Expr) :
   rcases linked with ⟨order, _, _, preserved, dependencyCell, consumerCell, providerCell⟩
   exact ⟨by simpa [P, path] using order, preserved, dependencyCell, consumerCell, providerCell⟩
 
-#print axioms nestedDependencyExtension
 
 /-- The actual linker resolves both importer aliases and the public re-export to the same cells. -/
 theorem liveCells (w : World) (initializer : Expr) :
@@ -223,14 +222,5 @@ theorem wrongAlias_changes_run :
   rw [wrongAlias.1, wrongAlias.2] at h
   exact (by decide : (#["provider", "true true"] : Array String) ≠ #["provider", "false false"]) h
 
-#print axioms liveCells
-#print axioms providerPrefix
-#print axioms importerContinuation
-#print axioms linkedBoundary
-#print axioms allOutcomes
-#print axioms sameExports
-#print axioms wrongAlias
-#print axioms effectfulOnce
-#print axioms wrongAlias_changes_run
 
 end CoreJS.StaticProviderBoundary

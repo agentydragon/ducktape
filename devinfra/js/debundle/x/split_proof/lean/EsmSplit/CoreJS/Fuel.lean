@@ -514,7 +514,5 @@ theorem Ends.unique {P : Program} {r r' : Res W Unit} (h : Ends W P r) (h' : End
   obtain ⟨n', hn', hr'⟩ := h'
   rw [← fuel_mono hn hr (Nat.le_max_left n n'), ← fuel_mono hn' hr' (Nat.le_max_right n n')]
 
-#print axioms fuel_mono
-#print axioms Ends.unique
 
 end CoreJS

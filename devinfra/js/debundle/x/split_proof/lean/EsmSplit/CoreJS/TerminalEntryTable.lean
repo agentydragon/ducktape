@@ -49,6 +49,5 @@ theorem exact_exports {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     change md.namedExports B = row.names
     simpa [emptyNames] using ExportRows.exact_entry_exports matched selected glue
 
-#print axioms exact_exports
 
 end CoreJS.TerminalEntryTable

@@ -232,9 +232,5 @@ theorem same_inline_exports_of_declarations {B : EsmSplit.Bundle} {S : EsmSplit.
     rw [targetTable]
     rfl
 
-#print axioms inline_tables
-#print axioms same_inline_exports
-#print axioms same_inline_exports_of_declarations
-#print axioms run_of_schedule
 
 end CoreJS.IndexedReorder

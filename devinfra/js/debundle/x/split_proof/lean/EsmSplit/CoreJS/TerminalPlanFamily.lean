@@ -72,8 +72,5 @@ theorem family {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
   · intro w fuel
     exact (world_result consts valid footprints ordered name row entry found units unpublished glue rowFootprint sourceDefs w).choose_spec.2.2 fuel
 
-#print axioms entry_in_order
-#print axioms world_result
-#print axioms family
 
 end CoreJS.TerminalPlanFamily

@@ -42,6 +42,5 @@ theorem all_original_owners {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit
     rw [none] at h
     cases h.2
 
-#print axioms all_original_owners
 
 end CoreJS.TerminalPlanOwnership

@@ -157,10 +157,5 @@ theorem row_allocated_cells {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S
   obtain ⟨b, present⟩ := scope_cell_present allocated original
   exact ⟨a, b, original, generated, present⟩
 
-#print axioms declareTops_binding
-#print axioms declareTops_bindings
-#print axioms declareTops_present
-#print axioms scope_cell_present
-#print axioms row_allocated_cells
 
 end CoreJS.IndexedAllocatedCells

@@ -223,8 +223,5 @@ def constructSource (source : Json) (request : EsmSplit.Spec) :
   let result ← construct program request
   return ⟨program, result⟩
 
-#print axioms construct
-#print axioms constructSource
-#print axioms Construction.sound
 
 end CoreJS.HoistedFunctionSplit

@@ -193,16 +193,5 @@ def graphLink (S : EsmSplit.Spec) (x y z : String) (a b : Literal)
           pure loaded) (ready w) = _
     rw [graph_scopes S x y z a b c, lift, M.pure_bind, hoists, M.pure_bind] <;> rfl⟩
 
-#print axioms execution_perm
-#print axioms graph_tops
-#print axioms graph_regions
-#print axioms graphLink
-#print axioms graph_scopes
-#print axioms entry_imports
-#print axioms import_left
-#print axioms graph_loaded
-#print axioms graph_order
-#print axioms graph_of_checked
-#print axioms graph_of_plan
 
 end CoreJS.LiteralReorderGraph

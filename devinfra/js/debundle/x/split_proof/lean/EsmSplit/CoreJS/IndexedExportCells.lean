@@ -122,12 +122,5 @@ theorem distinct_source_cells {w : World} {s s' : State w}
   subst b
   exact different (declareTops_scope_injective allocated source xCell yCell)
 
-#print axioms body_lookup
-#print axioms frame_keys
-#print axioms scope_lookup_none
-#print axioms scope_lookup_decl
-#print axioms source_and_module_cell
-#print axioms source_and_import_cell
-#print axioms distinct_source_cells
 
 end CoreJS.IndexedExportCells

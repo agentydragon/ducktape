@@ -848,8 +848,5 @@ theorem capture_faithful (n : Nat) (env : Env) (s : Stmt) (N : List Name) (hN : 
   show (N.eraseDups.filterMap fun y => (env.vars.lookup y).map (y, ·)).lookup x = _
   simp only [lookup_filterMap, List.mem_eraseDups, hN x hx, ite_true]
 
-#print axioms same
-#print axioms runUnit_agree
-#print axioms capture_faithful
 
 end CoreJS

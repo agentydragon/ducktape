@@ -65,7 +65,5 @@ theorem sound {original request} (c : Construction original request) :
     simpa only [← c.sourceEq, ← programEq] using
       outcomes request c.x c.y c.z c.a c.b c.layout c.distinctXY c.distinctXZ c.distinctYZ w fuel
 
-#print axioms construct
-#print axioms sound
 
 end CoreJS.LiteralReorderConstruct
