@@ -13,17 +13,18 @@ use spec_modules::{coalesce_source_match_claims, module_path_from_file};
 use spec_tree::ModuleTreeScope;
 
 use binding::{
-    BindingIdentity, BindingLabel, apply_doc_changes, binding_effective_name,
-    binding_matches_in_doc, canonical_module_path, insert_annotation, member_effective_name,
-    source_match_readable, take_indexed, take_source_match_bindings,
+    BindingIdentity, BindingLabel, SnapshotEdit, binding_effective_name, binding_matches_in_doc,
+    canonical_module_path, insert_annotation, member_effective_name, source_match_readable,
+    take_indexed, take_source_match_bindings,
 };
 use candidate_assessment::ResolvedCandidateEffectAssessment;
 use edit_gate::{
-    Gate, LocalBindingResolution, ModuleDocs, SourceUnitClaimProjection,
+    CheckedImportOrder, Gate, LocalBindingResolution, ModuleDocs, SourceUnitClaimProjection,
     SourceUnitModuleAssignments, load_module_docs, post_edit_spec_from_docs, resolve_edit_claims,
     source_unit_module_assignments_from_projection,
 };
-use outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
+use graph_edit::{EditCheck, GraphEdit, OutcomeRule};
+use outcome::{MutationOutcome, MutationVerb};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SourceUnitApplyOutcome {
@@ -339,59 +340,42 @@ pub fn run_source_unit_apply(
     // Applying assignments keeps empty authored shells; use `modules delete`
     // when their removal is intended.
     let to_delete = BTreeSet::new();
-    let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
     // Resolve the entire scoped spec, prove the expected source-unit map, then
     // apply the same complete graph check used for the reviewed assignment.
-    Gate::Run {
-        graph_path: dependency_graph_path,
-        input: std::sync::Arc::clone(&graph_input),
-        source_root: Some(source_root),
-        source_context,
-        import_order: Some(import_order.clone()),
-    }
-    .check_source_units(
-        stderr,
+    let edit = GraphEdit {
+        verb: MutationVerb::Apply,
         modules_root,
-        &post_spec,
-        &expected_source_unit_modules,
-        scope.as_ref(),
-        &import_order,
+        dry_run,
+        check: EditCheck::SourceUnits {
+            gate: Gate::Run {
+                graph_path: dependency_graph_path,
+                input: std::sync::Arc::clone(&graph_input),
+                source_root: Some(source_root),
+                source_context,
+                import_order: Some(import_order.clone()),
+            },
+            assignments: &expected_source_unit_modules,
+            scope: scope.as_ref(),
+            import_order: &import_order,
+            staged_order: staged_tree_config,
+        },
+        assessment: effect_assessment_context,
+    }
+    .run(
+        stderr,
+        SnapshotEdit {
+            original: &original_docs,
+            docs: &docs,
+            deleted: &to_delete,
+        },
+        OutcomeRule::WriteOrUnchanged,
     )?;
-    let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
-        Some(context.assess(stderr, modules_root, &docs, &to_delete, &import_order)?)
-    } else {
-        None
-    };
-    if let Some(assessment) = &effect_relocation_assessment {
-        pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
-    }
-
-    let (mut files_written, files_deleted) =
-        apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
-    if let Some((config_path, config_bytes)) = staged_tree_config {
-        if !dry_run {
-            yaml_edit::write_bytes_atomic(config_path, &config_bytes)?;
-        }
-        files_written.push(config_path.display().to_string());
-    }
-    let action = if files_written.is_empty() && files_deleted.is_empty() {
-        MutationAction::Unchanged
-    } else {
-        MutationAction::for_write(dry_run)
-    };
     Ok(SourceUnitApplyOutcome {
-        outcome: MutationOutcome::ownership_edit(
-            MutationVerb::Apply,
-            action,
-            GateOutcome::ClaimsChecked,
-            effect_relocation_assessment.as_ref(),
-            files_written,
-            files_deleted,
-        ),
+        outcome: edit.outcome,
         source_units_reassigned,
         residual_source_units_claimed,
         synthesized_claims,
-        effect_relocation_assessment,
+        effect_relocation_assessment: edit.effect_relocation_assessment,
     })
 }
 
@@ -474,11 +458,11 @@ fn requested_source_unit_destinations(
 }
 
 /// The tree config rewritten with a changed global import priority, if any.
-fn staged_import_order_config<'a>(
-    tree_config: Option<&'a Path>,
+fn staged_import_order_config(
+    tree_config: Option<&Path>,
     dependency_graph: &DependencyGraphReport,
     import_order: &[ModulePath],
-) -> Result<Option<(&'a Path, Vec<u8>)>> {
+) -> Result<CheckedImportOrder> {
     Ok(if import_order != dependency_graph.import_order {
         let config_path = tree_config.context(
             "changing the global import priority requires --tree-config so the checked order can be persisted",
@@ -490,9 +474,12 @@ fn staged_import_order_config<'a>(
             &dependency_graph.chunk_id,
             import_order.to_vec(),
         )?;
-        Some((config_path, updated))
+        CheckedImportOrder::Update {
+            path: config_path.to_path_buf(),
+            bytes: updated,
+        }
     } else {
-        None
+        CheckedImportOrder::Unchanged
     })
 }
 

@@ -82,6 +82,24 @@ rust_library(
     ],
 )
 
+# The assess → check → write transaction shared by graph-backed ownership edits.
+rust_library(
+    name = "graph_edit",
+    srcs = ["graph_edit.rs"],
+    crate_root = "graph_edit.rs",
+    edition = "2024",
+    deps = [
+        ":candidate_assessment",
+        ":edit_gate",
+        ":outcome",
+        "//devinfra/js/debundle:gate",
+        "//devinfra/js/debundle:pipeline",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_tree",
+        "@crates//:anyhow",
+    ],
+)
+
 rust_library(
     name = "binding",
     srcs = ["binding.rs"],
@@ -90,10 +108,10 @@ rust_library(
     deps = [
         ":candidate_assessment",
         ":edit_gate",
+        ":graph_edit",
         ":outcome",
         "//devinfra/js/debundle:command_diagnostics",
         "//devinfra/js/debundle:gate",
-        "//devinfra/js/debundle:pipeline",
         "//devinfra/js/debundle/selectors/resolution:selector_outcome",
         "//devinfra/js/debundle/spec",
         "//devinfra/js/debundle/spec:spec_modules",
@@ -140,12 +158,11 @@ rust_library(
     deps = [
         ":candidate_assessment",
         ":edit_gate",
+        ":graph_edit",
         ":outcome",
-        "//devinfra/js/debundle:command_diagnostics",
         "//devinfra/js/debundle:command_output",
         "//devinfra/js/debundle:gate",
         "//devinfra/js/debundle:graph_provenance",
-        "//devinfra/js/debundle/peel",
         "//devinfra/js/debundle/spec",
         "//devinfra/js/debundle/spec:spec_modules",
         "//devinfra/js/debundle/spec:yaml_edit",
@@ -199,6 +216,7 @@ rust_library(
         ":comment",
         ":edit_gate",
         ":graph_compatibility",
+        ":graph_edit",
         ":module",
         ":outcome",
         "//devinfra/js/debundle:analysis",

@@ -115,6 +115,24 @@ impl GraphEditArgs {
         self.edits_with_graph() && !self.dry_run
     }
 
+    /// Warn that `--no-verify` leaves `edit` unchecked.
+    pub fn warn_no_verify(
+        &self,
+        stderr: &mut (dyn std::io::Write + Send),
+        edit: &str,
+    ) -> Result<()> {
+        if self.no_verify {
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "warning: --no-verify skips the realizability gate; {edit} will not be \
+                     re-checked for cross-module cycles."
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn gate<'a>(
         &'a self,
         source_context: Option<&'a VerifiedGraphSourceContext>,

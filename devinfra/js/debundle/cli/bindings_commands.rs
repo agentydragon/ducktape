@@ -3,8 +3,9 @@
 use crate::emit_report;
 use anyhow::{Context, Result};
 use binding::{
-    BindingsListFilters, Move, Rename, parse_batch_json, parse_move_triple, rename_binding,
-    rename_bindings, run_bindings_assign, run_bindings_list, run_bindings_unassign,
+    AssignOutcome, BindingsListFilters, Move, Rename, UnassignOutcome, parse_batch_json,
+    parse_move_triple, rename_binding, rename_bindings, run_bindings_assign, run_bindings_list,
+    run_bindings_unassign,
 };
 use candidate_assessment::CandidateEffectAssessmentArgs;
 use clap::{Args as ClapArgs, Subcommand};
@@ -12,9 +13,8 @@ use command_output::infallible;
 use comment::{BindingCommentArgs, run_binding_comment_cmd};
 use edit_gate::GraphEditArgs;
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
-use outcome::{MutationOutcome, MutationVerb, emit_gate_rejection_json};
+use outcome::{MutationOutcome, MutationVerb, report_edit};
 use peel::output_format::OutputFormat;
-use serde::Serialize;
 use std::path::PathBuf;
 
 /// Top-level `debundle bindings ...` argument node.
@@ -328,40 +328,43 @@ fn run_bindings_assign_cmd(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    let mut moves: Vec<Move> = Vec::new();
-    for t in &args.triples {
-        moves.push(parse_move_triple(t)?);
-    }
-    if let Some(path) = &args.batch {
-        moves.extend(parse_batch_json(&read_binding_batch(path)?)?);
-    }
-    let candidate_context = args.effect_assessment.resolve_for_verified_write(
-        &args.edit,
-        source_context,
-        analysis_engine_sha256,
-    )?;
-    // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
-    // every mutating verb uses; no verb can silently skip the
-    // realizability gate.
-    let gate = args.edit.gate(source_context)?;
-    let out = run_bindings_assign(
-        stderr,
-        &args.edit.modules_root,
-        moves,
-        args.edit.dry_run,
-        gate,
-        candidate_context.as_ref(),
-    )
-    .map_err(|err| emit_gate_rejection_json(output, MutationVerb::Assign, args.edit.format, err))?;
-    let format = OutputFormat::resolve(args.edit.format);
-    print_edit_outcome(
+    let format = args.edit.format;
+    let report = (|| {
+        let mut moves: Vec<Move> = Vec::new();
+        for t in &args.triples {
+            moves.push(parse_move_triple(t)?);
+        }
+        if let Some(path) = &args.batch {
+            moves.extend(parse_batch_json(&read_binding_batch(path)?)?);
+        }
+        let candidate_context = args.effect_assessment.resolve_for_verified_write(
+            &args.edit,
+            source_context,
+            analysis_engine_sha256,
+        )?;
+        // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
+        // every mutating verb uses; no verb can silently skip the
+        // realizability gate.
+        let gate = args.edit.gate(source_context)?;
+        run_bindings_assign(
+            stderr,
+            &args.edit.modules_root,
+            moves,
+            args.edit.dry_run,
+            gate,
+            candidate_context.as_ref(),
+        )
+    })();
+    report_edit(
         output,
         stderr,
-        &out.outcome,
-        &out,
-        out.moves_applied,
-        "move",
+        MutationVerb::Assign,
         format,
+        report,
+        |out: &AssignOutcome| &out.outcome,
+        infallible(|out: &AssignOutcome, text| {
+            text.push_str(&edit_line(&out.outcome, out.moves_applied, "move"))
+        }),
     )
 }
 
@@ -372,57 +375,41 @@ fn run_bindings_unassign_cmd(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    let candidate_context =
-        args.effect_assessment
-            .resolve(&args.edit, source_context, analysis_engine_sha256)?;
-    let gate = args.edit.gate(source_context)?;
-    let out = run_bindings_unassign(
-        stderr,
-        &args.edit.modules_root,
-        args.syms,
-        args.edit.dry_run,
-        gate,
-        candidate_context.as_ref(),
-    )
-    .map_err(|err| {
-        emit_gate_rejection_json(output, MutationVerb::Unassign, args.edit.format, err)
-    })?;
-    let format = OutputFormat::resolve(args.edit.format);
-    print_edit_outcome(
+    let format = args.edit.format;
+    let report = (|| {
+        let candidate_context =
+            args.effect_assessment
+                .resolve(&args.edit, source_context, analysis_engine_sha256)?;
+        let gate = args.edit.gate(source_context)?;
+        run_bindings_unassign(
+            stderr,
+            &args.edit.modules_root,
+            args.syms,
+            args.edit.dry_run,
+            gate,
+            candidate_context.as_ref(),
+        )
+    })();
+    report_edit(
         output,
         stderr,
-        &out.outcome,
-        &out,
-        out.unassigned,
-        "unassign",
+        MutationVerb::Unassign,
         format,
+        report,
+        |out: &UnassignOutcome| &out.outcome,
+        infallible(|out: &UnassignOutcome, text| {
+            text.push_str(&edit_line(&out.outcome, out.unassigned, "unassign"))
+        }),
     )
 }
 
-fn print_edit_outcome(
-    output: &mut dyn std::io::Write,
-    stderr: &mut (dyn std::io::Write + Send),
-    outcome: &MutationOutcome,
-    report: &impl Serialize,
-    count: usize,
-    noun: &str,
-    format: OutputFormat,
-) -> Result<()> {
-    outcome.warn_if_unassessed_write(stderr)?;
-    command_output::write_report(
-        report,
-        format,
-        output,
-        infallible(|_, text| {
-            text.push_str(&format!(
-                "{}: {count} {noun}(s); {} file(s) written, {} file(s) deleted",
-                outcome.action,
-                outcome.files_written.len(),
-                outcome.files_deleted.len()
-            ))
-        }),
+fn edit_line(outcome: &MutationOutcome, count: usize, noun: &str) -> String {
+    format!(
+        "{}: {count} {noun}(s); {} file(s) written, {} file(s) deleted",
+        outcome.action,
+        outcome.files_written.len(),
+        outcome.files_deleted.len()
     )
-    .map_err(Into::into)
 }
 
 pub(super) fn run(
