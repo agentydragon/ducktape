@@ -63,17 +63,20 @@ private theorem filterMap_fst_of_lookup {source : List (Nat × Stmt)}
       simp only [List.map_cons, List.filterMap_cons, hrow]
       exact congrArg (row :: ·) (ih hrest)
 
-private theorem indexedNumbered_source_rows (source : List (Nat × Stmt))
-    (keysNodup : (source.map Prod.fst).Nodup) :
-    (source.map Prod.fst).filterMap (indexedNumbered source) = source := by
-  apply filterMap_fst_of_lookup
-  intro row member
+private theorem indexedNumbered_of_mem {source : List (Nat × Stmt)} {row : Nat × Stmt}
+    (keysNodup : (source.map Prod.fst).Nodup) (member : row ∈ source) :
+    indexedNumbered source row.1 = some row := by
   obtain ⟨id, stmt⟩ := row
   have unique : ∀ other, (id, other) ∈ source → other = stmt := by
     intro other otherMember
     change (id, stmt) ∈ source at member
     exact (nodup_keys (k := id) (v := stmt) (v' := other) keysNodup member otherMember).symm
   simpa [indexedNumbered] using lookup_of_mem member unique
+
+private theorem indexedNumbered_source_rows (source : List (Nat × Stmt))
+    (keysNodup : (source.map Prod.fst).Nodup) :
+    (source.map Prod.fst).filterMap (indexedNumbered source) = source :=
+  filterMap_fst_of_lookup _ fun _ member => indexedNumbered_of_mem keysNodup member
 
 private theorem start_le_foldl_max (values : List Nat) (start : Nat) :
     start ≤ values.foldl max start := by
@@ -189,32 +192,73 @@ theorem split_indexed_loaded_ids (source : List (Nat × Stmt)) (B : EsmSplit.Bun
   rw [split_indexed_loaded_flat]
   exact indexedNumbered_ids source P.execOrder
 
-/-- Under the projected order condition, the actual loaded body rows equal
-the sparse source rows themselves: the metadata holes are absent, and every
-retained statement and original identity is preserved. -/
+/-- Loaded rows come from the original bodies at the plan's executable IDs. -/
+theorem split_indexed_loaded_at_ids (source : List (Nat × Stmt)) (B : EsmSplit.Bundle)
+    (P : EsmSplit.Plan) :
+    (splitProgramIndexed source B P).loaded.flatMap (·.body) =
+      (executableIds source P).filterMap (indexedNumbered source) := by
+  rw [split_indexed_loaded_flat, filterMap_eq_filter_isSome]
+  rfl
+
+theorem split_indexed_loaded_perm {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    (unique : (source.map Prod.fst).Nodup)
+    (covered : (executableIds source P).Perm (source.map Prod.fst)) :
+    ((splitProgramIndexed source B P).loaded.flatMap (·.body)).Perm source := by
+  rw [split_indexed_loaded_at_ids]
+  have projected := covered.filterMap (indexedNumbered source)
+  rw [indexedNumbered_source_rows source unique] at projected
+  exact projected
+
+/-- A checked row schedule agrees with the constructed body once the actual
+plan has its IDs in the same order. -/
+theorem split_indexed_loaded_of_ids {source scheduled : List (Nat × Stmt)}
+    {B : EsmSplit.Bundle} {P : EsmSplit.Plan} (unique : (source.map Prod.fst).Nodup)
+    (permuted : scheduled.Perm source) (ids : executableIds source P = scheduled.map Prod.fst) :
+    (splitProgramIndexed source B P).loaded.flatMap (·.body) = scheduled := by
+  rw [split_indexed_loaded_at_ids, ids]
+  exact filterMap_fst_of_lookup _ fun _ member => indexedNumbered_of_mem unique (permuted.mem_iff.1 member)
+
+/-- Under the projected order condition, the loaded rows equal the original sparse rows. -/
 theorem split_indexed_loaded_eq_source {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     (kept : OrderKept source P) :
     (splitProgramIndexed source B P).loaded.flatMap (·.body) = source := by
-  have keptIds := kept.2
-  unfold executableIds at keptIds
-  rw [split_indexed_loaded_flat, filterMap_eq_filter_isSome, keptIds]
+  rw [split_indexed_loaded_at_ids, kept.2]
   exact indexedNumbered_source_rows source kept.1
 
-/-- If the source rows are already ordered by their original identities, the
-real constructed program's sorted declaration list is exactly those rows. -/
-theorem split_indexed_tops_eq_source {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
-    (kept : OrderKept source P) (ordered : source.Pairwise fun a b => a.1 ≤ b.1) :
+/-- Sorting a covered executable permutation recovers the original declaration allocation order. -/
+theorem split_indexed_tops_of_perm {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    (unique : (source.map Prod.fst).Nodup)
+    (covered : (executableIds source P).Perm (source.map Prod.fst))
+    (ordered : source.Pairwise fun a b => a.1 ≤ b.1) :
     (splitProgramIndexed source B P).tops = source := by
   unfold Program.tops
-  rw [split_indexed_loaded_eq_source kept]
-  exact List.mergeSort_of_pairwise (ordered.imp fun hab => by simpa using hab)
+  have perm := split_indexed_loaded_perm (B := B) unique covered
+  have sortedPerm : (((splitProgramIndexed source B P).loaded.flatMap (·.body)).mergeSort
+      fun a b => decide (a.1 ≤ b.1)).Perm source :=
+    (List.mergeSort_perm _ _).trans perm
+  refine sortedPerm.eq_of_pairwise (le := fun a b => a.1 ≤ b.1) (fun a b ha hb hab hba => ?_) ?_ ordered
+  · obtain ⟨i, x⟩ := a
+    obtain ⟨j, y⟩ := b
+    have same : i = j := Nat.le_antisymm hab hba
+    subst j
+    congr 1
+    exact nodup_keys unique (sortedPerm.mem_iff.1 ha) hb
+  · exact (List.pairwise_mergeSort (fun _ _ _ h h' => by simp at h h' ⊢; omega)
+      (fun _ _ => by simp; omega) _).imp fun h => by simpa using h
+
+/-- An order-kept plan is a special case of covered allocation. -/
+theorem split_indexed_tops_eq_source {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    (kept : OrderKept source P) (ordered : source.Pairwise fun a b => a.1 ≤ b.1) :
+    (splitProgramIndexed source B P).tops = source :=
+  split_indexed_tops_of_perm kept.1 (kept.2 ▸ List.Perm.refl _) ordered
 
 /-- The actual constructor's region extent is the extent required by the
 sparse source rows. Every source row is assigned by the kept projection, and
 every constructed body row is selected by lookup from those same source rows.
 This also accounts for plan modules that are not reached from the entry. -/
-theorem split_indexed_regions_eq_source {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
-    (kept : OrderKept source P) :
+theorem split_indexed_regions_of_perm {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    (unique : (source.map Prod.fst).Nodup)
+    (covered : (executableIds source P).Perm (source.map Prod.fst)) :
     (splitProgramIndexed source B P).regions = (source.map fun row => row.1 + 1).foldl max 0 := by
   let extent := (source.map fun row => row.1 + 1).foldl max 0
   unfold Program.regions
@@ -235,20 +279,25 @@ theorem split_indexed_regions_eq_source {source : List (Nat × Stmt)} {B : EsmSp
     · right
       rcases List.mem_map.mp hmax with ⟨⟨id, stmt⟩, inSource, rowEq⟩
       have inIds : id ∈ source.map Prod.fst := List.mem_map.mpr ⟨(id, stmt), inSource, rfl⟩
-      have inFiltered : id ∈ executableIds source P := by rw [kept.2]; exact inIds
+      have inFiltered : id ∈ executableIds source P := covered.mem_iff.2 inIds
       have inExec : id ∈ P.execOrder := (List.mem_filter.mp inFiltered).1
       obtain ⟨m, inMods, inBody⟩ := execOrder_mem_module inExec
       have sourceLookup : source.lookup id = some stmt := by
-        have unique : ∀ other, (id, other) ∈ source → other = stmt := by
+        have same : ∀ other, (id, other) ∈ source → other = stmt := by
           intro other otherMember
-          exact (nodup_keys (k := id) (v := stmt) (v' := other) kept.1 inSource otherMember).symm
-        exact lookup_of_mem inSource unique
+          exact (nodup_keys (k := id) (v := stmt) (v' := other) unique inSource otherMember).symm
+        exact lookup_of_mem inSource same
       simp only [splitProgramIndexed, List.flatMap_map]
       apply List.mem_flatMap.mpr
       refine ⟨m, inMods, ?_⟩
       apply List.mem_map.mpr
       refine ⟨(id, stmt), (moduleOfIndexed_body_lookup source B P m id stmt).mpr ⟨inBody, sourceLookup⟩, ?_⟩
       simpa [extent] using rowEq
+
+theorem split_indexed_regions_eq_source {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    (kept : OrderKept source P) :
+    (splitProgramIndexed source B P).regions = (source.map fun row => row.1 + 1).foldl max 0 :=
+  split_indexed_regions_of_perm kept.1 (kept.2 ▸ List.Perm.refl _)
 
 /-- The split constructor's file placements are the authored plan rows after
 projection through the sparse executable source. Metadata remains in the plan
@@ -343,6 +392,9 @@ theorem authored_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.P
     (member : (id, owner) ∈ CoreJS.PlanPlacement.assignments P) : S.claimants B id = [owner] :=
   CoreJS.PlanPlacement.authored_owner faithful member
 
+#print axioms split_indexed_loaded_perm
+#print axioms split_indexed_tops_of_perm
+#print axioms split_indexed_regions_of_perm
 #print axioms split_indexed_loaded_flat
 #print axioms split_indexed_find
 #print axioms moduleOfIndexed_body_lookup

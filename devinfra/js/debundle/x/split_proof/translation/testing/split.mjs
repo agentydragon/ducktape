@@ -1,25 +1,38 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
 import path from "node:path";
 import { writeDeployment } from "./deployment_manifest.mjs";
 
-function filesUnder(directory) {
-  if (!existsSync(directory)) return [];
-  return readdirSync(directory, { withFileTypes: true })
-    .flatMap((entry) => {
-      const file = path.join(directory, entry.name);
-      return entry.isDirectory() ? filesUnder(file).map((child) => path.join(entry.name, child)) : [entry.name];
-    })
-    .filter((file) => statSync(path.join(directory, file)).isFile())
-    .sort();
+function outputStat(file) {
+  try {
+    return lstatSync(file, { throwIfNoEntry: false });
+  } catch (error) {
+    if (error.code === "ENOTDIR") return undefined;
+    throw error;
+  }
 }
 
-function snapshotUnder(directory) {
-  return filesUnder(directory).map((file) => {
-    const stat = statSync(path.join(directory, file));
-    return [file, stat.size, stat.mtimeMs];
-  });
+function inspectOutput(directory, stat, capture) {
+  const files = [];
+  const snapshot = [];
+  function visit(file, relative, info) {
+    if (info.isFile() && relative) files.push(relative);
+    if (capture) {
+      let bytes;
+      if (info.isFile()) bytes = readFileSync(file);
+      if (info.isSymbolicLink()) bytes = readlinkSync(file, { encoding: "buffer" });
+      snapshot.push([relative, info.mode, info.mtimeMs, info.ctimeMs, bytes]);
+    }
+    if (info.isDirectory()) {
+      for (const name of readdirSync(file).sort()) {
+        const child = path.join(file, name);
+        visit(child, path.join(relative, name), lstatSync(child));
+      }
+    }
+  }
+  if (stat) visit(directory, "", stat);
+  return { files: files.sort(), snapshot };
 }
 
 /** Run lowersplit's certified command for one fixture and normalize its JSON verdict. */
@@ -44,12 +57,14 @@ export function split({
   assert(manifest || spec, "spec is required when source or ast is provided");
   assert(out, "out is required");
   assert(process.env.LOWERSPLIT, "LOWERSPLIT is required");
-  const existed = existsSync(out);
+  const originalOutput = outputStat(out);
+  const existed = originalOutput !== undefined;
   assert(
     checkOutput ? existed : !existed || allowExistingOut,
     checkOutput ? "checkOutput requires an existing output directory" : "out must not exist"
   );
-  const before = allowExistingOut && existed ? snapshotUnder(out) : null;
+  const before =
+    existed && (allowExistingOut || checkOutput) ? inspectOutput(out, originalOutput, true).snapshot : null;
 
   const input = source ?? ast;
   const deployment = manifest ?? writeDeployment(input, spec, out);
@@ -82,11 +97,11 @@ export function split({
   assert.equal(verdict.requested, guarantee ?? "normal-completion", log);
   assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
 
-  const files = filesUnder(out);
-  if (verdict.status === "rejected" && !checkOutput) {
-    if (before) assert.deepEqual(snapshotUnder(out), before, "refusal changed an existing output path");
-    else assert.equal(files.length, 0, "refusal emitted files");
-  }
+  const after = outputStat(out);
+  const compare = before !== null && (checkOutput || verdict.status === "rejected");
+  const { files, snapshot } = inspectOutput(out, after, compare);
+  if (compare) assert.deepEqual(snapshot, before, checkOutput ? "recheck changed output" : "refusal changed output");
+  if (verdict.status === "rejected" && !existed) assert.equal(after, undefined, "refusal created the output path");
   if (verdict.status === "certified") assert(files.length > 0, "certified split emitted no files");
 
   return {

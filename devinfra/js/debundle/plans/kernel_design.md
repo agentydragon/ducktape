@@ -114,9 +114,10 @@ approved in principle. Starting points:
 ## Kernel rules waiting for their construct
 
 - **Regions**: the kernel allocates and restores cells. The only refusal is
-  `has_unscoped_lexical_bindings`. This waits for `if`/`try` region lowering.
-- **Catch bindings**: `instantiate_catch_binding` and `leave_catch_binding` are
-  kernel rules. This waits for `catch` lowering.
+  the reference head's `has_unscoped_lexical_bindings`. This waits for
+  `if`/`try` region lowering.
+- **Catch bindings**: the reference head's `instantiate_catch_binding` and
+  `leave_catch_binding` are kernel rules. This waits for `catch` lowering.
 
 ## Provider execution
 
@@ -138,7 +139,8 @@ invokes an argument):
   `World.scope` already decides closure addresses and literal writability; the
   heap-cell sink and the settled/writable answers in `OwnDataContext` are the
   adapter's hardcoded isolation today and become decisions on `scope`. The
-  pooled-region refusal in `operation_support_receipt` lands with regions.
+  pooled-region refusal in the reference head's `operation_support_receipt`
+  lands with regions.
 - Summary substitution stays the fast path tried before the adapter runs.
 
 Left of the callback family:

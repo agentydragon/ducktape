@@ -225,7 +225,10 @@ function AcknowledgedReceiptEvidence({
       .then(([receipt]) => {
         if (controller.signal.aborted) return;
         setResult(
-          receipt?.receiptVersion === notice.receiptVersion && isDeliveryIssue(receipt.state)
+          receipt &&
+            notice.receiptVersion !== undefined &&
+            receipt.receiptVersion === notice.receiptVersion &&
+            isDeliveryIssue(receipt.state)
             ? { item: worksetItemFromReceipt(receipt) }
             : {
                 unavailable: receipt

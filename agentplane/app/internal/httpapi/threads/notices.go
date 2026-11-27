@@ -27,10 +27,12 @@ type NoticeStore interface {
 
 func noticeRevision(n *apppb.CommandNoticeRevision) (threadstore.NoticeRevision, error) {
 	id := n.GetCommandId()
-	if id == "" || len(id) > 1024 || !utf8.ValidString(id) || strings.ContainsRune(id, 0) || n.GetReceiptVersion() <= 0 {
-		return threadstore.NoticeRevision{}, status.Error(codes.InvalidArgument, "A notice requires a command ID of 1 to 1024 bytes and a positive Dispatcher receipt version")
+	receipt, outcome := n.GetReceiptVersion(), n.GetOutcomeCursor()
+	if id == "" || len(id) > 1024 || !utf8.ValidString(id) || strings.ContainsRune(id, 0) ||
+		(n.ReceiptVersion == nil) == (n.OutcomeCursor == nil) || (receipt <= 0 && outcome <= 0) {
+		return threadstore.NoticeRevision{}, status.Error(codes.InvalidArgument, "A notice requires a command ID of 1 to 1024 bytes and exactly one positive receipt version or outcome cursor")
 	}
-	return threadstore.NoticeRevision{CommandID: id, Version: n.GetReceiptVersion()}, nil
+	return threadstore.NoticeRevision{CommandID: id, Version: receipt, OutcomeCursor: outcome}, nil
 }
 
 func (h *Handler) noticeScope(ctx context.Context, threadID string) (threadstore.NoticeScope, error) {
@@ -139,8 +141,14 @@ func (h *Handler) ListCommandNoticeAcknowledgements(ctx context.Context, request
 func noticeAcknowledgements(rows []threadstore.NoticeAcknowledgement) *apppb.CommandNoticeAcknowledgements {
 	result := &apppb.CommandNoticeAcknowledgements{}
 	for _, r := range rows {
+		notice := &apppb.CommandNoticeRevision{CommandId: r.CommandID}
+		if r.OutcomeCursor > 0 {
+			notice.OutcomeCursor = &r.OutcomeCursor
+		} else {
+			notice.ReceiptVersion = &r.Version
+		}
 		result.Acknowledgements = append(result.Acknowledgements, &apppb.CommandNoticeAcknowledgement{
-			Notice:         &apppb.CommandNoticeRevision{CommandId: r.CommandID, ReceiptVersion: r.Version},
+			Notice:         notice,
 			AcknowledgedAt: timestamppb.New(r.AcknowledgedAt),
 		})
 	}

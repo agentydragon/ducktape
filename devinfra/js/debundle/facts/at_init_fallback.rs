@@ -489,10 +489,8 @@ impl Visit for SyncInvocationFinder {
 /// call site in [`assemble_statement_facts`] for the soundness
 /// rationale.
 struct OpaqueAtInitCallFinder<'a> {
-    shadowed: &'a BTreeSet<&'static str>,
-    hints: &'a AnalysisInputs,
+    scope: PurityScope<'a>,
     native_facts: &'a ValidatedNativeOperationFacts,
-    graph: &'a ChunkCodeGraph,
     found: bool,
     position: LazyPosition,
 }
@@ -519,14 +517,7 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
                 {
                     false
                 }
-                Expr::Call(_) | Expr::New(_) => !classify_expr_purity(
-                    expr,
-                    self.shadowed,
-                    &BTreeSet::new(),
-                    &self.hints.assumptions.declared_pure,
-                    self.graph,
-                )
-                .is_pure(),
+                Expr::Call(_) | Expr::New(_) => !classify_expr_purity(expr, &self.scope).is_pure(),
                 // Tagged templates invoke the tag function; the
                 // classifier has no pure tag whitelist.
                 Expr::TaggedTpl(_) => true,
@@ -552,10 +543,10 @@ pub fn has_opaque_at_init_call(
     graph: &ChunkCodeGraph,
 ) -> bool {
     let mut finder = OpaqueAtInitCallFinder {
-        shadowed,
-        hints,
+        // The finder walks statement-level expressions, where no name is
+        // lexically shadowed.
+        scope: PurityScope::chunk_top(shadowed, &hints.assumptions.declared_pure, graph),
         native_facts,
-        graph,
         found: false,
         position: LazyPosition::default(),
     };

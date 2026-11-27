@@ -239,11 +239,7 @@ pub fn resolve_imported_callable_summaries(
                 .exports
                 .iter()
                 .filter(|(export, _)| {
-                    required.contains(
-                        &bindings
-                            .export_id(module, export)
-                            .expect("prepared callable export"),
-                    )
+                    required.contains(&prepared_export_id(bindings, module, export))
                 })
                 .map(|(_, local)| local.clone())
                 .collect();
@@ -503,11 +499,7 @@ pub fn resolve_imported_callable_summaries(
                     &native_integrity,
                     &required_stable_providers,
                     modules[module].exports.keys().any(|export| {
-                        required.contains(
-                            &bindings
-                                .export_id(module, export)
-                                .expect("prepared callable export"),
-                        )
+                        required.contains(&prepared_export_id(bindings, module, export))
                     }),
                     || structural_flows.get(module).expect("prepared program flow"),
                 ),
@@ -557,6 +549,15 @@ pub fn resolve_imported_callable_summaries(
     })
 }
 
+/// The export key for one module export. The callable-export table is
+/// prepared before these summaries are built, so a missing entry means the
+/// preparation was skipped - not that this module lacks the export.
+fn prepared_export_id(bindings: &ProgramBindings, module: &str, export: &str) -> ExportId {
+    bindings
+        .export_id(module, export)
+        .expect("prepared callable export")
+}
+
 /// Callback-factory proofs for the author-asserted exports that exist.
 fn asserted_callback_factory_proofs(
     bindings: &ProgramBindings,
@@ -572,11 +573,7 @@ fn asserted_callback_factory_proofs(
                 .is_some_and(|facts| facts.exports.contains_key(export))
             {
                 export_summaries
-                    .entry(
-                        bindings
-                            .export_id(module, export)
-                            .expect("prepared callable export"),
-                    )
+                    .entry(prepared_export_id(bindings, module, export))
                     .or_default()
                     .add(
                         CallableSummary::callback_factory(
@@ -798,11 +795,7 @@ fn add_inferred_wrapper_summaries(
                 object_arguments: objects.clone(),
             });
             export_summaries
-                .entry(
-                    bindings
-                        .export_id(module, export)
-                        .expect("prepared callable export"),
-                )
+                .entry(prepared_export_id(bindings, module, export))
                 .or_default()
                 .add(summary, ProofDependencies::default());
         }
@@ -823,13 +816,10 @@ fn validate_descriptor_copy_assertions(
 ) -> Result<()> {
     for (module, exports) in descriptor_copy_asserted {
         for (export, signatures) in exports {
-            if !required.contains(
-                &bindings
-                    .export_id(module, export)
-                    .expect("prepared callable export"),
-            ) || !modules
-                .get(module)
-                .is_some_and(|facts| facts.exports.contains_key(export))
+            if !required.contains(&prepared_export_id(bindings, module, export))
+                || !modules
+                    .get(module)
+                    .is_some_and(|facts| facts.exports.contains_key(export))
             {
                 continue;
             }
@@ -927,9 +917,7 @@ fn add_descriptor_copy_summaries(
 ) -> Result<()> {
     for (module, exports) in descriptor_copy_asserted {
         for (export, signatures) in exports {
-            let key = bindings
-                .export_id(module, export)
-                .expect("prepared callable export");
+            let key = prepared_export_id(bindings, module, export);
             if !required.contains(&key) {
                 continue;
             }
@@ -986,9 +974,7 @@ fn add_inferred_capability_summaries(
             continue;
         };
         for (export, local) in &facts.exports {
-            let key = bindings
-                .export_id(module, export)
-                .expect("prepared callable export");
+            let key = prepared_export_id(bindings, module, export);
             if !required.contains(&key) || export_summaries.contains_key(&key) {
                 continue;
             }
@@ -1021,9 +1007,7 @@ fn add_inferred_capability_summaries(
             continue;
         };
         for (export, local) in &facts.exports {
-            let key = bindings
-                .export_id(module, export)
-                .expect("prepared callable export");
+            let key = prepared_export_id(bindings, module, export);
             // Summary eligibility does not establish readiness at an importer's
             // execution point. Passive providers prove that their emitted
             // owners cannot reenter an importer during initialization; class
@@ -1091,9 +1075,7 @@ fn add_inferred_capability_summaries(
     }
     for (module, facts) in modules {
         for (export, local) in &facts.exports {
-            let key = bindings
-                .export_id(module, export)
-                .expect("prepared callable export");
+            let key = prepared_export_id(bindings, module, export);
             if !required.contains(&key) {
                 continue;
             }

@@ -2494,7 +2494,7 @@ const queuedReasons = new Map<string, string>();
 const LEGACY_DISPATCH_WITH_LONG_REASON = "5034baaf-0000-4000-8000-000000000001";
 const dispatchWorksets = new Map<string, Record<string, unknown>>();
 const dispatchDetails = new Map<string, Record<string, unknown>>();
-type NoticeRevision = { commandId: string; receiptVersion: string };
+type NoticeRevision = { commandId: string; receiptVersion?: string; outcomeCursor?: string };
 const noticeAcknowledgements = new Map<string, Array<{ notice: NoticeRevision; acknowledgedAt: string }>>();
 
 function dispatchWorkset(withNoticeVersions = false): void {
@@ -3499,7 +3499,9 @@ routes.push(
   [
     "GET",
     /^\/upstream\/app\/v1\/threads\/([^/]+)\/notice-acknowledgements$/,
-    (match) => ({ acknowledgements: noticeAcknowledgements.get(match[1]) ?? [] }),
+    (match) => ({
+      acknowledgements: (noticeAcknowledgements.get(match[1]) ?? []).filter(({ notice }) => notice.receiptVersion),
+    }),
   ],
   [
     "POST",
@@ -3507,7 +3509,12 @@ routes.push(
     (match, _query, _signal, body) => {
       const { notices } = JSON.parse(body ?? "{}") as { notices: NoticeRevision[] };
       const acknowledgements = (noticeAcknowledgements.get(match[1]) ?? []).filter(({ notice }) =>
-        notices.some((item) => item.commandId === notice.commandId && item.receiptVersion === notice.receiptVersion)
+        notices.some(
+          (item) =>
+            item.commandId === notice.commandId &&
+            item.receiptVersion === notice.receiptVersion &&
+            item.outcomeCursor === notice.outcomeCursor
+        )
       );
       return { acknowledgements };
     },

@@ -98,6 +98,12 @@ Delivery history remains available independently of the History projection and i
 acknowledgements. When an exact revision has expired or was superseded, the interface reports that
 loss of evidence.
 
+History's **Execution failed** has its own Dismiss button for both inputs and control commands.
+It acknowledges the exact outcome cursor for the signed-in operator. The command stays in the
+conversation with a compact failure indicator that still opens the reason. This preference is
+independent of Dispatcher delivery acknowledgements and leaves the History outcome unchanged.
+In the conversation gutter, both kinds of Dismiss button sit right-aligned below the dots and status.
+
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
 The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive
 flag, so browser state cannot bypass the refusal. Confirmed suspended or deleted Environments can

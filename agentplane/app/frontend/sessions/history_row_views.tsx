@@ -4,7 +4,6 @@ import { type JSX, type ReactNode, useCallback, useEffect, useState } from "reac
 import { Markdown } from "../../../../util/frontend/markdown";
 import { useThreadSync } from "./thread_sync";
 import {
-  ThreadCommandOutcome,
   type ThreadEntity,
   type ThreadPayloadReference,
 } from "../../../history_service/api/history/history_service_pb";
@@ -278,19 +277,15 @@ export function HistoryRowView({
         ? first.entity.value.originCommandIds.find((id) => inputEchoes?.has(id))
         : undefined;
     const fallbackText = echoCommandId === undefined ? undefined : inputEchoes?.get(echoCommandId);
-    const progress =
-      first.entity.case === "command" && first.entity.value.outcome === ThreadCommandOutcome.PENDING
-        ? deliveryProgress
-        : undefined;
     return first.entity.case === "command" && !pendingSentMessage(first) ? (
-      <ProjectedControlCommand threadId={threadId} row={first} deliveryProgress={progress} />
+      <ProjectedControlCommand threadId={threadId} row={first} deliveryProgress={deliveryProgress} />
     ) : (
       <EntityCard
         threadId={threadId}
         entity={first}
         live={live(first)}
         fallbackText={fallbackText}
-        deliveryProgress={progress}
+        deliveryProgress={deliveryProgress}
         onFallbackLoaded={
           fallbackText === undefined || echoCommandId === undefined || !onInputEchoLoaded
             ? undefined

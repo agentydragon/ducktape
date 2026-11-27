@@ -110,8 +110,7 @@ impl SelectedModuleLowering {
     pub fn module_ref(&self) -> ModuleRef {
         ModuleRef {
             chunk_id: self.chunk_id.clone(),
-            path: spec::ModulePath::parse(&self.target_path, "")
-                .expect("lowering target_path is a canonical module path"),
+            path: spec::ModulePath::from_pipeline_target(&self.target_path),
         }
     }
 }
