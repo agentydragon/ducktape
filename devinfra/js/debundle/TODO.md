@@ -235,7 +235,7 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   pass-contract and sealed-input handoffs.
 
 - **AR5 — Reuse one prepared source/index across analysis phases.**
-  <frontend_elaboration/elaboration.rs> and <staged_analysis/chunk_facts.rs>
+  <frontend_elaboration/source_sites.rs> and <staged_analysis/chunk_facts.rs>
   recollect structural facts. Prepared syntax now survives through the selected
   static provider closure; consolidate the remaining censuses. Extend
   `SourceProgram`/manifest ownership so selectors, provider analysis and local
