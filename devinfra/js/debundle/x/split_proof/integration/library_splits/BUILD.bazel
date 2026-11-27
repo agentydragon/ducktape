@@ -94,6 +94,22 @@ js_test(
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
 )
 
+js_test(
+    name = "acorn_hoisted_cycle_test",
+    size = "small",
+    args = ["$(rootpath :real_bundles/acorn.mjs)"],
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":real_bundles/acorn.mjs",
+        "//devinfra/js/debundle/x/split_proof:acorn_hoisted_cycle_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "acorn_hoisted_cycle_test.mjs",
+    env = {"CYCLE_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:acorn_hoisted_cycle_test_runner)"},
+)
+
 js_library(
     name = "lint_sources",
     testonly = True,
