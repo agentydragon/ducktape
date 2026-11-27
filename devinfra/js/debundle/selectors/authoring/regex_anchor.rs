@@ -36,6 +36,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
+use js_ast::synthesized_string_argument;
 use source_match_holes::STRING_LITERAL_REGEX_PREDICATE;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
@@ -82,14 +83,7 @@ fn regex_predicate_call(pattern: &str) -> Expr {
         callee: Callee::Expr(Box::new(Expr::Ident(ident_node(
             STRING_LITERAL_REGEX_PREDICATE,
         )))),
-        args: vec![ExprOrSpread {
-            spread: None,
-            expr: Box::new(Expr::Lit(Lit::Str(Str {
-                span: DUMMY_SP,
-                value: pattern.into(),
-                raw: None,
-            }))),
-        }],
+        args: vec![synthesized_string_argument(pattern)],
         type_args: None,
     })
 }
