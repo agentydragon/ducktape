@@ -150,6 +150,11 @@ debundle_graph_e2e_test(
 
 debundle_graph_e2e_test(
     name = "native_operation_input_test",
+    srcs = glob(
+        ["native_operation_input/*.rs"],
+        exclude = ["native_operation_input/mod.rs"],
+    ),
+    source = "native_operation_input/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle/analysis_domain",
