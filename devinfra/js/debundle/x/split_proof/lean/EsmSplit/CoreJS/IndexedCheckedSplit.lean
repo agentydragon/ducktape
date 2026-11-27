@@ -125,7 +125,7 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
                                                     have sourceConsts : ∀ p ∈ body, ∃ name init,
                                                         p.2 = .decl .const name init := fun p hp => isConst_sound (consts p hp)
                                                     have rowShape : InteriorExportNames.SourceRow source row :=
-                                                      ⟨table, absent, before, after⟩
+                                                      ⟨table, absent⟩
                                                     have rowFootprint : row.FootprintMatches (B.stmt row.ordinal) :=
                                                       ⟨exportPairs, rowLocals⟩
                                                     have defs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧

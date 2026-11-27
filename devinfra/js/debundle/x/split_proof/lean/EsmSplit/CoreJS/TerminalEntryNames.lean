@@ -1,6 +1,4 @@
-import EsmSplit.CoreJS.DeclaringOwner
-import EsmSplit.LocalExportUnit
-import EsmSplit.MetadataImports
+import EsmSplit.CoreJS.InteriorExportNames
 
 /-! Source-plan linkage facts for an original local-export unit. They retain
 its original ordinal, public/local pairs and the authored declaring owner;
@@ -12,16 +10,8 @@ namespace CoreJS.TerminalEntryNames
 theorem published {B : EsmSplit.Bundle} {md : EsmSplit.Module} {row : EsmSplit.LocalExportUnit}
     (owned : row.ordinal ∈ md.stmts) (footprint : row.FootprintMatches (B.stmt row.ordinal))
     {publicName localName : EsmSplit.Name} (pair : (publicName, localName) ∈ row.names) :
-    (publicName, localName) ∈ md.namedExports B := by
-  have hexport := (row.matched_local_use_and_public footprint pair).2
-  unfold EsmSplit.Module.namedExports EsmSplit.Module.namedExportsFrom
-  apply List.mem_append_right
-  unfold EsmSplit.localExports EsmSplit.Module.publishedFrom
-  apply List.mem_filterMap.mpr
-  refine ⟨(publicName, some localName), ?_, rfl⟩
-  apply List.mem_flatMap.mpr
-  refine ⟨row.ordinal, owned, ?_⟩
-  simpa only [EsmSplit.Bundle.toArray_getD] using hexport
+    (publicName, localName) ∈ md.namedExports B :=
+  InteriorExportNames.row_pair_published owned footprint pair
 
 /-- A terminal export's local resolves to its original authored declaring
 owner. It is either declared in the entry module or imported from that exact
@@ -38,17 +28,8 @@ theorem bound_to_original_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : E
     (publicName, localName) ∈ entry.namedExports B ∧
     S.claimants B declOrdinal = [owner.name] ∧ P.declaredIn B localName = .declared owner.name ∧
     ((∃ j ∈ entry.stmts, localName ∈ (B.stmt j).defs) ∨
-      ∃ e ∈ entry.imports, localName ∈ e.2 ∧ e.1 = owner.name) := by
-  have ⟨claim, ownerBinding⟩ := DeclaringOwner.declared_in_original_owner valid.1 valid.2.2.1 ownerIn declOwned declared
-  refine ⟨published owned footprint pair, claim, ownerBinding, ?_⟩
-  by_cases localDecl : entry.declares B localName = true
-  · left
-    obtain ⟨j, hj, hname⟩ := List.any_eq_true.1 localDecl
-    exact ⟨j, hj, List.contains_iff_mem.1 hname⟩
-  · right
-    have notLocal : entry.declares B localName = false := Bool.eq_false_iff.mpr localDecl
-    exact EsmSplit.MetadataImports.external_use_imported valid entryIn owned
-      (row.matched_local_use_and_public footprint pair).1 ownerBinding notLocal
+      ∃ e ∈ entry.imports, localName ∈ e.2 ∧ e.1 = owner.name) :=
+  InteriorExportNames.row_pair_binding valid entryIn ownerIn owned footprint declOwned pair declared
 
 #print axioms published
 #print axioms bound_to_original_owner
