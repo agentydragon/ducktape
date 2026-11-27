@@ -1907,6 +1907,8 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   [purity_soundness.md § Declared purity](purity_soundness.md#declared-purity--spec-trust-contracts).
   The validator does not re-verify the body; an incorrect annotation
   produces a buggy debundle, so soundness shifts to the spec author.
+  Under `initializer_purity`, direct eager reads and callback-body read
+  dependencies remain in the dependency graph.
 
   `chunk_export_purity.<chunk>.pure_exports` is the cross-module form
   of the same contract, addressed to the **defining** chunk rather than
