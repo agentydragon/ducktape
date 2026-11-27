@@ -257,6 +257,16 @@ impl MemberSelectorProgramBuilder {
     /// The binding variable of export `export_name`, pinned by a relational
     /// selector, for templates that reference it: the variable ranges over
     /// the bindings its source unit declares.
+    /// One `source unit declares this binding name` atom, in the term shapes
+    /// the solver expects.
+    fn declare_binding(&mut self, source_unit: SelectorVariableId, binding: SelectorVariableId) {
+        self.program
+            .add_atom(SelectorAtom::SourceUnitDeclaresBinding {
+                source_unit: source_unit_term(source_unit),
+                binding: string_term(binding),
+            });
+    }
+
     pub fn relational_binding_variable(
         &mut self,
         logical_module: &str,
@@ -268,11 +278,7 @@ impl MemberSelectorProgramBuilder {
         }
         let binding = self.projected_binding_variable(logical_module, export_name);
         let source_unit = self.source_unit_for_local_export(logical_module, export_name);
-        self.program
-            .add_atom(SelectorAtom::SourceUnitDeclaresBinding {
-                source_unit: source_unit_term(source_unit),
-                binding: string_term(binding),
-            });
+        self.declare_binding(source_unit, binding);
         binding
     }
 
@@ -287,11 +293,7 @@ impl MemberSelectorProgramBuilder {
     ) {
         let source_unit = self.source_unit_for_local_export(logical_module, export_name);
         let binding = self.projected_binding_variable(logical_module, export_name);
-        self.program
-            .add_atom(SelectorAtom::SourceUnitDeclaresBinding {
-                source_unit: source_unit_term(source_unit),
-                binding: string_term(binding),
-            });
+        self.declare_binding(source_unit, binding);
         self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
             variables: [source_unit, binding]
                 .into_iter()
@@ -339,11 +341,7 @@ impl MemberSelectorProgramBuilder {
             self.source_unit_injectivity_classes
                 .insert(source_unit, injectivity_class.clone());
             let binding = self.projected_binding_variable(logical_module, export_name);
-            self.program
-                .add_atom(SelectorAtom::SourceUnitDeclaresBinding {
-                    source_unit: source_unit_term(source_unit),
-                    binding: string_term(binding),
-                });
+            self.declare_binding(source_unit, binding);
             variables.push(source_unit);
             variables.push(binding);
         }

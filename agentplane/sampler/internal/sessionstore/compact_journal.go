@@ -621,6 +621,11 @@ func (s *Store) applyJournalRepack(ctx context.Context, sessionID string, previo
 		if slices.EqualFunc(plan.sources, plan.outputs, repackStorage.equal) {
 			return nil
 		}
+		// Standalone rows reinserted here preserve existing frames, including the
+		// suffix of a split block. They are not new sampling evidence.
+		if err := markIndexedRecoveryWriter(txCtx, tx); err != nil {
+			return err
+		}
 		return replaceJournalStorage(txCtx, tx, sessionID, plan.sources, plan.outputs)
 	})
 }

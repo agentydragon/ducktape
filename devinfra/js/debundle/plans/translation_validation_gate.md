@@ -21,7 +21,7 @@ the remaining migration. The report-only candidate assessment pairs effect
 conflicts with typed placement evidence for the same finalized assignment; the
 shared projection also supplies emission's checked placement maps. Plan-building
 refusals before a final assignment remain outside that assessment. The legacy
-gate remains authoritative on `devel`. Draft #14552 is a reference
+gate remains authoritative on `devel`. Closed-unmerged #14552 is a reference
 implementation with the flip already applied; the landing order that keeps the
 flip as the late, small PR this plan's § Migration requires is in
 <convergence_landing.md>.
@@ -147,31 +147,14 @@ the effect-set check must judge.
 - **Nothing pairwise.** The binding-timeline and cell-order edge rules become
   projections of these sets, used only by tooling.
 
-## Choosing the candidate order
+## Candidate order
 
-The interpreter judges an order; it never searches. The emitted order is a
-function of the import graph, which is binding imports plus the phantom
-side-effect imports the emitter adds for ordering. So the search chooses
-phantom imports, outside the interpreter:
-
-1. **Seed.** Take today's Lemma 2 order, computed over the constraining edges
-   (with any cycle among them condensed) minus the soft categories: heap-frontier `cell_order`, and
-   `binding_timeline` edges with a `fallback` side. Hard edges are binding
-   reads, rebinds and definite cell conflicts.
-2. **Validate.** Run the sweep on the seed's emitted order.
-3. **Refine** each conflicting swapped pair `(u, v)`:
-   - if a premise or a sharper effect fact (computed for that pair only)
-     clears it, accept the pair;
-   - otherwise add `u → v` as a hard ordering edge (a phantom import) and go
-     back to step 1.
-4. **Stop** when the order validates, or when an added hard edge would close a
-   module cycle. The order then cannot be steered further; the loader model
-   still evaluates the order the imports give, and validation rejects with the
-   remaining conflicting pairs as evidence, never with the cycle. Each
-   iteration only adds edges, so the loop terminates.
-
-Spec authors keep control of placement. The search only orders modules the
-spec already defines.
+The interpreter judges an order; it never searches. The order is the schedule
+the supplied chunk `import_order` induces
+(<../docs/design.md#lemma-2-entry-side-import-ordering>). Validation rejects
+with the conflicting pairs as evidence, never with a cycle. Hard edges are
+binding reads, rebinds and definite cell conflicts; heap-frontier `cell_order`
+and `binding_timeline` edges with a `fallback` side are soft.
 
 ## `commuting_statements`
 
@@ -206,18 +189,17 @@ swapped conflicting pairs, not only the first.
 
 - **Abstract interpreter** (<abstract_interpreter.md>):
   - Step 7 supplies the effect sets.
-  - Step 9 ("`EffectsDisjoint` and gate consumption") is this gate's pair
-    check. TV needs it applied to swapped pairs only, not to every
-    `Sequenced` edge.
+  - TV applies the `commuting_statements` pair check to swapped pairs only,
+    not to every `Sequenced` edge.
   - The purity migration preserves one per-chunk context. TV reads the
     settled per-statement result and adds no constraint on it.
 - **Staged pipeline** (<../docs/bazel_integration.md>):
-  - TV runs in S4 on the S3 facts artifact, which must carry the effect sets.
-    It already carries `StatementFacts`.
-  - Commuting resolution already sits in S4.
-  - The graph build shrinks: it emits only the hard edges the search seeds
-    from, and the full edge set becomes a tooling view built on demand.
-  - Assignment edits, the agent loop, still never touch S3.
+  - TV runs in `debundle_apply` on the saved `debundle_analysis` facts,
+    which must carry the effect sets. They already carry `StatementFacts`.
+  - Commuting resolution already sits in `debundle_apply`.
+  - The graph build shrinks: it emits only the hard edges, and the full edge
+    set becomes a tooling view built on demand.
+  - Assignment edits, the agent loop, still never rerun `debundle_analysis`.
 - **Tooling** (atomic groups, `peel`, `modules propose`, `gate describe`,
   `per_atomic_group` / `coarse_atomic_groups`): these read `dependency_graph.json.gz` edges
   and atomic groups. They keep that data until each is ported to query
@@ -276,10 +258,6 @@ e2e test), and on the canonical inputs as a report diff.
 
 ## Open questions
 
-- **Search granularity.** Do phantom imports between whole modules give the
-  search enough freedom, or do some conflicts need a statement moved to
-  another module (a spec edit, out of scope)? The search report must show how
-  often the refine loop stops because a hard edge would close a cycle.
 - **Host-ordered effects.** Microtask and timer enqueue and host output need
   an explicit cell before TV can accept swaps of statements that only enqueue.
   Until then those stay `Havoc`, which is safe.
@@ -289,8 +267,7 @@ e2e test), and on the canonical inputs as a report diff.
   acceptance.
 - **Swap-count stability.** An edit in one module can reorder others and
   surface new swapped pairs. Diagnostics should say the conflict is new to
-  this order, and the search should prefer orders close to the previous
-  accepted one.
+  this order.
 - **Tooling that reads atomic groups** (`unassigned_mode: per_atomic_group` or
   `coarse_atomic_groups`, `peel`): keep atomic groups as planning output indefinitely, or redefine
   them as SCCs of hard edges?

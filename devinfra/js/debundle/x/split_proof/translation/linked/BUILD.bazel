@@ -124,16 +124,9 @@ js_test(
 js_test(
     name = "terminal_export_artifact_test",
     size = "medium",
-    data = [
-        ":harness",
-        "//devinfra/js/debundle/x/split_proof/lean:terminal_export_artifact_test_runner",
-        "//devinfra/js/debundle/x/split_proof/translation:module_io",
-    ],
+    data = _TEST_DATA,
     entry_point = "terminal_export_artifact_test.mjs",
-    env = {
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:terminal_export_artifact_test_runner)",
-        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
-    },
+    env = _TEST_ENV,
 )
 
 js_test(

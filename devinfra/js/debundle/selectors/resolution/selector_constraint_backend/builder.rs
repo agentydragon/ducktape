@@ -110,6 +110,26 @@ fn sparse_variable_domain_fingerprint(
 }
 
 impl CompiledSelectorProblemBuilder {
+    /// The identity of the next allowed-tuple constraint: its position in the
+    /// list, which is how callers name it to the solver.
+    fn next_allowed_tuple_id(&self) -> AllowedTupleConstraintId {
+        AllowedTupleConstraintId(self.allowed_tuples.len())
+    }
+
+    /// Record one allowed-tuple constraint over already-interned rows.
+    fn record_allowed_tuples(
+        &mut self,
+        id: AllowedTupleConstraintId,
+        variables: Vec<ConstraintVariableId>,
+        row_set: AllowedTupleRowsId,
+    ) {
+        self.allowed_tuples.push(CompiledAllowedTupleConstraint {
+            id,
+            variables,
+            row_set,
+        });
+    }
+
     pub fn known_unsat(&self) -> bool {
         self.known_unsat
     }
@@ -198,7 +218,7 @@ impl CompiledSelectorProblemBuilder {
         tuples: Vec<Vec<SelectorProjectedValue>>,
     ) -> Result<AllowedTupleConstraintId, CompiledSelectorProblemError> {
         let domains = self.validate_allowed_tuple_variables(&variables)?;
-        let id = AllowedTupleConstraintId(self.allowed_tuples.len());
+        let id = self.next_allowed_tuple_id();
         let mut compiled_tuples = Vec::with_capacity(tuples.len());
         for (tuple_index, tuple) in tuples.into_iter().enumerate() {
             if tuple.len() != variables.len() {
@@ -244,11 +264,7 @@ impl CompiledSelectorProblemBuilder {
             variables.len(),
             compiled_tuples,
         ));
-        self.allowed_tuples.push(CompiledAllowedTupleConstraint {
-            id,
-            variables,
-            row_set,
-        });
+        self.record_allowed_tuples(id, variables, row_set);
         Ok(id)
     }
 
@@ -258,7 +274,7 @@ impl CompiledSelectorProblemBuilder {
         domains: [VariableDomain; 2],
         tuples: Vec<(BackendValueId, BackendValueId)>,
     ) -> Result<AllowedTupleRowsId, CompiledSelectorProblemError> {
-        let id = AllowedTupleConstraintId(self.allowed_tuples.len());
+        let id = self.next_allowed_tuple_id();
         let mut compiled_tuples = Vec::with_capacity(tuples.len());
         for (tuple_index, (left, right)) in tuples.into_iter().enumerate() {
             self.validate_encoded_value_domain(id, tuple_index, variables[0], domains[0], left)?;
@@ -278,7 +294,7 @@ impl CompiledSelectorProblemBuilder {
         variables: Vec<ConstraintVariableId>,
         row_set: AllowedTupleRowsId,
     ) -> Result<AllowedTupleConstraintId, CompiledSelectorProblemError> {
-        let id = AllowedTupleConstraintId(self.allowed_tuples.len());
+        let id = self.next_allowed_tuple_id();
         self.validate_allowed_tuple_variables(&variables)?;
         let Some(rows) = self
             .allowed_tuple_row_sets
@@ -296,11 +312,7 @@ impl CompiledSelectorProblemBuilder {
             });
         }
         self.known_unsat |= rows.is_empty();
-        self.allowed_tuples.push(CompiledAllowedTupleConstraint {
-            id,
-            variables,
-            row_set,
-        });
+        self.record_allowed_tuples(id, variables, row_set);
         Ok(id)
     }
 

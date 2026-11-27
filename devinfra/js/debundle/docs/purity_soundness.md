@@ -1062,85 +1062,22 @@ local heap cells (SPEC § Initializer binding effects). Ordering them around eve
 opaque invocation, not only around such initializers, rejected every
 stateless-provider case of `foreign_state_node_differential_sweep_test`.
 
-`initializer_external_effects: isolated` independently promises that the selected
-simple initializer observes no mutable pre-existing heap, global-property or
-host/environment state, writes only its own fresh allocations, and performs no
-global-property write or observable host operation. A heap-only promise would
-not cover a return value depending on host state. Stable native/inherited
-metadata and opaque mutation paths require
-the author's lifetime audit over every admitted initialization schedule.
-Source-observed external heap reads reject the promise. Admission conservatively
-rejects other observed content accesses too: source allocation-site identity is
-not a proof of fresh runtime ownership across calls. The heap-order graph may
-discharge unknown heap barriers and assumed accesses for this initializer,
-retaining fresh allocation events, non-summarizable impure ordering and all
-other owners' order.
-It does not infer any absent external effects or provide lexical effects,
-completion, result shape or an operation receipt. Neither initializer purity nor
-lexical source-only effects implies external isolation.
-See SPEC § Initializer external effects.
+`initializer_external_effects` (`isolated`, `private_metadata`) is an author
+promise about one selected simple initializer's external heap, global-property
+and host state; admitted shapes, admission rejections, what the heap-order graph
+may discharge and the separate domains: [SPEC § Initializer external effects](../SPEC.md#initializer-external-effects).
 
-`initializer_external_effects: private_metadata` allows an audited provider to
-write private identity-keyed metadata for fresh result-owned objects. It also
-requires stable provider/configuration/environment observations and only
-observationally idempotent private capability memoization over every admitted
-initialization schedule. No key/entry publication except through the result,
-enumeration, interception or application reentry is permitted. These are author
-obligations, not a WeakMap recognizer or an inference of purity. The graph can
-refine the unknown external frontier while retaining source-known heap cells,
-allocation events and all other effect domains. Known global-property accesses
-and external observations remain admission guards. `isolated` keeps its stricter
-meaning. See SPEC § Initializer external effects for the complete contract.
-
-`initializer_call_effect_inputs` is a separate exact AUTHOR premise for one
-direct imported-call initializer with one fresh anonymous ordinary function
-argument. Its required `resolved_member: { module, name }` reference identifies
-an existing logical-module owner in the importer chunk. The joint selector
-solve supplies the actual declaration, which remains subject to the exact
-initializer-shape checks below. It covers the invoked provider operation's
-global-property,
-general-heap and host-effect domains under an audited stable protocol and
-provider-slot lifetime: only fresh per-call allocations may be written, and
-no mutable application/global/host state may be read. It does not infer that
-promise from `pure_exports`, callback factory evidence, or heap locality.
-The original provider and importer parser bytes are digest-bound; a bundled
-partial replacement additionally requires the exact vendor mapping and a
-separately captured effective bundle digest. Static provider initialization
-must precede the importer without reentry. Source-known writes to identified
-module/global bindings in the already prepared original provider callable
-and uniquely resolved direct local helpers contradict the assertion;
-unresolved helper/alias behavior and the effective replacement remain the
-author's exact-byte audit obligations. This negative check is not an inferred
-absence of effects. Callee/argument evaluation,
-lexical effects, abrupt paths, callback timing and retention, result shape,
-and later use remain independent. The normal root can consume the operation
-domains only after separate `initializer_purity: pure` and settled ordered
-execution evidence. See SPEC § Exact initializer call effect inputs.
-At the selected ordered root, existing callback-factory evidence may transfer
-an opaque fresh carrier from the actual single function argument. It is a
-separate result and callback-retention premise, not a consequence of the
-operation-domain assertion or `pure_exports`. The selected initializer also
-needs its own `initializer_purity: pure` assertion to exclude provider throws;
-known operand throws, mixed/unknown callees and later callback use remain
-conservative. A source-known original provider write still contradicts the
-operation input before any carrier transfer can be consumed.
+`initializer_call_effect_inputs` is a separate exact author premise for one
+direct imported-call initializer; its shape, digests, contradiction check,
+carrier transfer and the independent premises the normal root still needs:
+[SPEC § Exact initializer call effect inputs](../SPEC.md#exact-initializer-call-effect-inputs).
 For this exact selected root, creating the fresh function argument has no
 effect from syntax in its deferred body. An opaque callback body therefore
 does not make the creation step opaque. The existing activation and captured
 cell checks still apply, and invocation or escape of the retained callback
 continues through the ordinary conservative transfer.
 
-This does not assert purity or freedom from throws, and it does not complete
-coverage of shared-heap effects, foreign registry or configuration access,
-global-object or host effects, result shape, or callbacks retained for later
-use. Those effects remain subject to ordinary analysis. Omission makes no
-assertion. Logical-module `annotations:` and `chunk_renames.annotations:` use
-the same typed field.
-
-When the annotated binding is selected in an analyzed defining chunk and
-exported, the same author-trusted `pure_new` contract applies to each
-importer's local binding. The export mapping is resolved after structural
-selectors; source-matched classes need no minified export-name assertion.
+Export propagation of `pure_new` to importers: [design.md § A9](design.md#conditions-on-the-input-chunk-assumptions-a1a11).
 
 `pure_members: [<prop>, …]` is a third trust contract on the same member,
 extending "calls of the bound Ident are pure" to "calls of

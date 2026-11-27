@@ -34,12 +34,7 @@ impl CompiledSelectorProblemBuilder {
             };
             changed |= constraint_changed;
             let row_set = self.intern_allowed_tuple_rows(rows);
-            let id = AllowedTupleConstraintId(self.allowed_tuples.len());
-            self.allowed_tuples.push(CompiledAllowedTupleConstraint {
-                id,
-                variables,
-                row_set,
-            });
+            self.record_allowed_tuples(self.next_allowed_tuple_id(), variables, row_set);
         }
         Ok(changed)
     }

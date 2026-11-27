@@ -603,6 +603,55 @@ func TestRepackBlockLimitPreservesCrossingSourceBetweenCommits(t *testing.T) {
 	}
 }
 
+func TestRepackSplitBlockPreservesPendingSamplingProjection(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	const commandID = "split-block-test"
+	admitInput(t, store, session.ID, commandID, "Start")
+	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatchSequence := func() int {
+		t.Helper()
+		var seq int
+		if err := store.DB().QueryRowContext(t.Context(), `SELECT dispatch_sequence FROM sampler_intent WHERE id=$1 AND dispatch_turn_id=$2`, intentID, commandID).Scan(&seq); err != nil {
+			t.Fatal(err)
+		}
+		return seq
+	}
+	want := dispatchSequence()
+	cursor, err := store.CurrentCursor(t.Context(), session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.eventBlockProfile = eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 16, Level: 3}
+	opening := cursor + 96
+	appendAPBTestJournalThrough(t, store, session.ID, opening)
+	replaceRowsWithBlock(t, store, session.ID, cursor+9, cursor+40, true)
+	state := journalRepackState{through: cursor, opening: opening}
+	page, err := store.prepareJournalRepack(t.Context(), session.ID, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batches, err := splitJournalPage(page, 1)
+	if err != nil || len(batches) < 2 {
+		t.Fatalf("split into %d batches: %v", len(batches), err)
+	}
+	if _, err := store.applyJournalRepack(t.Context(), session.ID, state, batches[0]); err != nil {
+		t.Fatal(err)
+	}
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence BETWEEN $2 AND $3`, session.ID, cursor+17, cursor+40); got != 24 {
+		t.Fatalf("reinserted suffix rows=%d, want 24", got)
+	}
+	if got := dispatchSequence(); got != want {
+		t.Fatalf("dispatch sequence after physical rewrite=%d, want %d", got, want)
+	}
+}
+
 func TestRepackPreservesSmallerLegacySource(t *testing.T) {
 	store := newTestStore(t)
 	store.eventBlockProfile = eventblock.DefaultProfile(1)

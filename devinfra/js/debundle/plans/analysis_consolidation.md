@@ -2,23 +2,15 @@
 
 Baseline: `origin/devel` at
 [`ba0c3367d339a3eb30ae00ee575f656f5e562951`](https://github.com/agentydragon/ducktape/commit/ba0c3367d339a3eb30ae00ee575f656f5e562951).
-The inventory and decisions below come from that tree. This planning change
-branches directly from it and has no dependency on #16762 or #14552. Those PRs
-are candidate material to examine, not implementations that must be preserved
-or landed first. Implement this plan through bounded migrations; the complete
-redesign and the real icons extraction are not prerequisites for an individual
-slice.
+#16762 (open) is optional reference material. Implement this plan through
+bounded migrations; the complete redesign and the real icons extraction are not
+prerequisites for an individual slice.
 
 The goal is to consolidate existing inference and operation semantics while
 extending cross-chunk effects. Do not add another general-purpose fixed-point
-framework or parallel semantic implementation. This plan owns the consolidation algorithm and stage dependencies;
-other plans retain their separate capability, artifact-cache and gate-migration
-obligations. <../TODO.md#remaining-dispatch-order> owns active dispatch;
-<analysis_performance.md#open-analysis-tasks> owns the remaining PF1, PF4
-impact-profile and PF5 cost tasks;
-<analysis_performance.md#pass-standardization-tasks> owns PS1–PS4 common pass
-contracts and infrastructure. Both retain concrete completion criteria. The
-design below is a target, not a completed correctness proof.
+framework or parallel semantic implementation. Ownership and dispatch:
+<../TODO.md#active-work-queue>. The design below is a target, not a completed
+correctness proof.
 
 ## Problem and contract
 
@@ -105,22 +97,6 @@ it from the shared, richer operation facts.
 - The points-to experiment has the right worklist ingredients but documented
   semantic gaps and poor large-input cost. The tier-0 experiment has recorded
   incorrect commutation judgments. Neither is a verified replacement.
-
-These are source/audit findings. Causal CLI reproductions and matched performance
-runs are work to complete, not results supplied by this planning change.
-
-### Remaining invocation delta work
-
-Tracked as [PF1 in the analysis performance tracker](analysis_performance.md#pf1--incremental-invocation-targets-and-arguments).
-
-The indexed invocation transfer, its exact-expression/late-edge distinction,
-source-ordered activation semantics, proof propagation and polynomial work/state
-bounds are maintained in
-[Source invocation origin deltas](../docs/inference.md#source-invocation-origin-deltas).
-The implementation no longer loops over old targets or replays unchanged
-argument reads into whole-set formal joins. Remaining PF1 work is the matched
-optimized corpus measurement in the performance tracker; do not infer runtime
-improvement from the deterministic delivery controls.
 
 ### Evaluate unmerged work separately
 
@@ -594,11 +570,9 @@ queue. Independent work proceeds under the dispatch order in <../TODO.md>.
 Measurement and retirement accompany each slice; the final demonstration
 confirms their combined result rather than postponing those checks.
 
-For each slice, the review records its source of reused code, input/output facts,
-consumed dependencies, work/space bound and work-count controls, removed duplicate
-decisions, remaining legacy consumers and their removal gates, relevant
-assumptions, CLI behavior and exact checks. The common completion contract is in
-<analysis_performance.md#per-slice-completion-contract>.
+The per-slice review contract is in
+<analysis_performance.md#per-slice-completion-contract>; the review also records
+the source of reused code and the relevant assumptions.
 Temporary parallel comparison is diagnostic and has a named removal criterion;
 it must not become another permanent effect producer.
 

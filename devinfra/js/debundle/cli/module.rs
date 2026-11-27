@@ -213,9 +213,9 @@ impl DeleteSummary {
 /// Validation contract (per docs/cli.md § "Validate-by-default"):
 ///
 /// * Default: run the realizability gate against the post-merge
-///   assignment. Accept and splice if `Verdict::Realizable`; reject
-///   and exit non-zero with the same `render_cycle_summary`
-///   diagnostic the pipeline prints if `Verdict::Unrealizable`.
+///   assignment. Accept and splice if `RealizabilityVerdict::is_realizable`;
+///   otherwise reject and exit non-zero with the same `render_cycle_summary`
+///   diagnostic the pipeline prints.
 /// * `--dry-run`: run the gate but do not modify any file.
 /// * `--no-verify`: skip the gate for a single merge; rejected with `--batch`.
 pub fn run_merge(

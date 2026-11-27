@@ -18,6 +18,7 @@ const run = (options = {}) =>
 const original = run();
 assert.equal(original.status, "certified", original.log);
 assert.equal(original.guarantee, "all-outcomes");
+assert.equal(original.verdict.strategy, "compiled-constructor");
 assert.deepEqual(original.files, [entry, worker]);
 assert.deepEqual(observe(files.sourceFile, "a"), { a: 1 });
 assert.deepEqual(observe(path.join(out, entry), "a"), { a: 1 });
@@ -54,3 +55,13 @@ const fresh = path.join(root, "wrong-ordinal-fresh");
 const badSpecFile = path.join(root, "wrong-ordinal.json");
 assert.equal(run({ spec: badSpecFile, out: fresh }).status, "refused");
 assert(!existsSync(fresh));
+
+const duplicateSpec = path.join(root, "duplicate-ordinal.json");
+for (const guarantee of ["normal-completion", "all-outcomes"]) {
+  const duplicateOut = path.join(root, "duplicate-ordinal-" + guarantee);
+  const duplicate = run({ spec: duplicateSpec, out: duplicateOut, require: guarantee });
+  assert.equal(duplicate.status, "refused", duplicate.log);
+  assert.equal(duplicate.reasonCode, "linked_placement", duplicate.log);
+  assert.match(duplicate.reason, /an original unit is selected more than once/);
+  assert(!existsSync(duplicateOut));
+}

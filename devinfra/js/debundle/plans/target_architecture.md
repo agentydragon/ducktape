@@ -71,10 +71,6 @@ source, analysis projection and engine (`analysis_projection.rs`,
   from the emitted import lists (`esm_schedule/esm_import_order.rs`,
   `realizability/esm_simulator.rs`). It is a plain component with no verdict
   of its own, and it runs on the real order even when imports are cyclic.
-- **Order search.** The search chooses import orders through phantom side-effect
-  imports. It is seeded by hard facts (binding reads, rebinds, definite
-  conflicts) and prefers orders near the last accepted one. It never runs
-  inside the interpreter.
 
 ### 4. Validate
 
@@ -183,7 +179,7 @@ empty at the end.
   checking.
 - <synchronous_execution_fallback.md>: `Havoc` reach. It decides how many
   swapped opaque pairs commute.
-- <staged_pipeline.md>: when finer-grained S3 or vendor-strip actions justify
+- <staged_pipeline.md>: when finer-grained per-chunk analysis or vendor-strip actions justify
   their added artifact and action costs.
 - <translation_validation_gate.md>: stages 3 and 4, and the migration from
   Pass 1 and Pass 2.
