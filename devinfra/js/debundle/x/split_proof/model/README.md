@@ -15,6 +15,11 @@ once with seeds 1 and 2. The binding suite uses seeds 1–12. Run
 `model:corejs_differential_sweep_test` with `--test_tag_filters=manual` for 40 seeds. Appended `--test_arg=--count --test_arg=N` and
 `--test_arg=--seed --test_arg=S` override the target's arguments.
 
+The error realm and global environment comparisons each use a dedicated Lean
+fixture runner in this directory: [`ErrorRealmTest.lean`](ErrorRealmTest.lean)
+for `model:error_realm_differential_test` and
+[`GlobalEnvTest.lean`](GlobalEnvTest.lean) for `model:global_env_differential_test`.
+
 | Landed model feature                                              | Hand-written oracle                                                                                                                                    | Generated execution                                                                                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Primitive expressions, conversions, assignments, evaluation order | [`cases.mjs`](cases.mjs): numbers, conversions, assignment targets, calls                                                                              | Recursive expressions including negation; every unary, binary and logical operator in the frontend tables executes on generated operands.            |
