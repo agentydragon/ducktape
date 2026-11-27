@@ -91,3 +91,19 @@ eslint_test(
     name = "eslint_test",
     srcs = [":lint_sources"],
 )
+
+js_test(
+    name = "acorn_projection",
+    size = "medium",
+    args = ["$(rootpath :real_bundles/acorn.mjs)"],
+    data = [
+        ":node_modules/acorn",
+        ":real_bundles/acorn.mjs",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "acorn_projection.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
+    tags = ["manual"],
+)
