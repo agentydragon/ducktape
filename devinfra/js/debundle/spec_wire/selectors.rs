@@ -280,9 +280,7 @@ pub fn decode_source_match_claim(
     v: pb::SourceMatchClaim,
 ) -> Result<spec::annotations::SourceMatchClaim> {
     Ok(spec::annotations::SourceMatchClaim {
-        identifiers: pb::SourceMatchIdentifierMode::try_from(
-            v.identifiers.context("missing required projection field")?,
-        )?,
+        identifiers: pb::SourceMatchIdentifierMode::try_from(required(v.identifiers)?)?,
         match_source: required(v.match_source)?,
         bindings: v
             .bindings
@@ -395,9 +393,7 @@ pub fn encode_source_match(value: &spec::annotations::SourceMatch) -> pb::Source
 
 pub fn decode_source_match(v: pb::SourceMatch) -> Result<spec::annotations::SourceMatch> {
     Ok(spec::annotations::SourceMatch {
-        identifiers: pb::SourceMatchIdentifierMode::try_from(
-            v.identifiers.context("missing required projection field")?,
-        )?,
+        identifiers: pb::SourceMatchIdentifierMode::try_from(required(v.identifiers)?)?,
         target_binding: v.target_binding,
         match_source: required(v.match_source)?,
     })
