@@ -65,7 +65,7 @@
       import { html, mount } from "../report.js";
 
       const evidenceSha =
-        "cbc79ebc984297232d124c4d24db0bdfda646887ab4ce2b856c65d8d6d942303";
+        "d55f5ebacb5d1eea30a5d31a8f229eeb491652ce8177c8f2e421b7a55bc431c4";
       const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
@@ -77,6 +77,7 @@
       )
         throw new Error("Evidence does not match this report");
       const e = JSON.parse(new TextDecoder().decode(bytes));
+
       const repo = "https://github.com/agentydragon/ducktape";
       const link = (href, name) => html`<${Anchor} href=${href}>${name}<//>`;
       const pr = (n) => link(`${repo}/pull/${n}`, `#${n}`);
@@ -108,69 +109,106 @@
             <${Accordion.Panel}>${contents}<//>
           <//>
         <//>`;
+      const section = (id, title, ...children) =>
+        html`<section id=${id}>
+          <${Stack} gap="sm"><${Title} order=${2}>${title}<//>${children}<//>
+        </section>`;
+      const sub = (t) => html`<${Title} order=${3}>${t}<//>`;
+      const p = (...s) => html`<${Text}>${s}<//>`;
+      const fmt = (v) => (v == null ? "—" : String(Math.round(v)));
+      const pair = (v) =>
+        v.n ? `${fmt(v.p50)} / ${fmt(v.p90)} (${v.n})` : "—";
       const names = {
         same_repo_open: "Repository opening",
         same_repo_update: "Repository update",
         fork_open: "Trusted fork opening",
         fork_update: "Trusted fork update",
       };
-      const fmt = (v) => (v == null ? "—" : String(Math.round(v * 10) / 10));
-      const pair = (v) =>
-        v.n ? fmt(v.p50) + " / " + fmt(v.p90) + " (" + v.n + ")" : "—";
-      const section = (id, title, ...children) =>
-        html`<section id=${id}>
-          <${Stack} gap="sm"><${Title} order=${2}>${title}<//>${children}<//>
-        </section>`;
-      const p = (...s) => html`<${Text}>${s}<//>`;
+      const cats = {
+        test_vm: "Agentplane test_vm (KubeVirt)",
+        test_firecracker: "Agentplane test_firecracker",
+        agentplane_system_other: "Other Agentplane system test",
+        lean: "Lean compilation or audit",
+        rust: "Rust compilation",
+        debundle_integration_test: "Debundle integration (Excalidraw)",
+        debundle_other_test: "Other Debundle test",
+        other_test: "Other test",
+        other_build: "Short build path (< 1 min)",
+        no_test_invocation: "No test invocation",
+      };
       const previous = link(
-        repo + "/blob/" + e.previous_report_commit + "/latency/index.html",
-        "Previous snapshot and matched trials",
+        `${repo}/blob/2f3a3dbcf3/latency/index.html`,
+        "previous snapshot (17–24 Nov)",
       );
-      const now = e.heads.filter((r) => r.day === "2026-11-24");
-      const jf = (r, k) =>
-        link(
-          repo + "/actions/runs/" + r.gates[k].run + "/job/" + r.gates[k].job,
-          k,
-        );
-      const sample = (pr, time) =>
-        now.find((r) => r.pr === pr && (r.green === time || r.red === time));
+      const periods = Object.keys(e.critical_path_sample.periods);
+      const catRows = Object.keys(cats).map((k) => [
+        cats[k],
+        ...periods.map((per) => {
+          const c = e.critical_path_sample.periods[per].categories[k];
+          return c ? `${c.n} · ${fmt(c.green.p50)} / ${fmt(c.green.p90)}` : "—";
+        }),
+      ]);
+      const vmRuns = e.kvm_recycling.runs;
       function Report() {
-        const [k, setK] = React.useState("fork_open");
-        const days = e.daily[k];
         return html`<${Container}
           component="main"
           size="72rem"
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
-          ><${Stack} gap="xl">
+        >
+          <${Stack} gap="xl">
             <header>
-              ${link("../", "Ducktape reports")}<${Title} my="sm"
-                >CI feedback latency<//
-              >
-              <${Text} size="lg"
-                >Bazel finished last on 59 of 69 green heads on 24 November.
-                Median green ranged from 4m 51s to 7m 01s across the four PR
-                classes. A 30% cut to median green needs roughly half the
-                measured Bazel critical path removed. A 60% cut also requires
-                changing which work enters that path.<//
-              >
-              <${Text} c="dimmed" mt="sm"
-                >17–23 November UTC and 24 November through 22:30 UTC. Seconds
-                from first observed workflow creation for each PR head.
-                Successful reruns included.<//
-              >
+              ${link("../", "Ducktape reports")}
+              <${Title} my="sm">CI feedback latency<//>
+              <${Text} size="lg">
+                Median time to required green rose from 185–244 s (20–23 Nov) to
+                398 s and 421 s (24–25 Nov), then 268 s on 26 Nov. Bazel
+                finished last on 148 of 160 sampled greens. The long paths are
+                deep chains with a fixed cost per step: 26 Lean modules that
+                each pay about 10 s of imports, 26 levels of Debundle crates,
+                and a KubeVirt suite that imports 24 images one by one because
+                its runner is never reused.
+              <//>
+              <${Text} c="dimmed" mt="sm">
+                PR heads that arrived 20 Nov 00:00 – 27 Nov 05:00 UTC (27 Nov
+                partial). Seconds from GitHub's PR opened/synchronize event for
+                each exact head to all three required checks green. Successful
+                reruns included.
+              <//>
             </header>
+
             ${section(
-              "cohorts",
-              "Time to green and first red",
+              "trend",
+              "Time to required green",
+              html`<${Box}
+                role="img"
+                aria-label="Median and p90 minutes to required green by UTC arrival day"
+              >
+                <${BarChart}
+                  h=${240}
+                  withLegend
+                  dataKey="day"
+                  data=${e.daily.map((d) => ({ day: d.day.slice(8) + (d.day.endsWith("27") ? "*" : ""), Median: d.green.p50 / 60, P90: d.green.p90 / 60 }))}
+                  series=${[
+                    { name: "Median", color: "blue.7" },
+                    { name: "P90", color: "orange.7" },
+                  ]}
+                  yAxisLabel="Minutes"
+                  valueFormatter=${(v) => v.toFixed(1)}
+                />
+              <//>`,
+              p(
+                "UTC arrival day, * partial. Green heads per day: ",
+                e.daily.map((d) => d.green.n).join(", "),
+                ". All PR heads, not a sample.",
+              ),
               table(
                 [
-                  "24 November",
+                  "Class",
                   "Heads",
-                  "Green / red / canceled",
-                  "Required green p50 / p90 (n)",
-                  "First red p50 / p90 (n)",
-                  "Required red p50 / p90 (n)",
+                  "Green / red / superseded / other",
+                  "Green p50 / p90 s (n)",
+                  "Red p50 / p90 s (n)",
                 ],
                 Object.entries(e.classes).map(([k, s]) => [
                   names[k],
@@ -178,55 +216,16 @@
                   [
                     s.outcomes.green || 0,
                     s.outcomes.red || 0,
-                    s.outcomes.cancelled || 0,
+                    s.outcomes.superseded || 0,
+                    (s.outcomes.cancelled || 0) + (s.outcomes.pending || 0),
                   ].join(" / "),
                   pair(s.green),
                   pair(s.red),
-                  pair(s.required_red),
                 ]),
-                820,
-              ),
-              disclosure(
-                "First green or red on each head",
-                table(
-                  [
-                    "Class",
-                    "Any verdict / heads",
-                    "First verdict p50 / p90 (s)",
-                    "30% / 60% median targets (s)",
-                  ],
-                  Object.entries(e.classes).map(([k, d]) => [
-                    names[k],
-                    d.first_verdict.n + " / " + d.n,
-                    fmt(d.first_verdict.p50) + " / " + fmt(d.first_verdict.p90),
-                    fmt(0.7 * d.first_verdict.p50) +
-                      " / " +
-                      fmt(0.4 * d.first_verdict.p50),
-                  ]),
-                ),
+                760,
               ),
               p(
-                "The median PR-opening to workflow delay was 4 s in-repository and 5 s on trusted forks. GitHub does not give this collection a comparable push timestamp for updates. On devel the rules require Bazel, artifacts/imports and pre-commit, with zero required approvals and no strict up-to-date requirement.",
-              ),
-              p(
-                "Of 98 audited heads, 69 reached green, 16 ended red and 13 were canceled. Four greens and one cancellation had already reported a failure. First red includes a matching BuildBuddy status, a failed required gate or a confirmed devel merge conflict. Required green is the completion of all three checks. Draft status, conflict resolution, policy exceptions and the time an agent read the result have no historical readiness clock here.",
-              ),
-              html`<${Select}
-                label="Daily green by PR class"
-                value=${k}
-                onChange=${(v) => v && setK(v)}
-                allowDeselect=${false}
-                maw="22rem"
-                data=${Object.entries(names).map(([value, label]) => ({ value, label }))}
-              />`,
-              html`<${Box} role="img" aria-label="Minutes to required green by UTC arrival day"><${BarChart} h=${235} withLegend dataKey="day" data=${days.map((d) => ({ day: d.day.slice(8) + (d.day.endsWith("24") ? "*" : ""), Median: d.green.n ? d.green.p50 / 60 : null, P90: d.green.n >= 8 ? d.green.p90 / 60 : null }))} series=${[
-                { name: "Median", color: "blue.7" },
-                { name: "P90", color: "orange.7" },
-              ]} yAxisLabel="Minutes" /></${Box}>`,
-              p(
-                "UTC arrival day, * partial. Green counts for days 17–24: " +
-                  days.map((d) => d.green.n).join(", ") +
-                  ". A missing bar means no observations or fewer than eight greens for p90. Small samples make the tails sensitive to a single rerun.",
+                "The four classes now sit within about 2 minutes of each other at the median. Fork updates are slowest (332 s). Reds are no faster than greens: the median first failure lands at 259–349 s, because the failing action usually starts late in the Bazel run.",
               ),
               disclosure(
                 "Daily values in seconds",
@@ -234,222 +233,220 @@
                   [
                     "UTC day",
                     "Heads",
-                    "Green (n)",
-                    "Green p50 / p90, s",
-                    "First red p50 / p90, s (n)",
+                    "Green p50 / p90 (n)",
+                    "Red p50 / p90 (n)",
                   ],
-                  days.map((d) => [
+                  e.daily.map((d) => [
                     d.day,
-                    d.n,
-                    d.green.n,
-                    d.green.n
-                      ? fmt(d.green.p50) +
-                        " / " +
-                        (d.green.n >= 8 ? fmt(d.green.p90) : "—")
-                      : "—",
+                    d.heads,
+                    pair(d.green),
                     pair(d.red),
                   ]),
                 ),
               ),
               disclosure(
-                "Changed paths and sample selection",
-                html`<${Stack}
-                  >${table(
-                    [
-                      "24 November",
-                      "Heads",
-                      "Green p50 / p90 (n)",
-                      "First red p50 / p90 (n)",
-                    ],
-                    Object.entries(e.workloads).map(([k, s]) => [
-                      k,
-                      s.n,
-                      pair(s.green),
-                      pair(s.red),
-                    ]),
-                  )}
-                  ${p("We ranked heads by a hash of the SHA within day, repository and opening/update class. The cap was eight per class per complete day and 30 on the 24th. Of 320 candidates, 276 tested merges had the event head as second parent and a devel first parent, and six fork resolver logs confirmed a devel conflict. We excluded 38 other merges, including 22 on the 24th. An opening was the first observed workflow within one minute of PR creation. Counts do not estimate the repository-wide mix. Changed paths use the tested tree versus its first parent, prioritizing Debundle, Agentplane, cluster and Nix when edits span areas.")}<//
-                >`,
+                "Clocks and sources",
+                p(
+                  "The start clock is the PR opened time or the synchronize event's updated_at, read from the stored GitHub webhooks (CDviz). It is not the push time. Same-repo verdicts come from CDviz's ci_feedback view. Fork verdicts come from GitHub check runs on the head SHA, because that view mislabels most fork heads (see Data collection). Required checks: Bazel (bazel-ci / Test & Build), Build artifacts + imports check, Pre-commit checks; zero approvals required. Superseded heads are censored at their replacement. The previous report used a smaller audited sample with a workflow-creation clock, so compare its numbers loosely: ",
+                  previous,
+                  ".",
+                ),
               ),
             )}
             ${section(
               "drivers",
-              "What runs while a PR waits",
+              "What sets the time",
               p(
-                "Debundle accounted for 80 of 98 audited heads and 58 of 69 greens. In the final 90 minutes of arrivals, nine of ten heads touched Debundle. Five reached green (416–2,687 s), two ended red and three were canceled. These samples describe that workload mix.",
-              ),
-              p(
-                "On the 69 greens, GitHub admission for the first Bazel job took 2 s at the median and 10 s at p90. Its Test + Build + lint step took 309 / 624 s. The pinned CLI install step took 1 / 2 s among 59 jobs with a positive-duration step. Pre-commit finished last five times, and artifacts/imports five times. The previous cache-stall sample had pre-commit last on ten of twelve. ",
-                previous,
-              ),
-              p(
-                "On 54 Bazel-last, single-attempt greens with a native test critical path, its median length was 254 s. Test actions accounted for the largest portion on 24 paths, Rust compilation on 16, Lean compilation on 12 and other operations on two. Median reported remote queue share was 0.16% among paths with that field. The outer runner still needs to start and sync. This sample gives little reason to buy general runner slots.",
+                "We sampled 12 same-repo and 8 fork green heads per day and read the critical path of each Bazel test invocation. Bazel finished last on 77 of 80 heads in 20–23 Nov and 71 of 80 in 24–27 Nov. Pre-commit was last six times in the later period. Each row counts heads by the largest category on their critical path.",
               ),
               table(
                 [
-                  "Head",
-                  "Hosted and remote clocks from workflow creation",
-                  "What determined feedback",
+                  "Critical path dominated by",
+                  ...periods.map((per) => `${per}: heads · green p50 / p90 s`),
                 ],
-                [
-                  [
-                    pr(19701),
-                    "Bazel runner +27 s, remote sync +41 s, affected targets logged +93 s, all green +113 s.",
-                    "20 targets, six tests. Native test path 1.35 s.",
-                  ],
-                  [
-                    pr(19836),
-                    "Remote wait message → first sync 17 s. 235 affected targets. Artifacts green +107 s, Bazel green +421 s.",
-                    "Test invocation 305 s, with a 291 s path through Rust CLI compilation, graph export and editor-spec generation.",
-                  ],
-                  [
-                    pr(19849),
-                    "Bazel runner +2 s, other gates green by +83 s. Printer test enqueued +876 s, timed out +939 s. Live status +998 s, required red +1,248 s.",
-                    "The failing process ran 61 s. A different test, linked if_test, ended the 1,096 s native critical path. Shrinking that last test alone would miss the first red.",
-                  ],
-                ],
-                730,
+                catRows,
+                700,
               ),
-              html`<${Group}
-                >${[sample(19701, 113), sample(19836, 421), sample(19849, 998)].map((r) => inv(r.trace.invocation, "#" + r.pr + " inner trace"))}<//
-              >`,
               p(
-                "The sample’s assigned, completed GitHub jobs occupied 1,145 runner-minutes inside the 24 November window, including waiting on BuildBuddy. This includes pre-audit candidates. On #19849 the three largest fresh TestRunner labels by aggregate process time were property_assignment (833 s), flat_patterns (624 s) and loops (586 s). Their actions overlap. The native path instead spent 267 s in corejs_certificate_support, 150 s in corejs_runtime and 312 s in if_test. BuildBuddy’s outer runner handles checkout and invokes Bazel. The inner actions run on RBE. Pool-wide entitlement, backlog and per-action worker class were unavailable from these clocks.",
+                "The regression is a workload shift. Before 24 Nov, 36 of 80 sampled heads had a path under a minute or a small test. After it, 29 of 80 spent most of their path compiling Lean or Rust. The KVM suites appear on about one head in eight in both periods, but they own the longest tails. The 15,925 s Firecracker tail is one head that failed at 996 s and passed on a rerun four hours later.",
               ),
               disclosure(
-                "Reruns and earlier red",
-                p(
-                  "Four heads recovered on the same tested merge. #19821 hit the 300 s default_parameters timeout. #19857 timed out in reordering and the Excalidraw browser smoke. One #19800 head failed test_services_central and another hit a microVM restore error. All four had user-triggered rerun attempts. On #19857 the first job ended 21:37:02 UTC, the next attempt started 21:52:02 and its Bazel job started 21:58:08. The 15-minute gap preceded the attempt. On the 20 heads with both red clocks the paired median lead of the first signal was 5.5 s, and the maximum was 261 s. A subscription that follows the tested merge’s live status can expose those leads. The stored timestamps measure publication. ",
-                  pr(19857),
-                  " · ",
-                  pr(19800),
+                "Sampled heads",
+                table(
+                  ["Head", "Day", "Green s", "Path s", "Dominant", "Trace"],
+                  e.critical_path_sample.rows.map((r) => [
+                    link(`${repo}/commit/${r.sha}`, r.sha.slice(0, 10)),
+                    r.d.slice(5),
+                    fmt(r.green),
+                    fmt(r.cp),
+                    cats[r.cat],
+                    r.inv ? inv(r.inv, "path") : "—",
+                  ]),
+                  700,
                 ),
               ),
             )}
             ${section(
-              "goals",
-              "What a 30% or 60% reduction requires",
+              "opportunities",
+              "Best opportunities",
+              sub(
+                "1. KubeVirt suite (test_vm): stop paying for a cold stack every run",
+              ),
               p(
-                "The targets below are relative to each class’s current green median. For each head we reduce its measured ordinary-test critical path and recompute the latest of all three gates. Untraced heads and reruns keep their original clocks. The simulation assumes each second removed from the path moves Bazel completion a full second earlier. A parallel straggler can absorb that saving.",
+                "Every scenario in ",
+                source("agentplane/system_tests/vm/defs.bzl", "test_vm"),
+                " shares one K3s/KubeVirt stack. Its OTel spans show where a run goes. In the fastest sampled run (428 s), stack setup took 242 s, the two scenarios ran side by side for 131 s, and cleanup took 42 s. In each scenario the VM sandbox took 65–71 s to become ready and the agent turn 12–15 s. Setup is dominated by 24 container-image imports done one at a time (",
+                source(
+                  "agentplane/system_tests/k3s/baseline.py",
+                  "import_images",
+                ),
+                "): 190 s in that run, 572 s in the slowest. The K3s, KubeVirt and PKI installs overlap the imports, but the last import (the VM guest root disk, 34–84 s) gates KubeVirt readiness.",
+              ),
+              p(
+                "The suite is built to skip imports on a recycled runner, but it never gets one. In 6 of 6 sampled runs it started fresh. After the end-of-test memory reclaim the runner still held 2.152–2.339 GB, over the 2 GiB (2.147 GB) cap, mostly anonymous memory of the retained K3s, KubeVirt, Kyverno and cert-manager processes. ",
+                pr(19002),
+                " (22 Nov) caps paused runners at 2 GiB to stop memory stalls, so BuildBuddy discards every test_vm runner. test_firecracker stays near 1.4 GB and does recycle: warm setup took 40–47 s against 125–179 s cold.",
               ),
               table(
                 [
-                  "PR class",
-                  "Current",
-                  "30% target",
-                  "60% target",
-                  "If path halves",
-                  "Path cut needed for 30% / 60%",
-                  "Other-gate floor",
+                  "Suite",
+                  "Trace",
+                  "Warm runner",
+                  "Memory after reclaim (cap 2.147 GB)",
+                  "Stack setup s",
+                  "Pytest s",
                 ],
-                e.model.map((m) => [
-                  names[m.k],
-                  m.base,
-                  fmt(0.7 * m.base),
-                  fmt(0.4 * m.base),
-                  fmt(m.half),
-                  m.needed.join("% / ") + "%",
-                  fmt(m.floor),
+                vmRuns.map((r) => [
+                  r.suite,
+                  inv(r.invocation, r.invocation.slice(0, 8)),
+                  r.recycled ? "yes" : "no",
+                  (r.memory_after_reclaim_bytes / 1e9).toFixed(3) + " GB",
+                  fmt(r.stack_setup_s),
+                  fmt(r.pytest_s),
                 ]),
-                735,
+                700,
               ),
               p(
-                "The previous 182-head baseline had green medians of 197, 281, 167 and 397 s in the same class order. Its 30% goals were 138, 197, 117 and 278 s. All four current medians exceed them. The dates, sampled workloads and opening-clock origins differ. The new estimates use today’s observations.",
+                "Queueing is not the problem: these KVM actions waited 0.1–5 s (one 87 s) and fetched inputs in 1–17 s (max 56 s). The time is execution.",
+              ),
+              table(
+                ["Change", "Mechanism", "Expected effect on test_vm", "Status"],
+                [
+                  [
+                    "Retain only the image store",
+                    "Stop K3s before the runner is paused and keep the ext4 image disk. Anonymous memory falls well under the 2 GiB cap, so BuildBuddy keeps the runner; the next run boots K3s and reinstalls controllers but skips imports.",
+                    "−150 to −550 s setup on a warm hit. The 17 Nov spike measured 41 s warm vs 144 s cold setup on one source.",
+                    "Proposed. Measure warm-hit rate and setup spans on PR traffic.",
+                  ],
+                  [
+                    "Skip baseline cleanup when the runner cannot be kept",
+                    "stack.cleanup (42–73 s) resets the stack for reuse that never happens. The test already measures memory after reclaim and can skip the reset when it exceeds the cap.",
+                    "−40 to −70 s on every current run.",
+                    "Proposed; small change.",
+                  ],
+                  [
+                    "Import images concurrently",
+                    "Imports are serial and are the setup critical path. 11 of 24 images are pinned upstream (KubeVirt, cert-manager, Kyverno) and never change.",
+                    "Up to the serial sum minus the longest image; bounded by worker disk and CPU.",
+                    "Untested. Shared blobs need one importer each to avoid containerd ingest locks.",
+                  ],
+                ],
+                820,
               ),
               p(
-                "For first red, 30% / 60% targets are 142 / 81 s for fork openings, 113 / 64 s for fork updates, and 539 / 308 s for same-repo updates. The last pair rests on four first-red signals. Four fork conflicts were diagnosed in 7–15 s. We observed no same-repo opening red. Simply reporting terminal checks faster cannot recover minutes on heads whose failing action starts late.",
+                "Cold runs also vary threefold: setup 187 vs 657 s, with every phase slower by a similar factor. That points to contention on the worker rather than one stalled step. Over the week, guests on wyrm2 (about 28% of KVM busy time) had the most IO waiting while busy (median 0.18 vs 0.07–0.11 on the OVH hosts) and the highest CPU-wait tail (p90 0.43). The two slowest test_vm runs (1,234 and 1,016 s) ran on the same executor. Spans carry no host identity, so these runs cannot be tied to a host. Add the VM and node name to the test span resource; then decide whether to keep KVM workers off wyrm2.",
               ),
-              html`<${Title} order=${3}
-                >Run the printer test as soon as its own inputs are ready<//
-              >`,
+              sub("2. Debundle Rust: the crate graph is 26 crates deep"),
               p(
-                "It invokes only lowersplit --diagnostic, yet its launcher includes both compiler entry points and their shared Bazel target includes Certified.lean. Give the diagnostic runner its actual import closure and module I/O. Keep a separate end-to-end test for public CLI dispatch. This bounded change could advance red on proof edits that leave the printer’s inputs unchanged. ",
-                source(
-                  "devinfra/js/debundle/x/split_proof/lean/BUILD.bazel",
-                  "Current targets",
-                ),
+                'On 9 of the 29 later Lean/Rust heads, the path ended in building the debundler "for tool" (115–315 s) before any Debundle test could start. In one example trace, ten crate-metadata compiles ran in sequence (8–17 s each, including one-file crates), then the full cli rlib (62 s), the binary link (49 s), graph export (22 s), the editor-spec step (29 s) and the test (30 s). ',
+                inv("b67f9f5b-9cf2-5f62-a778-a16577f09253", "Trace"),
+                ". The debundler depends on 100 crates and the longest chain is 26 deep. Each level costs a metadata compile of 8–17 s, mostly fixed overhead. An edit to a low crate therefore costs minutes before any test runs.",
               ),
               p(
-                "The first same-seed trial favored the warm stock dependencies: stock passed in 16.8 s, while the cold candidate entered the queue 167 s later and timed out at 60 s. We then changed only Certified.lean after both layouts had built and forced both tests to execute again with their original assertions. The diagnostic-only test entered the queue 192 s earlier, alongside the stock workflow-library rebuild, and passed in 48.7 s. The stock test then timed out at 60.2 s. This demonstrates earlier eligibility on that kind of edit. Both layouts timed out once across the two trials. Confirm repeatability and measure PR-wide red before adopting.",
-                " ",
-                inv(
-                  "6a0b1b4a-22d6-425a-8fd8-f8485dd33aed",
-                  "Same-input diagnostic trial",
-                ),
+                "The ongoing crate splits (",
+                pr(20219),
+                ", ",
+                pr(20237),
+                ", ",
+                pr(20292),
+                ", ",
+                pr(20303),
+                ", ",
+                pr(20387),
+                ") cut work only where they make the graph wider. A split that adds a layer adds 8–17 s to every edit below it. Proposal: track the longest crate chain as a number in review, flatten chains such as cli → comment → binding → candidate_assessment, and give apply and graph export binaries that link only what they call. Next experiment: profile one one-file metadata compile to see what the 8–10 s floor is (dependency metadata loading, proc macros or action setup).",
+              ),
+              p(
+                "Rejected: building exec-configuration Rust at opt-level 1 instead of Bazel's default optimized exec build. A same-source pair sped up the largest full compiles (cli 43→26 s, staged_analysis 58→43 s) but not the metadata chain. The link got slower (24→30 s), and so did the tool's analysis run (22→34 s). It was one pair on different workers, so the net effect is within noise. ",
+                inv("f7d3db0f-0be3-468c-a745-70e6b9cd1ae0", "Control"),
                 " · ",
-                inv(
-                  "8a9d83ab-3a5a-4ce5-b192-e67529f25489",
-                  "Certified-only edit replay",
-                ),
+                inv("a98eb4a6-1da3-4241-a22a-85dce99dd70b", "opt-level 1"),
               ),
-              html`<${Title} order=${3}
-                >Start a focused test run on graph-wide changes<//
-              >`,
+              sub("3. Lean: a fixed import cost per module, 26 modules deep"),
               p(
-                "The median trusted-fork update red came from #19732. Its MODULE.bazel change triggered a sweep with 2,294 test labels in scope. It also edited the translation package BUILD file. The remote driver started at +39 s. The failing shift_fuzz_test queued at +150 s, ran 8.6 s and published red at +161 s. The preliminary query took 10.8 s. Removing it alone cannot deliver the 48 s required for 30%. ",
-                jf(sample(19732, 161), "Bazel"),
-                " · ",
-                inv("6d108243-88f9-46a0-8411-b6249e93d595", "Selection query"),
+                pr(20059),
+                " (26 Nov) moved Lean to one cached action per module. Before it, grouped library builds set paths of 313–1,176 s (24–25 Nov, 6 heads). After it, sampled Lean paths took 111–299 s (n = 5). The remaining cost is structural. One core-library edit recompiled 26 modules in a strict import chain, 8–54 s each, 518 s in total. ",
+                inv("eebd453d-7384-500f-a02e-5eade1555aa6", "Trace"),
               ),
               p(
-                "Trial a parallel run of tests in directly edited BUILD packages on the same merge, using the normal flags, trust boundary and cache. Keep the full sweep running. For this head, a focused run starting at +39 s would have 74 s to produce red for a 30% cut, or 25 s for 60%. The latter leaves about 16 s for startup and dependencies after the test itself. Compare exact-source failures, extra runner-minutes, duplicated setup and required green before enabling. This helps only when the early run contains the failure.",
-              ),
-              html`<${Title} order=${3}
-                >Narrow the Rust tool used for graph export<//
-              >`,
-              p(
-                "The graph action invokes the full debundler with run --graphs --reports-only. Give that action a smaller executable that calls the same export code, as the analyzer and projector already do. On #19836 the tool-side CLI rlib alone took 67 s. The whole 67 s would cover just over half the 126 s needed for a 30% cut on this head. Compare emitted graph bytes, rejection markers, editor specs, real browser behavior and cold/warm full-gate clocks. Medium engineering effort, no standing capacity. The shared pipeline crates and other Rust test targets can remain the last work. ",
-                source(
-                  "devinfra/js/debundle/pipeline.bzl",
-                  "Graph export action",
-                ),
-              ),
-              html`<${Title} order=${3}
-                >Reduce both proof compilation and editor-test time<//
-              >`,
-              p(
-                "Try one cacheable Lean compilation per module or small import component, with dependents starting when their imports finish. Retain the pinned toolchain, axiom audit and byte-equivalent outputs. Replay an upstream runtime edit and a downstream proof edit with both target and exec configurations. Previous Frame/Scope partitioning saved 39 s on a warm 415 s path but regressed twice cold. A new boundary must also beat the cold control. ",
-                inv(
-                  "d22f7c7a-e421-49ec-99d8-3200ee4f0a30",
-                  "Earlier warm replay",
-                ),
+                "Lean's profiler shows that per-module time is import, not proof work. HiddenRegion (50 lines) reported 7 s of import against 0.4 s of elaboration and 0.2 s of type checking. Remotely each module compile stages 15,500 files (2.7 GB), uses 10–13 CPU-s and peaks at about 450 MiB. Locally the same compile takes 1.3–3.2 s. The chain reaches the large `Lean` package through a few modules: HostProfile and four others import Lean.Data.Json, and the certificate modules import Lean.Elab.*. Every module above them pays that import.",
               ),
               p(
-                "The certified editor test binds an origin, certifies the split, runs the stock browser, installs the overlay and runs the split browser. The first two operations after binding both read the original inputs. Overlap certification and the stock browser, await both before installing the overlay, and retain the separate output-tree check and both browser comparisons. This can save at most the shorter overlapping phase and raises peak CPU and memory. Measure each phase and compare the full gate, including competing tests. ",
-                source(
-                  "devinfra/js/debundle/x/split_proof/integration/excalidraw/browser_smoke_test.py",
-                  "Editor test contract",
-                ),
+                "Proposal: keep the low-level frame modules off the `Lean` package (move the JSON parsing out of HostProfile into a leaf the proofs do not import), and let example and certificate modules import narrower prerequisites, so the chain shortens and branches. Rejected: dropping the per-module C output that rules_lean always emits. Local timing showed no measurable difference with or without it.",
               ),
+              sub("4. Smaller items"),
               p(
-                "For green, #19838 took 868 s. Its 769 s path contained roughly 464 s of Lean work and 303 s in the editor test. Holding the other 99 s fixed, a 30% cut allows 509 s on this path (for example, 280 s Lean and 225 s editor). A 60% cut allows 248 s (145 s Lean and 100 s editor). These are engineering budgets. Any newly limiting parallel action must fit too. ",
-                pr(19838),
-              ),
-              p(
-                "For first red, #19849 first signaled at 998 s. Its first failing action entered the queue at +876 s. If the remaining 122 s are fixed, the action must enter by +577 s for a 30% cut or +277 s for 60%. Narrowing the diagnostic executable can remove unrelated prerequisites. The 60% target may also require faster shared Lean compilation, and the observed interval between action exit and first GitHub status was 59 s. The watcher polls at two seconds by default. The available clocks do not isolate BuildBuddy indexing from status publication. ",
-                pr(19849),
-                " · ",
-                source(
-                  "devinfra/buildbuddy/ci/live_test_status.py",
-                  "Live watcher",
-                ),
-              ),
-              p(
-                "A blind sharding rollout lost its first comparison. On the same source revision the unmodified if_test passed in 83.2 s. Three independent actions containing every original case once passed in 98.0, 154.8 and 94.6 s. All four processes started within two seconds, and the three candidates consumed 264 CPU-s combined versus 114 CPU-s for control. Different workers and one run limit attribution. Keep this arrangement out of production. ",
-                inv("6fed6de6-e657-4540-9a3c-bd8102f17a64", "Four-arm trial"),
-              ),
-              html`<${Title} order=${3}
-                >Protect the pre-commit gate during cache outages<//
-              >`,
-              p(
-                "The previous matched replay cut green from 374 to 152 s during a failed compiler download. Both Rustfmt and scanner changes are still open. Apply their real file matchers and retain the tools on matching changes. Their ceiling is small on today’s Bazel-last heads. The direct installer and exit-3 publication fix have landed. The installer currently takes 1 s at the median. We have no matched production estimate for runner time freed by publication suppression. ",
+                "The Excalidraw integration tests dominated six later heads (green 738 / 1,350 s). The previous report's overlap of certification and the stock browser still applies. The two pre-commit tool-install PRs (",
                 pr(19640),
-                " · ",
+                ", ",
                 pr(19653),
-                " · ",
-                pr(19578),
-                " · ",
-                pr(19642),
+                ") are still open; pre-commit was last on six later heads. The printer-test narrowing has started (",
+                pr(20463),
+                ", ",
+                pr(20470),
+                ").",
+              ),
+            )}
+            ${section(
+              "signals",
+              "When agents can see results",
+              p(
+                "GitHub's job-completion webhook reached our collector at p50 2.9 s, p90 5.7 s and p99 7.4 s for about 19,700 required-gate completions (one 2,178 s outlier). This is receipt in the cluster, not an agent reading it. Delivery is not a meaningful part of feedback time.",
+              ),
+              p(
+                "The live BuildBuddy test status, which can report red before the job ends, is a GitHub commit status. CDviz does not subscribe to status or check-run events, so its lead time stays unmeasured.",
+              ),
+            )}
+            ${section(
+              "collection",
+              "Data collection fixes",
+              p(
+                "CDviz stores near-raw webhook payloads, which made this refresh possible. Three gaps showed up:",
+              ),
+              table(
+                ["Gap", "Effect", "Proposed fix"],
+                [
+                  [
+                    "ci_feedback view mislabels fork heads",
+                    "745 of 1,451 fork heads stay pending although GitHub shows them green. Same-repo: 4 of 2,877. The skipped CI pull_request run (higher run ID) emits pending rows for bazel-ci / Test & Build that outrank the real trusted-fork result.",
+                    "View only, raw data is intact: a new migration that emits run-level pending rows only for gates the run actually produced, or clears them when the run completes without that job.",
+                  ],
+                  [
+                    "No status or check_run events",
+                    "Early-red clock from the live BuildBuddy status is missing.",
+                    "Subscribe to status and check_run in the webhook; store raw.",
+                  ],
+                  [
+                    "No push clock",
+                    "Updates use pull_request.updated_at as a proxy.",
+                    "Subscribe to push events and keep X-GitHub-Delivery; imported_at then gives push arrival and duplicate detection.",
+                  ],
+                ],
+                760,
+              ),
+              p(
+                "The skills now include tested queries for this store (",
+                pr(20512),
+                ").",
               ),
             )}
             ${section(
@@ -458,51 +455,18 @@
               p(
                 "Source ",
                 link(
-                  repo + "/tree/" + e.source_devel_commit,
+                  `${repo}/tree/${e.source_devel_commit}`,
                   e.source_devel_commit,
                 ),
-                ". Success uses the earliest observed completion of all required contexts in the original workflow runs and their reruns. Live ordinary failures must match the run, attempt and invocation. Job clocks have one-second resolution. Provider timestamps do not measure first log accessibility, inbox acceptance or agent read time. The notification service supports commit status, check and workflow events, but no matched subscriber receipts were collected. ",
-                pr(19648),
-                " (withdrawn fork lookup) · ",
-                source(
-                  "agentplane/notification_service/internal/sources/github/publication/fanout/github_matching_integration_test.go",
-                  "Subscriber matching",
-                ),
-                " · ",
-                link(repo + "/rules?ref=refs%2Fheads%2Fdevel", "Current rules"),
-              ),
-              disclosure(
-                "Exact heads and gate clocks",
-                table(
-                  [
-                    "PR head",
-                    "Class",
-                    "Outcome",
-                    "Green / first red (s)",
-                    "First-attempt jobs",
-                  ],
-                  now.map((r) => [
-                    link(
-                      repo + "/pull/" + r.pr,
-                      "#" + r.pr + " " + r.sha.slice(0, 8),
-                    ),
-                    names[r.class],
-                    r.outcome,
-                    fmt(r.green) + " / " + fmt(r.red),
-                    html`<${Group} gap="xs"
-                      >${Object.keys(r.gates).map((k) => jf(r, k))}<//
-                    >`,
-                  ]),
-                  660,
-                ),
+                ". Raw API pages, logs and traces are kept locally; this page publishes aggregates and links only. Critical paths are BuildBuddy's critical-path tool log for each sampled head's first successful Bazel job. Sixteen sampled heads had no test invocation and count as such.",
               ),
               html`<${Group}
-                >${link("./evidence.json", "Head-level evidence")}
+                >${link("./evidence.json", "Evidence")}
                 ${link("./manifest.json", "Manifest")} ${previous}<//
               >`,
-            )}<//
-          ><//
-        >`;
+            )}
+          <//>
+        <//>`;
       }
       mount(Report);
     </script>
