@@ -380,6 +380,7 @@ lean_library(
     name = "corejs_fuel",
     srcs = ["EsmSplit/CoreJS/Fuel.lean"],
     deps = [
+        ":corejs_async_prefix",
         ":corejs_eval",
         ":corejs_iterator",
     ],
@@ -696,6 +697,7 @@ lean_library(
 lean_library(
     name = "corejs_linked_input",
     srcs = ["EsmSplit/CoreJS/LinkedInput.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [
         ":corejs_deployment_placement",
         ":corejs_entry_exports",
@@ -925,6 +927,7 @@ lean_library(
     name = "corejs_invocation_frame",
     srcs = ["EsmSplit/CoreJS/InvocationFrame.lean"],
     deps = [
+        ":corejs_async_prefix_frame",
         ":corejs_binding_frame",
         ":corejs_host_frame",
         ":corejs_request_property",
@@ -2055,6 +2058,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/Eval.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [
+        ":corejs_async_prefix",
         ":corejs_iterator",
         ":module_order",
     ],
@@ -4079,4 +4083,246 @@ lean_proof_test(
         "CoreJS.PrimitiveRhs.inert_logical",
     ],
     deps = [":primitive_rhs_frame"],
+)
+
+lean_library(
+    name = "corejs_async_prefix",
+    srcs = ["EsmSplit/CoreJS/AsyncPrefix.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [":corejs_value"],
+)
+
+lean_library(
+    name = "corejs_async_prefix_frame",
+    srcs = ["EsmSplit/CoreJS/AsyncPrefixFrame.lean"],
+    deps = [
+        ":corejs_async_prefix",
+        ":corejs_frame",
+        ":corejs_request_allocation",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_async_prefix_axioms_test",
+    allow_empty = True,
+    modules = [
+        "EsmSplit.CoreJS.AsyncPrefix",
+        "EsmSplit.CoreJS.AsyncPrefixFrame",
+    ],
+    required_theorems = [
+        "CoreJS.AsyncPrefix.allocate_fresh",
+        "CoreJS.AsyncPrefix.allocate_reachFrame",
+        "CoreJS.AsyncPrefix.invoke_after_allocate",
+        "CoreJS.AsyncPrefix.invokeBody_reachFrame",
+        "CoreJS.AsyncPrefix.invoke_zero",
+        "CoreJS.AsyncPrefix.settle_frame",
+        "CoreJS.AsyncPrefix.settlement_edges",
+    ],
+    deps = [
+        ":corejs_async_prefix",
+        ":corejs_async_prefix_frame",
+    ],
+)
+
+lean_library(
+    name = "corejs_turn",
+    srcs = ["EsmSplit/CoreJS/Turn.lean"],
+    deps = [":corejs_value"],
+)
+
+lean_library(
+    name = "corejs_call_turn",
+    srcs = ["EsmSplit/CoreJS/CallTurn.lean"],
+    deps = [
+        ":corejs_eval",
+        ":corejs_scope",
+        ":corejs_turn",
+    ],
+)
+
+executable_test(
+    name = "call_turn_test",
+    src = "CallTurnTest.lean",
+    deps = [":corejs_call_turn"],
+)
+
+lean_proof_test(
+    name = "corejs_call_turn_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.CallTurn"],
+    required_theorems = [
+        "CoreJS.callFnTurn_overlap",
+        "CoreJS.evalCall_turn",
+        "CoreJS.execFinally_turn",
+        "CoreJS.performCall_turn",
+    ],
+    deps = [":corejs_call_turn"],
+)
+
+lean_library(
+    name = "corejs_program_turn",
+    srcs = ["EsmSplit/CoreJS/ProgramTurn.lean"],
+    deps = [
+        ":corejs_eval",
+        ":corejs_scope",
+        ":corejs_turn",
+    ],
+)
+
+lean_library(
+    name = "corejs_turn_publication",
+    srcs = ["EsmSplit/CoreJS/TurnPublication.lean"],
+    deps = [
+        ":corejs_constructed_output",
+        ":corejs_linked_behavior",
+        ":corejs_primitive_await",
+        ":corejs_program_turn",
+    ],
+)
+
+lean_library(
+    name = "corejs_literal_reorder_turn",
+    srcs = ["EsmSplit/CoreJS/LiteralReorderTurn.lean"],
+    deps = [
+        ":corejs_turn_publication",
+        ":literal_reorder_construct",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_turn_publication_axioms_test",
+    allow_empty = True,
+    modules = [
+        "EsmSplit.CoreJS.LiteralReorderTurn",
+        "EsmSplit.CoreJS.ProgramTurn",
+        "EsmSplit.CoreJS.TurnPublication",
+    ],
+    required_theorems = [
+        "CoreJS.LiteralReorderConstruct.Construction.checkTurnReadback",
+        "CoreJS.LiteralReorderConstruct.Construction.turnPublication",
+        "CoreJS.TurnPublication.drains",
+        "CoreJS.TurnPublication.ordinary",
+        "CoreJS.checkTurnPublication_sameAcceptance",
+        "CoreJS.erase_does_not_determine_checkpoint",
+        "CoreJS.runProgram_eq_erase",
+    ],
+    deps = [":corejs_literal_reorder_turn"],
+)
+
+lean_library(
+    name = "corejs_primitive_await",
+    srcs = ["EsmSplit/CoreJS/PrimitiveAwait.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [
+        ":corejs_async_prefix",
+        ":corejs_eval",
+        ":corejs_turn",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_primitive_await_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PrimitiveAwait"],
+    required_theorems = [
+        "CoreJS.PrimitiveAwait.drain_head",
+        "CoreJS.PrimitiveAwait.drain_paused",
+        "CoreJS.PrimitiveAwait.launch_suspends",
+        "CoreJS.PrimitiveAwait.launch_zero",
+        "CoreJS.PrimitiveAwait.runJob_keeps_result",
+    ],
+    deps = [":corejs_primitive_await"],
+)
+
+lean_library(
+    name = "corejs_linked_primitive_await",
+    srcs = ["EsmSplit/CoreJS/LinkedPrimitiveAwait.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [
+        ":corejs_eval",
+        ":corejs_from_estree",
+        ":corejs_linked_input",
+        ":corejs_primitive_await",
+        ":corejs_program_turn",
+        ":corejs_scope",
+        ":corejs_split",
+        ":estree_units",
+        ":plan",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_linked_primitive_await_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedPrimitiveAwait"],
+    required_theorems = [
+        "CoreJS.LinkedPrimitiveAwait.noCuts_agree",
+        "CoreJS.LinkedPrimitiveAwait.runImmediate_same",
+    ],
+    deps = [":corejs_linked_primitive_await"],
+)
+
+lean_library(
+    name = "corejs_primitive_await_correspondence",
+    srcs = ["EsmSplit/CoreJS/PrimitiveAwaitCorrespondence.lean"],
+    deps = [
+        ":corejs_primitive_await",
+        ":corejs_scope",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_primitive_await_correspondence_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PrimitiveAwaitCorrespondence"],
+    required_theorems = [
+        "CoreJS.Job.capture_corresponds",
+        "CoreJS.PrimitiveAwait.drain_corresponds",
+        "CoreJS.PrimitiveAwait.onResume_capture",
+        "CoreJS.PrimitiveAwait.onResume_corresponds",
+        "CoreJS.PrimitiveAwait.runJob_corresponds",
+    ],
+    deps = [":corejs_primitive_await_correspondence"],
+)
+
+test_runner(
+    name = "await_staged_link_test_runner",
+    src = "AwaitStagedLinkTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":corejs_entry_exports",
+        ":corejs_eval",
+        ":corejs_linked_primitive_await",
+        ":corejs_linked_primitive_await_proof",
+        ":corejs_primitive_await",
+        ":corejs_state_match",
+        ":estree_emit",
+        ":estree_units",
+        ":lowersplit_input",
+        ":plan",
+        ":split_files",
+    ],
+)
+
+lean_library(
+    name = "corejs_linked_primitive_await_proof",
+    srcs = ["EsmSplit/CoreJS/LinkedPrimitiveAwaitProof.lean"],
+    deps = [
+        ":corejs_link_world",
+        ":corejs_linked_primitive_await",
+        ":corejs_primitive_await",
+        ":corejs_scope",
+        ":corejs_split",
+        ":corejs_state_match",
+        ":corejs_syntax_match",
+        ":plan",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_linked_primitive_await_proof_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedPrimitiveAwaitProof"],
+    required_theorems = ["CoreJS.LinkedPrimitiveAwait.StagedImmediate.drains"],
+    deps = [":corejs_linked_primitive_await_proof"],
 )

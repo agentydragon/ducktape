@@ -29,6 +29,7 @@ deriving instance Lean.ToExpr for Program
 deriving instance Lean.ToExpr for CoreJS.Addr
 deriving instance Lean.ToExpr for CoreJS.ErrorKind
 deriving instance Lean.ToExpr for CoreJS.Val
+deriving instance Lean.ToExpr for CoreJS.PromiseSlot
 deriving instance Lean.ToExpr for CoreJS.PropertyKey
 deriving instance Lean.ToExpr for CoreJS.Property
 deriving instance Lean.ToExpr for CoreJS.Env

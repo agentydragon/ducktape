@@ -42,14 +42,15 @@ private def codeMatch : MatchEq Code
   | _, _ => none
 
 private def objMatch : MatchEq Obj
-  | ⟨proto, props, code, array, rx, frozen⟩, ⟨proto', props', code', array', rx', frozen'⟩ => do
+  | ⟨proto, props, code, array, rx, frozen, promise⟩, ⟨proto', props', code', array', rx', frozen', promise'⟩ => do
     let ⟨p⟩ ← scalarEq proto proto'
     let ⟨ps⟩ ← scalarEq props props'
     let ⟨c⟩ ← optionEq codeMatch code code'
     let ⟨a⟩ ← scalarEq array array'
     let ⟨r⟩ ← scalarEq rx rx'
     let ⟨f⟩ ← scalarEq frozen frozen'
-    return ⟨p ▸ ps ▸ c ▸ a ▸ r ▸ f ▸ rfl⟩
+    let ⟨pr⟩ ← scalarEq promise promise'
+    return ⟨p ▸ ps ▸ c ▸ a ▸ r ▸ f ▸ pr ▸ rfl⟩
 
 /- Match a complete state, including heap addresses, objects, the host state,
 and the world's handed handles. -/

@@ -345,7 +345,12 @@ def showCode : Code → String
   | .opaque code part cells ctor => s!"opaque {code} {part} {cells.map (·.map showAddr)} {ctor}"
 
 def showObj (o : Obj) : String :=
-  s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (showKey k, showProperty p)} {o.code.map showCode} {o.array} {repr o.regexp}"
+  let promise := match o.promise with
+    | none => ""
+    | some .pending => " promise: pending"
+    | some (.fulfilled value) => s!" promise: fulfilled {showVal value}"
+    | some (.rejected reason) => s!" promise: rejected {showVal reason}"
+  s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (showKey k, showProperty p)} {o.code.map showCode} {o.array} {repr o.regexp}{promise}"
 
 def showBinding (b : Binding) : String := s!"{b.value.map showVal} {b.mutable}"
 

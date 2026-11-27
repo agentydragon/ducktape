@@ -39,8 +39,13 @@ def Property.nodes : Property → List HeapNode
   | .data v _ _ _ => v.nodes
   | .accessor get set _ _ => get.nodes ++ set.nodes
 
+def PromiseSlot.nodes : PromiseSlot → List HeapNode
+  | .pending => []
+  | .fulfilled value | .rejected value => value.nodes
+
 def Obj.nodes (o : Obj) : List HeapNode :=
-  o.proto.toList.map HeapNode.obj ++ o.props.flatMap (fun p => p.2.nodes) ++ o.code.toList.flatMap Code.nodes
+  o.proto.toList.map HeapNode.obj ++ o.props.flatMap (fun p => p.2.nodes) ++ o.code.toList.flatMap Code.nodes ++
+    o.promise.toList.flatMap PromiseSlot.nodes
 
 def Binding.nodes (b : Binding) : List HeapNode := b.value.toList.flatMap Val.nodes
 

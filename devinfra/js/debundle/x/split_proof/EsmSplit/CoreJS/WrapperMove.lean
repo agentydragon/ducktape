@@ -149,7 +149,7 @@ private theorem eval_withWrapper (h : WrapperAt s env alias cell factory closed 
         have he := (allocOnly_keeps (n + 1)).2.1 env [.func callback] s s rfl (Extends.refl s)
         rw [ha] at he
         have hg : getObj factory t = .ok o t := by simp [getObj, he.objs _ _ ho]
-        simp only [callFn, M.bind_apply, hg, hcode]
+        simp only [callFn, dispatchCall, runLocalCall, M.bind_apply, hg, hcode]
         rfl
       | _ => rfl
 

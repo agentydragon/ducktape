@@ -69,11 +69,12 @@ private theorem reachFrame_directProto {r R cells A} (away : Away r R A) {a : Ad
   apply reachFrame_modifyObj away a ha
   intro o node h
   simp only [Obj.nodes, List.mem_append] at h
-  rcases h with (proto | props) | code
+  rcases h with ((proto | props) | code) | promise
   · obtain ⟨b, hb, rfl⟩ := List.mem_map.mp proto
     exact Or.inr (hp b (Option.mem_toList.mp hb))
-  · exact Or.inl (List.mem_append_left _ (List.mem_append_right _ props))
-  · exact Or.inl (List.mem_append_right _ code)
+  · exact Or.inl (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ props)))
+  · exact Or.inl (List.mem_append_left _ (List.mem_append_right _ code))
+  · exact Or.inl (List.mem_append_right _ promise)
 
 theorem evalFields_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env) {a : Addr}
     (ha : A (.obj a))
@@ -229,10 +230,11 @@ private theorem reachFrame_constructorLink {r R cells A} (away : Away r R A) (pr
   apply reachFrame_modifyObj away proto hp
   intro o node hn
   simp [Obj.nodes, Property.nodes, Val.nodes] at hn ⊢
-  rcases hn with h | rfl | h
+  rcases hn with h | rfl | h | h
   · exact Or.inl (Or.inl h)
   · exact Or.inr hc
-  · exact Or.inl (Or.inr (Or.inr h))
+  · exact Or.inl (Or.inr (Or.inr (Or.inl h)))
+  · exact Or.inl (Or.inr (Or.inr (Or.inr h)))
 
 private theorem reachFrame_constructorCode {r R cells A} (away : Away r R A) (c : Addr)
     (hc : A (.obj c)) (code : Code) (safe : ∀ node ∈ code.nodes, A node) :
@@ -241,10 +243,11 @@ private theorem reachFrame_constructorCode {r R cells A} (away : Away r R A) (c 
   apply reachFrame_modifyObj away c hc
   intro o node hn
   simp [Obj.nodes] at hn ⊢
-  rcases hn with h | h | h
+  rcases hn with h | h | h | h
   · exact Or.inl (Or.inl h)
   · exact Or.inl (Or.inr (Or.inl h))
   · exact Or.inr (safe _ h)
+  · exact Or.inl (Or.inr (Or.inr (Or.inr h)))
 
 private theorem reachFrame_staticInitializers {r R cells A} (away : Away r R A)
     (eval : Expr → M W Val) (framed : ∀ e, ReachFrame r R cells A (SafeVal A) (eval e))

@@ -194,6 +194,7 @@ private theorem PrototypePath.propertySafe {cells A} {s : State W} (hs : Access 
     apply hs.closed _ _ ha
     apply Edge.obj ho
     apply List.mem_append_left
+    apply List.mem_append_left
     apply List.mem_append_right
     exact List.mem_flatMap.mpr ⟨(key, p), lookup_mem hk, hn⟩
   | inherited ho _ hproto _ ih => exact ih (hs.prototype ha ho hproto)
@@ -380,10 +381,11 @@ private theorem deleteProps_keeps_edges (o : Obj) (key : PropertyKey) :
     ∀ node ∈ ({ o with props := o.props.filter (·.1 != key) }).nodes, node ∈ o.nodes := by
   intro node hn
   simp only [Obj.nodes, List.mem_append] at hn ⊢
-  rcases hn with (h | h) | h
-  · exact Or.inl (Or.inl h)
+  rcases hn with ((h | h) | h) | h
+  · exact Or.inl (Or.inl (Or.inl h))
   · obtain ⟨p, hp, hnode⟩ := List.mem_flatMap.mp h
-    exact Or.inl (Or.inr (List.mem_flatMap.mpr ⟨p, (List.mem_filter.mp hp).1, hnode⟩))
+    exact Or.inl (Or.inl (Or.inr (List.mem_flatMap.mpr ⟨p, (List.mem_filter.mp hp).1, hnode⟩)))
+  · exact Or.inl (Or.inr h)
   · exact Or.inr h
 
 theorem reachFrame_deleteProp {r R cells A} (away : Away r R A) (base key : Val) (hb : SafeVal A base) :
@@ -475,8 +477,8 @@ private theorem setOwn_nodes (o : Obj) (k : PropertyKey) (p : Property) :
     ∀ node ∈ ({ o with props := setOwn o.props k p }).nodes, node ∈ o.nodes ∨ node ∈ p.nodes := by
   intro node h
   simp only [Obj.nodes, List.mem_append] at h ⊢
-  rcases h with (h | h) | h
-  · exact Or.inl (Or.inl (Or.inl h))
+  rcases h with ((h | h) | h) | h
+  · exact Or.inl (Or.inl (Or.inl (Or.inl h)))
   · obtain ⟨entry, member, edge⟩ := List.mem_flatMap.mp h
     unfold setOwn at member
     split at member
@@ -486,12 +488,13 @@ private theorem setOwn_nodes (o : Obj) (k : PropertyKey) (p : Property) :
       · simp only [same, ↓reduceIte] at edge
         exact Or.inr edge
       · simp only [same] at edge
-        exact Or.inl (Or.inl (Or.inr (List.mem_flatMap.mpr ⟨(oldKey, oldProperty), hOld, edge⟩)))
+        exact Or.inl (Or.inl (Or.inl (Or.inr (List.mem_flatMap.mpr ⟨(oldKey, oldProperty), hOld, edge⟩))))
     · rcases List.mem_append.mp member with hOld | hNew
-      · exact Or.inl (Or.inl (Or.inr (List.mem_flatMap.mpr ⟨entry, hOld, edge⟩)))
+      · exact Or.inl (Or.inl (Or.inl (Or.inr (List.mem_flatMap.mpr ⟨entry, hOld, edge⟩))))
       · simp only [List.mem_singleton] at hNew
         subst entry
         exact Or.inr edge
+  · exact Or.inl (Or.inl (Or.inr h))
   · exact Or.inl (Or.inr h)
 
 
@@ -528,8 +531,8 @@ theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : 
   · have ownSafe : ∀ p, p ∈ current.props.lookup key → ∀ node ∈ p.nodes, A node := by
       intro p hp node edge
       have member := lookup_mem (show current.props.lookup key = some p from hp)
-      exact currentSafe node (List.mem_append_left _ (List.mem_append_right _
-        (List.mem_flatMap.mpr ⟨(key, p), member, edge⟩)))
+      exact currentSafe node (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _
+        (List.mem_flatMap.mpr ⟨(key, p), member, edge⟩))))
     apply (reachFrame_applyDesc (current.props.lookup key) d safe ownSafe).bind
     intro result guard
     cases result with
@@ -867,11 +870,12 @@ private theorem reachFrame_setPrototype {r R cells A} (away : Away r R A)
         exact reachFrame_pure r R cells A _ (safeVal_obj.2 safeTarget)
       · intro o node h
         simp only [Obj.nodes, List.mem_append] at h
-        rcases h with (hp | props) | code
+        rcases h with ((hp | props) | code) | promise
         · obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hp
           exact Or.inr (safeParent a (Option.mem_toList.mp ha))
-        · exact Or.inl (List.mem_append_left _ (List.mem_append_right _ props))
-        · exact Or.inl (List.mem_append_right _ code)
+        · exact Or.inl (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ props)))
+        · exact Or.inl (List.mem_append_left _ (List.mem_append_right _ code))
+        · exact Or.inl (List.mem_append_right _ promise)
   refine Eq.mpr (congrArg (ReachFrame r R cells A (SafeVal A)) ?_) operation
   funext s
   simp only [M.bind_apply, getState, getObj]

@@ -132,3 +132,76 @@ js_test(
     env = _DIFFERENTIAL_ENV,
     tags = ["manual"],
 )
+
+test_runner(
+    name = "async_prefix_test_runner",
+    src = "AsyncPrefixTest.lean",
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:corejs_async_prefix",
+        "//devinfra/js/debundle/x/split_proof:corejs_eval",
+    ],
+)
+
+js_test(
+    name = "async_prefix_differential_test",
+    data = [":async_prefix_test_runner"],
+    entry_point = "async_prefix_differential_test.mjs",
+    env = {"ASYNC_PREFIX_TEST": "$(rootpath :async_prefix_test_runner)"},
+)
+
+test_runner(
+    name = "linked_async_test_runner",
+    src = "LinkedAsyncTest.lean",
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:corejs_eval",
+        "//devinfra/js/debundle/x/split_proof:corejs_linked_input",
+    ],
+)
+
+js_test(
+    name = "linked_async_differential_test",
+    data = [
+        "linked_async_fixture.mjs",
+        ":linked_async_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "linked_async_differential_test.mjs",
+    env = {"LINKED_ASYNC_TEST": "$(rootpath :linked_async_test_runner)"},
+)
+
+test_runner(
+    name = "primitive_await_test_runner",
+    src = "PrimitiveAwaitTest.lean",
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:corejs_eval",
+        "//devinfra/js/debundle/x/split_proof:corejs_primitive_await",
+    ],
+)
+
+js_test(
+    name = "primitive_await_differential_test",
+    data = [":primitive_await_test_runner"],
+    entry_point = "primitive_await_differential_test.mjs",
+    env = {"PRIMITIVE_AWAIT_TEST": "$(rootpath :primitive_await_test_runner)"},
+)
+
+test_runner(
+    name = "linked_primitive_await_test_runner",
+    src = "LinkedPrimitiveAwaitTest.lean",
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:corejs_eval",
+        "//devinfra/js/debundle/x/split_proof:corejs_linked_primitive_await",
+        "//devinfra/js/debundle/x/split_proof:corejs_primitive_await",
+    ],
+)
+
+js_test(
+    name = "linked_primitive_await_differential_test",
+    data = [
+        "linked_primitive_await_fixture.mjs",
+        ":linked_primitive_await_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "linked_primitive_await_differential_test.mjs",
+    env = {"LINKED_PRIMITIVE_AWAIT_TEST": "$(rootpath :linked_primitive_await_test_runner)"},
+)
