@@ -131,26 +131,24 @@ export function executionFailureProgress(
   const notice = executionNotice(row);
   if (!notice) return;
   const { acknowledged, saving } = attention.state(notice);
+  if (acknowledged) return;
   return (
     <>
       <CommandProgress
         stage="failed"
         subject={subject(row.entity.value.operation)}
         reason={row.entity.value.outcomeReason}
-        acknowledged={acknowledged}
       />
-      {!acknowledged && (
-        <Button
-          size="compact-xs"
-          variant="subtle"
-          loading={saving}
-          disabled={attention.pending !== null && !saving}
-          onClick={() => attention.acknowledge(notice)}
-          aria-label={`Dismiss execution failure for command ${row.entityId}`}
-        >
-          Dismiss
-        </Button>
-      )}
+      <Button
+        size="compact-xs"
+        variant="subtle"
+        loading={saving}
+        disabled={attention.pending !== null && !saving}
+        onClick={() => attention.acknowledge(notice)}
+        aria-label={`Dismiss execution failure for command ${row.entityId}`}
+      >
+        Dismiss
+      </Button>
     </>
   );
 }
@@ -198,6 +196,7 @@ export function PendingInputMessages({
   deliver,
   localNotice,
   executionProgress,
+  dismissedExecutionIds,
 }: {
   commands: LocalCommand[];
   entities: ThreadEntity[];
@@ -209,6 +208,7 @@ export function PendingInputMessages({
   deliver: (value: LocalCommand) => Promise<void>;
   localNotice: LocalNotice;
   executionProgress: ReadonlyMap<string, JSX.Element>;
+  dismissedExecutionIds: ReadonlySet<string>;
 }): JSX.Element | null {
   const inputCommands = commands.filter((value) => value.command.operation.case === "submitInput");
   const byId = new Map(localSendRows.map((row) => [row.entityId, row]));
@@ -227,6 +227,7 @@ export function PendingInputMessages({
         row.entity.value.operation === Operation.SUBMIT_INPUT &&
         row.entity.value.outcome !== ThreadCommandOutcome.PENDING &&
         row.entity.value.outcome !== ThreadCommandOutcome.UNSPECIFIED &&
+        !dismissedExecutionIds.has(row.entityId) &&
         !localCommandIds.has(row.entityId) &&
         !confirmedCommandIds.has(row.entityId)
     )
@@ -236,7 +237,10 @@ export function PendingInputMessages({
       return leftCursor < rightCursor ? -1 : leftCursor > rightCursor ? 1 : 0;
     });
   const pending = inputCommands.filter(
-    (value) => !historyMessageIds.has(value.command.commandId) && !confirmedCommandIds.has(value.command.commandId)
+    (value) =>
+      !dismissedExecutionIds.has(value.command.commandId) &&
+      !historyMessageIds.has(value.command.commandId) &&
+      !confirmedCommandIds.has(value.command.commandId)
   );
   if (pending.length === 0 && projectedOutcomes.length === 0) return null;
   return (

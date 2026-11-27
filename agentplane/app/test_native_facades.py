@@ -332,6 +332,16 @@ async def test_notice_acknowledgements_follow_only_the_same_operator_across_logi
         assert first_ack["acknowledgedAt"]
         execution_acks = await other.post(path + ":batchGet", json={"notices": [execution, later_execution]})
         assert [item["notice"] for item in execution_acks.raise_for_status().json()["acknowledgements"]] == [execution]
+        (await other.post(path, json={"notice": later_execution})).raise_for_status()
+        execution_query = {"executionFailures": "true", "pageSize": "1"}
+        execution_page = (await http.get(path, params=execution_query)).raise_for_status().json()
+        assert [item["notice"] for item in execution_page["acknowledgements"]] == [later_execution]
+        execution_next = {**execution_query, "pageToken": execution_page["nextPageToken"]}
+        execution_page = (await http.get(path, params=execution_next)).raise_for_status().json()
+        assert [item["notice"] for item in execution_page["acknowledgements"]] == [execution]
+        assert (await other.get(other_path, params=execution_next)).status_code == 422
+        assert (await unrelated.get(path, params=execution_next)).status_code == 422
+        assert (await http.get(path, params={"pageToken": execution_next["pageToken"]})).status_code == 422
         other_session = await other.post(other_path + ":batchGet", json={"notices": [older]})
         assert other_session.json()["acknowledgements"] == []
         assert (await other.post(path, json={"notice": newer})).status_code == 200
