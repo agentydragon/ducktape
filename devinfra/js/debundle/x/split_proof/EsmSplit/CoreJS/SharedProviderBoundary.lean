@@ -2,7 +2,7 @@ import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.Split
 
-/-! A common linked provider prefix and an order-preserving consumer suffix schedule. -/
+/-! Transport a consumer schedule proof through one common linked provider prefix. -/
 
 namespace CoreJS.LinkedBehavior
 
@@ -43,15 +43,28 @@ theorem SharedProvider.providerPrefixResult {source candidate : Program}
   rw [boundary.ready]
   exact congrFun (runUnits_same fuel boundary.providerPrefixSame) boundary.after.ready
 
-/-- Lift the order-preserving result for the consumer suffix through one common provider prefix.
-The checked links put that provider first and once; identical suffix executions are transported
-from every state the provider produces, while abrupt provider outcomes stop both schedules alike. -/
-theorem SharedProvider.run_eq {source candidate : Program} (boundary : SharedProvider source candidate w)
-    (fuel : Nat) (suffix : SameUnits boundary.sourceTail boundary.candidateTail) :
+/-- Check the consumer suffix only at a state reached by successful provider evaluation.
+The checked links put the provider first and once, so the suffix may rely on facts established
+by its initializer. A provider throw, unknown result or fuel exhaustion skips both suffixes. -/
+theorem SharedProvider.run_eq_after_prefix {source candidate : Program}
+    (boundary : SharedProvider source candidate w) (fuel : Nat)
+    (suffix : ∀ state, runUnits fuel boundary.sourcePre boundary.before.ready = .ok () state →
+      runUnits fuel boundary.sourceTail state = runUnits fuel boundary.candidateTail state) :
     runProgram w fuel source = runProgram w fuel candidate := by
   rw [run_after_link fuel boundary.before, run_after_link fuel boundary.after,
-    boundary.sourceSchedule, boundary.candidateSchedule, ← boundary.ready, runUnits_append, runUnits_append]
-  rw [runUnits_same fuel boundary.providerPrefixSame, runUnits_same fuel suffix]
+    boundary.sourceSchedule, boundary.candidateSchedule, runUnits_append, runUnits_append]
+  simp only [M.bind_apply, ← boundary.providerPrefixResult fuel]
+  cases outcome : runUnits fuel boundary.sourcePre boundary.before.ready with
+  | ok value state =>
+    cases value
+    exact suffix state outcome
+  | throw | unknown | fuel => rfl
+
+/-- Preserve a consumer suffix whose units and their scopes agree in order. -/
+theorem SharedProvider.run_eq {source candidate : Program} (boundary : SharedProvider source candidate w)
+    (fuel : Nat) (suffix : SameUnits boundary.sourceTail boundary.candidateTail) :
+    runProgram w fuel source = runProgram w fuel candidate :=
+  boundary.run_eq_after_prefix fuel fun state _ => congrFun (runUnits_same fuel suffix) state
 
 /-- The common prefix is exactly one linked provider module in both acyclic schedules. -/
 theorem SharedProvider.providerOccursOnce {source candidate : Program}
