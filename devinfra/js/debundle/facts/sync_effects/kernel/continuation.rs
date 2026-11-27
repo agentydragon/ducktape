@@ -258,6 +258,18 @@ impl LocalContinuation {
             .unwrap_or_else(|| SelectedValue::raw(Values::new()))
     }
 
+    /// The step's selected value. An empty selection ends the normal path:
+    /// there is no value left for this step to consume, so the caller stops
+    /// rather than continuing with an empty one.
+    fn take_selected_or_stop(&mut self) -> Option<SelectedValue> {
+        let selected = self.take_value();
+        if selected.values.is_empty() {
+            self.frame.stop_normal_path();
+            return None;
+        }
+        Some(selected)
+    }
+
     fn begin_aggregate(&mut self, aggregate: Aggregate) -> Result<usize, RemainderDisposition> {
         let id = self.next_aggregate;
         self.next_aggregate = id
@@ -394,11 +406,9 @@ impl LocalContinuation {
             }
             Step::Expression(node) => return self.expression(context, body, node),
             Step::Initialize(binding) => {
-                let selected = self.take_value();
-                if selected.values.is_empty() {
-                    self.frame.stop_normal_path();
+                let Some(selected) = self.take_selected_or_stop() else {
                     return Ok(None);
-                }
+                };
                 let SelectedValue { values, selection } = selected;
                 let selection = selection.filter(|selection| selection.matches(&values));
                 self.frame.environment.insert(binding.clone(), values);
@@ -769,11 +779,9 @@ impl LocalContinuation {
                 span,
                 invocation,
             } => {
-                let selected = self.take_value();
-                if selected.values.is_empty() {
-                    self.frame.stop_normal_path();
+                let Some(selected) = self.take_selected_or_stop() else {
                     return Ok(None);
-                }
+                };
                 self.frame.inputs.extend(selected.values.iter().cloned());
                 arguments.push(selected);
                 let next = index + 1;
@@ -806,11 +814,9 @@ impl LocalContinuation {
                 property,
                 span,
             } => {
-                let selected = self.take_value();
-                if selected.values.is_empty() {
-                    self.frame.stop_normal_path();
+                let Some(selected) = self.take_selected_or_stop() else {
                     return Ok(None);
-                }
+                };
                 store_field(
                     context,
                     &mut self.frame,
@@ -823,20 +829,16 @@ impl LocalContinuation {
                 self.value = Some(selected);
             }
             Step::DefineThisField(property) => {
-                let selected = self.take_value();
-                if selected.values.is_empty() {
-                    self.frame.stop_normal_path();
+                let Some(selected) = self.take_selected_or_stop() else {
                     return Ok(None);
-                }
+                };
                 construct::define_field(context, &mut self.frame, &property, &selected.values)?;
                 self.value = Some(selected);
             }
             Step::AssignThisField { property, span } => {
-                let selected = self.take_value();
-                if selected.values.is_empty() {
-                    self.frame.stop_normal_path();
+                let Some(selected) = self.take_selected_or_stop() else {
                     return Ok(None);
-                }
+                };
                 construct::assign_field(
                     context,
                     &mut self.frame,
