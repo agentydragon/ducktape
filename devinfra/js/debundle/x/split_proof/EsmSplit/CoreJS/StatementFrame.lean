@@ -65,21 +65,16 @@ theorem loop_reachFrame_step {r R cells A n} (away : Away r R A)
   · exact reachFrame_pure r R cells A Flow.normal (FlowSafe.normal A)
   · apply (step env body safe).bind
     intro flow hflow
-    have repeatLoop : ReachFrame r R cells A (FlowSafe A) (do
-        if !(← loopCondition postTest (evalExpr n env test)) then return .normal
-        let next ← copyBindings env fresh
-        let _ ← evalExpr n next update
-        loop n next fresh test update body postTest) := by
+    cases flow
+    case brk => exact reachFrame_pure r R cells A Flow.normal (FlowSafe.normal A)
+    case ret value => exact reachFrame_pure r R cells A (Flow.ret value) hflow
+    all_goals
       apply (condition postTest).bind
       intro again _
       cases again
       · exact reachFrame_pure r R cells A Flow.normal (FlowSafe.normal A)
       · exact (reachFrame_copyBindings away outside env fresh safe).bind
           (fun next hn => (eval update next hn).bind fun _ _ => tail next fresh test update body postTest hn)
-    cases flow
-    case brk => exact reachFrame_pure r R cells A Flow.normal (FlowSafe.normal A)
-    case ret value => exact reachFrame_pure r R cells A (Flow.ret value) hflow
-    all_goals exact repeatLoop
 
 private def IteratorRemainderSafe (A : HeapNode → Prop) : Option IteratorCursor → Prop
   | none => True
