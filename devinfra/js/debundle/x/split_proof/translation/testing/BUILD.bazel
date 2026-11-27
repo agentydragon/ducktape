@@ -52,11 +52,11 @@ js_binary(
     name = "split_cli",
     data = [
         ":split",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
     ],
     entry_point = "split_cli.mjs",
     env = {
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
     },
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )

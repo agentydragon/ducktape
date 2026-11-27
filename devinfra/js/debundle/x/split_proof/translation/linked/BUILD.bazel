@@ -17,11 +17,11 @@ js_library(
 js_test(
     name = "input_test",
     data = [
-        "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "input_test.mjs",
-    env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)"},
+    env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)"},
 )
 
 js_test(
@@ -38,19 +38,19 @@ js_library(
 
 _TEST_DATA = [
     ":harness",
-    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof:lowersplit",
 ]
 
-_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
+_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"}
 
 js_test(
     name = "static_provider_boundary_input_test",
     data = glob(["fixtures/static_provider_boundary/**/*.mjs"]) + [
-        "//devinfra/js/debundle/x/split_proof/lean:provider_input_boundary_test_runner",
+        "//devinfra/js/debundle/x/split_proof:provider_input_boundary_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "static_provider_boundary_input_test.mjs",
-    env = {"PROVIDER_BOUNDARY_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:provider_input_boundary_test_runner)"},
+    env = {"PROVIDER_BOUNDARY_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:provider_input_boundary_test_runner)"},
 )
 
 # Acceptance probe: distinguish this constructor from other certified strategies.
@@ -60,14 +60,14 @@ js_test(
     timeout = "long",
     data = _TEST_DATA + [
         ":module_graph_fixture",
-        "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "module_graph_constructor_test.mjs",
     env = dict(
         _TEST_ENV,
-        LINKED_INPUT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)",
+        LINKED_INPUT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
     ),
 )
 
@@ -76,12 +76,12 @@ js_test(
     size = "medium",
     data = [
         ":harness",
-        "//devinfra/js/debundle/x/split_proof/lean:checked_artifact_test_runner",
+        "//devinfra/js/debundle/x/split_proof:checked_artifact_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     entry_point = "checked_artifact_test.mjs",
     env = {
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:checked_artifact_test_runner)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:checked_artifact_test_runner)",
         "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
         "SPLIT_PROOF_TIMINGS": "1",
     },
@@ -92,12 +92,12 @@ js_test(
     size = "medium",
     data = [
         ":harness",
-        "//devinfra/js/debundle/x/split_proof/lean:checked_artifact_test_runner",
+        "//devinfra/js/debundle/x/split_proof:checked_artifact_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     entry_point = "sparse_checked_artifact_test.mjs",
     env = {
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:checked_artifact_test_runner)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:checked_artifact_test_runner)",
         "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
         "SPLIT_PROOF_TEST_SPARSE": "1",
     },
@@ -115,13 +115,13 @@ js_test(
     name = "joint_static_test",
     size = "medium",
     data = _TEST_DATA + [
-        "//devinfra/js/debundle/x/split_proof/lean:joint_static_test_runner",
+        "//devinfra/js/debundle/x/split_proof:joint_static_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "joint_static_test.mjs",
     env = dict(
         _TEST_ENV,
-        JOINT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:joint_static_test_runner)",
+        JOINT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof:joint_static_test_runner)",
     ),
 )
 
@@ -173,13 +173,13 @@ js_test(
     name = "certified_split_test",
     data = [
         ":harness",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
         "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "certified_split_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
     shard_count = 6,
 )
 

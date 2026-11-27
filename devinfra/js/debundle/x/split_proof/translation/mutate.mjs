@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { bodyUnits } from "./frontend.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/bin/translate");
+const translate = process.env.TRANSLATE ?? path.join(here, "../.lake/build/bin/translate");
 const [bundlePath, outputPath, certPath, ...rest] = process.argv.slice(2);
 const option = (name, fallback) =>
   rest.includes(`--${name}`) ? Number(rest[rest.indexOf(`--${name}`) + 1]) : fallback;

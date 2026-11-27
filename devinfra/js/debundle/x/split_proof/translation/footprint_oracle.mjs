@@ -36,7 +36,7 @@ import { spawnAndWait } from "./spawn_and_wait.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const harness = pathToFileURL(path.join(here, "oracle_harness.mjs")).href;
-const defaultLower = () => process.env.LOWER ?? path.join(here, "../lean/.lake/build/bin/lower");
+const defaultLower = () => process.env.LOWER ?? path.join(here, "../.lake/build/bin/lower");
 
 /**
  * The program with a call of the harness after each unit. `units[i].source` is the text of unit `i`; `names` are the

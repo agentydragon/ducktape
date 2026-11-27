@@ -138,7 +138,7 @@ The probe runs the provider in Node. It does not execute the complete editor.
 
 The separate CoreJS theorem covers wrapper creation and the independent arrow declaration from
 a common linked environment. Both orders reach exactly the same successful final states.
-[Linked reproduction](../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
+[Linked reproduction](../../EsmSplit/CoreJS/WrapperLinked.lean)
 
 The single-arrow move plan records 259 structural source-order conflicts. All
 cross `#1337`, including the conflict with the first source unit after imports.

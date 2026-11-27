@@ -1,6 +1,6 @@
 # Checking two splits in one module graph
 
-[The Lean primitive](../lean/EsmSplit/CoreJS/JointStatic.lean) checks a closed
+[The Lean primitive](../EsmSplit/CoreJS/JointStatic.lean) checks a closed
 pair of static modules. Supply a plan, the original annotated ESTree and the
 output ESTrees for each. Both plans use the same deployment root. The checker
 resolves relative requests from the real declaring and importing filenames,

@@ -4,12 +4,12 @@ js_binary(
     name = "compare_footprints",
     data = [
         "statement_shape.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof:lower",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
     ],
     entry_point = "compare.mjs",
-    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
+    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof:lower)"},
     tags = ["manual"],
 )
 

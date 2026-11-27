@@ -23,7 +23,7 @@ free-name coverage; it does not prove the semantic correctness of either fronten
 
 ## Semantic interface
 
-[`MovesSound`](../lean/EsmSplit/CoreJS/Move.lean) separates the semantic premise
+[`MovesSound`](../EsmSplit/CoreJS/Move.lean) separates the semantic premise
 from the procedure that establishes it. For each bundle scope produced by a
 successful `declareTops` allocation and each execution bound, every allowed pair
 must commute in both directions. Using an actual allocation trace preserves the
@@ -90,7 +90,7 @@ The executable path is `bindingCertificate` → `bindingMayMove` →
 `Stmt.bindingFootprint` and `declareTops_bundleEnv_injective`;
 `moves_preserve_of_certifiedMovesOk` supplies the whole-program result.
 The diagnostic model report (`modelDiagnostics` in
-[`LowerSplit/Diagnostic.lean`](../lean/EsmSplit/LowerSplit/Diagnostic.lean)) calls this
+[`LowerSplit/Diagnostic.lean`](../EsmSplit/LowerSplit/Diagnostic.lean)) calls this
 `moves (certified bindings)` when the existing syntax-only rule cannot cover a plan.
 
 The integration regressions swap independent assignments such as `x = 1` and
@@ -117,7 +117,7 @@ cross a contiguous block of inert or allocation-only declarations whose eager
 reads exclude the subclass binding. Both orders must share the prefix that
 establishes the base. The resulting theorem quantifies over all CoreJS worlds
 and fuel bounds and compares the entire final state on successful execution.
-[Checker and theorem](../lean/EsmSplit/CoreJS/HeritageCertificate.lean)
+[Checker and theorem](../EsmSplit/CoreJS/HeritageCertificate.lean)
 
 ## Current proof inventory
 
@@ -134,7 +134,7 @@ The [`model` coverage matrix](../model/README.md) and
 Passing those tests is not a footprint soundness proof.
 
 For a flat `var` object pattern with a named RHS, the conditional
-[`DataProjection.declaration_commutes_at`](../lean/EsmSplit/CoreJS/DataProjection.lean)
+[`DataProjection.declaration_commutes_at`](../EsmSplit/CoreJS/DataProjection.lean)
 covers the entire CoreJS block, including receiver capture, getter-free reads and
 writes to each target. Its premises require the resolved binding and the actual
 own data descriptors in the state at the crossing, with the other unit local to

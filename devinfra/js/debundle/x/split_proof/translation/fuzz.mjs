@@ -14,7 +14,7 @@ import { seededRandom } from "../seeded_random.mjs";
 import { astStatistics, generateCorpusBundle, renderBundle, split } from "./fuzz_support.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/bin/translate");
+const translate = process.env.TRANSLATE ?? path.join(here, "../.lake/build/bin/translate");
 // The premises the checker runs under besides the always-on ones: the world defines no accessors or conversion hooks on
 // program objects (P3), which the generated bundles satisfy.
 const premises = { noWorldHooks: true };

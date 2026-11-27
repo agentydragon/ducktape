@@ -1,7 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 
-_EVALORDER = "//devinfra/js/debundle/x/split_proof/lean:evalorder"
+_EVALORDER = "//devinfra/js/debundle/x/split_proof:evalorder"
 
 js_test(
     name = "es_order_test",

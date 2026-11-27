@@ -40,7 +40,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const resolver = path.resolve(
   process.env.DEBUNDLE_RESOLVER ?? "bazel-bin/devinfra/js/debundle/debundle_resolve_placement"
 );
-const lowersplit = path.resolve(process.env.LOWERSPLIT ?? path.join(here, "../lean/.lake/build/bin/lowersplit"));
+const lowersplit = path.resolve(process.env.LOWERSPLIT ?? path.join(here, "../.lake/build/bin/lowersplit"));
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
   const at = args.indexOf(`--${name}`);

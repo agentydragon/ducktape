@@ -18,7 +18,7 @@ archive_override(
 
 lean = use_extension("@rules_lean//lean:extensions.bzl", "lean")
 
-# TODO: Read split_proof/lean/lean-toolchain here when the upstream extension accepts a version file.
+# TODO: Read split_proof/lean-toolchain here when the upstream extension accepts a version file.
 lean.toolchain(version = "4.35.0")
 use_repo(lean, "lean_toolchains")
 

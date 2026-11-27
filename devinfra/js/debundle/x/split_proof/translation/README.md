@@ -2,7 +2,7 @@
 
 The verification frontend parses each module with Acorn and passes its annotated ESTree Program to Lean. The footprint dump, translation checker and CoreJS lowerer use the same Lean definition of a top-level unit. Each declarator in a `var`, `let` or `const` list gets its own unit, including inside a named export. A destructuring pattern stays in one unit. Imports and export lists occupy source ordinals in a bundle. The translation checker derives its links from these declarations and numbers the executable body units for pairing. Linked CoreJS modules handle imports separately and assign body IDs from the caller’s table. In the authored Excalidraw replay the module assignments and evaluation order come from the Rust debundler’s reports. Lean reconstructs that plan, checks it and renders the candidate modules. The synthetic split tests supply their own specs. [Excalidraw replay](../integration/excalidraw/authored.mjs)
 
-[`Translate.lean`](../lean/EsmSplit/Translate.lean) takes a bundle and a tree of ES modules and decides whether the tree is the bundle with its top-level statements moved between modules and its names changed. It does not need to know how the tree was made, so it can referee a splitter, a debundler or an agent that edits names and comments.
+[`Translate.lean`](../EsmSplit/Translate.lean) takes a bundle and a tree of ES modules and decides whether the tree is the bundle with its top-level statements moved between modules and its names changed. It does not need to know how the tree was made, so it can referee a splitter, a debundler or an agent that edits names and comments.
 
 ## Run it
 
@@ -13,7 +13,7 @@ cp package.json.in package.json && npm ci --no-audit --no-fund
 node frontend.mjs bundle <bundle.js> --out bundle.json
 node frontend.mjs tree <outRoot> --entry entry.js --out output.json
 node pair.mjs bundle.json output.json --out cert.json
-../lean/.lake/build/bin/translate bundle.json output.json cert.json [--premises premises.json] [--table table.json] [--obligations obligations.jsonl]
+../.lake/build/bin/translate bundle.json output.json cert.json [--premises premises.json] [--table table.json] [--obligations obligations.jsonl]
 ```
 
 For source text, use `dump(source, options)` from `parser.mjs`. If a caller already has an Acorn parse and scope manager, pass that parsed value to `dumpParsed` from `annotated_estree.mjs` instead.
@@ -29,7 +29,7 @@ bindings. Code `2` covers incorrect positional usage.
 
 ## Footprints
 
-The footprint of a unit is what it touches: whether it reaches the world, which names it may change, which names it reads through functions it calls. [`Effects.lean`](../lean/EsmSplit/Effects.lean) computes it by running the bundle's top level over abstract values, and [`Lower.lean`](../lean/EsmSplit/Lower.lean) scans what the unit declares, mentions and assigns. How it works, the premises and the tests are in [`../effects/README.md`](../effects/README.md). `--premises <file>` is `{"vendor": …, "members": …, "noWorldHooks": true}`; every key is optional, and without a file the checker assumes nothing beyond the premises that are always on. Every verdict starts with the premises it rests on.
+The footprint of a unit is what it touches: whether it reaches the world, which names it may change, which names it reads through functions it calls. [`Effects.lean`](../EsmSplit/Effects.lean) computes it by running the bundle's top level over abstract values, and [`Lower.lean`](../EsmSplit/Lower.lean) scans what the unit declares, mentions and assigns. How it works, the premises and the tests are in [`../effects/README.md`](../effects/README.md). `--premises <file>` is `{"vendor": …, "members": …, "noWorldHooks": true}`; every key is optional, and without a file the checker assumes nothing beyond the premises that are always on. Every verdict starts with the premises it rests on.
 
 A callback can escape before a later `const`, `let`, class or other non-hoisted binding initializes. Any unit that runs code the analysis cannot see may invoke it, so such a unit writes every name that reaches an escaped function's closure, and conflicts with the declaration of a name the function reads. [`inert_escape_test.mjs`](inert_escape_test.mjs) holds the shapes (direct, through aliases in objects and arrays, through a module-local slot, a generated pair, an exported declaration seen by a cyclic importer): Node runs each forced split into a `ReferenceError`, and the checker refuses it. A unit that only builds and changes program objects is not an effect, so reordering two of them gives no obligation.
 
@@ -43,8 +43,8 @@ A _unit_ is one top-level statement of the bundle, or one declarator of a variab
 2. Paired units are equal up to renaming: same node types, literals and property names. Locals correspond by a bijection. Globals are equal. Module-scope names pair up.
 3. Links. The output name that a bundle declaration pairs with is declared by the module that holds the unit. Every reference to a module-scope name resolves, through the output's imports and exports, to the declaration of the bundle name it pairs with.
 4. The output entry exports every name the bundle exports, each meaning the same declaration. Extra exports are counted.
-5. The plan the output describes, written in the bundle's own names, passes `Sound` ([`Correct.lean`](../lean/EsmSplit/Correct.lean)): unique definitions, reads closed, linkable, hygienic, `AssignsHome`, every unit once, conflicting units keep their order. The last check is where obligations come from.
-   A unit _binds_ the names it declares and the names it may assign, its `writes`: reassigned variables, objects whose contents it changes, and what the functions it may call change. Two units conflict if both are effects, if one reads a name the other binds, or if both bind the same name. A unit reads the names it mentions and the names it reaches through functions it calls (`deps`). These definitions are in the verified model ([`Bundle.lean`](../lean/EsmSplit/Bundle.lean), [`Semantics.lean`](../lean/EsmSplit/Semantics.lean)); the footprints are computed outside it, see [Footprints](#footprints).
+5. The plan the output describes, written in the bundle's own names, passes `Sound` ([`Correct.lean`](../EsmSplit/Correct.lean)): unique definitions, reads closed, linkable, hygienic, `AssignsHome`, every unit once, conflicting units keep their order. The last check is where obligations come from.
+   A unit _binds_ the names it declares and the names it may assign, its `writes`: reassigned variables, objects whose contents it changes, and what the functions it may call change. Two units conflict if both are effects, if one reads a name the other binds, or if both bind the same name. A unit reads the names it mentions and the names it reaches through functions it calls (`deps`). These definitions are in the verified model ([`Bundle.lean`](../EsmSplit/Bundle.lean), [`Semantics.lean`](../EsmSplit/Semantics.lean)); the footprints are computed outside it, see [Footprints](#footprints).
 6. `AssignsHome`: code that assigns a module-scope name sits in the module that declares it. ES imports are read-only, so an assignment through an import throws a `TypeError` when it runs. It is a conjunct of `Sound`. What a _call_ of such code changes is `writes`, and is ordered by the conflict rule, wherever the call sits. The first version of this checker lacked the rule and accepted such a split.
 7. Refused outright, because moving or renaming the unit changes what it does:
    - `import.meta`, whose value belongs to the module. The one accepted shape is `new URL("/absolute/path", import.meta.url)` (below).
@@ -68,7 +68,7 @@ Anything else that differs is a rejection. Modules outside the tree are assumed 
 
 ## Trusted
 
-The checker trusts Acorn's parse and the frontend's annotations for identifier scope, local binders and literal values. Lean extracts units and resolves imports and exports from the Programs. It compares paired units after removing source positions and treating shorthand properties as explicit ones. The footprints are `Effects.lean`'s and `Lower.lean`'s, under the premises they print. The semantic theorem is about the plan and assumes that renaming preserves meaning. [Frontend](frontend.mjs) · [Lean input projection](../lean/EsmSplit/TranslateInput.lean)
+The checker trusts Acorn's parse and the frontend's annotations for identifier scope, local binders and literal values. Lean extracts units and resolves imports and exports from the Programs. It compares paired units after removing source positions and treating shorthand properties as explicit ones. The footprints are `Effects.lean`'s and `Lower.lean`'s, under the premises they print. The semantic theorem is about the plan and assumes that renaming preserves meaning. [Frontend](frontend.mjs) · [Lean input projection](../EsmSplit/TranslateInput.lean)
 
 The assumption has a known edge: a program can observe the spelling of a name through `fn.name` and `class.name`, `Function.prototype.toString`, `Error` stacks and messages, and `console.log` of a function (`[Function: f]`). A rename changes all of these, and the checker accepts the rename. The [fuzzer](#fuzzer) reproduces it with `--leaks` and reports it apart.
 
@@ -163,11 +163,11 @@ or its constructor. [Validation test](ast_generator_validation_test.mjs)
 From `translation/` with its standalone dependencies installed:
 
 ```sh
-(cd ../lean && lake build analysis_inventory)
+(cd .. && lake build analysis_inventory)
 node coverage_audit.mjs --samples 150 --seed 1 --out COVERAGE.md && prettier --write COVERAGE.md
 ```
 
-[`syntax_inventory.mjs`](syntax_inventory.mjs) defines the forms and witness snippets. [`AnalysisInventory.lean`](../lean/AnalysisInventory.lean) runs each witness separately and exports the actual intrinsic keys and member paths. Pass `--analyzer FILE` to select a built executable. [`intrinsics_probe.mjs`](intrinsics_probe.mjs) counts the standard functions a sampled program calls from its own code. `node fuzz.mjs --emit DIR` writes the bundles of a corpus mode without running them.
+[`syntax_inventory.mjs`](syntax_inventory.mjs) defines the forms and witness snippets. [`AnalysisInventory.lean`](../AnalysisInventory.lean) runs each witness separately and exports the actual intrinsic keys and member paths. Pass `--analyzer FILE` to select a built executable. [`intrinsics_probe.mjs`](intrinsics_probe.mjs) counts the standard functions a sampled program calls from its own code. `node fuzz.mjs --emit DIR` writes the bundles of a corpus mode without running them.
 
 ### Protocol combinations outside the general fuzz corpus
 
@@ -200,7 +200,7 @@ node host_inventory.mjs render inventory.json > report.md && prettier --write re
 The reorder oracle above sees a wrong footprint only when a reorder happens to change what Node prints. [`footprint_oracle.mjs`](footprint_oracle.mjs) checks the footprints themselves: it runs a program unit by unit in Node, and after every unit compares what each top-level binding reaches with the unit's footprint from [`lower`](../effects/README.md).
 
 ```sh
-LOWER=../lean/.lake/build/bin/lower node footprint_oracle.mjs program.mjs [--premises p.json] [--runs 2]
+LOWER=../.lake/build/bin/lower node footprint_oracle.mjs program.mjs [--premises p.json] [--runs 2]
 node footprint_oracle_sweep.mjs [--only templates,ast,shift,…] [--samples 50] [--seed 1] [--keep DIR]    # the generators of the audit
 ```
 

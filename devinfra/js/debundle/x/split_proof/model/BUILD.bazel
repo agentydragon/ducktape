@@ -32,13 +32,13 @@ _DIFFERENTIAL_DATA = [
     "//devinfra/js/debundle/x/split_proof:seeded_random",
     "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
     "//devinfra/js/debundle/x/split_proof/translation:split_dump",
-    "//devinfra/js/debundle/x/split_proof/lean:corejs",
-    "//devinfra/js/debundle/x/split_proof/lean:evalorder",
+    "//devinfra/js/debundle/x/split_proof:corejs",
+    "//devinfra/js/debundle/x/split_proof:evalorder",
 ]
 
 _DIFFERENTIAL_ENV = {
-    "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
-    "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
+    "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof:corejs)",
+    "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof:evalorder)",
 }
 
 js_test(
@@ -48,16 +48,16 @@ js_test(
 
 js_test(
     name = "error_realm_differential_test",
-    data = ["//devinfra/js/debundle/x/split_proof/lean:error_realm_test_runner"],
+    data = ["//devinfra/js/debundle/x/split_proof:error_realm_test_runner"],
     entry_point = "error_realm_differential.mjs",
-    env = {"ERROR_REALM_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:error_realm_test_runner)"},
+    env = {"ERROR_REALM_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof:error_realm_test_runner)"},
 )
 
 js_test(
     name = "global_env_differential_test",
-    data = ["//devinfra/js/debundle/x/split_proof/lean:global_env_test_runner"],
+    data = ["//devinfra/js/debundle/x/split_proof:global_env_test_runner"],
     entry_point = "global_env_differential.mjs",
-    env = {"GLOBAL_ENV_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:global_env_test_runner)"},
+    env = {"GLOBAL_ENV_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof:global_env_test_runner)"},
 )
 
 js_test(

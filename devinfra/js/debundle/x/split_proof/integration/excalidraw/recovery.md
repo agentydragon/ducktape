@@ -139,7 +139,7 @@ unrelated declaration fails the local-allocation check. Concrete linked
 execution under the browser-page profile reaches “host value window.WeakMap
 is constructed”.
 
-[WeakMapBoundary.lean](../../lean/EsmSplit/CoreJS/WeakMapBoundary.lean) proves
+[WeakMapBoundary.lean](../../EsmSplit/CoreJS/WeakMapBoundary.lean) proves
 that even an effect-free stable binding read returning a stipulated constructor
 identity leads to that unknown result at sufficient fuel, with the input state
 unchanged. The world has no native construct operation. A future rule would
@@ -193,7 +193,7 @@ selection counts, not 158 independently rejected Lean runs.
 | Filter                                               | Units | Example and reason                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Hoisted function declarations                        |    25 | Moving the full angle module reached `degreesToRadians`. The structural move rule expects a local allocating declaration; a hoisted function is already present before evaluation. [Lean refusal](https://app.buildbuddy.io/invocation/10de4651-3fb8-4976-9254-126dd29cafb6)                                                                                       |
-| An earlier source unit refers to the binding         |    42 | `isFreeDrawElement` captures `isFreeDrawElementType`. The [move checker](../../lean/EsmSplit/CoreJS/LinkedPivotCheck.lean) requires earlier units to have no access to the moved region. A reference in a deferred body counts. [Lean refusal](https://app.buildbuddy.io/invocation/69a56768-5f93-452b-8a9d-8ea7727ea7fd)                                          |
+| An earlier source unit refers to the binding         |    42 | `isFreeDrawElement` captures `isFreeDrawElementType`. The [move checker](../../EsmSplit/CoreJS/LinkedPivotCheck.lean) requires earlier units to have no access to the moved region. A reference in a deferred body counts. [Lean refusal](https://app.buildbuddy.io/invocation/69a56768-5f93-452b-8a9d-8ea7727ea7fd)                                               |
 | Needs a private binding that would stay in the entry |    91 | Iterate to a fixed point: if a selected unit needs a private entry binding whose owner cannot move with it, drop that unit and revisit its consumers. For example, moving `calculateScrollCenter` adds three editor exports; moving only `centerScrollOn` preserves the namespace. [Scroll export comparison](README.md#strict-certification-of-the-scroll-module) |
 
 This left 114 candidates. The Rust gate and Lean then checked concrete subsets.
@@ -239,7 +239,7 @@ new RegExp(`^[^${r7}]*[${U7}]`);
 ```
 
 `linkedTemplate` converts each substitution to a string before adding the
-next cooked segment. [StringInitializer](../../lean/EsmSplit/CoreJS/StringInitializer.lean)
+next cooked segment. [StringInitializer](../../EsmSplit/CoreJS/StringInitializer.lean)
 proves the result and absence of effects **given the values of the reads**.
 The two inputs are module `var` cells in different regions from the result.
 A move proof still needs to show the corresponding writes have run in both
