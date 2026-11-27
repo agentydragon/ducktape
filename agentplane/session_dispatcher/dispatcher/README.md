@@ -136,8 +136,8 @@ The queue, replica and wake probes run in the `test_dispatcher` system test, des
   rate-limited result is retried at its shared-budget `retry_at`. An uncertain patch response is not
   repeated for the same observed generation; the worker reassesses after that generation changes.
   The lifecycle service and PostgreSQL budget adapter share a limit of 10 distinct guarded wake
-  generations per caller principal in a rolling 60-second window. ServiceAccounts use their exact
-  UID, Identities use their namespace/name/UID, and services use their SPIFFE ID; every reservation
+  generations per caller principal in a rolling 60-second window. Identities use their
+  namespace/name/UID and services use their SPIFFE ID; every reservation
   is scoped by target Sandbox UID and generation. Retries of a generation reuse its reservation. After a successful wake
   request, delivery waits for the Sandbox to become `Ready`; if it remains unready for ten minutes,
   the existing queue deadline fails the work with the current Ready condition details. A central

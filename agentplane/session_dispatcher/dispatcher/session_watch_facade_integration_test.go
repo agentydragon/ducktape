@@ -44,7 +44,7 @@ func TestSessionWatchGeneratedJSONFacade(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	if _, err := createSession(queueStore, admitted(t), "test-facade-unrecorded-session", "test-facade-environment", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	if _, err := createSession(queueStore, admitted(t), "test-facade-unrecorded-session", "test-facade-environment", sandboxUID, &sessionpb.SessionSpec{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	service := &Service{Store: queueStore, Hub: hub, WatchLease: time.Minute, DispatcherServices: sets.New(peertls.AppURI)}

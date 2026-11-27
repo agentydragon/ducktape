@@ -40,7 +40,7 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 	ctx := admitted(t)
 	const sessionID, commandID = "workset-session", "workset-command"
 	queueStore := testStore(t, 5)
-	if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, "workset-sandbox", sandboxUID, input(commandID, "authored payload"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, ctx, sessionID, "workset-sandbox", sandboxUID, input(commandID, "authored payload")); err != nil {
 		t.Fatal(err)
 	}
 	// A pre-retention Dispatcher left a deletion receipt for this Session. It
@@ -108,7 +108,7 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 		t.Fatalf("pruned receipt still visible: %v", replacement)
 	}
 	reconnected.stop(t)
-	_, _, err := queueStore.ReadDispatchWorkset(ctx, sessionID, testStoreCaller(nil), 0, true)
+	_, _, err := queueStore.ReadDispatchWorkset(ctx, sessionID, testStoreCaller(), 0, true)
 	if status.Code(err) != codes.OutOfRange {
 		t.Fatalf("expired checkpoint: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestDispatchWorksetTracksDeliveryAndLegacyCoverage(t *testing.T) {
 func TestDispatchWorksetGeneratedFacadeReportsEachBound(t *testing.T) {
 	const sessionID = "workset-http-session"
 	queueStore, databaseURL := testStoreWithURL(t, 2048)
-	if _, err := enqueueWithSession(t, queueStore, t.Context(), sessionID, "workset-http-sandbox", sandboxUID, input("head", "large payload omitted"), nil); err != nil {
+	if _, err := enqueueWithSession(t, queueStore, t.Context(), sessionID, "workset-http-sandbox", sandboxUID, input("head", "large payload omitted")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := queueStore.DB.ExecContext(t.Context(), `INSERT INTO dispatch

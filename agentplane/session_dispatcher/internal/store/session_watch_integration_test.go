@@ -16,7 +16,7 @@ func TestSessionWatchVersionsFollowSerializedCommitOrder(t *testing.T) {
 	ctx := t.Context()
 	ids := []string{uuid.NewString(), uuid.NewString()}
 	for _, id := range ids {
-		if _, err := createSession(store, ctx, id, "test-watch-version", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		if _, err := createSession(store, ctx, id, "test-watch-version", uuid.NewString(), &sessionpb.SessionSpec{}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

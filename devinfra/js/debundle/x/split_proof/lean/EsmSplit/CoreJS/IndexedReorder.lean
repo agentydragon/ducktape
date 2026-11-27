@@ -178,8 +178,63 @@ theorem same_inline_exports {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSp
     rw [targetTable]
     rfl
 
+/-- Inline exports keep their original live cells for any source made only of
+top-level declarations. Allocation and link hoists use the declaration kind,
+so initialized and uninitialized lexical `let` rows retain their mutability
+and TDZ transitions. The schedule remains exactly the source order. -/
+theorem same_inline_exports_of_declarations {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (valid : EsmSplit.Valid B S P) {original : Program} {source : Module}
+    (single : original.modules = [source]) (imports : source.imports = [])
+    (found : original.find original.entry = some source)
+    (footprints : IndexedExportCells.Footprints source.body B)
+    (complete : IndexedPlanCells.DefinitionsPresent source.body B)
+    (ordered : source.body.Pairwise (fun a b => a.1 ≤ b.1))
+    (decls : ∀ p ∈ source.body, ∃ kind name init, p.2 = .decl kind name init)
+    (covered : (SparseProjectedOrder.executableIds source.body P).Perm (source.body.map Prod.fst))
+    {entry : EsmSplit.Module} (planEntry : P.find P.entry = some entry)
+    (own : InlineExportsOwned source B entry)
+    (table : (moduleOfIndexed source.body B P entry).exports = source.exports) :
+    LinkedBehavior.SameExports original (splitProgramIndexed source.body B P) := by
+  intro w
+  let output := splitProgramIndexed source.body B P
+  have unique := footprints.uniqueIds
+  have tops : output.tops = source.body :=
+    SparseProjectedOrder.split_indexed_tops_of_perm unique covered ordered
+  have regions : output.regions = original.regions := by
+    rw [SparseProjectedOrder.split_indexed_regions_of_perm unique covered,
+      IndexedEntryLink.singleton_source_regions single]
+  obtain ⟨frames, ready, allocated⟩ :=
+    IndexedConstLink.source_decl_allocation rfl single decls w
+  have frameNames := declareTops_names _ allocated
+  let env : Env := { vars := source.scope frames, this := .undef }
+  let before : LinkedBehavior.CheckedLink original w :=
+    ⟨[(source, env)], ready, IndexedEntryLink.link_after_const_allocation
+      (IndexedEntryLink.import_free_source_tops found imports ordered)
+      unique allocated (IndexedEntryLink.import_free_entry_scopes found imports frames)
+      (IndexedEntryLink.source_decl_init decls)⟩
+  obtain ⟨linked, scopes⟩ := IndexedEntryLink.indexed_scopes_success
+    valid footprints complete frameNames (source := source) rfl
+  have init := IndexedEntryLink.indexed_initFunctions_declarations (W := w) scopes decls
+  let after : LinkedBehavior.CheckedLink output w :=
+    ⟨linked, ready, by
+      rw [regions]
+      exact IndexedEntryLink.link_after_const_allocation tops unique allocated scopes init⟩
+  obtain ⟨exports, sourceTable, targetTable⟩ :=
+    inline_tables valid found footprints complete frameNames scopes planEntry own table
+  refine ⟨exports, exports, ?_, ?_, .refl _⟩
+  · rw [LinkedBehavior.exports, before.equation]
+    change (EntryExports.resolve original.entry _).toOption = _
+    rw [sourceTable]
+    rfl
+  · change LinkedBehavior.exports w output = _
+    rw [LinkedBehavior.exports, after.equation]
+    change (EntryExports.resolve output.entry _).toOption = _
+    rw [targetTable]
+    rfl
+
 #print axioms inline_tables
 #print axioms same_inline_exports
+#print axioms same_inline_exports_of_declarations
 #print axioms run_of_schedule
 
 end CoreJS.IndexedReorder

@@ -35,7 +35,7 @@ func TestCentralActivityLeaseProjectionAndFencing(t *testing.T) {
 	}{
 		{id, uid, centralActivitySpec(uid)}, {second, secondUID, centralActivitySpec(secondUID)}, {hosted, uid, &sessionpb.SessionSpec{}},
 	} {
-		if _, err := createSession(store, ctx, session.id, "executor", session.uid, session.spec, nil, nil); err != nil {
+		if _, err := createSession(store, ctx, session.id, "executor", session.uid, session.spec, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -145,7 +145,7 @@ func TestCentralActivityObserverSnapshotReconnectAndWatch(t *testing.T) {
 	store, url := testStoreWithURL(t, 5)
 	ctx := admitted(t)
 	id, uid := uuid.NewString(), uuid.NewString()
-	if _, err := createSession(store, ctx, id, "executor", uid, centralActivitySpec(uid), nil, nil); err != nil {
+	if _, err := createSession(store, ctx, id, "executor", uid, centralActivitySpec(uid), nil); err != nil {
 		t.Fatal(err)
 	}
 	hub := sessionWatchHub(t, url, "central-activity-"+uuid.NewString())

@@ -193,6 +193,7 @@ func removePostV17SamplerMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
 	// Fixtures replay from before version 18. Undo later schema changes as well
 	// so Goose sees a contiguous predecessor history.
+	removeBlockMetadata(t, db)
 	removeSamplingRecoveryProjection(t, db)
 	migrationExec(t, db, `ALTER TABLE sampler_command
 		DROP CONSTRAINT sampler_command_admission_metadata_check,
@@ -209,6 +210,13 @@ func removePostV17SamplerMigrations(t *testing.T, db *sql.DB) {
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP CONSTRAINT sampler_session_owner_kind`)
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP COLUMN service_spiffe_id`)
 	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id>=18`)
+}
+
+func removeBlockMetadata(t *testing.T, db *sql.DB) {
+	t.Helper()
+	migrationExec(t, db, `DROP TRIGGER set_block_metadata ON sampler_event_block`)
+	migrationExec(t, db, `DROP FUNCTION sampler_event_block_set_metadata()`)
+	migrationExec(t, db, `ALTER TABLE sampler_event_block DROP COLUMN block_format, DROP COLUMN uncompressed_bytes`)
 }
 
 func removeSamplingRecoveryProjection(t *testing.T, db *sql.DB) {

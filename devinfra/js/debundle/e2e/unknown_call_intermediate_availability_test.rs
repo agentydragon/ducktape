@@ -56,42 +56,84 @@ fn lexical_heritage_does_not_cover_a_throwing_static_initializer() {
     assert_preserved_entry_error(&fixture, "Error: static evaluation");
 }
 
+enum SplitOutcome {
+    /// The split is rejected, naming these logical modules as atomic.
+    Conflict(&'static [&'static str]),
+    /// The split is accepted and prints this entry output.
+    Accepted(&'static str),
+}
+
+/// One program run colocated (`runtime/all`, inline unassigned mode) and then
+/// split; both runs disable the synchronous module loader.
+struct ClassSplitCase {
+    label: &'static str,
+    source: &'static str,
+    peer: Option<&'static str>,
+    colocated: LogicalModuleEntry,
+    colocated_output: &'static str,
+    split: Vec<LogicalModuleEntry>,
+    outcome: SplitOutcome,
+}
+
+impl ClassSplitCase {
+    fn check(self) {
+        println!("case: {}", self.label);
+        let peer: Vec<(&str, &str)> = self
+            .peer
+            .map(|peer| ("static/peer", peer))
+            .into_iter()
+            .collect();
+        let mut colocated = FixtureOpts::new(self.source, vec![self.colocated])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_extra_chunks(&peer);
+        colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+        assert_preserved_entry_output(&run_fixture(colocated), self.colocated_output);
+
+        let mut split = FixtureOpts::new(self.source, self.split).with_extra_chunks(&peer);
+        split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+        match self.outcome {
+            SplitOutcome::Conflict(modules) => {
+                expect_atomic_conflict_rejection(split, modules, &[])
+            }
+            SplitOutcome::Accepted(output) => {
+                let fixture = run_fixture(split);
+                assert_preserved_entry_output(&fixture, output);
+                assert_all_emitted_js_checks(&fixture);
+            }
+        }
+    }
+}
+
 #[test]
-fn superclass_static_initializer_observes_early_value() {
-    let source = r#"let later = 0;
+fn class_and_published_reader_runs_observe_the_early_value() {
+    for case in [
+        ClassSplitCase {
+            label: "superclass static initializer",
+            source: r#"let later = 0;
 class Core { static snapshot = later; }
 class Derived extends Core {}
 later = 42;
 console.log(Derived.snapshot, later);
 export { Derived, later };
-"#;
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Core", "Derived", "later"]),
-            &["later = 42;", "console.log(Derived.snapshot, later);"],
-        )],
-    )
-    .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("runtime/core", &[Member::new("Core")]),
-            logical_module("runtime/derived", &[Member::new("Derived")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    );
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["runtime/core", "values/later"], &[]);
-}
-
-#[test]
-fn reassigned_superclass_constructor_reads_are_promoted() {
-    let source = r#"import { trigger } from './peer.js';
+"#,
+            peer: None,
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Core", "Derived", "later"]),
+                &["later = 42;", "console.log(Derived.snapshot, later);"],
+            ),
+            colocated_output: "0 42\n",
+            split: vec![
+                logical_module("runtime/core", &[Member::new("Core")]),
+                logical_module("runtime/derived", &[Member::new("Derived")]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+            outcome: SplitOutcome::Conflict(&["runtime/core", "values/later"]),
+        },
+        ClassSplitCase {
+            // Reassigned superclass constructor reads are promoted.
+            label: "reassigned superclass constructor",
+            source: r#"import { trigger } from './peer.js';
 let later = 0;
 class Original {}
 let Core = Original;
@@ -102,55 +144,40 @@ const box = trigger();
 later = 42;
 console.log(globalThis.observed, later);
 export { box, later };
-"#;
-    let peer = [(
-        "static/peer",
-        "export function trigger() { new globalThis.Derived(); return {}; }",
-    )];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Original", "Core", "Derived", "box", "later"]),
-            &[
-                "Core = class { constructor() { globalThis.observed = later; } };",
-                "globalThis.Derived = Derived;",
-                "later = 42;",
-                "console.log(globalThis.observed, later);",
+"#,
+            peer: Some("export function trigger() { new globalThis.Derived(); return {}; }"),
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Original", "Core", "Derived", "box", "later"]),
+                &[
+                    "Core = class { constructor() { globalThis.observed = later; } };",
+                    "globalThis.Derived = Derived;",
+                    "later = 42;",
+                    "console.log(globalThis.observed, later);",
+                ],
+            ),
+            colocated_output: "0 42\n",
+            split: vec![
+                logical_module("runtime/original", &[Member::new("Original")]),
+                logical_module_with_anon(
+                    "runtime/core",
+                    &[Member::new("Core")],
+                    &["Core = class { constructor() { globalThis.observed = later; } };"],
+                ),
+                logical_module_with_anon(
+                    "runtime/derived",
+                    &[Member::new("Derived")],
+                    &["globalThis.Derived = Derived;"],
+                ),
+                logical_module("runtime/call", &[Member::new("box")]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
-        )],
-    )
-    .with_unassigned_mode(unassigned_mode_inline())
-    .with_extra_chunks(&peer);
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("runtime/original", &[Member::new("Original")]),
-            logical_module_with_anon(
-                "runtime/core",
-                &[Member::new("Core")],
-                &["Core = class { constructor() { globalThis.observed = later; } };"],
-            ),
-            logical_module_with_anon(
-                "runtime/derived",
-                &[Member::new("Derived")],
-                &["globalThis.Derived = Derived;"],
-            ),
-            logical_module("runtime/call", &[Member::new("box")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["runtime/call", "values/later"], &[]);
-}
-
-#[test]
-fn superclass_value_is_frozen_when_the_derived_class_is_defined() {
-    let source = r#"import { trigger } from './peer.js';
+            outcome: SplitOutcome::Conflict(&["runtime/call", "values/later"]),
+        },
+        ClassSplitCase {
+            // The superclass value is frozen when the derived class is defined.
+            label: "superclass rebound after definition",
+            source: r#"import { trigger } from './peer.js';
 let later = 0;
 let Core = class { constructor() { globalThis.observed = later; } };
 class Derived extends Core {}
@@ -160,49 +187,34 @@ const box = trigger();
 later = 42;
 console.log(globalThis.observed, later);
 export { box, later };
-"#;
-    let peer = [(
-        "static/peer",
-        "export function trigger() { new globalThis.Derived(); return {}; }",
-    )];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Core", "Derived", "box", "later"]),
-            &[
-                "Core = class {};",
-                "globalThis.Derived = Derived;",
-                "later = 42;",
-                "console.log(globalThis.observed, later);",
-            ],
-        )],
-    )
-    .with_unassigned_mode(unassigned_mode_inline())
-    .with_extra_chunks(&peer);
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "runtime/classes",
-                &binding_members(["Core", "Derived"]),
-                &["Core = class {};", "globalThis.Derived = Derived;"],
+"#,
+            peer: Some("export function trigger() { new globalThis.Derived(); return {}; }"),
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Core", "Derived", "box", "later"]),
+                &[
+                    "Core = class {};",
+                    "globalThis.Derived = Derived;",
+                    "later = 42;",
+                    "console.log(globalThis.observed, later);",
+                ],
             ),
-            logical_module("runtime/call", &[Member::new("box")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["runtime/call", "values/later"], &[]);
-}
-
-#[test]
-fn inherited_accessor_reads_remain_visible_through_the_subclass() {
-    let source = r#"import { trigger } from './peer.js';
+            colocated_output: "0 42\n",
+            split: vec![
+                logical_module_with_anon(
+                    "runtime/classes",
+                    &binding_members(["Core", "Derived"]),
+                    &["Core = class {};", "globalThis.Derived = Derived;"],
+                ),
+                logical_module("runtime/call", &[Member::new("box")]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+            outcome: SplitOutcome::Conflict(&["runtime/call", "values/later"]),
+        },
+        ClassSplitCase {
+            // Inherited accessor reads remain visible through the subclass.
+            label: "inherited accessor",
+            source: r#"import { trigger } from './peer.js';
 let later = 0;
 class Base { get value() { return later; } }
 class Derived extends Base {}
@@ -211,49 +223,36 @@ const box = trigger();
 later = 42;
 console.log(globalThis.observed, later);
 export { box, later };
-"#;
-    let peer = [(
-        "static/peer",
-        "export function trigger() { globalThis.observed = new globalThis.Derived().value; return {}; }",
-    )];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Base", "Derived", "box", "later"]),
-            &[
-                "globalThis.Derived = Derived;",
-                "later = 42;",
-                "console.log(globalThis.observed, later);",
-            ],
-        )],
-    )
-    .with_unassigned_mode(unassigned_mode_inline())
-    .with_extra_chunks(&peer);
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("runtime/base", &[Member::new("Base")]),
-            logical_module_with_anon(
-                "runtime/derived",
-                &[Member::new("Derived")],
-                &["globalThis.Derived = Derived;"],
+"#,
+            peer: Some(
+                "export function trigger() { globalThis.observed = new globalThis.Derived().value; return {}; }",
             ),
-            logical_module("runtime/call", &[Member::new("box")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["runtime/call", "values/later"], &[]);
-}
-
-#[test]
-fn unknown_superclass_keeps_the_generic_callback_fallback() {
-    let source = r#"import { Base } from './peer.js';
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Base", "Derived", "box", "later"]),
+                &[
+                    "globalThis.Derived = Derived;",
+                    "later = 42;",
+                    "console.log(globalThis.observed, later);",
+                ],
+            ),
+            colocated_output: "0 42\n",
+            split: vec![
+                logical_module("runtime/base", &[Member::new("Base")]),
+                logical_module_with_anon(
+                    "runtime/derived",
+                    &[Member::new("Derived")],
+                    &["globalThis.Derived = Derived;"],
+                ),
+                logical_module("runtime/call", &[Member::new("box")]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+            outcome: SplitOutcome::Conflict(&["runtime/call", "values/later"]),
+        },
+        ClassSplitCase {
+            // An unknown superclass keeps the generic callback fallback.
+            label: "unknown superclass",
+            source: r#"import { Base } from './peer.js';
 let later = 0;
 globalThis.callback = () => later;
 class Derived extends Base {}
@@ -262,176 +261,70 @@ const value = new Derived();
 later = 42;
 console.log(globalThis.observed, later);
 export { value, later };
-"#;
-    let peer = [(
-        "static/peer",
-        "export class Base { constructor() { globalThis.observed = globalThis.callback(); } }",
-    )];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Derived", "value", "later"]),
-            &[
-                "globalThis.callback = () => later;",
-                "globalThis.Derived = Derived;",
-                "later = 42;",
-                "console.log(globalThis.observed, later);",
-            ],
-        )],
-    )
-    .with_unassigned_mode(unassigned_mode_inline())
-    .with_extra_chunks(&peer);
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "runtime/derived",
-                &[Member::new("Derived")],
+"#,
+            peer: Some(
+                "export class Base { constructor() { globalThis.observed = globalThis.callback(); } }",
+            ),
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Derived", "value", "later"]),
                 &[
                     "globalThis.callback = () => later;",
                     "globalThis.Derived = Derived;",
+                    "later = 42;",
+                    "console.log(globalThis.observed, later);",
                 ],
             ),
-            logical_module("runtime/construct", &[Member::new("value")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["runtime/construct", "values/later"], &[]);
-}
-
-#[test]
-fn unused_constructor_and_getter_are_not_executed_by_subclass_heritage() {
-    let source = r#"import { trigger } from './peer.js';
-class Calendar { get day() { return later; } }
-class Core { constructor() { this.calendar = new Calendar(); } }
-class Derived extends Core {}
-const box = trigger();
-box.flag = 1;
-const later = 42;
-console.log(box.flag, later);
-export { box, later };
-"#;
-    let peer = [("static/peer", "export function trigger() { return {}; }")];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Calendar", "Core", "Derived", "box", "later"]),
-            &["box.flag = 1;", "console.log(box.flag, later);"],
-        )],
-    )
-    .with_extra_chunks(&peer)
-    .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "1 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("runtime/calendar", &[Member::new("Calendar")]),
-            logical_module("runtime/core", &[Member::new("Core")]),
-            logical_module("runtime/derived", &[Member::new("Derived")]),
-            logical_module_with_anon("runtime/call", &[Member::new("box")], &["box.flag = 1;"]),
-            logical_module("values/later", &[Member::new("later")]),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(split);
-    assert_preserved_entry_output(&fixture, "1 42\n");
-    assert_all_emitted_js_checks(&fixture);
-}
-
-#[test]
-fn inherited_constructor_observes_early_value_when_constructed() {
-    let source = r#"let later = 0;
+            colocated_output: "0 42\n",
+            split: vec![
+                logical_module_with_anon(
+                    "runtime/derived",
+                    &[Member::new("Derived")],
+                    &[
+                        "globalThis.callback = () => later;",
+                        "globalThis.Derived = Derived;",
+                    ],
+                ),
+                logical_module("runtime/construct", &[Member::new("value")]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+            outcome: SplitOutcome::Conflict(&["runtime/construct", "values/later"]),
+        },
+        ClassSplitCase {
+            label: "inherited constructor when constructed",
+            source: r#"let later = 0;
 class Core { constructor() { globalThis.observed = later; } }
 class Derived extends Core {}
 new Derived();
 later = 42;
 console.log(globalThis.observed, later);
 export { later };
-"#;
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Core", "Derived", "later"]),
-            &[
-                "new Derived();",
-                "later = 42;",
-                "console.log(globalThis.observed, later);",
-            ],
-        )],
-    )
-    .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("runtime/core", &[Member::new("Core")]),
-            logical_module_with_anon(
-                "runtime/derived",
-                &[Member::new("Derived")],
-                &["new Derived();"],
+"#,
+            peer: None,
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Core", "Derived", "later"]),
+                &[
+                    "new Derived();",
+                    "later = 42;",
+                    "console.log(globalThis.observed, later);",
+                ],
             ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    );
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["runtime/derived", "values/later"], &[]);
-}
-
-#[test]
-fn unpublished_pure_class_method_does_not_run_during_opaque_call() {
-    let source = r#"import { trigger } from './peer.js';
-class Container { read() { return later; } }
-const box = trigger();
-box.flag = 1;
-const later = 42;
-console.log(box.flag, later);
-export { box, later };
-"#;
-    let peer = [("static/peer", "export function trigger() { return {}; }")];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Container", "box", "later"]),
-            &["box.flag = 1;", "console.log(box.flag, later);"],
-        )],
-    )
-    .with_extra_chunks(&peer)
-    .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "1 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("runtime/class", &[Member::new("Container")]),
-            logical_module_with_anon("runtime/call", &[Member::new("box")], &["box.flag = 1;"]),
-            logical_module("values/later", &[Member::new("later")]),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(split);
-    assert_preserved_entry_output(&fixture, "1 42\n");
-    assert_all_emitted_js_checks(&fixture);
-}
-
-#[test]
-fn published_class_constructor_and_getter_observe_early_value() {
-    let source = r#"import { trigger } from './peer.js';
+            colocated_output: "0 42\n",
+            split: vec![
+                logical_module("runtime/core", &[Member::new("Core")]),
+                logical_module_with_anon(
+                    "runtime/derived",
+                    &[Member::new("Derived")],
+                    &["new Derived();"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+            outcome: SplitOutcome::Conflict(&["runtime/derived", "values/later"]),
+        },
+        ClassSplitCase {
+            label: "published class constructor and getter",
+            source: r#"import { trigger } from './peer.js';
 let later = 0;
 class Container {
   constructor() { globalThis.constructed = later; }
@@ -443,105 +336,37 @@ box.flag = 1;
 later = 42;
 console.log(globalThis.constructed, globalThis.observed, later);
 export { box, later };
-"#;
-    let peer = [(
-        "static/peer",
-        "export function trigger() { const instance = new globalThis.Container(); globalThis.observed = instance.value; return {}; }",
-    )];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["Container", "box", "later"]),
-            &[
-                "globalThis.Container = Container;",
-                "box.flag = 1;",
-                "later = 42;",
-                "console.log(globalThis.constructed, globalThis.observed, later);",
+"#,
+            peer: Some(
+                "export function trigger() { const instance = new globalThis.Container(); globalThis.observed = instance.value; return {}; }",
+            ),
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Container", "box", "later"]),
+                &[
+                    "globalThis.Container = Container;",
+                    "box.flag = 1;",
+                    "later = 42;",
+                    "console.log(globalThis.constructed, globalThis.observed, later);",
+                ],
+            ),
+            colocated_output: "0 0 42\n",
+            split: vec![
+                logical_module("runtime/class", &[Member::new("Container")]),
+                logical_module_with_anon(
+                    "runtime/call",
+                    &[Member::new("box")],
+                    &["globalThis.Container = Container;", "box.flag = 1;"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
-        )],
-    )
-    .with_extra_chunks(&peer)
-    .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 0 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("runtime/class", &[Member::new("Container")]),
-            logical_module_with_anon(
-                "runtime/call",
-                &[Member::new("box")],
-                &["globalThis.Container = Container;", "box.flag = 1;"],
-            ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["runtime/call", "values/later"], &[]);
-}
-
-#[test]
-fn post_await_future_command_does_not_make_its_reader_synchronous() {
-    let source = r#"import { trigger } from './peer.js';
-const reader = () => later;
-async function load() { await 0; return command.run(); }
-globalThis.saved = load;
-const box = trigger();
-box.flag = 1;
-const command = { run: reader };
-const later = 42;
-console.log(box.flag, later);
-export { box, command, later };
-"#;
-    let peer = [(
-        "static/peer",
-        "export function trigger() { globalThis.saved(); return {}; }",
-    )];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["reader", "load", "box", "command", "later"]),
-            &[
-                "globalThis.saved = load;",
-                "box.flag = 1;",
-                "console.log(box.flag, later);",
-            ],
-        )],
-    )
-    .with_extra_chunks(&peer)
-    .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "1 42\n");
-
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("runtime/functions", &[Member::new("load")]),
-            logical_module_with_anon(
-                "runtime/call",
-                &[Member::new("box")],
-                &["globalThis.saved = load;", "box.flag = 1;"],
-            ),
-            logical_module(
-                "values/late",
-                &binding_members(["reader", "command", "later"]),
-            ),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(split);
-    assert_preserved_entry_output(&fixture, "1 42\n");
-    assert_all_emitted_js_checks(&fixture);
-}
-
-#[test]
-fn before_await_published_reader_still_observes_early_value() {
-    let source = r#"import { trigger } from './peer.js';
+            outcome: SplitOutcome::Conflict(&["runtime/call", "values/later"]),
+        },
+        ClassSplitCase {
+            // A published reader called before the first `await` still runs
+            // synchronously inside the unknown call.
+            label: "before-await published reader",
+            source: r#"import { trigger } from './peer.js';
 let later = 0;
 function reader() { return later; }
 const command = { run: reader };
@@ -552,47 +377,137 @@ box.flag = 1;
 later = 42;
 console.log(globalThis.observed, later);
 export { box, command, later };
-"#;
-    let peer = [(
-        "static/peer",
-        "export function trigger() { globalThis.saved(); return {}; }",
-    )];
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &binding_members(["reader", "load", "box", "command", "later"]),
-            &[
-                "globalThis.saved = load;",
-                "box.flag = 1;",
-                "later = 42;",
-                "console.log(globalThis.observed, later);",
+"#,
+            peer: Some("export function trigger() { globalThis.saved(); return {}; }"),
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["reader", "load", "box", "command", "later"]),
+                &[
+                    "globalThis.saved = load;",
+                    "box.flag = 1;",
+                    "later = 42;",
+                    "console.log(globalThis.observed, later);",
+                ],
+            ),
+            colocated_output: "0 42\n",
+            split: vec![
+                logical_module(
+                    "runtime/functions",
+                    &binding_members(["reader", "command", "load"]),
+                ),
+                logical_module_with_anon(
+                    "runtime/call",
+                    &[Member::new("box")],
+                    &["globalThis.saved = load;", "box.flag = 1;"],
+                ),
+                logical_module_with_anon("values/late", &[Member::new("later")], &["later = 42;"]),
             ],
-        )],
-    )
-    .with_extra_chunks(&peer)
-    .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    assert_preserved_entry_output(&run_fixture(colocated), "0 42\n");
+            outcome: SplitOutcome::Conflict(&["runtime/call", "values/late"]),
+        },
+    ] {
+        case.check();
+    }
+}
 
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module(
-                "runtime/functions",
-                &binding_members(["reader", "command", "load"]),
+#[test]
+fn unreached_class_members_and_post_await_readers_allow_the_split() {
+    for case in [
+        ClassSplitCase {
+            // Subclass heritage does not execute an unused constructor or getter.
+            label: "unused constructor and getter",
+            source: r#"import { trigger } from './peer.js';
+class Calendar { get day() { return later; } }
+class Core { constructor() { this.calendar = new Calendar(); } }
+class Derived extends Core {}
+const box = trigger();
+box.flag = 1;
+const later = 42;
+console.log(box.flag, later);
+export { box, later };
+"#,
+            peer: Some("export function trigger() { return {}; }"),
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Calendar", "Core", "Derived", "box", "later"]),
+                &["box.flag = 1;", "console.log(box.flag, later);"],
             ),
-            logical_module_with_anon(
-                "runtime/call",
-                &[Member::new("box")],
-                &["globalThis.saved = load;", "box.flag = 1;"],
+            colocated_output: "1 42\n",
+            split: vec![
+                logical_module("runtime/calendar", &[Member::new("Calendar")]),
+                logical_module("runtime/core", &[Member::new("Core")]),
+                logical_module("runtime/derived", &[Member::new("Derived")]),
+                logical_module_with_anon("runtime/call", &[Member::new("box")], &["box.flag = 1;"]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+            outcome: SplitOutcome::Accepted("1 42\n"),
+        },
+        ClassSplitCase {
+            // An unpublished pure class method does not run during an opaque call.
+            label: "unpublished pure class method",
+            source: r#"import { trigger } from './peer.js';
+class Container { read() { return later; } }
+const box = trigger();
+box.flag = 1;
+const later = 42;
+console.log(box.flag, later);
+export { box, later };
+"#,
+            peer: Some("export function trigger() { return {}; }"),
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["Container", "box", "later"]),
+                &["box.flag = 1;", "console.log(box.flag, later);"],
             ),
-            logical_module_with_anon("values/late", &[Member::new("later")], &["later = 42;"]),
-        ],
-    )
-    .with_extra_chunks(&peer);
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["runtime/call", "values/late"], &[]);
+            colocated_output: "1 42\n",
+            split: vec![
+                logical_module("runtime/class", &[Member::new("Container")]),
+                logical_module_with_anon("runtime/call", &[Member::new("box")], &["box.flag = 1;"]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+            outcome: SplitOutcome::Accepted("1 42\n"),
+        },
+        ClassSplitCase {
+            // A post-await future command does not make its reader synchronous.
+            label: "post-await future command",
+            source: r#"import { trigger } from './peer.js';
+const reader = () => later;
+async function load() { await 0; return command.run(); }
+globalThis.saved = load;
+const box = trigger();
+box.flag = 1;
+const command = { run: reader };
+const later = 42;
+console.log(box.flag, later);
+export { box, command, later };
+"#,
+            peer: Some("export function trigger() { globalThis.saved(); return {}; }"),
+            colocated: logical_module_with_anon(
+                "runtime/all",
+                &binding_members(["reader", "load", "box", "command", "later"]),
+                &[
+                    "globalThis.saved = load;",
+                    "box.flag = 1;",
+                    "console.log(box.flag, later);",
+                ],
+            ),
+            colocated_output: "1 42\n",
+            split: vec![
+                logical_module("runtime/functions", &[Member::new("load")]),
+                logical_module_with_anon(
+                    "runtime/call",
+                    &[Member::new("box")],
+                    &["globalThis.saved = load;", "box.flag = 1;"],
+                ),
+                logical_module(
+                    "values/late",
+                    &binding_members(["reader", "command", "later"]),
+                ),
+            ],
+            outcome: SplitOutcome::Accepted("1 42\n"),
+        },
+    ] {
+        case.check();
+    }
 }
 
 const PEER: &str = r#"import { readLater } from "./provider.js";
@@ -842,9 +757,12 @@ fn expect_class_split_conflict(source: &'static str) {
 }
 
 #[test]
-fn late_const_callable_is_unavailable_during_unknown_call_reentry() {
-    let fixture = split_fixture(
-        r#"import { ready } from "./peer.js";
+fn late_intermediates_are_unavailable_during_unknown_call_reentry() {
+    for (label, fixture, source) in [
+        (
+            "late const callable",
+            split_fixture as fn(&'static str) -> Fixture,
+            r#"import { ready } from "./peer.js";
 export function readLater() { return getLater(); }
 const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = ((object) => {
@@ -855,23 +773,12 @@ const getLater = () => dynamic;
 const later = 42;
 console.log(globalThis.earlyRead, readLater() === dynamic);
 "#,
-    );
-
-    assert_preserved_entry_output(&fixture, "threw true\n");
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const provider = await import('./static/provider/entry.js');\n\
-         const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
-         console.log(provider.readLater() === dynamic.dynamic);\n",
-        "true\n",
-    );
-    assert_all_emitted_js_checks(&fixture);
-}
-
-#[test]
-fn split_modules_preserve_the_early_tdz_and_later_read() {
-    let fixture = split_fixture(
-        r#"import { ready } from "./peer.js";
+        ),
+        (
+            // Split modules preserve the early TDZ and the later read.
+            "plain dynamic record",
+            split_fixture,
+            r#"import { ready } from "./peer.js";
 export function readLater() { return getLater(); }
 const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = { ready: "ready" };
@@ -879,17 +786,35 @@ const getLater = () => dynamic;
 const later = 42;
 console.log(globalThis.earlyRead, readLater() === dynamic);
 "#,
-    );
-
-    assert_preserved_entry_output(&fixture, "threw true\n");
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const provider = await import('./static/provider/entry.js');\n\
-         const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
-         console.log(provider.readLater() === dynamic.dynamic);\n",
-        "true\n",
-    );
-    assert_all_emitted_js_checks(&fixture);
+        ),
+        (
+            "late class intermediate",
+            class_split_fixture,
+            r#"import { ready } from "./peer.js";
+export function readLater() { return new Reader().read(); }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "ready";
+  return object;
+})({});
+class Reader { read() { return dynamic; } }
+const later = 42;
+console.log(globalThis.earlyRead, readLater() === dynamic);
+"#,
+        ),
+    ] {
+        println!("case: {label}");
+        let fixture = fixture(source);
+        assert_preserved_entry_output(&fixture, "threw true\n");
+        assert_generated_module_after_entry_script(
+            &fixture,
+            "const provider = await import('./static/provider/entry.js');\n\
+             const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
+             console.log(provider.readLater() === dynamic.dynamic);\n",
+            "true\n",
+        );
+        assert_all_emitted_js_checks(&fixture);
+    }
 }
 
 #[test]
@@ -919,33 +844,6 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
 }
 
 #[test]
-fn late_class_intermediate_is_unavailable_during_unknown_call_reentry() {
-    let fixture = class_split_fixture(
-        r#"import { ready } from "./peer.js";
-export function readLater() { return new Reader().read(); }
-const prefix = ready && globalThis.runBeforeInitialization();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "ready";
-  return object;
-})({});
-class Reader { read() { return dynamic; } }
-const later = 42;
-console.log(globalThis.earlyRead, readLater() === dynamic);
-"#,
-    );
-
-    assert_preserved_entry_output(&fixture, "threw true\n");
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const provider = await import('./static/provider/entry.js');\n\
-         const dynamic = await import('./static/provider/modules/values/dynamic.js');\n\
-         console.log(provider.readLater() === dynamic.dynamic);\n",
-        "true\n",
-    );
-    assert_all_emitted_js_checks(&fixture);
-}
-
-#[test]
 fn initialized_class_really_reaches_the_later_binding() {
     expect_class_split_conflict(
         r#"import { ready } from "./peer.js";
@@ -962,20 +860,6 @@ console.log(globalThis.earlyRead, readLater() === dynamic);
     );
 }
 
-#[test]
-fn split_rejects_const_tdz_observed_during_unknown_call_without_iife_writes() {
-    expect_independent_later_conflict(
-        r#"import { ready } from "./peer.js";
-export function readLater() { return later; }
-const prefix = ready && globalThis.runBeforeInitialization();
-const dynamic = {};
-const later = 42;
-console.log(globalThis.earlyRead, globalThis.earlyValue, later);
-"#,
-        PEER,
-    );
-}
-
 const FRESH_IIFE_BEFORE_INITIALIZATION: &str = r#"import { ready } from "./peer.js";
 export function readLater() { return later; }
 const prefix = ready && globalThis.runBeforeInitialization();
@@ -988,8 +872,23 @@ console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 "#;
 
 #[test]
-fn split_rejects_const_tdz_observed_during_unknown_call_with_fresh_iife_writes() {
-    expect_independent_later_conflict(FRESH_IIFE_BEFORE_INITIALIZATION, PEER);
+fn split_rejects_const_tdz_observed_during_unknown_call() {
+    for (label, source) in [
+        (
+            "without IIFE writes",
+            r#"import { ready } from "./peer.js";
+export function readLater() { return later; }
+const prefix = ready && globalThis.runBeforeInitialization();
+const dynamic = {};
+const later = 42;
+console.log(globalThis.earlyRead, globalThis.earlyValue, later);
+"#,
+        ),
+        ("with fresh IIFE writes", FRESH_IIFE_BEFORE_INITIALIZATION),
+    ] {
+        println!("case: {label}");
+        expect_independent_later_conflict(source, PEER);
+    }
 }
 
 #[test]
@@ -1014,45 +913,39 @@ console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 }
 
 #[test]
-fn split_accepts_var_initialized_before_unknown_call() {
-    let fixture = independent_later_fixture(
-        r#"import { ready } from "./peer.js";
+fn split_accepts_later_initialized_before_unknown_call() {
+    for (label, source) in [
+        (
+            "var",
+            r#"import { ready } from "./peer.js";
 var later = 42;
 export function readLater() { return later; }
 const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = {};
 console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 "#,
-    );
-
-    assert_preserved_entry_output(&fixture, "returned 42 42\n");
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const later = await import('./static/provider/modules/values/later.js');\n\
-         console.log(later.readLater());\n",
-        "42\n",
-    );
-}
-
-#[test]
-fn split_accepts_const_available_before_unknown_call() {
-    let fixture = independent_later_fixture(
-        r#"import { ready } from "./peer.js";
+        ),
+        (
+            "const",
+            r#"import { ready } from "./peer.js";
 const later = 42;
 export function readLater() { return later; }
 const prefix = ready && globalThis.runBeforeInitialization();
 const dynamic = {};
 console.log(globalThis.earlyRead, globalThis.earlyValue, later);
 "#,
-    );
-
-    assert_preserved_entry_output(&fixture, "returned 42 42\n");
-    assert_generated_module_after_entry_script(
-        &fixture,
-        "const later = await import('./static/provider/modules/values/later.js');\n\
-         console.log(later.readLater());\n",
-        "42\n",
-    );
+        ),
+    ] {
+        println!("case: {label}");
+        let fixture = independent_later_fixture(source);
+        assert_preserved_entry_output(&fixture, "returned 42 42\n");
+        assert_generated_module_after_entry_script(
+            &fixture,
+            "const later = await import('./static/provider/modules/values/later.js');\n\
+             console.log(later.readLater());\n",
+            "42\n",
+        );
+    }
 }
 
 #[test]
