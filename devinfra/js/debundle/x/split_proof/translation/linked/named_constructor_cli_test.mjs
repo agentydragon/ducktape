@@ -99,6 +99,7 @@ const uninitializedOut = path.join(root, "uninitialized-let-out");
 const uninitialized = split({ source, spec, out: uninitializedOut, require: "all-outcomes" });
 assert.equal(uninitialized.status, "certified", uninitialized.log);
 assert.equal(uninitialized.scope, "named-declarations");
+assert.equal(uninitialized.verdict.strategy, "compiled-constructor");
 assert.equal((await import(pathToFileURL(path.join(uninitializedOut, "entry.mjs")))).result, undefined);
 assert.equal(
   split({ source, spec, out: uninitializedOut, require: "all-outcomes", checkOutput: true }).status,
