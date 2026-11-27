@@ -65,6 +65,7 @@ def Expr.allocOnly : Expr → Bool
   -- ambient constructor or prototype properties.
   | .regexp _ => true
   | e@(.binary ..) => e.literalArithmetic
+  | .seq a b => a.allocOnly && b.allocOnly
   | .unary op operand => localUnaryOperand op operand && operand.allocOnly
   | .obj props => allocOnlyProps props
   | .arr elems => allocOnlyAll elems
@@ -157,6 +158,7 @@ mutual
 field initializers keep bindings without reading them; static initializers run now. -/
 def Expr.readsNow : Expr → List Name
   | .var x => [x]
+  | .seq first second => first.readsNow ++ second.readsNow
   | .unary _ operand => operand.readsNow
   | .obj props => readsNowProps props
   | .arr elems => readsNowAll elems

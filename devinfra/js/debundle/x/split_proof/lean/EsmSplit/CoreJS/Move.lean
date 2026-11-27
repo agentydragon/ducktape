@@ -537,6 +537,17 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
         change Local r R (evalExpr (n + 1) env (.unary op operand) : M W Val)
         rw [evalExpr_localUnary hop]
         exact (ihE env operand ha hw).bind' fun _ => local_lift _
+      case seq first second =>
+        simp only [Bool.and_eq_true] at he
+        change Local r R (evalExpr (n + 1) env (.seq first second) : M W Val)
+        have firstWithin : Within r R env first.readsNow := by
+          intro c hc
+          exact hw c (by simp [Expr.readsNow, hc])
+        have secondWithin : Within r R env second.readsNow := by
+          intro c hc
+          exact hw c (by simp [Expr.readsNow, hc])
+        unfold evalExpr
+        exact (ihE env first he.1 firstWithin).seq (ihE env second he.2 secondWithin)
       case func f => exact local_makeFunc env f
       case obj props =>
         refine (local_alloc _).bind fun a ⟨s, s', hr, h⟩ => ?_

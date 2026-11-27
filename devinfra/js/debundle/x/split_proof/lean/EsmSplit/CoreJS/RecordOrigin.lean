@@ -185,5 +185,70 @@ theorem numericRecord_origin (fs : List (String × Float)) (fresh : (fs.map Prod
     intro k x found
     rw [lookupNumber, found]; rfl
 
+def stringField (field : String × String) : PropDef := .init (.str field.1) (.str field.2)
+def stringValues (fields : List (String × String)) := fields.map fun (k, x) => (k, Val.str x)
+
+private theorem stringFields_origin (n : Nat) (env : Env) (fields : List (String × String))
+    (previous : List (String × Val)) {s t : State W}
+    (ho : s.objAt a = some (record previous))
+    (fresh : (fields.map Prod.fst).Nodup)
+    (sep : ∀ f ∈ fields, f.1 ∉ previous.map Prod.fst)
+    (run : evalProps n env a (fields.map stringField) s = .ok () t) :
+    t.objAt a = some (record (previous ++ stringValues fields)) := by
+  induction n generalizing fields previous s t with
+  | zero => cases run
+  | succ n ih =>
+    cases fields with
+    | nil => cases run; simpa [stringValues] using ho
+    | cons f fs =>
+      obtain ⟨k, value⟩ := f
+      cases n with
+      | zero => cases run
+      | succ n =>
+        change (createData a (.str k) (.str value) >>= fun _ =>
+          evalProps (n + 1) env a (fs.map stringField)) s = .ok () t at run
+        obtain ⟨_, u, write, rest⟩ := bind_ok run
+        simp only [List.map_cons, List.nodup_cons] at fresh
+        have next := add_fresh ho (sep _ List.mem_cons_self) write
+        have result := ih fs (previous ++ [(k, .str value)]) next fresh.2 (by
+          intro f hf
+          simp only [List.map_append, List.map_cons, List.map_nil, List.mem_append,
+            List.mem_singleton, not_or]
+          exact ⟨sep f (List.mem_cons_of_mem _ hf), fun eq => fresh.1 (List.mem_map.mpr ⟨f, hf, eq⟩)⟩) rest
+        simpa [stringValues, List.append_assoc] using result
+
+private theorem lookupString (fs : List (String × String)) (k : String) :
+    (record (stringValues fs)).props.lookup (PropertyKey.str k) =
+      (fs.lookup k).map (fun x => Property.data (.str x) true true true) := by
+  induction fs with
+  | nil => rfl
+  | cons f fs ih =>
+    obtain ⟨key, value⟩ := f
+    by_cases h : k = key
+    · subst key; simp [record, dataProps, stringValues]
+    · simpa only [record, dataProps, stringValues, List.map_cons, List.lookup_cons,
+        PropertyKey.str_beq, beq_eq_false_iff_ne.mpr h] using ih
+
+/-- A literal string record creates own writable data entries at its actual
+allocation address. Distinct keys keep ordinary duplicate-property semantics
+outside this proof. -/
+theorem stringRecord_origin (fs : List (String × String)) (fresh : (fs.map Prod.fst).Nodup)
+    {s t : State W} (run : evalExpr n env (.obj (fs.map stringField)) s = .ok v t) :
+    ∃ a o, v = .obj a ∧ t.objAt a = some o ∧
+      ∀ k value, fs.lookup k = some value →
+        o.props.lookup (.str k) = some (.data (.str value) true true true) := by
+  cases n with
+  | zero => cases run
+  | succ n =>
+    unfold evalExpr at run
+    obtain ⟨a, s1, allocates, run⟩ := bind_ok run
+    obtain ⟨_, s2, fields, result⟩ := bind_ok run
+    cases result
+    have complete := stringFields_origin n env fs [] (alloc_objAt allocates) fresh (by simp) fields
+    refine ⟨a, record (stringValues fs), rfl, complete, ?_⟩
+    intro k value found
+    rw [lookupString, found]
+    rfl
+
 end RecordOrigin
 end CoreJS

@@ -50,6 +50,7 @@ def noClassExpr : Expr → Prop
   | .obj props => noClassProps props
   | .arr elems => noClassAll elems
   | .unary _ operand => noClassExpr operand
+  | .seq first second => noClassExpr first ∧ noClassExpr second
   | _ => True
 
 def noClassAll : List Expr → Prop
@@ -101,11 +102,14 @@ private def noClassExprDecidable : (expr : Expr) → Decidable (noClassExpr expr
     match noClassExprDecidable expr with
     | isTrue h => isTrue (by simpa [noClassExpr] using h)
     | isFalse h => isFalse (by simpa [noClassExpr] using h)
+  | .seq first second =>
+    andDecidable (noClassExpr first) (noClassExpr second)
+      (noClassExprDecidable first) (noClassExprDecidable second)
   | .undef | .null | .bool _ | .num _ | .str _ | .regexp _ | .var _ | .host _ | .this | .func _
   | .spreadArg _ | .derived .. | .get .. | .getSuper _ | .getOptional .. | .hasProp .. | .delete ..
   | .assign .. | .assignOp .. | .assignLogical .. | .update .. | .call .. | .callMethod ..
   | .callSuper .. | .callOptionalReceiver .. | .callOptionalCallee .. | .new .. | .prim ..
-  | .binary .. | .logical .. | .cond .. | .seq .. => isTrue trivial
+  | .binary .. | .logical .. | .cond .. => isTrue trivial
 
 private def noClassAllDecidable : (exprs : List Expr) → Decidable (noClassAll exprs)
   | [] => isTrue trivial
@@ -784,6 +788,22 @@ private theorem replay_allocOnly {source target : World} :
         have literal : (Expr.binary op left right).literalArithmetic = true := by
           simpa [Expr.allocOnly] using allocOnly
         exact replay_literalArithmetic (fuel + 1) env (.binary op left right) literal
+      | seq first second =>
+        simp only [Expr.allocOnly, Bool.and_eq_true] at allocOnly
+        simp only [noClassExpr] at noClass
+        obtain ⟨noClassFirst, noClassSecond⟩ := noClass
+        have resolvedFirst : NamesResolved env first.readsNow := by
+          apply NamesResolved.of_subset resolved
+          intro name member
+          simp [Expr.readsNow, member]
+        have resolvedSecond : NamesResolved env second.readsNow := by
+          apply NamesResolved.of_subset resolved
+          intro name member
+          simp [Expr.readsNow, member]
+        simp only [evalExpr]
+        apply replay_bind (ihExpr env first allocOnly.1 noClassFirst resolvedFirst)
+        intro _
+        exact ihExpr env second allocOnly.2 noClassSecond resolvedSecond
       | unary op operand =>
         simp only [Expr.allocOnly, Bool.and_eq_true] at allocOnly
         have noClassOperand : noClassExpr operand := by simpa [noClassExpr] using noClass

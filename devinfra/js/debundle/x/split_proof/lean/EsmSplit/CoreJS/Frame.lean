@@ -529,6 +529,12 @@ theorem allocOnly_keeps (n : Nat) :
         change (evalExpr (n + 1) env (.unary op operand) s).Keeps base
         rw [evalExpr_localUnary hop]
         exact keeps_bind (ihE env operand base s ha hb) fun _ _ _ h => (inert_lift _).keeps h
+      case seq first second =>
+        simp only [Bool.and_eq_true] at he
+        change (evalExpr (n + 1) env (.seq first second) s).Keeps base
+        unfold evalExpr
+        exact keeps_bind (ihE env first base s he.1 hb) fun _ _ _ h =>
+          ihE env second base _ he.2 h
       case func f => exact makeFunc_keeps env f hb
       case obj props =>
         refine keeps_bind (alloc_keeps _ hb) fun a s1 h1 hb1 => ?_

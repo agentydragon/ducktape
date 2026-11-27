@@ -9,16 +9,19 @@ Unrecognized operations forget the whole table, including aliased receivers. -/
 
 namespace CoreJS.PrefixProjection
 
-private inductive Shape where
+inductive Shape where
   | number (value : Float)
   | text (value : String)
   | numbers (fields : List (String × Float))
+  | strings (fields : List (String × String))
 
-private def Shape.Holds (s : State w) : Shape → Val → Prop
+def Shape.Holds (s : State w) : Shape → Val → Prop
   | .number x, v => v = .num x
   | .text str, v => v = .str str
   | .numbers fields, v => ∃ a o, v = .obj a ∧ s.objAt a = some o ∧
       ∀ k x, fields.lookup k = some x → o.props.lookup (.str k) = some (.data (.num x) true true true)
+  | .strings fields, v => ∃ a o, v = .obj a ∧ s.objAt a = some o ∧
+      ∀ k x, fields.lookup k = some x → o.props.lookup (.str k) = some (.data (.str x) true true true)
 
 private theorem Shape.transport {s t : State w} {shape : Shape} (h : shape.Holds s v)
     (objects : ∀ a o, s.objAt a = some o → t.objAt a = some o) : shape.Holds t v := by
@@ -27,27 +30,37 @@ private theorem Shape.transport {s t : State w} {shape : Shape} (h : shape.Holds
   | numbers =>
     obtain ⟨a, o, value, atObj, fields⟩ := h
     exact ⟨a, o, value, objects _ _ atObj, fields⟩
+  | strings =>
+    obtain ⟨a, o, value, atObj, fields⟩ := h
+    exact ⟨a, o, value, objects _ _ atObj, fields⟩
 
-private structure Facts where
+structure Facts where
   live : Addr → Bool
   entries : List (Addr × Shape) := []
 
-private structure Holds (p : Facts) (s : State w) : Prop where
+structure Holds (p : Facts) (s : State w) : Prop where
   live : ∀ c, p.live c = true → (s.cellAt c).isSome
   entry : ∀ c sh, (c, sh) ∈ p.entries → ∃ v m, s.cellAt c = some ⟨some v, m⟩ ∧ sh.Holds s v
 
-private def empty : Facts := ⟨fun _ => false, []⟩
+def empty : Facts := ⟨fun _ => false, []⟩
 
-private theorem empty_holds (s : State w) : Holds empty s :=
+theorem empty_holds (s : State w) : Holds empty s :=
   ⟨by simp [empty], by simp [empty]⟩
 
-private theorem Holds.region {s : State w} (h : Holds p s) (r : Nat) : Holds p {s with region := r} := by
+theorem Holds.region {s : State w} (h : Holds p s) (r : Nat) : Holds p {s with region := r} := by
   refine ⟨h.live, ?_⟩
   intro c sh mem
   obtain ⟨v, m, cell, value⟩ := h.entry c sh mem
   exact ⟨v, m, cell, sh.transport value (fun _ _ h => h)⟩
 
-private theorem Holds.read {s : State w} (h : Holds p s)
+theorem Holds.extends {s t : State w} (h : Holds p s) (ext : Extends s t) : Holds p t := by
+  refine ⟨fun c live => ?_, fun c sh member => ?_⟩
+  · obtain ⟨b, present⟩ := Option.isSome_iff_exists.mp (h.live c live)
+    exact Option.isSome_iff_exists.mpr ⟨b, ext.cells c b present⟩
+  · obtain ⟨v, m, binding, shape⟩ := h.entry c sh member
+    exact ⟨v, m, ext.cells c _ binding, sh.transport shape ext.objs⟩
+
+theorem Holds.read {s : State w} (h : Holds p s)
     (lk : env.vars.lookup x = some c) (fact : p.entries.lookup c = some sh) :
     ∃ v, readVar env x s = .ok v s ∧ sh.Holds s v := by
   obtain ⟨v, m, bound, hs⟩ := h.entry c sh (lookup_mem fact)
@@ -55,15 +68,16 @@ private theorem Holds.read {s : State w} (h : Holds p s)
 
 /-- Only normal paths continue through a prefix. A read replacement has to
 agree even on failure, at the same evaluator fuel. -/
-private structure ExprStep (p : Facts) (env : Env) (e : Expr) where
+structure ExprStep (p : Facts) (env : Env) (e : Expr) where
   replacement : Expr
   shape : Option Shape
+  allocOnly : replacement.allocOnly = true
   same : ∀ {w} n (s : State w), Holds p s → evalExpr n env e s = evalExpr n env replacement s
   result : ∀ {w} n (s t : State w) v, Holds p s → evalExpr n env e s = .ok v t →
     Extends s t ∧ ∀ sh, shape = some sh → sh.Holds t v
 
 private def keep (p : Facts) (env : Env) (e : Expr) (h : e.allocOnly = true) : ExprStep p env e :=
-  ⟨e, none, fun _ _ _ => rfl, by
+  ⟨e, none, h, fun _ _ _ => rfl, by
     intro w n s t v _ run
     have preserves := allocOnly_extends (fuel := n) (env := env) (s := s) h
     change (evalExpr n env e s).Keeps s at preserves
@@ -188,12 +202,22 @@ private def numbers? : (ps : List PropDef) →
     return ⟨(k, x) :: fs, ⟨by rw [eq]; rfl⟩⟩
   | _ => none
 
+private def strings? : (ps : List PropDef) →
+    Option ((fs : List (String × String)) × PLift (ps = fs.map RecordOrigin.stringField))
+  | [] => some ⟨[], ⟨rfl⟩⟩
+  | .init (.str k) (.str value) :: ps => do
+    let ⟨fs, ⟨eq⟩⟩ ← strings? ps
+    return ⟨(k, value) :: fs, ⟨by rw [eq]; rfl⟩⟩
+  | _ => none
+
 /-- Substitute only initialized Number cells. The proof expression retains
 the operator tree and its fuel cost; the recorded result is available to a
 subsequent declaration in this same prefix. -/
 private structure Numeric (p : Facts) (env : Env) (e : Expr) where
   value : Float
   closed : Expr
+  closedLiteralArithmetic : closed.literalArithmetic = true
+  closedAllocOnly : closed.allocOnly = true
   same : ∀ {w} n (s : State w), Holds p s → evalExpr n env e s = evalExpr n env closed s
   evaluates : ∀ {w} n, (evalExpr n env closed : M w Val) = outOfFuel ∨
     evalExpr (W := w) n env closed = pure (.num value)
@@ -201,7 +225,7 @@ private structure Numeric (p : Facts) (env : Env) (e : Expr) where
 private def numberLeaf (p : Facts) (env : Env) (e : Expr) (x : Float)
     (read : ∀ {w} n (s : State w), Holds p s → evalExpr n env e s = evalExpr n env (.num x) s) :
     Numeric p env e :=
-  ⟨x, .num x, @read, by intro w n; cases n <;> first | exact Or.inl rfl | exact Or.inr rfl⟩
+  ⟨x, .num x, rfl, rfl, @read, by intro w n; cases n <;> first | exact Or.inl rfl | exact Or.inr rfl⟩
 
 private def numeric? (p : Facts) (env : Env) : (e : Expr) → Option (Numeric p env e)
   | .num x => some (numberLeaf p env _ x (fun _ _ _ => rfl))
@@ -217,12 +241,17 @@ private def numeric? (p : Facts) (env : Env) : (e : Expr) → Option (Numeric p 
         change v = .num value at hv
         subst v; exact read)
   | .binary op left right => do
-    guard op.numberArithmetic
-    let a ← numeric? p env left
-    let b ← numeric? p env right
-    match hb : binop op (.num a.value) (.num b.value) with
-    | .ok (.num value) =>
-      return ⟨value, .binary op a.closed b.closed, by
+    if hOp : op.numberArithmetic = true then
+      let a ← numeric? p env left
+      let b ← numeric? p env right
+      match hb : binop op (.num a.value) (.num b.value) with
+      | .ok (.num value) =>
+        have literal : (Expr.binary op a.closed b.closed).literalArithmetic = true := by
+          change op.numberArithmetic && a.closed.literalArithmetic && b.closed.literalArithmetic = true
+          simp [hOp, a.closedLiteralArithmetic, b.closedLiteralArithmetic]
+        have alloc : (Expr.binary op a.closed b.closed).allocOnly = true := by
+          simpa [Expr.allocOnly] using literal
+        return ⟨value, .binary op a.closed b.closed, literal, alloc, by
         intro w n s hs
         cases n with
         | zero => rfl
@@ -243,11 +272,12 @@ private def numeric? (p : Facts) (env : Env) : (e : Expr) → Option (Numeric p 
           rcases b.evaluates (w := w) n with hf | hy
           · rw [hf]; exact Or.inl rfl
           rw [hy, M.pure_bind, hb]; exact Or.inr rfl⟩
-    | _ => none
+      | _ => none
+    else none
   | _ => none
 
 private def Numeric.step (a : Numeric p env e) : ExprStep p env e :=
-  ⟨a.closed, some (.number a.value), a.same, by
+  ⟨a.closed, some (.number a.value), a.closedAllocOnly, a.same, by
     intro w n s t v hs run
     rw [a.same n s hs] at run
     rcases a.evaluates (w := w) n with hf | hv
@@ -255,12 +285,142 @@ private def Numeric.step (a : Numeric p env e) : ExprStep p env e :=
     · rw [hv] at run; cases run
       exact ⟨Extends.refl _, fun _ h => by cases h; rfl⟩⟩
 
+private def ownDataRead? (p : Facts) (env : Env) : (e : Expr) → Option (ExprStep p env e)
+  | .get (.var x) (.str key) => do
+    let ⟨c, ⟨lk⟩⟩ ← found? (env.vars.lookup x)
+    match hShape : p.entries.lookup c with
+    | some (.numbers fs) => do
+      let fact := hShape
+      let ⟨number, ⟨field⟩⟩ ← found? (fs.lookup key)
+      let rhs := Expr.seq .undef (.num number)
+      have same {w} n (s : State w) (h : Holds p s) : evalExpr n env (.get (.var x) (.str key)) s = evalExpr n env rhs s := by
+        obtain ⟨v, read, a, o, rfl, obj, fields⟩ := h.read lk fact
+        cases n with
+        | zero => rfl
+        | succ n =>
+          cases n with
+          | zero => rfl
+          | succ n =>
+            have prop := getProp_ownData (callFn (W := w) (n + 1)) obj (fields _ _ field)
+            simp only [rhs, evalExpr, M.pure_bind, M.bind_apply, read, prop]
+            rfl
+      return ⟨rhs, some (.number number), by simp [rhs, Expr.allocOnly], @same, by
+        intro w n s t v h run
+        rw [same n s h] at run
+        cases n with
+        | zero => cases run
+        | succ n =>
+          cases n with
+          | zero => cases run
+          | succ n =>
+            cases run
+            exact ⟨Extends.refl _, by intro shape shapeEq; cases shapeEq; rfl⟩⟩
+    | some (.strings fs) => do
+      let fact := hShape
+      let ⟨value, ⟨field⟩⟩ ← found? (fs.lookup key)
+      let rhs := Expr.seq .undef (.str value)
+      have same {w} n (s : State w) (h : Holds p s) : evalExpr n env (.get (.var x) (.str key)) s = evalExpr n env rhs s := by
+        obtain ⟨v, read, a, o, rfl, obj, fields⟩ := h.read lk fact
+        cases n with
+        | zero => rfl
+        | succ n =>
+          cases n with
+          | zero => rfl
+          | succ n =>
+            have prop := getProp_ownData (callFn (W := w) (n + 1)) obj (fields _ _ field)
+            simp only [rhs, evalExpr, M.pure_bind, M.bind_apply, read, prop]
+            rfl
+      return ⟨rhs, some (.text value), by simp [rhs, Expr.allocOnly], @same, by
+        intro w n s t v h run
+        rw [same n s h] at run
+        cases n with
+        | zero => cases run
+        | succ n =>
+          cases n with
+          | zero => cases run
+          | succ n =>
+            cases run
+            exact ⟨Extends.refl _, by intro shape shapeEq; cases shapeEq; rfl⟩⟩
+    | _ => none
+  | _ => none
+
+structure SafeExpr (p : Facts) (env : Env) (e : Expr) where
+  step : ExprStep p env e
+  replacementAllocOnly : step.replacement.allocOnly = true
+  sourceArgument : e.argument = (false, e)
+  replacementArgument : step.replacement.argument = (false, step.replacement)
+
+structure SafeArgs (p : Facts) (env : Env) (es : List Expr) where
+  replacements : List Expr
+  allocOnly : allocOnlyAll replacements = true
+  same : ∀ {w} n (s : State w), Holds p s →
+    evalArgs n env es s = evalArgs n env replacements s
+
+mutual
+private def safeExpr? (p : Facts) (env : Env) : (e : Expr) → Option (SafeExpr p env e)
+  | .arr elems => do
+    let cooked ← safeArgs? p env elems
+    let replacement := Expr.arr cooked.replacements
+    have replacementAlloc : replacement.allocOnly = true := by
+      simpa [replacement, Expr.allocOnly] using cooked.allocOnly
+    let basic := keep p env replacement cooked.allocOnly
+    have same {w} n (s : State w) (hs : Holds p s) :
+        evalExpr n env (.arr elems) s = evalExpr n env (.arr cooked.replacements) s := by
+      cases n with
+      | zero => rfl
+      | succ n =>
+        simp only [evalExpr, M.bind_apply]
+        rw [cooked.same n s hs]
+    let step : ExprStep p env (.arr elems) := { basic with
+      same := @same
+      result := by
+        intro w n s t v hs run
+        rw [same n s hs] at run
+        exact basic.result n s t v hs run }
+    return ⟨step, replacementAlloc, rfl, Expr.argument_of_allocOnly replacementAlloc⟩
+  | .get (.var x) (.str key) => do
+    let e := Expr.get (.var x) (.str key)
+    let some step := ownDataRead? p env e | none
+    return ⟨step, step.allocOnly, rfl, Expr.argument_of_allocOnly step.allocOnly⟩
+  | e => do
+    if alloc : e.allocOnly = true then
+      let step := keep p env e alloc
+      return ⟨step, alloc, Expr.argument_of_allocOnly alloc, Expr.argument_of_allocOnly alloc⟩
+    else none
+
+private def safeArgs? (p : Facts) (env : Env) : (es : List Expr) → Option (SafeArgs p env es)
+  | [] => some ⟨[], rfl, fun _ _ _ => rfl⟩
+  | e :: es => do
+    let head ← safeExpr? p env e
+    let tail ← safeArgs? p env es
+    have same {w} fuel (s : State w) (hs : Holds p s) :
+        evalArgs fuel env (e :: es) s = evalArgs fuel env (head.step.replacement :: tail.replacements) s := by
+      cases fuel with
+      | zero => rfl
+      | succ n =>
+        simp only [evalArgs, head.sourceArgument, head.replacementArgument,
+          Bool.false_eq_true, ↓reduceIte, M.pure_bind, M.bind_apply]
+        rw [head.step.same n s hs]
+        cases run : evalExpr n env head.step.replacement s with
+        | ok value after =>
+          have sourceRun : evalExpr n env e s = .ok value after := by
+            rw [head.step.same n s hs]
+            exact run
+          have extended := (head.step.result n s after value hs sourceRun).1
+          simp only [run, tail.same n after (hs.extends extended)]
+        | throw value after => simp only [run]
+        | unknown why after => simp only [run]
+        | fuel => simp only [run]
+    return ⟨head.step.replacement :: tail.replacements,
+      by simp [allocOnlyAll, head.replacementAllocOnly, tail.allocOnly], @same⟩
+end
+
 private def infer? (p : Facts) (env : Env) (e : Expr) : Option (ExprStep p env e) := do
   match he : e with
   | .num _ | .binary .. =>
     return (← numeric? p env e).step
   | .str text =>
-    return ⟨e, some (.text text), fun _ _ _ => rfl, by
+    return ⟨e, some (.text text), by simp [he, Expr.allocOnly], fun _ _ _ => rfl, by
       intro w n s t v _ run
       rw [he] at run
       cases n with
@@ -269,7 +429,7 @@ private def infer? (p : Facts) (env : Env) (e : Expr) : Option (ExprStep p env e
   | .var x =>
     let ⟨c, ⟨lk⟩⟩ ← found? (env.vars.lookup x)
     let ⟨sh, ⟨fact⟩⟩ ← found? (p.entries.lookup c)
-    return ⟨e, some sh, fun _ _ _ => rfl, by
+    return ⟨e, some sh, by simp [he, Expr.allocOnly], fun _ _ _ => rfl, by
       intro w n s t v hs run
       rw [he] at run
       cases n with
@@ -280,6 +440,8 @@ private def infer? (p : Facts) (env : Env) (e : Expr) : Option (ExprStep p env e
         rw [read] at run
         cases run
         exact ⟨Extends.refl _, fun _ h => by cases h; exact hv⟩⟩
+  | .arr .. =>
+    if let some projected := safeExpr? p env e then return projected.step
   | .obj ps =>
     let c ← cooked? p env ps
     have same {w} n (s : State w) (hs : Holds p s) : evalExpr n env e s = evalExpr n env (.obj c.fields) s :=
@@ -287,7 +449,7 @@ private def infer? (p : Facts) (env : Env) (e : Expr) : Option (ExprStep p env e
     let basic := keep p env (.obj c.fields) c.allocs
     if let some ⟨fs, ⟨eq⟩⟩ := numbers? c.fields then
       if fresh : (fs.map Prod.fst).Nodup then
-        return ⟨.obj c.fields, some (.numbers fs), @same, by
+        return ⟨.obj c.fields, some (.numbers fs), c.allocs, @same, by
           intro w n s t v hs run
           rw [same n s hs] at run
           refine ⟨(basic.result n s t v hs run).1, ?_⟩
@@ -295,45 +457,41 @@ private def infer? (p : Facts) (env : Env) (e : Expr) : Option (ExprStep p env e
           cases shapeEq
           rw [eq] at run
           exact RecordOrigin.numericRecord_origin fs fresh run⟩
-    return ⟨.obj c.fields, none, @same, by
+    else if let some ⟨fs, ⟨eq⟩⟩ := strings? c.fields then
+      if fresh : (fs.map Prod.fst).Nodup then
+        return ⟨.obj c.fields, some (.strings fs), c.allocs, @same, by
+          intro w n s t v hs run
+          rw [same n s hs] at run
+          refine ⟨(basic.result n s t v hs run).1, ?_⟩
+          intro sh shapeEq
+          cases shapeEq
+          rw [eq] at run
+          exact RecordOrigin.stringRecord_origin fs fresh run⟩
+    return ⟨.obj c.fields, none, c.allocs, @same, by
       intro w n s t v hs run
       rw [same n s hs] at run
       exact ⟨(basic.result n s t v hs run).1, by simp⟩⟩
-  | .get (.var x) (.str key) =>
-    let ⟨c, ⟨lk⟩⟩ ← found? (env.vars.lookup x)
-    let ⟨.numbers fs, ⟨fact⟩⟩ ← found? (p.entries.lookup c) | none
-    let ⟨number, ⟨field⟩⟩ ← found? (fs.lookup key)
-    -- Keep the original depth: a literal alone would succeed at fuel 1.
-    let rhs := Expr.seq .undef (.num number)
-    have same {w} n (s : State w) (h : Holds p s) : evalExpr n env e s = evalExpr n env rhs s := by
-      obtain ⟨v, read, a, o, rfl, obj, fields⟩ := h.read lk fact
-      rw [he]
-      cases n with
-      | zero => rfl
-      | succ n =>
-        cases n with
-        | zero => rfl
-        | succ n =>
-          have prop := getProp_ownData (callFn (W := w) (n + 1)) obj (fields _ _ field)
-          simp only [rhs, evalExpr, M.pure_bind, M.bind_apply, read, prop]
-          rfl
-    return ⟨rhs, none, @same, by
-      intro w n s t v h run
-      rw [same n s h] at run
-      cases n with
-      | zero => cases run
-      | succ n =>
-        cases n with
-        | zero => cases run
-        | succ => cases run; exact ⟨Extends.refl _, by simp⟩⟩
+  | .get .. =>
+    if let some step := ownDataRead? p env e then return step
   | _ => pure ()
   none
 
 private def expr? (p : Facts) (env : Env) (e : Expr) := infer? p env e <|>
   if h : e.allocOnly = true then some (keep p env e h) else none
 
+/-- Typed, exact-fuel projection for one allocation-only expression. A caller
+may use the returned replacement only under the returned `Holds` premise;
+unknown reads and effects have no witness. -/
+def projectExpr? (p : Facts) (env : Env) (e : Expr) : Option (SafeExpr p env e) :=
+  safeExpr? p env e
+
+/-- Compose `projectExpr?` over an argument list, including nested array
+literal elements. This does not admit array mutations or unknown operations. -/
+def projectArgs? (p : Facts) (env : Env) (es : List Expr) : Option (SafeArgs p env es) :=
+  safeArgs? p env es
+
 /-- Keep the last 32 proved bindings; evicting a fact can only refuse a read. -/
-private def updated (p : Facts) (c : Addr) (info : Option Shape) : Facts :=
+def updated (p : Facts) (c : Addr) (info : Option Shape) : Facts :=
   { p with entries := ((info.map (c, ·)).toList ++ p.entries.filter (fun entry => entry.1 != c)).take 32 }
 
 private def assignDecl (env : Env) (kind : DeclKind) (x : Name) (value : Val) : M w Unit :=
@@ -428,7 +586,9 @@ private def step (p : Facts) (recordPivots : Std.HashSet Nat) : (u : LinkedUnit)
       -- Retained records can establish facts for later reads without moving.
       -- One prefix may know their fields when the other does not.
       let use := if (e matches .obj _) && !recordPivots.contains id then
-        { ex with replacement := e, same := fun _ _ _ => rfl }
+        if alloc : e.allocOnly = true then
+          { ex with replacement := e, allocOnly := alloc, same := fun _ _ _ => rfl }
+        else ex
       else ex
       declStep p id env kind x e c h use
     | _, _ => ⟨_, empty, fun _ _ _ => rfl, fun _ _ _ _ _ _ => empty_holds _⟩
@@ -481,5 +641,9 @@ def prepare (recordPivots : Std.HashSet Nat) (ready : State World.probe) (units 
   let p : Facts := ⟨fun c => (ready.cellAt c).isSome, []⟩
   let ⟨result, ⟨proof⟩⟩ := normalize recordPivots p units
   ⟨result, ⟨fun w n final => proof n _ final ⟨fun _ h => h, by simp [p]⟩⟩⟩
+
+#print axioms projectExpr?
+#print axioms projectArgs?
+#print axioms prepare
 
 end CoreJS.PrefixProjection

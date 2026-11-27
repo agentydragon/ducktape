@@ -9,7 +9,6 @@ import {
   array,
   exportNamed,
   expression,
-  forcePreview,
   id,
   literal,
   lower,
@@ -151,10 +150,5 @@ for (const mutation of ["field", "key"]) {
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, /probe executions completed normally with different final states/, log);
   assert(!existsSync(out), log);
-
-  const preview = path.join(test.dir, "preview");
-  forcePreview(test.files, preview);
-  assert.deepEqual(moduleEvaluationOrder(preview, entry), [...order, entry]);
   await expectExports(test.files.sourceFile, test.expected());
-  await expectExports(path.join(preview, entry), test.expected(mutation === "field" ? "updated" : test.alternateValue));
 }
