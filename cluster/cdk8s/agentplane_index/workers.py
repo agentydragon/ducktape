@@ -25,7 +25,7 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from agentplane.x.indexing.settings import Settings
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.container_resources import container_resources
@@ -147,7 +147,7 @@ def _worker(
                 spec=k8s.PodSpec(
                     service_account_name=instance,
                     image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
-                    node_selector={"topology.kubernetes.io/region": "hil"},
+                    node_selector=node_scheduling.OVH_REGION_NODE_SELECTOR,
                     # The worker reads its repository itself; nothing here talks to the API server.
                     automount_service_account_token=False,
                     security_context=k8s.PodSecurityContext(

@@ -266,7 +266,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     # Same public-node selector as Cilium's hostNetwork Gateway Envoy tier.
-                    node_selector={"topology.kubernetes.io/region": "hil"},
+                    node_selector=node_scheduling.OVH_REGION_NODE_SELECTOR,
                     # This is the per-public-node MX entry point: hostPort 25 must remain present
                     # on every public OVH node while the control-plane taint is rolled out. The
                     # backend Deployment is movable; this DaemonSet is the explicit control-plane

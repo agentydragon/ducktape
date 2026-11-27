@@ -115,7 +115,7 @@ def chart(app: App) -> Chart:
                 "hostnames": ["headlamp.allegedly.works"],
             },
             "ingress": {"enabled": False},
-            "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "nodeSelector": node_scheduling.OVH_REGION_NODE_SELECTOR,
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "256Mi"}},
             "pluginsManager": {"enabled": True, "version": "0.1.1", "configContent": _PLUGINS_CONFIG},

@@ -66,7 +66,7 @@ def chart(app: App) -> Chart:
                 ),
             ),
             image_pull_policy=CdiSpecImagePullPolicy.IF_NOT_PRESENT,
-            infra=CdiSpecInfra(node_selector={"topology.kubernetes.io/region": "hil"}),
+            infra=CdiSpecInfra(node_selector=node_scheduling.OVH_REGION_NODE_SELECTOR),
             # Importer pods run where the volume was provisioned, which for a first-consumer local volume is the
             # node the VM is scheduled on, and the KVM worker VMs run on control-plane nodes.
             workload=CdiSpecWorkload(
@@ -82,9 +82,13 @@ def chart(app: App) -> Chart:
                                 CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                                     match_expressions=[
                                         CdiSpecWorkloadAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                            key="topology.kubernetes.io/region",
+                                            key=node_scheduling.REGION_LABEL,
                                             operator="In",
-                                            values=["hil", "home", "proxmox"],
+                                            values=[
+                                                node_scheduling.OVH_REGION,
+                                                node_scheduling.HOME_REGION,
+                                                node_scheduling.PROXMOX_REGION,
+                                            ],
                                         )
                                     ]
                                 )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -76,7 +77,7 @@ def chart(app: App) -> Chart:
                 "extraEnvFrom": [{"secretRef": {"name": _CREDENTIALS_SECRET}}],
             },
             "persistence": {"enabled": False},
-            "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "nodeSelector": node_scheduling.OVH_REGION_NODE_SELECTOR,
             "serviceMonitor": {"enabled": True},
         },
     )

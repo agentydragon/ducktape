@@ -1,5 +1,5 @@
-"""Node-scheduling facts shared across cluster/cdk8s: the OVH zone and its node selector,
-the control-plane taint, and the affinity that keeps a Pod tolerating that taint on
+"""Node-scheduling facts shared across cluster/cdk8s: the node labels their machine config sets
+(region, zone, hostname, disk tier) with the selectors that use them, the control-plane taint, and the affinity that keeps a Pod tolerating that taint on
 workers. `pod_policy.place` applies a `Placement` to a generated workload.
 
 Helm values and other `any`-typed fields take the typed structs as they are: jsii passes
@@ -26,6 +26,15 @@ HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
 HOME_LAN_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HOME_LAN_ZONE}
 # NFD reconciles the host's OS release independently of kubelet registration.
 NIXOS_NODE_SELECTOR: Mapping[str, str] = {"feature.node.kubernetes.io/system-os_release.ID": "nixos"}
+# Machine config sets the topology labels on each node: cluster/terraform/main for the OVH
+# (region hil, per-node disk tier) and Proxmox nodes, nix/nixos for the laptops. Region names the
+# site; zone names the failure domain inside it (cluster/README.md Nodes).
+REGION_LABEL = "topology.kubernetes.io/region"
+OVH_REGION = "hil"
+HOME_REGION = "home"
+PROXMOX_REGION = "proxmox"
+OVH_REGION_NODE_SELECTOR: Mapping[str, str] = {REGION_LABEL: OVH_REGION}
+PROXMOX_REGION_NODE_SELECTOR: Mapping[str, str] = {REGION_LABEL: PROXMOX_REGION}
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.
 CONTROL_PLANE_TAINT_KEY = "node-role.kubernetes.io/control-plane"
 CONTROL_PLANE_TOLERATION = k8s.Toleration(key=CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule")

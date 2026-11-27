@@ -556,6 +556,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":service_ref",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy",
         "//cluster/cdk8s/providers/cilium:ciliumenvoyconfig",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
@@ -1271,6 +1272,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":vpa_policy",
+        "//cluster/cdk8s:node_scheduling",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -1534,6 +1536,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

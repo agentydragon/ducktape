@@ -30,7 +30,7 @@ CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 
 _PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
 # Controller Pods can run on any prepared OVH node.
-_CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "topology.kubernetes.io/region": "hil"}
+_CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", node_scheduling.REGION_LABEL: node_scheduling.OVH_REGION}
 _CLUSTER_NODE_AFFINITY = {
     "nodeSelectorTerms": [{"matchExpressions": [{"key": _PIRAEUS_READY_LABEL, "operator": "In", "values": ["true"]}]}]
 }
@@ -226,7 +226,7 @@ def operator_chart(app: App) -> Chart:
             "installCRDs": True,
             "operator": {"resources": {"requests": {"cpu": "200m", "memory": "192Mi"}}},
             # The controller is cluster-wide, but keep it on the existing OVH region.
-            "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "nodeSelector": node_scheduling.OVH_REGION_NODE_SELECTOR,
             # A single operator replica can be restarted during node maintenance.
             "podDisruptionBudget": {"enabled": False},
         },

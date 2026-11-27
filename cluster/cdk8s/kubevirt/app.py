@@ -96,7 +96,7 @@ def chart(app: App) -> Chart:
             image_pull_policy=_IF_NOT_PRESENT,
             infra=KubeVirtSpecInfra(
                 node_placement=KubeVirtSpecInfraNodePlacement(
-                    node_selector={"topology.kubernetes.io/region": "hil"},
+                    node_selector=node_scheduling.OVH_REGION_NODE_SELECTOR,
                     tolerations=[
                         KubeVirtSpecInfraNodePlacementTolerations(
                             key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"

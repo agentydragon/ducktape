@@ -71,7 +71,6 @@ _DATABASE = "studycasino"
 _READONLY_ROLE = "study_casino_ro"
 _READONLY = SecretRef(namespace=_NAMESPACE, name="study-casino-db-ro")
 _SQL_CONFIG_MAP = "study-casino-db-readonly-sql"
-_REGION = "hil"
 _IMMUTABLE = "public, max-age=31536000, immutable"
 # The PINS_DIR Component overrides the tag and copies it into STUDY_CASINO_IMAGE_TAG.
 _PLACEHOLDER_TAG = "unset"
@@ -198,7 +197,7 @@ def _readonly_provisioner(scope: Construct) -> None:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     restart_policy="Never",
-                    node_selector={"topology.kubernetes.io/region": _REGION},
+                    node_selector=node_scheduling.OVH_REGION_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name="psql",
@@ -257,7 +256,7 @@ def _deployment(scope: Construct) -> None:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    node_selector={"topology.kubernetes.io/region": _REGION},
+                    node_selector=node_scheduling.OVH_REGION_NODE_SELECTOR,
                     # Stateless: all state is in study-casino-db (CNPG), no local storage. Allow
                     # control-plane nodes as overflow capacity, but prefer workers to keep
                     # ordinary application I/O away from etcd disks.

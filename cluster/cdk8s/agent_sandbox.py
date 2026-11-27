@@ -5,7 +5,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.container_resources import quantities
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, initial_request_annotations
@@ -50,7 +50,7 @@ def controller_patches(app: App) -> Chart:
                 metadata=k8s.ObjectMeta(labels=labels),
                 spec=k8s.PodSpec(
                     # Keep the controller and the workspaces on always-on OVH capacity.
-                    node_selector={"topology.kubernetes.io/region": "hil"},
+                    node_selector=node_scheduling.OVH_REGION_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
                     ),

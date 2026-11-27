@@ -32,6 +32,8 @@ from cilium_envoyconfig_crds.io.cilium import (
 )
 from constructs import Construct
 
+from cluster.cdk8s import node_scheduling
+
 # Aliased because this module's own `dns_egress` binds `KUBE_DNS_LABELS` to the generic rule.
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Protocol, dns_egress as _dns_egress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
@@ -195,7 +197,7 @@ def tcp_listener(scope: Construct, id: str, *, service: ServiceRef) -> CiliumEnv
             name=service.name, namespace=namespace, annotations={"cec.cilium.io/use-original-source-address": "false"}
         ),
         spec=CiliumEnvoyConfigSpec(
-            node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
+            node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels=node_scheduling.OVH_REGION_NODE_SELECTOR),
             backend_services=[
                 CiliumEnvoyConfigSpecBackendServices(name=service.name, namespace=namespace, number=[str(port)])
             ],

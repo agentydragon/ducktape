@@ -7,7 +7,7 @@ from __future__ import annotations
 from cdk8s import App, Chart, Yaml
 from cdk8s_plus_34 import k8s
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Json6902Patch, PatchTarget
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -34,7 +34,7 @@ def _on_hil(deployment: str, namespace: str) -> Json6902Patch:
                 {
                     "op": "add",
                     "path": "/spec/template/spec/nodeSelector",
-                    "value": {"topology.kubernetes.io/region": "hil"},
+                    "value": node_scheduling.OVH_REGION_NODE_SELECTOR,
                 }
             ]
         ),

@@ -7,7 +7,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -56,7 +56,7 @@ def chart(app: App) -> Chart:
                 spec=k8s.PodSpec(
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
-                    node_selector={"topology.kubernetes.io/region": "proxmox"},
+                    node_selector=node_scheduling.PROXMOX_REGION_NODE_SELECTOR,
                     containers=[
                         k8s.Container(
                             name="nginx",
