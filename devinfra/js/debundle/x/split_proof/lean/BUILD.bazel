@@ -38,6 +38,29 @@ lean_library(
 )
 
 lean_library(
+    name = "plan_glue",
+    srcs = ["EsmSplit/PlanGlue.lean"],
+    deps = [":planner"],
+)
+
+lean_proof_test(
+    name = "plan_glue_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.PlanGlue"],
+    required_theorems = [
+        "EsmSplit.PlanGlue.published_contains_iff",
+        "EsmSplit.PlanGlue.glue_length",
+        "EsmSplit.PlanGlue.covered_of_glue_empty",
+        "EsmSplit.PlanGlue.glue_empty_of_covered",
+        "EsmSplit.PlanGlue.finishPlan_glue",
+        "EsmSplit.PlanGlue.mkPlan_glue_equation",
+        "EsmSplit.PlanGlue.mkPlan_no_extra_glue",
+        "EsmSplit.PlanGlue.mkPlan_no_extra_glue_iff",
+    ],
+    deps = [":plan_glue"],
+)
+
+lean_library(
     name = "estree",
     srcs = [
         # Keep import order for the native Lean rule.
