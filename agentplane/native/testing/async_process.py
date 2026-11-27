@@ -1,10 +1,10 @@
-"""Direct stdin/stdout/stderr pipes to one native harness process, recorded as JSONL, with
-non-destructive native-frame observation. No PTY, facade, or lifecycle model."""
+"""Direct stdin/stdout pipes to one native harness process, recorded as JSONL, with
+non-destructive native-frame observation; stderr goes straight to `stderr.log`. No PTY, facade, or
+lifecycle model."""
 
 from __future__ import annotations
 
 import asyncio
-import codecs
 import json
 import os
 import signal
@@ -124,23 +124,23 @@ class AsyncNativeProcess:
         self.process: asyncio.subprocess.Process | None = None
         self._frames = _FrameTrace()
         self._stdout_task: asyncio.Task[None] | None = None
-        self._stderr_task: asyncio.Task[None] | None = None
         self._stdin_lock = asyncio.Lock()
         self._frame_responder = frame_responder
 
     async def __aenter__(self) -> AsyncNativeProcess:
-        self.process = await asyncio.create_subprocess_exec(
-            *self.command,
-            cwd=self.cwd,
-            env=self.environment,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
-            limit=MAX_FRAME_LINE_BYTES,
-        )
+        # The child writes its own inherited descriptor, so ours can close once it is spawned.
+        with (self.logs / "stderr.log").open("ab") as stderr:
+            self.process = await asyncio.create_subprocess_exec(
+                *self.command,
+                cwd=self.cwd,
+                env=self.environment,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=stderr,
+                start_new_session=True,
+                limit=MAX_FRAME_LINE_BYTES,
+            )
         self._stdout_task = asyncio.create_task(self._stdout())
-        self._stderr_task = asyncio.create_task(self._stderr())
         return self
 
     async def __aexit__(self, exc_type: type[BaseException] | None, *_: object) -> None:
@@ -206,9 +206,8 @@ class AsyncNativeProcess:
             self.process.terminate()
             await self.process.wait()
             raise
-        for task in (self._stdout_task, self._stderr_task):
-            if task is not None:
-                await task
+        if self._stdout_task is not None:
+            await self._stdout_task
         return result
 
     def stdout_frames(self) -> list[dict[str, Any]]:
@@ -239,15 +238,3 @@ class AsyncNativeProcess:
             raise
         else:
             self._frames.close()
-
-    async def _stderr(self) -> None:
-        assert self.process is not None
-        assert self.process.stderr is not None
-        # Fixed-size reads can split a multibyte character; the decoder carries it to the next chunk.
-        decoder = codecs.getincrementaldecoder("utf-8")()
-        while True:
-            chunk = await self.process.stderr.read(65536)
-            if text := decoder.decode(chunk, final=not chunk):
-                write_jsonl(self.logs / "stderr.jsonl", TextRecord(time_ns=time.monotonic_ns(), text=text))
-            if not chunk:
-                return
