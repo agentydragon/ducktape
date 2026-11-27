@@ -66,10 +66,6 @@ inputs:
       override the pinned image from image_pins.json.
     required: false
     default: ""
-  disk_bytes:
-    description: "Runner disk size in bytes (EstimatedFreeDiskBytes)"
-    required: false
-    default: "100000000000"
   compute_units:
     description: "Runner vCPU count (EstimatedComputeUnits)"
     required: false
@@ -127,7 +123,6 @@ runs:
         INPUT_ENV_OVERRIDES: ${{ inputs.env_overrides }}
         INPUT_RUNNER_CONTAINER_IMAGE: ${{ inputs.runner_container_image }}
         INPUT_RBE_CONTAINER_IMAGE: ${{ inputs.rbe_container_image }}
-        INPUT_DISK_BYTES: ${{ inputs.disk_bytes }}
         INPUT_COMPUTE_UNITS: ${{ inputs.compute_units }}
         INPUT_RUNNER_RECYCLING_KEY: ${{ inputs.runner_recycling_key }}
         INPUT_LINKAGE_ROLES: ${{ inputs.linkage_roles }}
@@ -179,7 +174,6 @@ runs:
         BB_REMOTE_COMMAND=(
           bb remote
           --disable_retry=true
-          --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"
           --runner_exec_properties=EstimatedComputeUnits="$INPUT_COMPUTE_UNITS"
         )
         if [[ -n "$INPUT_RUNNER_RECYCLING_KEY" ]]; then
