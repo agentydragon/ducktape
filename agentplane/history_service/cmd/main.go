@@ -113,9 +113,15 @@ func run(ctx context.Context, c config) error {
 	return serve(ctx, c, rpcListener, identities)
 }
 
-// serve answers the read API and journal ingress on one native gRPC listener until ctx ends. identities resolves
-// Identity names for SVID resolution and delegation.
-func serve(ctx context.Context, c config, rpcListener net.Listener, identities auth.IdentityUIDReader) error {
+// identityView resolves Identity names for SVID resolution and delegation, and says when it first can.
+type identityView interface {
+	auth.IdentityUIDReader
+	WaitCurrent(ctx context.Context) error
+}
+
+// serve answers the read API and journal ingress on one native gRPC listener until ctx ends. It reports SERVING only
+// once identities can answer: a workload that connected earlier would be refused as UNAVAILABLE.
+func serve(ctx context.Context, c config, rpcListener net.Listener, identities identityView) error {
 	base, err := kubernetesConfig(c)
 	if err != nil {
 		return err
@@ -200,7 +206,19 @@ func serve(ctx context.Context, c config, rpcListener net.Listener, identities a
 	server := grpc.NewServer(options...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	healthpb.RegisterHealthServer(server, healthServer)
+	// Only the first snapshot gates readiness. Once the view has been current, a later PolicyService outage is
+	// ridden out by the view's grace and then refused per request, as before, not by dropping every replica.
+	identityContext, stopWaitingForIdentities := context.WithCancel(ctx)
+	defer stopWaitingForIdentities()
+	identitiesCurrent := make(chan struct{})
+	go func() {
+		defer close(identitiesCurrent)
+		if identities.WaitCurrent(identityContext) == nil {
+			healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+		}
+	}()
 	ingressOptions := storage.Options{SettleDeltas: c.Ingress.SettleDeltas, CompactDeltas: c.Ingress.CompactDeltas, CompactExecutionEvidence: c.Ingress.CompactExecutionEvidence}
 	if c.Ingress.EventBlockWrites {
 		ingressOptions.EventPackers, err = c.Ingress.packers()
@@ -236,6 +254,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener, identities a
 	case <-ctx.Done():
 		result = ctx.Err()
 	}
+	// Ending the wait first keeps a late SERVING from overwriting the shutdown status.
+	stopWaitingForIdentities()
+	<-identitiesCurrent
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	// Open watches end with reconnect_required rather than holding the shutdown until their leases.
 	service.Drain()

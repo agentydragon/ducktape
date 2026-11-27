@@ -58,6 +58,12 @@ func svidConfig(t *testing.T, ca *peertlstesting.CA) config {
 // startWithSVIDs serves History with workload certificates from ca enabled on its listener.
 func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) running {
 	t.Helper()
+	return startWithIdentities(t, ca, testIdentities(t), tune)
+}
+
+// startWithIdentities is startWithSVIDs resolving Identities through identities.
+func startWithIdentities(t *testing.T, ca *peertlstesting.CA, identities identityView, tune func(*config)) running {
+	t.Helper()
 	c := svidConfig(t, ca)
 	if tune != nil {
 		tune(&c)
@@ -71,7 +77,7 @@ func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) run
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, rpcListener, testIdentities(t)) }()
+	go func() { served <- serve(ctx, c, rpcListener, identities) }()
 	var stopped bool
 	stop := func() error {
 		if stopped {
@@ -203,13 +209,48 @@ func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
 const testPolicyNamespace = "test-policies"
 
 // testIdentities reads the test API server's Identities in testPolicyNamespace, standing in for the PolicyService view.
-func testIdentities(t *testing.T) auth.IdentityUIDReader {
+// It is current from the start.
+func testIdentities(t *testing.T) identityView {
 	t.Helper()
 	identities, err := auth.NewKubernetesIdentityUIDs(kube.Config, testPolicyNamespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return identities
+	return currentIdentities{identities}
+}
+
+type currentIdentities struct{ auth.IdentityUIDReader }
+
+func (currentIdentities) WaitCurrent(context.Context) error { return nil }
+
+// gatedIdentities becomes current when current closes.
+type gatedIdentities struct {
+	identityView
+	current <-chan struct{}
+}
+
+func (g gatedIdentities) WaitCurrent(ctx context.Context) error {
+	select {
+	case <-g.current:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// A workload that connects the moment History reports SERVING must find its Identity view current, so History
+// reports NOT_SERVING until the view is.
+func TestTheServiceIsNotServingUntilItsIdentityViewIsCurrent(t *testing.T) {
+	current := make(chan struct{})
+	service := startWithIdentities(t, peertlstesting.NewCA(t), gatedIdentities{testIdentities(t), current}, nil)
+	ctx, cancel := context.WithCancel(callContext(t))
+	defer cancel()
+	watch := watchHealth(ctx, t, service, "")
+	if first, err := watch.Recv(); err != nil || first.GetStatus() != healthpb.HealthCheckResponse_NOT_SERVING {
+		t.Fatalf("before its Identity view is current: %v, %v; want NOT_SERVING", first, err)
+	}
+	close(current)
+	awaitHealth(t, watch, healthpb.HealthCheckResponse_SERVING)
 }
 
 // An Identity SVID reads exactly the Sessions retained as executing as its Identity incarnation: not

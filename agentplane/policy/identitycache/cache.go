@@ -61,6 +61,24 @@ func (c *Cache) Changed() <-chan struct{} {
 	return c.changed
 }
 
+// WaitCurrent returns once the view can vouch for Identities, that is once its first snapshot has completed, or with
+// ctx's error if ctx ends first.
+func (c *Cache) WaitCurrent(ctx context.Context) error {
+	for {
+		c.mu.RLock()
+		current, changed := c.currentLocked(), c.changed
+		c.mu.RUnlock()
+		if current {
+			return nil
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
 // notifyChangedLocked is called with mu held.
 func (c *Cache) notifyChangedLocked() {
 	close(c.changed)

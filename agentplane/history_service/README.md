@@ -472,7 +472,10 @@ Bazel targets: `//agentplane/history_service/cmd:history-service` and `//agentpl
 by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` ([`cmd/config.go`](cmd/config.go), `settings.py`). Generic `AGENTPLANE_HISTORY_SERVICE_*`
 environment variables do not override it. The database URL remains an explicit Secret input in
 `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`.
-The read API and journal ingress share `rpc.listen_address`, where `grpc.health.v1.Health` reports process liveness only.
+The read API and journal ingress share `rpc.listen_address`, where `grpc.health.v1.Health` reports NOT_SERVING until the
+PolicyService Identity view has completed its first snapshot, and SERVING after that: a workload authenticated earlier
+would be refused as UNAVAILABLE. A later PolicyService outage does not change it; the view answers through its grace and
+then refuses per request.
 The listener accepts TCP addresses or inherited descriptors as documented by
 [`agentplane/net/listener`](../net/listener/README.md).
 

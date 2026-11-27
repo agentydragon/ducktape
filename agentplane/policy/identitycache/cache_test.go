@@ -165,6 +165,33 @@ func TestCacheIsStaleUntilTheFirstSnapshotCompletes(t *testing.T) {
 	}
 }
 
+func TestWaitCurrentReturnsOnceTheFirstSnapshotCompletes(t *testing.T) {
+	cache, fake, _ := start(t, time.Minute)
+	session := open(fake)
+	waited := make(chan error, 1)
+	go func() { waited <- cache.WaitCurrent(t.Context()) }()
+	send(session, snapshot(identity("fake-agent", "uid-1"))[0])
+	select {
+	case err := <-waited:
+		t.Fatalf("returned before the snapshot completed: %v", err)
+	default:
+	}
+	send(session, snapshot()[1])
+	if err := <-waited; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWaitCurrentEndsWithItsContext(t *testing.T) {
+	cache, fake, _ := start(t, time.Minute)
+	open(fake)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := cache.WaitCurrent(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, want context.Canceled", err)
+	}
+}
+
 func TestCacheTreatsDeletingAndUIDlessIdentitiesAsGone(t *testing.T) {
 	cache, fake, _ := start(t, time.Minute)
 	deleting := identity("deleting-agent", "uid-deleting")
