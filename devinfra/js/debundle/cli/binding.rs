@@ -545,10 +545,8 @@ pub fn rename_bindings(
                 MutationAction::Noop
             } else if files_written.is_empty() {
                 MutationAction::Unchanged
-            } else if dry_run {
-                MutationAction::DryRun
             } else {
-                MutationAction::Applied
+                MutationAction::for_write(dry_run)
             },
             gate: if resolved.is_empty() {
                 GateOutcome::NotRequired
@@ -908,10 +906,8 @@ pub fn run_bindings_assign(
             MutationVerb::Assign,
             if no_moves {
                 MutationAction::Noop
-            } else if dry_run {
-                MutationAction::DryRun
             } else {
-                MutationAction::Applied
+                MutationAction::for_write(dry_run)
             },
             if no_moves {
                 GateOutcome::NotRequired
@@ -1298,10 +1294,8 @@ pub fn run_bindings_unassign(
             MutationVerb::Unassign,
             if no_symbols {
                 MutationAction::Noop
-            } else if dry_run {
-                MutationAction::DryRun
             } else {
-                MutationAction::Applied
+                MutationAction::for_write(dry_run)
             },
             if no_symbols {
                 GateOutcome::NotRequired

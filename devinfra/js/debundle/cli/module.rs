@@ -308,11 +308,7 @@ pub fn run_merge(
             }
         }
     }
-    let action = if merge.edit.dry_run {
-        MutationAction::DryRun
-    } else {
-        MutationAction::Applied
-    };
+    let action = MutationAction::for_write(merge.edit.dry_run);
     let mut files_written = plans
         .iter()
         .map(|plan| plan.summary.target.display().to_string())
@@ -830,11 +826,7 @@ pub fn run_delete(
     let delete_outcome = DeleteOutcome {
         outcome: MutationOutcome::ownership_edit(
             MutationVerb::Delete,
-            if summary.dry_run {
-                MutationAction::DryRun
-            } else {
-                MutationAction::Applied
-            },
+            MutationAction::for_write(summary.dry_run),
             gate_outcome,
             effect_relocation_assessment.as_ref(),
             files_written,

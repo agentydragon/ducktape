@@ -376,10 +376,8 @@ pub fn run_source_unit_apply(
     }
     let action = if files_written.is_empty() && files_deleted.is_empty() {
         MutationAction::Unchanged
-    } else if dry_run {
-        MutationAction::DryRun
     } else {
-        MutationAction::Applied
+        MutationAction::for_write(dry_run)
     };
     Ok(SourceUnitApplyOutcome {
         outcome: MutationOutcome::ownership_edit(
