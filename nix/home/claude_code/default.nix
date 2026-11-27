@@ -280,6 +280,7 @@ in
           "$defaults"
           "kubectl apply/delete/exec against atlas cluster namespaces outside a scratch/dev namespace (e.g. haku-console, flux-system, kube-system, authentik) — shared production-adjacent infra"
           "Writes to cluster/terraform/main/*.tf or cluster/k8s/*/terraform.yaml (IaC affecting IAM, networking, node pools, secrets sync) without explicit confirmation"
+          "Recursive filesystem walks rooted at `/`, `/tmp`, `/nix`, `/home`, `~` or another mount root (`find`/`bfs`/`fd`/`rg`/`grep -r`/`du`/`tree`, including `2>/dev/null | head -1` forms), unless the user explicitly asked for a search that wide in this conversation. /tmp holds hundreds of GB of agent worktrees; one such `find /` saturated disk I/O on wyrm2 for 50 min, outlived its tool timeout and stalled systemd and nixos-rebuild. Search the specific tree instead (the repo or worktree, `go env GOMODCACHE`, `bazel info output_base`, a store path)"
         ];
       };
       # Voice dictation: speak prompts instead of typing. Tap once to record,

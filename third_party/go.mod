@@ -57,6 +57,9 @@ require (
 // Direct dependencies for the generated HTTP facades of agentplane services
 require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 
+// Direct dependency for agentplane/history_service field sets over SessionSummary
+require github.com/mennanov/fmutils v0.4.1
+
 // Direct dependencies for Agentplane YAML consumers
 require gopkg.in/yaml.v3 v3.0.1
 

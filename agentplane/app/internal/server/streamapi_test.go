@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -97,8 +98,9 @@ func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 
 type typedHistoryServer struct {
 	historypb.UnimplementedHistoryServiceServer
-	requests     chan *historypb.ReadThreadEntitiesRequest
-	holdSelected bool
+	requests         chan *historypb.ReadThreadEntitiesRequest
+	selectedRequests chan *historypb.WatchSessionSummariesRequest
+	holdSelected     bool
 }
 
 func (s *typedHistoryServer) ReadThreadEntities(_ context.Context, request *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error) {
@@ -372,6 +374,9 @@ func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 }
 
 func (s *typedHistoryServer) WatchSessionSummaries(req *historypb.WatchSessionSummariesRequest, stream grpc.ServerStreamingServer[historypb.WatchSessionSummariesResponse]) error {
+	if s.selectedRequests != nil {
+		s.selectedRequests <- req
+	}
 	if err := stream.Send(&historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Snapshot{Snapshot: &historypb.BatchGetSessionSummariesResponse{Summaries: []*historypb.SessionSummary{{SessionId: req.GetSelected().GetSessionIds()[0]}}}}}); err != nil {
 		return err
 	}
@@ -383,7 +388,8 @@ func (s *typedHistoryServer) WatchSessionSummaries(req *historypb.WatchSessionSu
 
 func TestHistorySelectedSummariesGeneratedFacade(t *testing.T) {
 	grpcServer := grpc.NewServer()
-	historypb.RegisterHistoryServiceServer(grpcServer, &typedHistoryServer{holdSelected: true})
+	servicer := &typedHistoryServer{holdSelected: true, selectedRequests: make(chan *historypb.WatchSessionSummariesRequest, 1)}
+	historypb.RegisterHistoryServiceServer(grpcServer, servicer)
 	target := grpcserver.Serve(t, grpcServer)
 	generated, err := facade.NewHandler(t.Context(), target, time.Second, historypb.RegisterHistoryServiceHandlerFromEndpoint)
 	if err != nil {
@@ -396,7 +402,7 @@ func TestHistorySelectedSummariesGeneratedFacade(t *testing.T) {
 	defer httpServer.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/upstream/history/v1/session-summaries:watch?selected.session_ids=11111111-1111-1111-1111-111111111111", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/upstream/history/v1/session-summaries:watch?selected.session_ids=11111111-1111-1111-1111-111111111111&selected.field_mask=last_event_at,attached.spec.model", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,5 +420,9 @@ func TestHistorySelectedSummariesGeneratedFacade(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(data[:n]), "11111111-1111-1111-1111-111111111111") {
 		t.Fatalf("selected summary facade: %d %s", response.StatusCode, data[:n])
+	}
+	// The browser spells the field set as one comma-separated query value.
+	if got := (<-servicer.selectedRequests).GetSelected().GetFieldMask().GetPaths(); !slices.Equal(got, []string{"last_event_at", "attached.spec.model"}) {
+		t.Fatalf("field set reached History as %q", got)
 	}
 }

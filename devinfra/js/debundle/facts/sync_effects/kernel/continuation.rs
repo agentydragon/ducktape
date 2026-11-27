@@ -286,147 +286,17 @@ impl LocalContinuation {
         step: Step,
     ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
         match step {
-            Step::Prepare => {
-                self.steps.push(Step::Operation(0));
-                self.steps.push(Step::PrepareBody);
-                if self.frame.parameter_inputs.is_some() {
-                    // Later parameters are in TDZ while an earlier default
-                    // executes. Body declarations are instantiated only after
-                    // this environment.
-                    for parameter in body.parameters.iter() {
-                        self.frame.environment.insert(
-                            parameter.binding.clone(),
-                            Values::from([AbstractValue::Value(Value::Unavailable)]),
-                        );
-                        self.frame.binding_selections.remove(&parameter.binding);
-                    }
-                    cells::instantiate_parameter_cells(context, body, &self.frame);
-                    self.steps.push(Step::Parameter(0));
-                }
-            }
-            Step::Parameter(index) => {
-                let Some(parameter) = body.parameters.get(index) else {
-                    return Ok(None);
-                };
-                let Some(arguments) = &self.frame.parameter_inputs else {
-                    return Err(RemainderDisposition::NeedsSummary);
-                };
-                let mut selected = arguments.get(index).cloned().unwrap_or_else(|| {
-                    SelectedValue::raw(Values::from([AbstractValue::UNDEFINED]))
-                });
-                self.steps.push(Step::Parameter(index + 1));
-                if let Some(default) = &parameter.default
-                    && selected.values.remove(&AbstractValue::UNDEFINED)
-                {
-                    self.steps.push(Step::BindDefault {
-                        binding: parameter.binding.clone(),
-                        alternative: !selected.values.is_empty(),
-                        supplied: selected,
-                    });
-                    self.steps.push(Step::Expression(default.clone()));
-                    return Ok(None);
-                }
-                bind_parameter(context, body, &mut self.frame, &parameter.binding, selected);
-            }
+            Step::Prepare => self.prepare_activation(context, body),
+            Step::Parameter(index) => return self.bind_next_parameter(context, body, index),
             Step::BindDefault {
                 binding,
-                mut supplied,
+                supplied,
                 alternative,
-            } => {
-                let default = self.take_value();
-                let selected = if alternative {
-                    // Abstract alternatives do not prove which prologue path
-                    // completed. Keep every reached effect and value.
-                    self.frame
-                        .ledger
-                        .effects
-                        .compose(&EffectCoverageFragment::default());
-                    supplied.values.extend(default.values);
-                    supplied.selection = None;
-                    supplied
-                } else {
-                    default
-                };
-                bind_parameter(context, body, &mut self.frame, &binding, selected);
-            }
+            } => self.bind_default_parameter(context, body, binding, supplied, alternative),
             Step::PrepareBody => prepare_body_bindings(context, body, &mut self.frame),
-            Step::Operation(index) => {
-                let Some(operation) = body.operations.get(index) else {
-                    self.frame.complete_return(SelectedValue::raw(Values::from([
-                        AbstractValue::UNDEFINED,
-                    ])));
-                    return Ok(None);
-                };
-                self.steps.push(Step::Operation(index + 1));
-                match operation {
-                    LocalOperation::Initialize(binding, Some(value)) => {
-                        self.steps.push(Step::Initialize(binding.clone()));
-                        self.steps.push(Step::Expression(value.clone()));
-                    }
-                    LocalOperation::Initialize(binding, None) => {
-                        let Some(kind) = body.bindings.get(binding) else {
-                            return Err(RemainderDisposition::NeedsSummary);
-                        };
-                        if !matches!(
-                            kind,
-                            LocalBinding::Var
-                                | LocalBinding::Parameter
-                                | LocalBinding::HoistedFunction(_)
-                        ) {
-                            self.value =
-                                Some(SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])));
-                            self.steps.push(Step::Initialize(binding.clone()));
-                        }
-                    }
-                    LocalOperation::Evaluate(value) => {
-                        self.steps.push(Step::Discard);
-                        self.steps.push(Step::Expression(value.clone()));
-                    }
-                    LocalOperation::Return(value) => {
-                        self.steps.push(Step::Return);
-                        match value {
-                            Some(value) => self.steps.push(Step::Expression(value.clone())),
-                            None => {
-                                self.value = Some(SelectedValue::raw(Values::from([
-                                    AbstractValue::UNDEFINED,
-                                ])));
-                            }
-                        }
-                    }
-                    LocalOperation::Throw(value) => {
-                        self.frame
-                            .ledger
-                            .effects
-                            .compose(&EffectCoverageFragment::default());
-                        self.frame.ledger.effects.abrupt();
-                        self.steps.push(Step::Throw);
-                        self.steps.push(Step::Expression(value.clone()));
-                    }
-                }
-            }
+            Step::Operation(index) => return self.schedule_operation(body, index),
             Step::Expression(node) => return self.expression(context, body, node),
-            Step::Initialize(binding) => {
-                let Some(selected) = self.take_selected_or_stop() else {
-                    return Ok(None);
-                };
-                let SelectedValue { values, selection } = selected;
-                let selection = selection.filter(|selection| selection.matches(&values));
-                self.frame.environment.insert(binding.clone(), values);
-                match selection {
-                    Some(selection) => {
-                        self.frame
-                            .binding_selections
-                            .insert(binding.clone(), selection);
-                    }
-                    None => {
-                        self.frame.binding_selections.remove(&binding);
-                    }
-                }
-                cells::declared_binding_stored(context, body, &binding, &self.frame);
-                self.frame.initialized_bindings.insert(binding.clone());
-                let effects = cells::declarative_binding_operation(context, body, &binding);
-                self.frame.ledger.effects.compose(&effects);
-            }
+            Step::Initialize(binding) => self.initialize_binding(context, body, binding),
             Step::Discard => {
                 if self.take_value().values.is_empty() {
                     self.frame.stop_normal_path();
@@ -444,123 +314,17 @@ impl LocalContinuation {
                 aggregate,
                 properties,
                 index,
-            } => {
-                let Some(property) = properties.get(index) else {
-                    return Ok(None);
-                };
-                let Some(Aggregate::Record { transfer, .. }) = self.aggregates.get(&aggregate)
-                else {
-                    return Err(RemainderDisposition::NeedsSummary);
-                };
-                if !transfer.can_complete() {
-                    return Ok(None);
-                }
-                let value = property.value().clone();
-                self.steps.push(Step::RecordNext {
-                    aggregate,
-                    properties,
-                    index: index + 1,
-                });
-                self.steps.push(Step::RecordValue { aggregate, index });
-                self.steps.push(Step::Expression(value));
-            }
+            } => return self.schedule_record_property(aggregate, properties, index),
             Step::RecordValue { aggregate, index } => {
-                let selected = self.take_value();
-                // A later child can truncate the unfinished literal.
-                self.frame.inputs.extend(selected.values.iter().cloned());
-                let Some(Aggregate::Record {
-                    transfer,
-                    allocation,
-                    new_record,
-                }) = self.aggregates.get_mut(&aggregate)
-                else {
-                    return Err(RemainderDisposition::NeedsSummary);
-                };
-                // A child can reenter this allocation site. Its resulting
-                // heap entry then also represents an older record.
-                *new_record &= context
-                    .world()
-                    .surface
-                    .own_properties(*allocation)
-                    .is_none();
-                // The child's judgment was composed into the ledger as it ran.
-                transfer.child(
-                    index,
-                    AllocationValue {
-                        values: selected.values,
-                        judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
-                    },
-                );
+                return self.record_property_value(context, aggregate, index);
             }
             Step::ArrayNext {
                 aggregate,
                 elements,
                 index,
-            } => {
-                let Some(Aggregate::Array(transfer)) = self.aggregates.get_mut(&aggregate) else {
-                    return Err(RemainderDisposition::NeedsSummary);
-                };
-                if !transfer.can_complete() {
-                    return Ok(None);
-                }
-                match elements.get(index) {
-                    None => {}
-                    Some(LocalArrayElement::Hole) => {
-                        transfer.hole();
-                        self.steps.push(Step::ArrayNext {
-                            aggregate,
-                            elements,
-                            index: index + 1,
-                        });
-                    }
-                    Some(LocalArrayElement::Value(element)) => {
-                        let element = element.clone();
-                        self.steps.push(Step::ArrayNext {
-                            aggregate,
-                            elements,
-                            index: index + 1,
-                        });
-                        self.steps.push(Step::ArrayValue(aggregate));
-                        self.steps.push(Step::Expression(element));
-                    }
-                    Some(LocalArrayElement::Spread { value, span }) => {
-                        let (value, span) = (value.clone(), *span);
-                        self.steps.push(Step::ArrayNext {
-                            aggregate,
-                            elements,
-                            index: index + 1,
-                        });
-                        self.steps.push(Step::ArraySpread { aggregate, span });
-                        self.steps.push(Step::Expression(value));
-                    }
-                }
-            }
+            } => return self.schedule_array_element(aggregate, elements, index),
             Step::ArraySpread { aggregate, span } => {
-                let selected = self.take_value();
-                self.frame.inputs.extend(selected.values.iter().cloned());
-                let Some(Aggregate::Array(transfer)) = self.aggregates.get_mut(&aggregate) else {
-                    return Err(RemainderDisposition::NeedsSummary);
-                };
-                let mut bridge = LocalValueContext {
-                    context,
-                    frame: &mut self.frame,
-                    refusal: None,
-                };
-                transfer.spread(
-                    &mut bridge,
-                    span,
-                    AllocationValue {
-                        values: selected.values,
-                        judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
-                    },
-                );
-                if let Some(remainder) = bridge.refusal {
-                    self.frame
-                        .ledger
-                        .allocation
-                        .compose(&AllocationJudgment::Opaque);
-                    return Err(remainder);
-                }
+                return self.spread_array_value(context, aggregate, span);
             }
             Step::ArrayValue(aggregate) => {
                 let selected = self.take_value();
@@ -573,156 +337,20 @@ impl LocalContinuation {
                     judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
                 });
             }
-            Step::FinishAggregate(aggregate) => {
-                let Some(aggregate) = self.aggregates.remove(&aggregate) else {
-                    return Err(RemainderDisposition::NeedsSummary);
-                };
-                if !self.frame.continues() {
-                    // An unfinished literal is not an allocation; no heap entry
-                    // is written for it.
-                    self.frame
-                        .ledger
-                        .allocation
-                        .compose(&AllocationJudgment::Opaque);
-                    self.value = None;
-                    return Ok(None);
-                }
-                let mut bridge = LocalValueContext {
-                    context,
-                    frame: &mut self.frame,
-                    refusal: None,
-                };
-                let (result, record) = match aggregate {
-                    Aggregate::Record {
-                        transfer,
-                        allocation,
-                        new_record,
-                    } => (transfer.finish(&mut bridge), Some((allocation, new_record))),
-                    Aggregate::Array(transfer) => (transfer.finish(&mut bridge), None),
-                };
-                self.frame.ledger.allocation.compose(&result.judgment);
-                if let Some((allocation, new_record)) = record {
-                    mark_fresh_record(
-                        context,
-                        &mut self.frame,
-                        allocation,
-                        new_record,
-                        &result.values,
-                    );
-                }
-                self.value = Some(completing_selected(
-                    SelectedValue::raw(result.values),
-                    &mut self.frame,
-                ));
-            }
+            Step::FinishAggregate(aggregate) => return self.finish_aggregate(context, aggregate),
             Step::Sequence {
                 expressions,
                 index,
-                mut transfer,
-                mut selection,
-            } => {
-                if index > 0 {
-                    if !self.frame.continues() {
-                        self.frame
-                            .ledger
-                            .allocation
-                            .compose(&AllocationJudgment::Opaque);
-                        self.value = None;
-                        return Ok(None);
-                    }
-                    let selected = self.take_value();
-                    selection = selected.selection;
-                    if !transfer.child(AllocationValue {
-                        values: selected.values,
-                        judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
-                    }) {
-                        self.frame.stop_normal_path();
-                        self.frame
-                            .ledger
-                            .allocation
-                            .compose(&AllocationJudgment::Opaque);
-                        return Ok(None);
-                    }
-                }
-                match expressions.get(index) {
-                    Some(next) => {
-                        let next = next.clone();
-                        self.steps.push(Step::Sequence {
-                            expressions,
-                            index: index + 1,
-                            transfer,
-                            selection,
-                        });
-                        self.steps.push(Step::Expression(next));
-                    }
-                    None => {
-                        let result = transfer.finish();
-                        self.frame.ledger.allocation.compose(&result.judgment);
-                        self.value = Some(completing_selected(
-                            SelectedValue {
-                                values: result.values,
-                                selection,
-                            },
-                            &mut self.frame,
-                        ));
-                    }
-                }
-            }
+                transfer,
+                selection,
+            } => self.continue_sequence(expressions, index, transfer, selection),
             Step::Template {
                 substitutions,
                 index,
                 span,
-            } => match substitutions.get(index) {
-                Some(next) => {
-                    let next = next.clone();
-                    self.steps.push(Step::Template {
-                        substitutions,
-                        index: index + 1,
-                        span,
-                    });
-                    self.steps.push(Step::TemplateConvert(span));
-                    self.steps.push(Step::Expression(next));
-                }
-                None => {
-                    self.value = Some(completing_selected(
-                        SelectedValue::raw(Values::from([AbstractValue::Value(Value::Prim(
-                            PrimKinds::STRING,
-                        ))])),
-                        &mut self.frame,
-                    ));
-                }
-            },
+            } => self.continue_template(substitutions, index, span),
             Step::TemplateConvert(span) => {
-                let operand = self.take_value();
-                if operand.values.is_empty() {
-                    self.frame.stop_normal_path();
-                    return Ok(None);
-                }
-                // String concatenation has the same primitive ToString result and
-                // abrupt alternatives. Object conversion needs a separate string-hint
-                // proof, so it retains the existing conservative fallback.
-                let string = Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]);
-                let transfer = allocation_transfer::binary(
-                    BinaryOp::Add,
-                    &string,
-                    &operand.values,
-                    AllocationJudgment::CoveredAllocationOnly(Box::default()),
-                );
-                let Some(transfer) = transfer else {
-                    self.frame
-                        .ledger
-                        .allocation
-                        .compose(&AllocationJudgment::Opaque);
-                    return Err(unproved_operator(
-                        context,
-                        &mut self.frame,
-                        &operand.values,
-                        span,
-                    ));
-                };
-                absorb_primitive_transfer(&mut self.frame, &transfer);
-                completing(transfer.values, &mut self.frame);
-                self.value = None;
+                return self.convert_template_substitution(context, span);
             }
             Step::BinaryLeft { op, right, span } => {
                 let left = self.take_value();
@@ -734,31 +362,7 @@ impl LocalContinuation {
                 self.steps.push(Step::Expression(right));
             }
             Step::BinaryRight { op, left, span } => {
-                let right = self.take_value();
-                if right.values.is_empty() {
-                    self.frame.stop_normal_path();
-                    return Ok(None);
-                }
-                let transfer = allocation_transfer::binary(
-                    op,
-                    &left.values,
-                    &right.values,
-                    AllocationJudgment::CoveredAllocationOnly(Box::default()),
-                );
-                let Some(transfer) = transfer else {
-                    self.frame
-                        .ledger
-                        .allocation
-                        .compose(&AllocationJudgment::Opaque);
-                    let mut reached = left.values;
-                    reached.extend(right.values);
-                    return Err(unproved_operator(context, &mut self.frame, &reached, span));
-                };
-                absorb_primitive_transfer(&mut self.frame, &transfer);
-                self.value = Some(completing_selected(
-                    SelectedValue::raw(transfer.values),
-                    &mut self.frame,
-                ));
+                return self.apply_binary_operator(context, op, left, span);
             }
             Step::Assign(binding, span) => {
                 let selected = self.take_value();
@@ -773,40 +377,20 @@ impl LocalContinuation {
             }
             Step::Arguments {
                 callee,
-                mut arguments,
+                arguments,
                 expressions,
                 index,
                 span,
                 invocation,
             } => {
-                let Some(selected) = self.take_selected_or_stop() else {
-                    return Ok(None);
-                };
-                self.frame.inputs.extend(selected.values.iter().cloned());
-                arguments.push(selected);
-                let next = index + 1;
-                match expressions.get(next) {
-                    Some(argument) => {
-                        let argument = argument.clone();
-                        self.steps.push(Step::Arguments {
-                            callee,
-                            arguments,
-                            expressions,
-                            index: next,
-                            span,
-                            invocation,
-                        });
-                        self.steps.push(Step::Expression(argument));
-                    }
-                    None => {
-                        return Ok(Some(LocalSuspension::Call(LocalCallRequest {
-                            callee,
-                            arguments,
-                            span,
-                            invocation,
-                        })));
-                    }
-                }
+                return Ok(self.schedule_call_argument(
+                    callee,
+                    arguments,
+                    expressions,
+                    index,
+                    span,
+                    invocation,
+                ));
             }
             Step::StoreField {
                 receivers,
@@ -814,19 +398,7 @@ impl LocalContinuation {
                 property,
                 span,
             } => {
-                let Some(selected) = self.take_selected_or_stop() else {
-                    return Ok(None);
-                };
-                store_field(
-                    context,
-                    &mut self.frame,
-                    &receivers,
-                    prefix_tracked,
-                    &property,
-                    &selected.values,
-                    span,
-                )?;
-                self.value = Some(selected);
+                return self.store_field_value(context, receivers, prefix_tracked, property, span);
             }
             Step::DefineThisField(property) => {
                 let Some(selected) = self.take_selected_or_stop() else {
@@ -851,65 +423,675 @@ impl LocalContinuation {
             Step::ConditionalSelect {
                 consequent,
                 alternate,
-            } => {
-                let test = self.take_value();
-                if test.values.is_empty() {
-                    self.frame.stop_normal_path();
-                    return Ok(None);
-                }
-                // A truncated arm can still reach the tested value.
-                self.frame.inputs.extend(test.values.iter().cloned());
-                branch::test_selected(&mut self.frame);
-                let (truthy, falsy) = branch::split_truthiness(&test.values);
-                match (truthy.is_empty(), falsy.is_empty()) {
-                    (false, true) => self.steps.push(Step::Expression(consequent)),
-                    (true, false) => self.steps.push(Step::Expression(alternate)),
-                    _ => {
-                        return self
-                            .fork(Step::Expression(consequent), Step::Expression(alternate))
-                            .map(Some);
-                    }
-                }
-            }
-            Step::LogicalSelect { op, right } => {
-                let left = self.take_value();
-                if left.values.is_empty() {
-                    self.frame.stop_normal_path();
-                    return Ok(None);
-                }
-                self.frame.inputs.extend(left.values.iter().cloned());
-                branch::test_selected(&mut self.frame);
-                let (retained, runs_right) = match op {
-                    LogicalOperator::And => {
-                        let (truthy, falsy) = branch::split_truthiness(&left.values);
-                        (falsy, !truthy.is_empty())
-                    }
-                    LogicalOperator::Or => {
-                        let (truthy, falsy) = branch::split_truthiness(&left.values);
-                        (truthy, !falsy.is_empty())
-                    }
-                    LogicalOperator::NullishCoalescing => branch::split_nullish(&left.values),
-                };
-                if retained.is_empty() {
-                    self.steps.push(Step::Expression(right));
-                    return Ok(None);
-                }
-                let selection = left
-                    .selection
-                    .filter(|selection| selection.matches(&retained));
-                let retained = SelectedValue {
-                    values: retained,
-                    selection,
-                };
-                if runs_right {
-                    return self
-                        .fork(Step::Selected(retained), Step::Expression(right))
-                        .map(Some);
-                }
-                self.value = Some(retained);
-            }
+            } => return self.select_conditional_arm(consequent, alternate),
+            Step::LogicalSelect { op, right } => return self.select_logical_operand(op, right),
             Step::Selected(selected) => self.value = Some(selected),
         }
+        Ok(None)
+    }
+
+    /// Schedules the body after its parameter prologue. With parameter
+    /// inputs, every parameter starts in TDZ and binds in order.
+    fn prepare_activation(&mut self, context: &mut impl KernelContext, body: &LocalBody) {
+        self.steps.push(Step::Operation(0));
+        self.steps.push(Step::PrepareBody);
+        if self.frame.parameter_inputs.is_some() {
+            // Later parameters are in TDZ while an earlier default
+            // executes. Body declarations are instantiated only after
+            // this environment.
+            for parameter in body.parameters.iter() {
+                self.frame.environment.insert(
+                    parameter.binding.clone(),
+                    Values::from([AbstractValue::Value(Value::Unavailable)]),
+                );
+                self.frame.binding_selections.remove(&parameter.binding);
+            }
+            cells::instantiate_parameter_cells(context, body, &self.frame);
+            self.steps.push(Step::Parameter(0));
+        }
+    }
+
+    /// Binds parameter `index` to its argument, first running its default
+    /// where the argument may be undefined.
+    fn bind_next_parameter(
+        &mut self,
+        context: &mut impl KernelContext,
+        body: &LocalBody,
+        index: usize,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let Some(parameter) = body.parameters.get(index) else {
+            return Ok(None);
+        };
+        let Some(arguments) = &self.frame.parameter_inputs else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
+        let mut selected = arguments
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])));
+        self.steps.push(Step::Parameter(index + 1));
+        if let Some(default) = &parameter.default
+            && selected.values.remove(&AbstractValue::UNDEFINED)
+        {
+            self.steps.push(Step::BindDefault {
+                binding: parameter.binding.clone(),
+                alternative: !selected.values.is_empty(),
+                supplied: selected,
+            });
+            self.steps.push(Step::Expression(default.clone()));
+            return Ok(None);
+        }
+        bind_parameter(context, body, &mut self.frame, &parameter.binding, selected);
+        Ok(None)
+    }
+
+    /// Binds a defaulted parameter to its default's value, joined with the
+    /// supplied non-undefined alternative.
+    fn bind_default_parameter(
+        &mut self,
+        context: &mut impl KernelContext,
+        body: &LocalBody,
+        binding: Id,
+        mut supplied: SelectedValue,
+        alternative: bool,
+    ) {
+        let default = self.take_value();
+        let selected = if alternative {
+            // Abstract alternatives do not prove which prologue path
+            // completed. Keep every reached effect and value.
+            self.frame
+                .ledger
+                .effects
+                .compose(&EffectCoverageFragment::default());
+            supplied.values.extend(default.values);
+            supplied.selection = None;
+            supplied
+        } else {
+            default
+        };
+        bind_parameter(context, body, &mut self.frame, &binding, selected);
+    }
+
+    /// Schedules body operation `index`, or completes with `undefined` past
+    /// the last one.
+    fn schedule_operation(
+        &mut self,
+        body: &LocalBody,
+        index: usize,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let Some(operation) = body.operations.get(index) else {
+            self.frame
+                .complete_return(SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])));
+            return Ok(None);
+        };
+        self.steps.push(Step::Operation(index + 1));
+        match operation {
+            LocalOperation::Initialize(binding, Some(value)) => {
+                self.steps.push(Step::Initialize(binding.clone()));
+                self.steps.push(Step::Expression(value.clone()));
+            }
+            LocalOperation::Initialize(binding, None) => {
+                let Some(kind) = body.bindings.get(binding) else {
+                    return Err(RemainderDisposition::NeedsSummary);
+                };
+                if !matches!(
+                    kind,
+                    LocalBinding::Var | LocalBinding::Parameter | LocalBinding::HoistedFunction(_)
+                ) {
+                    self.value = Some(SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])));
+                    self.steps.push(Step::Initialize(binding.clone()));
+                }
+            }
+            LocalOperation::Evaluate(value) => {
+                self.steps.push(Step::Discard);
+                self.steps.push(Step::Expression(value.clone()));
+            }
+            LocalOperation::Return(value) => {
+                self.steps.push(Step::Return);
+                match value {
+                    Some(value) => self.steps.push(Step::Expression(value.clone())),
+                    None => {
+                        self.value =
+                            Some(SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])));
+                    }
+                }
+            }
+            LocalOperation::Throw(value) => {
+                self.frame
+                    .ledger
+                    .effects
+                    .compose(&EffectCoverageFragment::default());
+                self.frame.ledger.effects.abrupt();
+                self.steps.push(Step::Throw);
+                self.steps.push(Step::Expression(value.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Stores the selected value into a declared binding and records the
+    /// declarative operation's effects.
+    fn initialize_binding(
+        &mut self,
+        context: &mut impl KernelContext,
+        body: &LocalBody,
+        binding: Id,
+    ) {
+        let Some(selected) = self.take_selected_or_stop() else {
+            return;
+        };
+        let SelectedValue { values, selection } = selected;
+        let selection = selection.filter(|selection| selection.matches(&values));
+        self.frame.environment.insert(binding.clone(), values);
+        match selection {
+            Some(selection) => {
+                self.frame
+                    .binding_selections
+                    .insert(binding.clone(), selection);
+            }
+            None => {
+                self.frame.binding_selections.remove(&binding);
+            }
+        }
+        cells::declared_binding_stored(context, body, &binding, &self.frame);
+        self.frame.initialized_bindings.insert(binding.clone());
+        let effects = cells::declarative_binding_operation(context, body, &binding);
+        self.frame.ledger.effects.compose(&effects);
+    }
+
+    /// Schedules record property `index` while the literal can complete.
+    fn schedule_record_property(
+        &mut self,
+        aggregate: usize,
+        properties: Arc<[PropertyDefinition<LocalExpression>]>,
+        index: usize,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let Some(property) = properties.get(index) else {
+            return Ok(None);
+        };
+        let Some(Aggregate::Record { transfer, .. }) = self.aggregates.get(&aggregate) else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
+        if !transfer.can_complete() {
+            return Ok(None);
+        }
+        let value = property.value().clone();
+        self.steps.push(Step::RecordNext {
+            aggregate,
+            properties,
+            index: index + 1,
+        });
+        self.steps.push(Step::RecordValue { aggregate, index });
+        self.steps.push(Step::Expression(value));
+        Ok(None)
+    }
+
+    /// Adds record property `index`'s value to the literal's transfer.
+    fn record_property_value(
+        &mut self,
+        context: &mut impl KernelContext,
+        aggregate: usize,
+        index: usize,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let selected = self.take_value();
+        // A later child can truncate the unfinished literal.
+        self.frame.inputs.extend(selected.values.iter().cloned());
+        let Some(Aggregate::Record {
+            transfer,
+            allocation,
+            new_record,
+        }) = self.aggregates.get_mut(&aggregate)
+        else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
+        // A child can reenter this allocation site. Its resulting
+        // heap entry then also represents an older record.
+        *new_record &= context
+            .world()
+            .surface
+            .own_properties(*allocation)
+            .is_none();
+        // The child's judgment was composed into the ledger as it ran.
+        transfer.child(
+            index,
+            AllocationValue {
+                values: selected.values,
+                judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
+            },
+        );
+        Ok(None)
+    }
+
+    /// Schedules array element `index` (a hole, value or spread) while the
+    /// literal can complete.
+    fn schedule_array_element(
+        &mut self,
+        aggregate: usize,
+        elements: Arc<[LocalArrayElement]>,
+        index: usize,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let Some(Aggregate::Array(transfer)) = self.aggregates.get_mut(&aggregate) else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
+        if !transfer.can_complete() {
+            return Ok(None);
+        }
+        match elements.get(index) {
+            None => {}
+            Some(LocalArrayElement::Hole) => {
+                transfer.hole();
+                self.steps.push(Step::ArrayNext {
+                    aggregate,
+                    elements,
+                    index: index + 1,
+                });
+            }
+            Some(LocalArrayElement::Value(element)) => {
+                let element = element.clone();
+                self.steps.push(Step::ArrayNext {
+                    aggregate,
+                    elements,
+                    index: index + 1,
+                });
+                self.steps.push(Step::ArrayValue(aggregate));
+                self.steps.push(Step::Expression(element));
+            }
+            Some(LocalArrayElement::Spread { value, span }) => {
+                let (value, span) = (value.clone(), *span);
+                self.steps.push(Step::ArrayNext {
+                    aggregate,
+                    elements,
+                    index: index + 1,
+                });
+                self.steps.push(Step::ArraySpread { aggregate, span });
+                self.steps.push(Step::Expression(value));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Expands the spread operand's iterator receipt into the array literal.
+    fn spread_array_value(
+        &mut self,
+        context: &mut impl KernelContext,
+        aggregate: usize,
+        span: Span,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let selected = self.take_value();
+        self.frame.inputs.extend(selected.values.iter().cloned());
+        let Some(Aggregate::Array(transfer)) = self.aggregates.get_mut(&aggregate) else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
+        let mut bridge = LocalValueContext {
+            context,
+            frame: &mut self.frame,
+            refusal: None,
+        };
+        transfer.spread(
+            &mut bridge,
+            span,
+            AllocationValue {
+                values: selected.values,
+                judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
+            },
+        );
+        if let Some(remainder) = bridge.refusal {
+            self.frame
+                .ledger
+                .allocation
+                .compose(&AllocationJudgment::Opaque);
+            return Err(remainder);
+        }
+        Ok(None)
+    }
+
+    /// Completes a record or array literal into its allocation, unless the
+    /// normal path ended inside it.
+    fn finish_aggregate(
+        &mut self,
+        context: &mut impl KernelContext,
+        aggregate: usize,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let Some(aggregate) = self.aggregates.remove(&aggregate) else {
+            return Err(RemainderDisposition::NeedsSummary);
+        };
+        if !self.frame.continues() {
+            // An unfinished literal is not an allocation; no heap entry
+            // is written for it.
+            self.frame
+                .ledger
+                .allocation
+                .compose(&AllocationJudgment::Opaque);
+            self.value = None;
+            return Ok(None);
+        }
+        let mut bridge = LocalValueContext {
+            context,
+            frame: &mut self.frame,
+            refusal: None,
+        };
+        let (result, record) = match aggregate {
+            Aggregate::Record {
+                transfer,
+                allocation,
+                new_record,
+            } => (transfer.finish(&mut bridge), Some((allocation, new_record))),
+            Aggregate::Array(transfer) => (transfer.finish(&mut bridge), None),
+        };
+        self.frame.ledger.allocation.compose(&result.judgment);
+        if let Some((allocation, new_record)) = record {
+            mark_fresh_record(
+                context,
+                &mut self.frame,
+                allocation,
+                new_record,
+                &result.values,
+            );
+        }
+        self.value = Some(completing_selected(
+            SelectedValue::raw(result.values),
+            &mut self.frame,
+        ));
+        Ok(None)
+    }
+
+    /// Adds the previous sequence expression's value, then schedules the next
+    /// one or completes with the last value.
+    fn continue_sequence(
+        &mut self,
+        expressions: Arc<[LocalExpression]>,
+        index: usize,
+        mut transfer: SequenceTransfer,
+        mut selection: Option<CallableSelection>,
+    ) {
+        if index > 0 {
+            if !self.frame.continues() {
+                self.frame
+                    .ledger
+                    .allocation
+                    .compose(&AllocationJudgment::Opaque);
+                self.value = None;
+                return;
+            }
+            let selected = self.take_value();
+            selection = selected.selection;
+            if !transfer.child(AllocationValue {
+                values: selected.values,
+                judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
+            }) {
+                self.frame.stop_normal_path();
+                self.frame
+                    .ledger
+                    .allocation
+                    .compose(&AllocationJudgment::Opaque);
+                return;
+            }
+        }
+        match expressions.get(index) {
+            Some(next) => {
+                let next = next.clone();
+                self.steps.push(Step::Sequence {
+                    expressions,
+                    index: index + 1,
+                    transfer,
+                    selection,
+                });
+                self.steps.push(Step::Expression(next));
+            }
+            None => {
+                let result = transfer.finish();
+                self.frame.ledger.allocation.compose(&result.judgment);
+                self.value = Some(completing_selected(
+                    SelectedValue {
+                        values: result.values,
+                        selection,
+                    },
+                    &mut self.frame,
+                ));
+            }
+        }
+    }
+
+    /// Schedules template substitution `index` and its string conversion, or
+    /// completes with a string past the last one.
+    fn continue_template(
+        &mut self,
+        substitutions: Arc<[LocalExpression]>,
+        index: usize,
+        span: Span,
+    ) {
+        match substitutions.get(index) {
+            Some(next) => {
+                let next = next.clone();
+                self.steps.push(Step::Template {
+                    substitutions,
+                    index: index + 1,
+                    span,
+                });
+                self.steps.push(Step::TemplateConvert(span));
+                self.steps.push(Step::Expression(next));
+            }
+            None => {
+                self.value = Some(completing_selected(
+                    SelectedValue::raw(Values::from([AbstractValue::Value(Value::Prim(
+                        PrimKinds::STRING,
+                    ))])),
+                    &mut self.frame,
+                ));
+            }
+        }
+    }
+
+    /// Converts a template substitution's value to a string.
+    fn convert_template_substitution(
+        &mut self,
+        context: &mut impl KernelContext,
+        span: Span,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let operand = self.take_value();
+        if operand.values.is_empty() {
+            self.frame.stop_normal_path();
+            return Ok(None);
+        }
+        // String concatenation has the same primitive ToString result and
+        // abrupt alternatives. Object conversion needs a separate string-hint
+        // proof, so it retains the existing conservative fallback.
+        let string = Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]);
+        let transfer = allocation_transfer::binary(
+            BinaryOp::Add,
+            &string,
+            &operand.values,
+            AllocationJudgment::CoveredAllocationOnly(Box::default()),
+        );
+        let Some(transfer) = transfer else {
+            self.frame
+                .ledger
+                .allocation
+                .compose(&AllocationJudgment::Opaque);
+            return Err(unproved_operator(
+                context,
+                &mut self.frame,
+                &operand.values,
+                span,
+            ));
+        };
+        absorb_primitive_transfer(&mut self.frame, &transfer);
+        completing(transfer.values, &mut self.frame);
+        self.value = None;
+        Ok(None)
+    }
+
+    /// Applies a binary operator to its evaluated left and right operands.
+    fn apply_binary_operator(
+        &mut self,
+        context: &mut impl KernelContext,
+        op: BinaryOp,
+        left: SelectedValue,
+        span: Span,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let right = self.take_value();
+        if right.values.is_empty() {
+            self.frame.stop_normal_path();
+            return Ok(None);
+        }
+        let transfer = allocation_transfer::binary(
+            op,
+            &left.values,
+            &right.values,
+            AllocationJudgment::CoveredAllocationOnly(Box::default()),
+        );
+        let Some(transfer) = transfer else {
+            self.frame
+                .ledger
+                .allocation
+                .compose(&AllocationJudgment::Opaque);
+            let mut reached = left.values;
+            reached.extend(right.values);
+            return Err(unproved_operator(context, &mut self.frame, &reached, span));
+        };
+        absorb_primitive_transfer(&mut self.frame, &transfer);
+        self.value = Some(completing_selected(
+            SelectedValue::raw(transfer.values),
+            &mut self.frame,
+        ));
+        Ok(None)
+    }
+
+    /// Adds an evaluated call argument, then schedules the next one or yields
+    /// the call once every argument has run.
+    fn schedule_call_argument(
+        &mut self,
+        callee: EvaluatedCallee,
+        mut arguments: Vec<SelectedValue>,
+        expressions: Arc<[LocalExpression]>,
+        index: usize,
+        span: Span,
+        invocation: Invocation,
+    ) -> Option<LocalSuspension> {
+        let selected = self.take_selected_or_stop()?;
+        self.frame.inputs.extend(selected.values.iter().cloned());
+        arguments.push(selected);
+        let next = index + 1;
+        match expressions.get(next) {
+            Some(argument) => {
+                let argument = argument.clone();
+                self.steps.push(Step::Arguments {
+                    callee,
+                    arguments,
+                    expressions,
+                    index: next,
+                    span,
+                    invocation,
+                });
+                self.steps.push(Step::Expression(argument));
+            }
+            None => {
+                return Some(LocalSuspension::Call(LocalCallRequest {
+                    callee,
+                    arguments,
+                    span,
+                    invocation,
+                }));
+            }
+        }
+        None
+    }
+
+    /// Stores the selected value into `property` of the evaluated receivers.
+    fn store_field_value(
+        &mut self,
+        context: &mut impl KernelContext,
+        receivers: Values,
+        prefix_tracked: bool,
+        property: String,
+        span: Span,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let Some(selected) = self.take_selected_or_stop() else {
+            return Ok(None);
+        };
+        store_field(
+            context,
+            &mut self.frame,
+            &receivers,
+            prefix_tracked,
+            &property,
+            &selected.values,
+            span,
+        )?;
+        self.value = Some(selected);
+        Ok(None)
+    }
+
+    /// Continues with the conditional arm the test's truthiness selects, or
+    /// forks when either may run.
+    fn select_conditional_arm(
+        &mut self,
+        consequent: LocalExpression,
+        alternate: LocalExpression,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let test = self.take_value();
+        if test.values.is_empty() {
+            self.frame.stop_normal_path();
+            return Ok(None);
+        }
+        // A truncated arm can still reach the tested value.
+        self.frame.inputs.extend(test.values.iter().cloned());
+        branch::test_selected(&mut self.frame);
+        let (truthy, falsy) = branch::split_truthiness(&test.values);
+        match (truthy.is_empty(), falsy.is_empty()) {
+            (false, true) => self.steps.push(Step::Expression(consequent)),
+            (true, false) => self.steps.push(Step::Expression(alternate)),
+            _ => {
+                return self
+                    .fork(Step::Expression(consequent), Step::Expression(alternate))
+                    .map(Some);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Keeps the left operand where it short-circuits and runs `right` where
+    /// it does not, forking when both may happen.
+    fn select_logical_operand(
+        &mut self,
+        op: LogicalOperator,
+        right: LocalExpression,
+    ) -> Result<Option<LocalSuspension>, RemainderDisposition> {
+        let left = self.take_value();
+        if left.values.is_empty() {
+            self.frame.stop_normal_path();
+            return Ok(None);
+        }
+        self.frame.inputs.extend(left.values.iter().cloned());
+        branch::test_selected(&mut self.frame);
+        let (retained, runs_right) = match op {
+            LogicalOperator::And => {
+                let (truthy, falsy) = branch::split_truthiness(&left.values);
+                (falsy, !truthy.is_empty())
+            }
+            LogicalOperator::Or => {
+                let (truthy, falsy) = branch::split_truthiness(&left.values);
+                (truthy, !falsy.is_empty())
+            }
+            LogicalOperator::NullishCoalescing => branch::split_nullish(&left.values),
+        };
+        if retained.is_empty() {
+            self.steps.push(Step::Expression(right));
+            return Ok(None);
+        }
+        let selection = left
+            .selection
+            .filter(|selection| selection.matches(&retained));
+        let retained = SelectedValue {
+            values: retained,
+            selection,
+        };
+        if runs_right {
+            return self
+                .fork(Step::Selected(retained), Step::Expression(right))
+                .map(Some);
+        }
+        self.value = Some(retained);
         Ok(None)
     }
 

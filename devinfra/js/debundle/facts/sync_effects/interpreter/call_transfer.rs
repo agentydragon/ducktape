@@ -1,6 +1,7 @@
 //! Call execution and the transfer of evaluated calls.
 
 use super::*;
+use std::ops::ControlFlow;
 
 impl<'source, 'rule> Executor<'source, 'rule> {
     pub(crate) fn promote_importer_cell_reads(&mut self, call: &Call, outcome: &mut Outcome) {
@@ -269,20 +270,150 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         for values in &mut args {
             values.remove(&AbstractValue::Value(Value::Unavailable));
         }
+        let site = EvaluatedCallSite {
+            call,
+            env,
+            captures,
+            targets: &targets,
+            args: &args,
+            prepared_receiver: prepared_receiver.as_ref(),
+        };
+        let premises = ProviderCallPremises {
+            needs_value,
+            operands_may_throw,
+            selected_pure_initializer_call,
+            selected_const_factory_result,
+        };
+        if let Some(transfer) =
+            self.transfer_provider_call(call, outcome, &args, needs_value, operands_may_throw)
+        {
+            return transfer;
+        }
+        if let Some(transfer) = self.transfer_no_reentry_call(site, premises) {
+            return transfer;
+        }
+        // Proofs that reevaluate source expressions have not migrated to
+        // evaluated operands. A missing result transfer truncates the ordered
+        // caller; it must never replay those expressions to recover a value.
+        let prepared_receiver_unused = prepared_receiver
+            .as_ref()
+            .map(|_| self.method_receiver_is_unused(&targets));
+        if let Some(transfer) = self.transfer_retained_factory_carrier(site, premises) {
+            return transfer;
+        }
+        if needs_value
+            && let Some(refusal) =
+                self.ordered_call_admission_refusal(&targets, prepared_receiver_unused)
+        {
+            return CallTransfer::UnsupportedOperands(refusal);
+        }
+        let from_entries_source_callbacks = match self.transfer_entry_iteration_call(
+            call,
+            env,
+            captures,
+            &args,
+            needs_value,
+            outcome,
+        ) {
+            ControlFlow::Break(transfer) => return transfer,
+            ControlFlow::Continue(callbacks) => callbacks,
+        };
+        self.expose_method_receiver(site, prepared_receiver_unused, outcome);
+        let opaque_args =
+            self.opaque_call_arguments(site, from_entries_source_callbacks, needs_value, outcome);
+        self.taint_opaque_call_operands(site);
+        let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
+            && values.iter().all(|value| matches!(value, AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, captured) if self.audited_result_is_clean(captured))));
+        if targets.is_empty() {
+            outcome.lose_call_target(&self.inputs.metrics, call.owner, call.span);
+            outcome.unknown_call = true;
+            self.note_unknown_call(call);
+            self.invoke_possible_callbacks_at(
+                &opaque_args,
+                call.no_sync_arguments,
+                Some(call.span),
+                outcome,
+            );
+        }
+        let invoked_unknown_callbacks = targets.is_empty();
+        let mut result_values = Values::new();
+        if needs_value
+            && (operands_may_throw
+                || targets
+                    .iter()
+                    .any(|target| matches!(target, AbstractValue::Value(Value::Prim(_)))))
+        {
+            result_values.insert(AbstractValue::Value(Value::Unavailable));
+        }
+        let coverage_target = self.call_coverage_target(
+            site,
+            selected_member_dependencies.as_deref(),
+            selected_value.as_ref(),
+            needs_value,
+            operands_may_throw,
+        );
+        let single_target = targets.len() == 1;
+        let nested_record_factory_premise = if single_target && !operands_may_throw {
+            self.checked_nested_record_factory_call(call, &args, env, captures)
+        } else {
+            None
+        };
+        let mut result_selection = None;
+        // `new` of a local plain function runs its body with an untracked
+        // `this`: what it stores through `this` or into other bindings is
+        // part of the call's effects. The instance stays unknown (the
+        // unknown-callee arm below).
+        if call.kind == CallKind::New {
+            self.construct_plain_functions(&targets, &args, outcome);
+        }
+        self.dispatch_call_targets(
+            targets,
+            &CallTargetDispatch {
+                call,
+                args: &args,
+                argument_selections: &argument_selections,
+                opaque_args: &opaque_args,
+                coverage_target: coverage_target.as_ref(),
+                nested_record_factory_premise: nested_record_factory_premise.as_ref(),
+                retained_callback,
+                single_target,
+                needs_value,
+            },
+            invoked_unknown_callbacks,
+            &mut result_values,
+            &mut result_selection,
+            outcome,
+        );
+        outcome.return_selection =
+            result_selection.filter(|selection| selection.matches(&result_values));
+        CallTransfer::requested(needs_value, || result_values)
+    }
+
+    /// Calls whose provider is summarized outside the interpreter: foreign
+    /// summaries, source record factories and namespace wrappers, descriptor
+    /// copies and admitted native rows.
+    fn transfer_provider_call(
+        &mut self,
+        call: &Call,
+        outcome: &mut Outcome,
+        args: &[Values],
+        needs_value: bool,
+        operands_may_throw: bool,
+    ) -> Option<CallTransfer> {
         // The provider body runs no other code and writes only its own
         // allocations. The call stays impure for purity and S-chain order.
         if !call.has_spread
             && let Some(summary) = self.foreign_call_summary(call.kind, &call.callee)
         {
-            self.retain_foreign_arguments(&summary, &args);
+            self.retain_foreign_arguments(&summary, args);
             self.record_foreign_call_use(&summary);
-            return CallTransfer::requested(needs_value, || {
-                let mut values = self.foreign_call_result(&summary, &args);
+            return Some(CallTransfer::requested(needs_value, || {
+                let mut values = self.foreign_call_result(&summary, args);
                 if operands_may_throw {
                     values.insert(AbstractValue::Value(Value::Unavailable));
                 }
                 values
-            });
+            }));
         }
         if call.kind == CallKind::Call
             && !call.has_spread
@@ -294,16 +425,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 call.owner,
                 call.span,
             );
-            return CallTransfer::requested(needs_value, || {
+            return Some(CallTransfer::requested(needs_value, || {
                 Values::from([AbstractValue::ForeignDeferredRecord])
-            });
+            }));
         }
         if call.kind == CallKind::Call
             && !call.has_spread
             && let Some(source_object) =
-                self.source_namespace_wrapper(&call.callee, &args, call.span.into())
+                self.source_namespace_wrapper(&call.callee, args, call.span.into())
         {
-            return CallTransfer::requested(needs_value, || {
+            return Some(CallTransfer::requested(needs_value, || {
                 let mut retained = Values::from([AbstractValue::Value(Value::Alloc(
                     Kind::Object,
                     source_object,
@@ -314,16 +445,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::Value(Value::Top),
                     AbstractValue::Value(Value::Unavailable),
                 ])
-            });
+            }));
         }
         if call.kind == CallKind::Call
             && !call.has_spread
             && let Some(proof) =
-                self.descriptor_copy_projection(&call.callee, &args, call.span.into())
+                self.descriptor_copy_projection(&call.callee, args, call.span.into())
         {
-            return CallTransfer::requested(needs_value, || {
-                self.install_descriptor_copy_result(proof, &args, call.span.into())
-            });
+            return Some(CallTransfer::requested(needs_value, || {
+                self.install_descriptor_copy_result(proof, args, call.span.into())
+            }));
         }
         if !call.has_spread
             && let Some(resolution) = self.resolve_native_call(
@@ -331,60 +462,98 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &call.callee,
                 CallSite::from(call.span),
                 &call.args,
-                &args,
+                args,
             )
         {
-            // This branch is the consumed runtime transfer: operands have
-            // completed, and the admitted row's checked plan is committed to
-            // this prefix whether or not the value is used.
-            if needs_value {
-                // The kernel's per-call outcome: the admitted row is the one
-                // operation it performed, with no application callback,
-                // accessor, host operation or exterior write.
-                let mut coverage =
-                    EffectCoverageFragment::native_operation(&resolution.dependencies);
-                if let (Some(caller), Some(intrinsic)) = (
-                    self.local_body_identity_for_call(call),
-                    resolution.row.family(),
-                ) {
-                    coverage.selected_local_call(LocalCallReceipt {
-                        caller,
-                        call_span: call.span,
-                        target: LocalBodyIdentity::Native {
-                            intrinsic,
-                            property: resolution.row.op.callee().1.map(str::to_owned),
-                        },
-                        dependencies: Box::new(resolution.dependencies.clone()),
-                    });
-                }
-                outcome.effect_coverage = coverage;
-            }
-            for cell in &resolution.projected_reads {
-                outcome
-                    .effects
-                    .record_heap_read(cell.clone(), self.state.assumption.is_none());
-            }
-            if let Some(receipt) = &resolution.iterable {
-                outcome.effects.record_heap_contents(
-                    &receipt.external_heap_contents(),
-                    self.state.assumption.is_none(),
-                );
-                outcome.effect_coverage.compose(&receipt.coverage);
-            }
-            let values = self.execute_native_resolution(
+            return Some(self.transfer_native_resolution(
+                call,
+                outcome,
                 resolution,
-                &args,
+                args,
+                needs_value,
                 operands_may_throw,
-                call.span.into(),
-            );
-            return CallTransfer::requested(needs_value, || values);
+            ));
         }
+        None
+    }
+
+    /// This branch is the consumed runtime transfer: operands have completed,
+    /// and the admitted row's checked plan is committed to this prefix
+    /// whether or not the value is used.
+    fn transfer_native_resolution(
+        &mut self,
+        call: &Call,
+        outcome: &mut Outcome,
+        resolution: NativeCallResolution,
+        args: &[Values],
+        needs_value: bool,
+        operands_may_throw: bool,
+    ) -> CallTransfer {
+        if needs_value {
+            // The kernel's per-call outcome: the admitted row is the one
+            // operation it performed, with no application callback,
+            // accessor, host operation or exterior write.
+            let mut coverage = EffectCoverageFragment::native_operation(&resolution.dependencies);
+            if let (Some(caller), Some(intrinsic)) = (
+                self.local_body_identity_for_call(call),
+                resolution.row.family(),
+            ) {
+                coverage.selected_local_call(LocalCallReceipt {
+                    caller,
+                    call_span: call.span,
+                    target: LocalBodyIdentity::Native {
+                        intrinsic,
+                        property: resolution.row.op.callee().1.map(str::to_owned),
+                    },
+                    dependencies: Box::new(resolution.dependencies.clone()),
+                });
+            }
+            outcome.effect_coverage = coverage;
+        }
+        for cell in &resolution.projected_reads {
+            outcome
+                .effects
+                .record_heap_read(cell.clone(), self.state.assumption.is_none());
+        }
+        if let Some(receipt) = &resolution.iterable {
+            outcome.effects.record_heap_contents(
+                &receipt.external_heap_contents(),
+                self.state.assumption.is_none(),
+            );
+            outcome.effect_coverage.compose(&receipt.coverage);
+        }
+        let values =
+            self.execute_native_resolution(resolution, args, operands_may_throw, call.span.into());
+        CallTransfer::requested(needs_value, || values)
+    }
+
+    /// Calls covered by host or author no-reentry contracts, retained
+    /// callback providers and dense-array pushes.
+    fn transfer_no_reentry_call(
+        &mut self,
+        site: EvaluatedCallSite<'_>,
+        premises: ProviderCallPremises,
+    ) -> Option<CallTransfer> {
+        let EvaluatedCallSite {
+            call,
+            env,
+            captures,
+            args,
+            prepared_receiver,
+            ..
+        } = site;
+        let ProviderCallPremises {
+            needs_value,
+            operands_may_throw,
+            selected_pure_initializer_call,
+            selected_const_factory_result,
+        } = premises;
         if self.host_call_does_not_reenter(call) {
-            return CallTransfer::EffectsOnly;
+            return Some(CallTransfer::EffectsOnly);
         }
         if call.kind == CallKind::Call
             && !call.has_spread
-            && let Some(callbacks) = self.no_reentry_callbacks(call.span.into(), &call.args, &args)
+            && let Some(callbacks) = self.no_reentry_callbacks(call.span.into(), &call.args, args)
         {
             // Argument evaluation has completed. The provider cannot reenter
             // during this call, but may retain callbacks anywhere, including a
@@ -396,24 +565,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 Some(call.span),
                 None,
             );
-            return CallTransfer::EffectsOnly;
+            return Some(CallTransfer::EffectsOnly);
         }
         if call.kind == CallKind::Call
             && !call.has_spread
             && let Some(callbacks) =
-                self.retained_factory_callbacks(call.span.into(), &call.args, &args)
+                self.retained_factory_callbacks(call.span.into(), &call.args, args)
         {
-            return CallTransfer::requested(needs_value, || {
+            return Some(CallTransfer::requested(needs_value, || {
                 Values::from([self.audited_retained_result(RetainedResultKind::Factory, callbacks)])
-            });
+            }));
         }
         if call.kind == CallKind::New
             && !call.has_spread
             && self
-                .retained_constructor_callbacks(call.span.into(), &call.args, &args)
+                .retained_constructor_callbacks(call.span.into(), &call.args, args)
                 .is_some()
         {
-            return CallTransfer::EffectsOnly;
+            return Some(CallTransfer::EffectsOnly);
         }
         // An exact author-pinned root call returns normally with an opaque
         // callable. Its separately asserted no-reentry and purity premises
@@ -431,10 +600,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && matches!(call.args.as_slice(), [ValueExpr::Binding(binding)]
                 if self.inputs.index.dynamic_scope_owners.is_empty()
                     && self.closed_primitive_binding(binding))
-            && matches!(args.as_slice(), [values]
+            && matches!(args, [values]
                 if !values.is_empty() && values.iter().all(AbstractValue::is_primitive))
         {
-            return CallTransfer::Values(Values::from([self.deferred_callbacks(args[0].clone())]));
+            return Some(CallTransfer::Values(Values::from([
+                self.deferred_callbacks(args[0].clone())
+            ])));
         }
         // The author assertion covers this direct imported call with checked
         // primitive arguments. Its result remains Unknown; only opaque
@@ -444,7 +615,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && let ValueExpr::Binding(binding) = &call.callee
             && self.inputs.index.no_reentry_exports.contains(binding)
         {
-            return CallTransfer::EffectsOnly;
+            return Some(CallTransfer::EffectsOnly);
         }
         // Distinct author assertions cover primitive and fresh-record inputs.
         // Both use the same member identity and lookup guards. The provider
@@ -467,42 +638,45 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .get(namespace)
                         .is_some_and(|members| members.contains(property))))
         {
-            return CallTransfer::EffectsOnly;
+            return Some(CallTransfer::EffectsOnly);
         }
         if call.kind == CallKind::Call
             && !call.has_spread
-            && self.execute_dense_array_push(
-                &call.callee,
-                &args,
-                env,
-                captures,
-                prepared_receiver.as_ref(),
-            )
+            && self.execute_dense_array_push(&call.callee, args, env, captures, prepared_receiver)
         {
-            return CallTransfer::requested(needs_value, || {
+            return Some(CallTransfer::requested(needs_value, || {
                 // Contents and multiplicity stay unknown after a push. Its
                 // completing result is numeric; a length overflow may throw.
                 Values::from([
                     AbstractValue::Value(Value::Prim(PrimKinds::NUMBER)),
                     AbstractValue::Value(Value::Unavailable),
                 ])
-            });
+            }));
         }
-        // Proofs that reevaluate source expressions have not migrated to
-        // evaluated operands. A missing result transfer truncates the ordered
-        // caller; it must never replay those expressions to recover a value.
-        let prepared_receiver_unused = prepared_receiver
-            .as_ref()
-            .map(|_| self.method_receiver_is_unused(&targets));
-        // The callback-factory evidence supplies a fresh ordinary carrier
-        // retaining this callback. The exact root's separate purity premise
-        // excludes provider throws. Keep the carrier opaque and use the
-        // already evaluated callee and argument without replaying either.
-        if selected_pure_initializer_call
-            && needs_value
+        None
+    }
+
+    /// The callback-factory evidence supplies a fresh ordinary carrier
+    /// retaining this callback. The exact root's separate purity premise
+    /// excludes provider throws. Keep the carrier opaque and use the
+    /// already evaluated callee and argument without replaying either.
+    fn transfer_retained_factory_carrier(
+        &mut self,
+        site: EvaluatedCallSite<'_>,
+        premises: ProviderCallPremises,
+    ) -> Option<CallTransfer> {
+        let EvaluatedCallSite {
+            call,
+            targets,
+            args,
+            prepared_receiver,
+            ..
+        } = site;
+        if premises.selected_pure_initializer_call
+            && premises.needs_value
             && call.kind == CallKind::Call
             && !call.has_spread
-            && !operands_may_throw
+            && !premises.operands_may_throw
             && prepared_receiver.is_none()
             && matches!(&call.callee, ValueExpr::Binding(_))
             && let [ValueExpr::Alloc(Kind::Function, source)] = call.args.as_slice()
@@ -513,7 +687,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     AbstractValue::CallbackFactory | AbstractValue::InlineCallbackFactory
                 )
             })
-            && matches!(args.as_slice(), [values] if values.len() == 1
+            && matches!(args, [values] if values.len() == 1
             && values.iter().all(|value| matches!(
                 value,
                     AbstractValue::Value(Value::Alloc(Kind::Function, actual))
@@ -522,54 +696,69 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             )))
         {
             let records_evidence = targets.contains(&AbstractValue::CallbackFactory);
-            return CallTransfer::Values(self.retained_factory_carrier(
+            return Some(CallTransfer::Values(self.retained_factory_carrier(
                 call,
                 records_evidence,
                 &args[0],
-            ));
+            )));
         }
-        if needs_value {
-            // Publication can change properties and captured state, but cannot
-            // replace an ordinary source function's [[Call]]. Invocation reads
-            // live capture cells and retains their existing havoc/heap guards.
-            let local_target = self.local_call_target(&targets).is_some();
-            let abrupt = !targets.is_empty()
-                && targets.iter().all(|target| {
-                    matches!(
-                        target,
-                        AbstractValue::Value(Value::Unavailable)
-                            | AbstractValue::Value(Value::Prim(_))
-                    )
-                });
-            let admission_refusal = if !local_target && !abrupt {
-                let refusal = if targets.len() > 1 {
-                    OrderedCallAdmissionRefusal::MultipleTargets
-                } else {
-                    match targets.iter().next() {
-                        None
-                        | Some(AbstractValue::Value(Value::Top))
-                        | Some(AbstractValue::SymbolicInput(_)) => {
-                            OrderedCallAdmissionRefusal::UnknownTarget
-                        }
-                        Some(_) => OrderedCallAdmissionRefusal::NonLocalTarget,
-                    }
-                };
-                Some(refusal)
-            } else if !abrupt && prepared_receiver_unused == Some(false) {
-                Some(OrderedCallAdmissionRefusal::UnsupportedReceiver)
+        None
+    }
+
+    /// Publication can change properties and captured state, but cannot
+    /// replace an ordinary source function's [[Call]]. Invocation reads live
+    /// capture cells and retains their existing havoc/heap guards.
+    fn ordered_call_admission_refusal(
+        &self,
+        targets: &Values,
+        prepared_receiver_unused: Option<bool>,
+    ) -> Option<OrderedCallAdmissionRefusal> {
+        let local_target = self.local_call_target(targets).is_some();
+        let abrupt = !targets.is_empty()
+            && targets.iter().all(|target| {
+                matches!(
+                    target,
+                    AbstractValue::Value(Value::Unavailable) | AbstractValue::Value(Value::Prim(_))
+                )
+            });
+        if !local_target && !abrupt {
+            let refusal = if targets.len() > 1 {
+                OrderedCallAdmissionRefusal::MultipleTargets
             } else {
-                None
+                match targets.iter().next() {
+                    None
+                    | Some(AbstractValue::Value(Value::Top))
+                    | Some(AbstractValue::SymbolicInput(_)) => {
+                        OrderedCallAdmissionRefusal::UnknownTarget
+                    }
+                    Some(_) => OrderedCallAdmissionRefusal::NonLocalTarget,
+                }
             };
-            if let Some(refusal) = admission_refusal {
-                return CallTransfer::UnsupportedOperands(refusal);
-            }
+            Some(refusal)
+        } else if !abrupt && prepared_receiver_unused == Some(false) {
+            Some(OrderedCallAdmissionRefusal::UnsupportedReceiver)
+        } else {
+            None
         }
+    }
+
+    /// Proven `Object.fromEntries`, Map entry and array iteration calls.
+    /// Continues with the callbacks an unproven `fromEntries` source retains.
+    fn transfer_entry_iteration_call(
+        &mut self,
+        call: &Call,
+        env: &Context,
+        captures: &Context,
+        args: &[Values],
+        needs_value: bool,
+        outcome: &mut Outcome,
+    ) -> ControlFlow<CallTransfer, Option<Values>> {
         let from_entries_source_callbacks = if call.kind == CallKind::Call && !needs_value {
             if self
                 .proven_from_entries_callbacks(call.span.into(), env, captures)
                 .is_some()
             {
-                return CallTransfer::EffectsOnly;
+                return ControlFlow::Break(CallTransfer::EffectsOnly);
             }
             self.callbacks_in_from_entries_source(call.span.into(), env, captures)
         } else {
@@ -582,28 +771,45 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // what it holds: whoever reaches the Map reaches them.
             let entries: Values = args.iter().flatten().cloned().collect();
             self.taint_objects(&entries);
-            return CallTransfer::EffectsOnly;
+            return ControlFlow::Break(CallTransfer::EffectsOnly);
         }
         if call.kind == CallKind::Call
             && !needs_value
             && self.execute_array_iteration(call.span.into(), env, captures, outcome)
         {
-            return CallTransfer::EffectsOnly;
+            return ControlFlow::Break(CallTransfer::EffectsOnly);
         }
-        // Known local methods still receive an implicit `this` capability.
-        // Its effects are not resolved by invoke, so it can mutate any retained
-        // array reachable from the receiver before a later intrinsic iteration.
+        ControlFlow::Continue(from_entries_source_callbacks)
+    }
+
+    /// Known local methods still receive an implicit `this` capability.
+    /// Its effects are not resolved by invoke, so it can mutate any retained
+    /// array reachable from the receiver before a later intrinsic iteration.
+    fn expose_method_receiver(
+        &mut self,
+        site: EvaluatedCallSite<'_>,
+        prepared_receiver_unused: Option<bool>,
+        outcome: &mut Outcome,
+    ) {
+        let EvaluatedCallSite {
+            call,
+            env,
+            captures,
+            targets,
+            prepared_receiver,
+            ..
+        } = site;
         if call.kind == CallKind::Call
             && let Some(receiver) = method_callee_receiver(&call.callee)
         {
-            let unused_receiver = prepared_receiver_unused
-                .unwrap_or_else(|| self.method_receiver_is_unused(&targets));
+            let unused_receiver =
+                prepared_receiver_unused.unwrap_or_else(|| self.method_receiver_is_unused(targets));
             if !unused_receiver {
                 let values = prepared_receiver
-                    .clone()
+                    .cloned()
                     .unwrap_or_else(|| self.evaluate(receiver, env, captures));
                 let contains_array = self.contains_dense_array(&values);
-                if self.method_may_read_receiver(&targets) {
+                if self.method_may_read_receiver(targets) {
                     // The summary reads `this` as unknown, which stands only
                     // for published values.
                     self.publish_values(
@@ -617,14 +823,34 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if contains_array {
                     // A dense receiver preserves possible callback reach, but
                     // does not prove that the method invoked those callbacks.
-                    self.promote_escaped_callbacks(&targets, outcome);
+                    self.promote_escaped_callbacks(targets, outcome);
                 }
             }
         }
-        let mut opaque_args = args.clone();
+    }
+
+    /// The input capabilities an opaque callee may invoke: arguments, the
+    /// method receiver, an iterated source and retained `fromEntries`
+    /// callbacks.
+    fn opaque_call_arguments(
+        &mut self,
+        site: EvaluatedCallSite<'_>,
+        from_entries_source_callbacks: Option<Values>,
+        needs_value: bool,
+        outcome: &mut Outcome,
+    ) -> Vec<Values> {
+        let EvaluatedCallSite {
+            call,
+            env,
+            captures,
+            args,
+            prepared_receiver,
+            ..
+        } = site;
+        let mut opaque_args = args.to_vec();
         if let Some(receiver) = method_callee_receiver(&call.callee) {
             let receiver_values = prepared_receiver
-                .clone()
+                .cloned()
                 .unwrap_or_else(|| self.evaluate(receiver, env, captures));
             // The receiver is an input capability too: an opaque method can
             // invoke its stored callbacks through `this`, including callbacks
@@ -644,6 +870,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if let Some(callbacks) = from_entries_source_callbacks {
             opaque_args.push(callbacks);
         }
+        opaque_args
+    }
+
+    /// Opaque calls can mutate objects passed as arguments or used as method
+    /// receivers. Preserve that possibility for later narrow construction
+    /// proofs (including changes to an entry's own data properties or an
+    /// array's iterator/species surface).
+    fn taint_opaque_call_operands(&mut self, site: EvaluatedCallSite<'_>) {
+        let EvaluatedCallSite {
+            call,
+            env,
+            captures,
+            targets,
+            args,
+            prepared_receiver,
+        } = site;
         if targets.is_empty()
             || targets.iter().any(|target| {
                 matches!(
@@ -656,50 +898,44 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 )
             })
         {
-            // Opaque calls can mutate objects passed as arguments or used as
-            // method receivers. Preserve that possibility for later narrow
-            // construction proofs (including changes to an entry's own data
-            // properties or an array's iterator/species surface).
             let mut possible_objects: Values = args.iter().flatten().cloned().collect();
             if let Some(receiver) = method_callee_receiver(&call.callee) {
                 possible_objects.extend(
                     prepared_receiver
-                        .clone()
+                        .cloned()
                         .unwrap_or_else(|| self.evaluate(receiver, env, captures)),
                 );
             }
             self.expose_class_capabilities(&possible_objects);
             self.taint_objects(&possible_objects);
         }
-        let retained_callback = matches!(args.as_slice(), [values] if !values.is_empty()
-            && values.iter().all(|value| matches!(value, AbstractValue::AuditedRetainedResult(RetainedResultKind::Factory, captured) if self.audited_result_is_clean(captured))));
-        if targets.is_empty() {
-            outcome.lose_call_target(&self.inputs.metrics, call.owner, call.span);
-            outcome.unknown_call = true;
-            self.note_unknown_call(call);
-            self.invoke_possible_callbacks_at(
-                &opaque_args,
-                call.no_sync_arguments,
-                Some(call.span),
-                outcome,
-            );
-        }
-        let mut invoked_unknown_callbacks = targets.is_empty();
-        let mut result_values = Values::new();
-        if needs_value
-            && (operands_may_throw
-                || targets
-                    .iter()
-                    .any(|target| matches!(target, AbstractValue::Value(Value::Prim(_)))))
-        {
-            result_values.insert(AbstractValue::Value(Value::Unavailable));
-        }
-        // The receipt belongs to this exact selected invocation. A member
-        // target is admitted only when LocalBody already consumed its
-        // initialized-module own-data selection before evaluating arguments;
-        // An alias instead needs the actual value-selection evidence carried
-        // by its ordered producer. Native/imported targets and raw known
-        // return values do not manufacture a selection receipt.
+    }
+
+    /// The receipt belongs to this exact selected invocation. A member target
+    /// is admitted only when LocalBody already consumed its initialized-module
+    /// own-data selection before evaluating arguments; An alias instead needs
+    /// the actual value-selection evidence carried by its ordered producer.
+    /// Native/imported targets and raw known return values do not manufacture
+    /// a selection receipt.
+    fn call_coverage_target(
+        &self,
+        site: EvaluatedCallSite<'_>,
+        selected_member_dependencies: Option<&ProofDependencies>,
+        selected_value: Option<&CallableSelection>,
+        needs_value: bool,
+        operands_may_throw: bool,
+    ) -> Option<(
+        u32,
+        LocalBodyIdentity,
+        LocalBodyIdentity,
+        Box<ProofDependencies>,
+    )> {
+        let EvaluatedCallSite {
+            call,
+            targets,
+            prepared_receiver,
+            ..
+        } = site;
         let direct_binding = match &call.callee {
             ValueExpr::Binding(binding)
                 if self
@@ -715,28 +951,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             _ => None,
         };
         let member_selection = matches!(
-            (&call.callee, prepared_receiver.as_ref(), selected_member_dependencies.as_ref()),
+            (&call.callee, prepared_receiver, selected_member_dependencies),
             (
                 ValueExpr::Member(receiver, Some(_), MemberKey::Static, _),
                 Some(_),
                 Some(_)
             ) if matches!(receiver.as_ref(), ValueExpr::Binding(_))
         );
-        let coverage_target = if needs_value
+        if needs_value
             && call.kind == CallKind::Call
             && !call.has_spread
             && !operands_may_throw
             && (direct_binding.is_some() || member_selection || selected_value.is_some())
-            && let Some((key, callable)) = self.local_call_target(&targets)
+            && let Some((key, callable)) = self.local_call_target(targets)
             && let Some(caller) = self.local_body_identity_for_call(call)
             && direct_binding
                 .is_none_or(|binding| self.inputs.index.hoisted_bindings.get(binding) == Some(&key))
         {
             let mut prerequisites = self.boxed_settled_prefix_dependencies();
-            if let Some(selection) = &selected_member_dependencies {
+            if let Some(selection) = selected_member_dependencies {
                 prerequisites.extend(selection);
             }
-            if let Some(selection) = &selected_value {
+            if let Some(selection) = selected_value {
                 prerequisites.extend(&selection.dependencies);
             }
             Some((
@@ -750,27 +986,26 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ))
         } else {
             None
-        };
-        let single_target = targets.len() == 1;
-        let nested_record_factory_premise = if single_target && !operands_may_throw {
-            self.checked_nested_record_factory_call(call, &args, env, captures)
-        } else {
-            None
-        };
-        let mut result_selection = None;
-        // `new` of a local plain function runs its body with an untracked
-        // `this`: what it stores through `this` or into other bindings is
-        // part of the call's effects. The instance stays unknown (the
-        // unknown-callee arm below).
-        if call.kind == CallKind::New {
-            self.construct_plain_functions(&targets, &args, outcome);
         }
+    }
+
+    /// Transfers each possible callee of the call in turn.
+    fn dispatch_call_targets(
+        &mut self,
+        targets: Values,
+        dispatch: &CallTargetDispatch<'_>,
+        mut invoked_unknown_callbacks: bool,
+        result_values: &mut Values,
+        result_selection: &mut Option<CallableSelection>,
+        outcome: &mut Outcome,
+    ) {
+        let call = dispatch.call;
         for target in targets {
             match target {
                 AbstractValue::CallbackFactory
                     if call.kind == CallKind::Call
                         && !call.has_spread
-                        && (retained_callback
+                        && (dispatch.retained_callback
                             || matches!(
                                 call.args.as_slice(),
                                 [ValueExpr::Alloc(Kind::Function, _)]
@@ -796,7 +1031,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.promote_foreign_record(outcome);
                     self.note_unknown_call(call);
                     self.invoke_possible_callbacks_at(
-                        &opaque_args,
+                        dispatch.opaque_args,
                         false,
                         Some(call.span),
                         outcome,
@@ -807,7 +1042,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     outcome.lose_call_target(&self.inputs.metrics, call.owner, call.span);
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
-                    let mut possible_args = opaque_args.clone();
+                    let mut possible_args = dispatch.opaque_args.to_vec();
                     possible_args.push((*captured.values).clone());
                     self.promote_deferred_callbacks(&captured.values, outcome);
                     self.invoke_possible_callbacks_at(
@@ -825,7 +1060,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         this.promote_class_members(key, outcome)
                     });
                     self.invoke_possible_callbacks_at(
-                        &opaque_args,
+                        dispatch.opaque_args,
                         false,
                         Some(call.span),
                         outcome,
@@ -838,7 +1073,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
                         this.promote_class_members(key, outcome)
                     });
-                    let mut possible_args = opaque_args.clone();
+                    let mut possible_args = dispatch.opaque_args.to_vec();
                     possible_args.push((*captured.values).clone());
                     self.invoke_possible_callbacks_at(
                         &possible_args,
@@ -857,132 +1092,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .is_some_and(|(caller, body)| self.stable_fresh_function_target(caller, body, id))) =>
                     {}
                 AbstractValue::ObjectAssign if call.kind == CallKind::Call => {
-                    // Once the target's descriptor/prototype integrity is
-                    // unproven, copying a property may synchronously call a
-                    // setter. Include nested lazy bodies of owners that ran
-                    // before this call, as well as the owners of the source
-                    // and target values. The first-order fallback excludes
-                    // those bodies because merely creating a closure does
-                    // not execute it.
-                    self.note_unknown_call(call);
-                    let possible_objects: Values = args.iter().flatten().cloned().collect();
-                    // The target may be reachable by anyone (an intrinsic
-                    // prototype): what is copied onto it escapes.
-                    self.publish_values(
-                        &possible_objects,
-                        ClassMembersPublicationWriter::ObjectAssignCopy,
-                        Some(call.span),
-                    );
-                    let mut possible_accessors: BTreeSet<_> = self
-                        .state
-                        .world
-                        .reachability
-                        .owners
-                        .iter()
-                        .copied()
-                        .filter(|candidate| self.may_be_available_accessor_owner(*candidate))
-                        .collect();
-                    possible_accessors.extend(outcome.executed_owners.iter().copied());
-                    if self.state.world.reachability.incomplete {
-                        possible_accessors.extend(self.all_owners());
-                    }
-                    let effect_owner = self.state.current_top_owner.unwrap_or(call.owner);
-                    self.assuming(AssumedEffectReason::PossibleSetter, |this| {
-                        for accessor_owner in possible_accessors {
-                            this.promote_lazy_owner(accessor_owner, effect_owner, outcome);
-                        }
-                    });
-                    outcome.unsupported(
-                        &self.inputs.metrics,
-                        ExecutionOperation::ObjectAssign,
-                        call.owner,
-                        call.span,
-                    );
-                    outcome.unknown_call = true;
-                    self.widen_native_effects();
+                    self.transfer_object_assign_target(call, dispatch.args, outcome);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Class, key))
                     if call.kind == CallKind::New =>
                 {
-                    let constructed = if call.has_spread {
-                        Err(ConstructionRejection::SpreadArguments)
-                    } else {
-                        self.construct_local_class(key, &args)
-                    };
-                    match constructed {
-                        Ok((nested, _)) => {
-                            self.absorb_nested_call(outcome, nested);
-                        }
-                        Err(rejection) => {
-                            self.reject_local_construction(key, &args, call, rejection, outcome);
-                            if !invoked_unknown_callbacks {
-                                self.invoke_possible_callbacks_at(
-                                    &args,
-                                    false,
-                                    Some(call.span),
-                                    outcome,
-                                );
-                                invoked_unknown_callbacks = true;
-                            }
-                        }
-                    }
+                    self.construct_class_target(
+                        key,
+                        call,
+                        dispatch.args,
+                        &mut invoked_unknown_callbacks,
+                        outcome,
+                    );
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     if call.kind == CallKind::Call =>
                 {
-                    let premises_before = self
-                        .observations
-                        .record_factory_prototype_premises()
-                        .clone();
-                    let previous_premise = std::mem::replace(
-                        &mut self.state.nested_record_factory_premise,
-                        nested_record_factory_premise
-                            .as_ref()
-                            .filter(|(factory, _, _, _)| *factory == key)
-                            .map(|(_, class, object, _)| (*class, *object)),
-                    );
-                    self.execute_local_call_target(
-                        LocalCallTarget {
-                            key,
-                            captured: None,
-                            args: &args,
-                            argument_selections: &argument_selections,
-                            coverage_target: coverage_target.as_ref(),
-                            single_target,
-                            needs_value,
-                            call_span: call.span,
-                        },
-                        &mut result_values,
-                        &mut result_selection,
+                    self.execute_local_function_target(
+                        key,
+                        dispatch,
+                        result_values,
+                        result_selection,
                         outcome,
                     );
-                    self.state.nested_record_factory_premise = previous_premise;
-                    let scoped_factory = nested_record_factory_premise
-                        .as_ref()
-                        .filter(|(factory_key, _, _, _)| *factory_key == key);
-                    if let Some((_, _, _, properties)) = scoped_factory.filter(|_| outcome.complete)
-                        && !properties.is_empty()
-                    {
-                        let ValueExpr::Binding(factory) = &call.callee else {
-                            unreachable!()
-                        };
-                        outcome.effects.local_record_factory_uses.push(
-                            analysis_vocabulary::report_schema::LocalRecordFactoryUse {
-                                factory_binding: factory.0.to_string(),
-                                prototype_properties: properties.clone(),
-                                lexical_statement_ordinal: self
-                                    .state
-                                    .current_top_owner
-                                    .unwrap_or(call.owner),
-                                source_location: None,
-                                span: call.span,
-                            },
-                        );
-                    }
-                    if scoped_factory.is_some() {
-                        *self.observations.record_factory_prototype_premises_mut() =
-                            premises_before;
-                    }
                 }
                 AbstractValue::Closure(HeapAddress { callable: key, .. }, captured)
                     if call.kind == CallKind::Call =>
@@ -991,15 +1123,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         LocalCallTarget {
                             key,
                             captured: Some(captured),
-                            args: &args,
-                            argument_selections: &argument_selections,
-                            coverage_target: coverage_target.as_ref(),
-                            single_target,
-                            needs_value,
+                            args: dispatch.args,
+                            argument_selections: dispatch.argument_selections,
+                            coverage_target: dispatch.coverage_target,
+                            single_target: dispatch.single_target,
+                            needs_value: dispatch.needs_value,
                             call_span: call.span,
                         },
-                        &mut result_values,
-                        &mut result_selection,
+                        result_values,
+                        result_selection,
                         outcome,
                     );
                 }
@@ -1009,7 +1141,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.note_unknown_call(call);
                     if !invoked_unknown_callbacks {
                         self.invoke_possible_callbacks_at(
-                            &opaque_args,
+                            dispatch.opaque_args,
                             call.no_sync_arguments,
                             Some(call.span),
                             outcome,
@@ -1019,8 +1151,183 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
-        outcome.return_selection =
-            result_selection.filter(|selection| selection.matches(&result_values));
-        CallTransfer::requested(needs_value, || result_values)
     }
+
+    /// Once the target's descriptor/prototype integrity is unproven, copying
+    /// a property may synchronously call a setter. Include nested lazy bodies
+    /// of owners that ran before this call, as well as the owners of the
+    /// source and target values. The first-order fallback excludes those
+    /// bodies because merely creating a closure does not execute it.
+    fn transfer_object_assign_target(
+        &mut self,
+        call: &Call,
+        args: &[Values],
+        outcome: &mut Outcome,
+    ) {
+        self.note_unknown_call(call);
+        let possible_objects: Values = args.iter().flatten().cloned().collect();
+        // The target may be reachable by anyone (an intrinsic
+        // prototype): what is copied onto it escapes.
+        self.publish_values(
+            &possible_objects,
+            ClassMembersPublicationWriter::ObjectAssignCopy,
+            Some(call.span),
+        );
+        let mut possible_accessors: BTreeSet<_> = self
+            .state
+            .world
+            .reachability
+            .owners
+            .iter()
+            .copied()
+            .filter(|candidate| self.may_be_available_accessor_owner(*candidate))
+            .collect();
+        possible_accessors.extend(outcome.executed_owners.iter().copied());
+        if self.state.world.reachability.incomplete {
+            possible_accessors.extend(self.all_owners());
+        }
+        let effect_owner = self.state.current_top_owner.unwrap_or(call.owner);
+        self.assuming(AssumedEffectReason::PossibleSetter, |this| {
+            for accessor_owner in possible_accessors {
+                this.promote_lazy_owner(accessor_owner, effect_owner, outcome);
+            }
+        });
+        outcome.unsupported(
+            &self.inputs.metrics,
+            ExecutionOperation::ObjectAssign,
+            call.owner,
+            call.span,
+        );
+        outcome.unknown_call = true;
+        self.widen_native_effects();
+    }
+
+    /// `new` of a local class: absorb the checked construction, or reject it
+    /// and invoke the arguments' possible callbacks once.
+    fn construct_class_target(
+        &mut self,
+        key: u32,
+        call: &Call,
+        args: &[Values],
+        invoked_unknown_callbacks: &mut bool,
+        outcome: &mut Outcome,
+    ) {
+        let constructed = if call.has_spread {
+            Err(ConstructionRejection::SpreadArguments)
+        } else {
+            self.construct_local_class(key, args)
+        };
+        match constructed {
+            Ok((nested, _)) => {
+                self.absorb_nested_call(outcome, nested);
+            }
+            Err(rejection) => {
+                self.reject_local_construction(key, args, call, rejection, outcome);
+                if !*invoked_unknown_callbacks {
+                    self.invoke_possible_callbacks_at(args, false, Some(call.span), outcome);
+                    *invoked_unknown_callbacks = true;
+                }
+            }
+        }
+    }
+
+    /// Runs a local function target under its scoped nested record factory
+    /// premise, recording the factory use when the call completes.
+    fn execute_local_function_target(
+        &mut self,
+        key: u32,
+        dispatch: &CallTargetDispatch<'_>,
+        result_values: &mut Values,
+        result_selection: &mut Option<CallableSelection>,
+        outcome: &mut Outcome,
+    ) {
+        let call = dispatch.call;
+        let premises_before = self
+            .observations
+            .record_factory_prototype_premises()
+            .clone();
+        let previous_premise = std::mem::replace(
+            &mut self.state.nested_record_factory_premise,
+            dispatch
+                .nested_record_factory_premise
+                .filter(|(factory, _, _, _)| *factory == key)
+                .map(|(_, class, object, _)| (*class, *object)),
+        );
+        self.execute_local_call_target(
+            LocalCallTarget {
+                key,
+                captured: None,
+                args: dispatch.args,
+                argument_selections: dispatch.argument_selections,
+                coverage_target: dispatch.coverage_target,
+                single_target: dispatch.single_target,
+                needs_value: dispatch.needs_value,
+                call_span: call.span,
+            },
+            result_values,
+            result_selection,
+            outcome,
+        );
+        self.state.nested_record_factory_premise = previous_premise;
+        let scoped_factory = dispatch
+            .nested_record_factory_premise
+            .filter(|(factory_key, _, _, _)| *factory_key == key);
+        if let Some((_, _, _, properties)) = scoped_factory.filter(|_| outcome.complete)
+            && !properties.is_empty()
+        {
+            let ValueExpr::Binding(factory) = &call.callee else {
+                unreachable!()
+            };
+            outcome.effects.local_record_factory_uses.push(
+                analysis_vocabulary::report_schema::LocalRecordFactoryUse {
+                    factory_binding: factory.0.to_string(),
+                    prototype_properties: properties.clone(),
+                    lexical_statement_ordinal: self.state.current_top_owner.unwrap_or(call.owner),
+                    source_location: None,
+                    span: call.span,
+                },
+            );
+        }
+        if scoped_factory.is_some() {
+            *self.observations.record_factory_prototype_premises_mut() = premises_before;
+        }
+    }
+}
+
+/// The evaluated operands of one call, with the context that evaluated them.
+#[derive(Clone, Copy)]
+struct EvaluatedCallSite<'a> {
+    call: &'a Call,
+    env: &'a Context,
+    captures: &'a Context,
+    targets: &'a Values,
+    args: &'a [Values],
+    prepared_receiver: Option<&'a Values>,
+}
+
+/// Selection premises that admit a provider call's shortcut transfers.
+#[derive(Clone, Copy)]
+struct ProviderCallPremises {
+    needs_value: bool,
+    operands_may_throw: bool,
+    selected_pure_initializer_call: bool,
+    selected_const_factory_result: bool,
+}
+
+/// The evaluated call state shared by every target of one call transfer.
+struct CallTargetDispatch<'a> {
+    call: &'a Call,
+    args: &'a [Values],
+    argument_selections: &'a [Option<CallableSelection>],
+    opaque_args: &'a [Values],
+    coverage_target: Option<&'a (
+        u32,
+        LocalBodyIdentity,
+        LocalBodyIdentity,
+        Box<ProofDependencies>,
+    )>,
+    nested_record_factory_premise: Option<&'a (u32, u32, u32, Vec<String>)>,
+    retained_callback: bool,
+    single_target: bool,
+    needs_value: bool,
 }

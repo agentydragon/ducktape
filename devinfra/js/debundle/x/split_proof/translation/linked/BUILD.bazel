@@ -132,6 +132,7 @@ js_test(
 )
 
 _UNSHARDED_TESTS = [
+    "generator_test",
     "arithmetic_test",
     "import_cells_test",
     "module_graph_test",

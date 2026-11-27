@@ -48,6 +48,7 @@ def chart(app: App) -> Chart:
         "github_policy.vrl",
         "001_ci_feedback.sql",
         "002_ci_feedback_optimization.sql",
+        "003_ci_feedback_absent_gates.sql",
         "grants.sql",
     ]
     k8s.KubeConfigMap(
@@ -107,6 +108,7 @@ def chart(app: App) -> Chart:
                                 "--single-transaction",
                                 "--file=/etc/cdviz/001_ci_feedback.sql",
                                 "--file=/etc/cdviz/002_ci_feedback_optimization.sql",
+                                "--file=/etc/cdviz/003_ci_feedback_absent_gates.sql",
                                 "--file=/etc/cdviz/grants.sql",
                             ],
                             env=_database_env(),

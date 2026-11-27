@@ -30,6 +30,10 @@ func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummaries
 	if selected != nil && request.RecordedAfter != nil {
 		return status.Error(codes.InvalidArgument, "selected summaries cannot be combined with recorded_after")
 	}
+	fields, err := newSummaryFields(selected.GetFieldMask())
+	if err != nil {
+		return err
+	}
 	ctx := stream.Context()
 	reader, err := s.scopedReader(ctx)
 	if err != nil {
@@ -49,7 +53,7 @@ func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummaries
 	var previous map[string]*historypb.SessionSummary
 	for {
 		if selected != nil {
-			previous, err = s.sendSelectedSummaries(leased, stream, reader, selected, previous)
+			previous, err = s.sendSelectedSummaries(leased, stream, reader, selected, fields, previous)
 			if err != nil {
 				return err
 			}
@@ -126,6 +130,7 @@ func (s *Service) sendSelectedSummaries(
 	stream watchStream,
 	reader *reads.Reader,
 	request *historypb.SelectedSessionSummaries,
+	fields summaryFields,
 	previous map[string]*historypb.SessionSummary,
 ) (map[string]*historypb.SessionSummary, error) {
 	if !s.wakeups.Connected() {
@@ -137,12 +142,16 @@ func (s *Service) sendSelectedSummaries(
 	if err != nil {
 		return nil, failure(stream.Context(), err)
 	}
+	// Rows are compared and sent as reduced to the requested fields, so a change outside them sends nothing.
 	next := make(map[string]*historypb.SessionSummary, len(result.GetSummaries()))
+	snapshot := &historypb.BatchGetSessionSummariesResponse{Summaries: make([]*historypb.SessionSummary, 0, len(result.GetSummaries()))}
 	for _, row := range result.GetSummaries() {
-		next[row.GetSessionId()] = row
+		reduced := fields.apply(row)
+		next[row.GetSessionId()] = reduced
+		snapshot.Summaries = append(snapshot.Summaries, reduced)
 	}
 	if previous == nil {
-		err := s.send(ctx, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Snapshot{Snapshot: result}})
+		err := s.send(ctx, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Snapshot{Snapshot: snapshot}})
 		return next, err
 	}
 	for id, row := range next {

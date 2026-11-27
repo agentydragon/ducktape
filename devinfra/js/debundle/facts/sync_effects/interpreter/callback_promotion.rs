@@ -827,10 +827,89 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.widen_native_effects();
         outcome.executed_owners.insert(owner);
 
-        // The recursive summary is no longer being expanded. Preserve reads
-        // from this callable and callbacks actually present in its arguments,
-        // captures, exports, or escaped globals. Do not turn ordinary
-        // recursion into a whole-chunk reachability root.
+        let (callbacks, first_class_candidates) = self.fallback_callbacks(args, captured);
+        let input_paths = if first_class_candidates.is_empty() {
+            BTreeMap::new()
+        } else {
+            self.fallback_input_paths(
+                diagnostic_arguments.as_deref().unwrap_or(args),
+                captured,
+                &first_class_candidates,
+            )
+        };
+        let diagnostic_callsite = diagnostic_callsite_span
+            .filter(|span| *span != DUMMY_SP)
+            .map(|span| BoundedInvocationFallbackCallSite {
+                top_level_owner: self.state.current_top_owner,
+                span_start: span.lo.0,
+                span_end: span.hi.0,
+                source_location: None,
+            });
+        let publication_diagnostic = BoundedFallbackPublicationDiagnostic {
+            input_paths,
+            callsite: diagnostic_callsite,
+        };
+
+        if callbacks.contains(&AbstractValue::ForeignDeferredRecord) {
+            self.promote_foreign_record(&mut outcome);
+        }
+        // The summarized bodies run on these inputs without the interpreter
+        // following what they do to them.
+        let reached = ordered_values(args.iter().flatten().chain(&callbacks).cloned());
+        self.unsettle(&reached);
+        let roots = self.fallback_reachability_roots(&callbacks, effect_owner, &outcome);
+        self.extend_reachable_owners(roots.iter().copied().chain([owner]));
+        self.expand_callback_fallback(&roots);
+        self.promote_callback_fallback_effects(effect_owner, &mut outcome);
+        // A directly truncated callable need not escape. Follow its same
+        // synchronous prefix graph without publishing private roots into the
+        // persistent callback cache. Expand each local owner once per source
+        // statement; earlier promotions remain in fallback_outcome.
+        if !self.state.callback_fallback.expanded.contains(&owner) {
+            self.promote_local_fallback_owner(owner, effect_owner, &mut outcome);
+        }
+
+        // The truncated body may have passed one of these callback values to
+        // opaque code. Retain only this proven escape set for later calls.
+        self.insert_escaped_callback_values(
+            &callbacks,
+            ClassMembersPublicationWriter::BoundedInvocationFallback,
+            Some(span),
+            Some(&publication_diagnostic),
+        );
+        if outcome.effects.rebinds.len() != rebinds_before {
+            self.apply_rebind_effects(&outcome.effects.rebinds);
+        }
+        // Fallback effects are attributed to the active top-level statement,
+        // not the lexical callee. Accumulate them there once instead of copying
+        // and re-merging the whole summary through every nested invocation.
+        self.state.fallback_outcome = outcome;
+        let mut result = Outcome {
+            returns: unknown(),
+            unknown_call: true,
+            executed_owners: BTreeSet::from([owner]),
+            ..Outcome::default()
+        };
+        result.record_loss(ExecutionPrecisionLoss {
+            reason,
+            reach,
+            statement_ordinal: owner,
+            source_location: None,
+            span,
+        });
+        result
+    }
+
+    /// The recursive summary is no longer being expanded. Preserve reads from
+    /// this callable and callbacks actually present in its arguments,
+    /// captures, exports, or escaped globals. Do not turn ordinary recursion
+    /// into a whole-chunk reachability root. Returns those callbacks and the
+    /// classes among them not yet published as escaped.
+    fn fallback_callbacks(
+        &mut self,
+        args: &[Values],
+        captured: &Context,
+    ) -> (Values, BTreeSet<u32>) {
         let export_callbacks = self.available_export_callbacks();
         let possible_values = ordered_values(
             args.iter()
@@ -858,82 +937,73 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 _ => None,
             })
             .collect();
-        let input_paths = if first_class_candidates.is_empty() {
-            BTreeMap::new()
-        } else {
-            // Only the first-publication diagnostic needs seed labels. Keep
-            // this path-only work out of fallback calls with no new class
-            // capability, and do not change the deduplicated value union.
-            // Callback-pool truncation passes a synthetic `[callbacks]` value
-            // to the semantic fallback; trace from the original call inputs
-            // instead so the report never calls that synthetic vector arg 0.
-            let path_arguments = diagnostic_arguments.as_deref().unwrap_or(args);
-            let mut path_roots = Values::new();
-            let mut fallback_seeds = BTreeMap::new();
-            for (position, values) in path_arguments.iter().enumerate() {
-                for value in values {
-                    path_roots.insert(value.clone());
-                    fallback_seeds
-                        .entry(value.clone())
-                        .or_insert(BoundedInvocationFallbackSeed::Argument { position });
-                }
-            }
-            for (binding, values) in captured {
-                for value in values {
-                    path_roots.insert(value.clone());
-                    fallback_seeds.entry(value.clone()).or_insert_with(|| {
-                        BoundedInvocationFallbackSeed::CapturedBinding {
-                            binding: binding.0.to_string(),
-                        }
-                    });
-                }
-            }
-            for value in &self.state.world.publication.global_escaped_callbacks {
-                path_roots.insert(value.clone());
-                fallback_seeds
-                    .entry(value.clone())
-                    .or_insert(BoundedInvocationFallbackSeed::EscapedCallbackPool);
-            }
-            self.visit_available_export_callback_roots(|binding, value| {
-                path_roots.insert(value.clone());
-                fallback_seeds
-                    .entry(value.clone())
-                    .or_insert_with(|| match binding {
-                        Some(binding) => BoundedInvocationFallbackSeed::AvailableExportBinding {
-                            binding: binding.0.to_string(),
-                        },
-                        None => BoundedInvocationFallbackSeed::AvailableExportCallbacks,
-                    });
-            });
-            let (_, paths) = self.callback_values_with_paths(
-                &path_roots,
-                &fallback_seeds,
-                &first_class_candidates,
-            );
-            paths
-        };
-        let diagnostic_callsite = diagnostic_callsite_span
-            .filter(|span| *span != DUMMY_SP)
-            .map(|span| BoundedInvocationFallbackCallSite {
-                top_level_owner: self.state.current_top_owner,
-                span_start: span.lo.0,
-                span_end: span.hi.0,
-                source_location: None,
-            });
-        let publication_diagnostic = BoundedFallbackPublicationDiagnostic {
-            input_paths,
-            callsite: diagnostic_callsite,
-        };
+        (callbacks, first_class_candidates)
+    }
 
-        if callbacks.contains(&AbstractValue::ForeignDeferredRecord) {
-            self.promote_foreign_record(&mut outcome);
+    /// Only the first-publication diagnostic needs seed labels. Keep this
+    /// path-only work out of fallback calls with no new class capability, and
+    /// do not change the deduplicated value union. Callback-pool truncation
+    /// passes a synthetic `[callbacks]` value to the semantic fallback; the
+    /// caller traces from the original call inputs (`path_arguments`) instead
+    /// so the report never calls that synthetic vector arg 0.
+    fn fallback_input_paths(
+        &mut self,
+        path_arguments: &[Values],
+        captured: &Context,
+        first_class_candidates: &BTreeSet<u32>,
+    ) -> BTreeMap<u32, BoundedInvocationFallbackInputPath> {
+        let mut path_roots = Values::new();
+        let mut fallback_seeds = BTreeMap::new();
+        for (position, values) in path_arguments.iter().enumerate() {
+            for value in values {
+                path_roots.insert(value.clone());
+                fallback_seeds
+                    .entry(value.clone())
+                    .or_insert(BoundedInvocationFallbackSeed::Argument { position });
+            }
         }
-        // The summarized bodies run on these inputs without the interpreter
-        // following what they do to them.
-        let reached = ordered_values(args.iter().flatten().chain(&callbacks).cloned());
-        self.unsettle(&reached);
+        for (binding, values) in captured {
+            for value in values {
+                path_roots.insert(value.clone());
+                fallback_seeds.entry(value.clone()).or_insert_with(|| {
+                    BoundedInvocationFallbackSeed::CapturedBinding {
+                        binding: binding.0.to_string(),
+                    }
+                });
+            }
+        }
+        for value in &self.state.world.publication.global_escaped_callbacks {
+            path_roots.insert(value.clone());
+            fallback_seeds
+                .entry(value.clone())
+                .or_insert(BoundedInvocationFallbackSeed::EscapedCallbackPool);
+        }
+        self.visit_available_export_callback_roots(|binding, value| {
+            path_roots.insert(value.clone());
+            fallback_seeds
+                .entry(value.clone())
+                .or_insert_with(|| match binding {
+                    Some(binding) => BoundedInvocationFallbackSeed::AvailableExportBinding {
+                        binding: binding.0.to_string(),
+                    },
+                    None => BoundedInvocationFallbackSeed::AvailableExportCallbacks,
+                });
+        });
+        let (_, paths) =
+            self.callback_values_with_paths(&path_roots, &fallback_seeds, first_class_candidates);
+        paths
+    }
+
+    /// The owners of the fallback's callbacks, plus every owner whose effects
+    /// could have stored a callable the summarized bodies reach.
+    fn fallback_reachability_roots(
+        &self,
+        callbacks: &Values,
+        effect_owner: SourceUnitOrdinal,
+        outcome: &Outcome,
+    ) -> BTreeSet<SourceUnitOrdinal> {
         let mut roots = BTreeSet::new();
-        for callback in &callbacks {
+        for callback in callbacks {
             let key = match callback {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => Some(*key),
@@ -978,7 +1048,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         .contains(candidate)
                 }),
         );
-        self.extend_reachable_owners(roots.iter().copied().chain([owner]));
+        roots
+    }
+
+    /// Expands the persistent callback fallback from `roots`, accumulating
+    /// the top-level reads and rebinds of every newly reached owner.
+    fn expand_callback_fallback(&mut self, roots: &BTreeSet<SourceUnitOrdinal>) {
         let state = &mut *self.state;
         let mut reached = self.inputs.extend_available_source_units(
             roots.iter().copied(),
@@ -1023,6 +1098,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+    }
+
+    /// Promotes the callback fallback's lazy effects: all of them the first
+    /// time in a statement, then only the IDs added since.
+    fn promote_callback_fallback_effects(
+        &mut self,
+        effect_owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) {
         let callback_sizes = (
             self.state.callback_fallback.reads.len(),
             self.state.callback_fallback.rebinds.len(),
@@ -1039,73 +1123,47 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .cloned()
                 .collect();
-            self.promote_lazy_effects(&reads, &rebinds, effect_owner, &mut outcome);
+            self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
         } else {
             self.promote_lazy_effects(
                 &self.state.callback_fallback.reads,
                 &self.state.callback_fallback.rebinds,
                 effect_owner,
-                &mut outcome,
+                outcome,
             );
         }
         self.state.fallback_callback_sizes = Some(callback_sizes);
-        // A directly truncated callable need not escape. Follow its same
-        // synchronous prefix graph without publishing private roots into the
-        // persistent callback cache. Expand each local owner once per source
-        // statement; earlier promotions remain in fallback_outcome.
-        if !self.state.callback_fallback.expanded.contains(&owner) {
-            let state = &mut *self.state;
-            let reached = self.inputs.extend_available_source_units(
-                [owner],
-                &state.world.module.initialized_bindings,
-                state.world.reachability.incomplete,
-                &mut state.fallback_local_owners,
-                &mut state.fallback_local_deferred,
-            );
-            for reached_owner in reached {
-                let (reads, rebinds) = self
-                    .inputs
-                    .synchronous_effects(reached_owner, self.state.world.reachability.incomplete);
-                let reads = reads
-                    .difference(&self.state.callback_fallback.reads)
-                    .cloned()
-                    .collect();
-                let rebinds = rebinds
-                    .difference(&self.state.callback_fallback.rebinds)
-                    .cloned()
-                    .collect();
-                self.promote_lazy_effects(&reads, &rebinds, effect_owner, &mut outcome);
-            }
-        }
+    }
 
-        // The truncated body may have passed one of these callback values to
-        // opaque code. Retain only this proven escape set for later calls.
-        self.insert_escaped_callback_values(
-            &callbacks,
-            ClassMembersPublicationWriter::BoundedInvocationFallback,
-            Some(span),
-            Some(&publication_diagnostic),
+    /// Promotes the effects of the truncated callable's own synchronous
+    /// prefix graph that the callback fallback has not already promoted.
+    fn promote_local_fallback_owner(
+        &mut self,
+        owner: SourceUnitOrdinal,
+        effect_owner: SourceUnitOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        let state = &mut *self.state;
+        let reached = self.inputs.extend_available_source_units(
+            [owner],
+            &state.world.module.initialized_bindings,
+            state.world.reachability.incomplete,
+            &mut state.fallback_local_owners,
+            &mut state.fallback_local_deferred,
         );
-        if outcome.effects.rebinds.len() != rebinds_before {
-            self.apply_rebind_effects(&outcome.effects.rebinds);
+        for reached_owner in reached {
+            let (reads, rebinds) = self
+                .inputs
+                .synchronous_effects(reached_owner, self.state.world.reachability.incomplete);
+            let reads = reads
+                .difference(&self.state.callback_fallback.reads)
+                .cloned()
+                .collect();
+            let rebinds = rebinds
+                .difference(&self.state.callback_fallback.rebinds)
+                .cloned()
+                .collect();
+            self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
         }
-        // Fallback effects are attributed to the active top-level statement,
-        // not the lexical callee. Accumulate them there once instead of copying
-        // and re-merging the whole summary through every nested invocation.
-        self.state.fallback_outcome = outcome;
-        let mut result = Outcome {
-            returns: unknown(),
-            unknown_call: true,
-            executed_owners: BTreeSet::from([owner]),
-            ..Outcome::default()
-        };
-        result.record_loss(ExecutionPrecisionLoss {
-            reason,
-            reach,
-            statement_ordinal: owner,
-            source_location: None,
-            span,
-        });
-        result
     }
 }

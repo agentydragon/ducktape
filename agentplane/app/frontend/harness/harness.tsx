@@ -94,7 +94,15 @@ import { testSandbox } from "../testing/sandbox";
 import { acknowledgedQuiescingLifecycleFixture, runtimeDiagnosticsFixture } from "../testing/runtime_diagnostics";
 import "@mantine/core/styles.css";
 
-import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
+import {
+  clone,
+  create,
+  fromJson,
+  toJson,
+  type JsonObject,
+  type JsonValue,
+  type MessageInitShape,
+} from "@bufbuild/protobuf";
 
 import App from "../shell/app";
 import {
@@ -1126,7 +1134,6 @@ function withDormantSession(thread: ThreadView): ThreadView {
         metadata: { ...thread.metadata, name: "Dormant harness thread" },
         summary: {
           ...thread.summary,
-          feedStatus: FeedStatus.ACTIVE,
           attached: { ...thread.summary.attached!, harnessState: HarnessState.STOPPED, activeTurnId: "" },
         },
       }
@@ -3273,7 +3280,7 @@ routes.push(
         (thread) => !query.has("sandbox") || thread.summary.sandbox?.name === query.get("sandbox")
       ).map((thread) => ({
         metadata: toJson(ThreadMetadataSchema, thread.metadata),
-        summary: toJson(SessionSummarySchema, thread.summary),
+        summary: toJson(SessionSummarySchema, create(SessionSummarySchema, thread.summary)),
       })),
       next_page_token: null,
     }),
@@ -3287,7 +3294,7 @@ routes.push(
       const mapped = mapThread(thread);
       return {
         metadata: toJson(ThreadMetadataSchema, mapped.metadata),
-        summary: toJson(SessionSummarySchema, mapped.summary),
+        summary: toJson(SessionSummarySchema, create(SessionSummarySchema, mapped.summary)),
       };
     },
   ]
@@ -3704,7 +3711,7 @@ routes.push(
     (match) => {
       const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === match[1]);
       if (thread === undefined) return Response.json({ detail: "session not found" }, { status: 404 });
-      return toJson(SessionSummarySchema, mapThread(thread).summary);
+      return toJson(SessionSummarySchema, create(SessionSummarySchema, mapThread(thread).summary));
     },
   ],
   [
@@ -4217,6 +4224,7 @@ routes.unshift(
     /^\/upstream\/history\/v1\/session-summaries:watch$/,
     (_match, query, signal) => {
       const wanted = new Set(query.getAll("selected.session_ids"));
+      const fields = query.get("selected.field_mask")?.split(",") ?? [];
       const frames = () =>
         wanted.size
           ? [
@@ -4224,7 +4232,12 @@ routes.unshift(
                 snapshot: {
                   summaries: THREADS_WITH_SANDBOXES.map(mapThread)
                     .filter((thread) => wanted.has(thread.metadata.threadId))
-                    .map((thread) => toJson(SessionSummarySchema, thread.summary)),
+                    .map((thread) =>
+                      reduceToFields(
+                        toJson(SessionSummarySchema, create(SessionSummarySchema, thread.summary)) as JsonObject,
+                        fields
+                      )
+                    ),
                 },
               },
             ]
@@ -4244,6 +4257,33 @@ routes.unshift(
     },
   ]
 );
+
+const camelCase = (name: string): string => name.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+
+/** What History sends for a field set: the requested fields of the summary, plus its `sessionId`. An empty set sends it whole. */
+function reduceToFields(summary: JsonObject, paths: readonly string[]): JsonObject {
+  if (paths.length === 0) return summary;
+  const reduced: JsonObject = { sessionId: summary.sessionId ?? null };
+  for (const path of paths) {
+    const keys = path.split(".").map(camelCase);
+    let from: JsonValue | undefined = summary;
+    let into = reduced;
+    for (const [index, key] of keys.entries()) {
+      if (typeof from !== "object" || from === null || Array.isArray(from) || !(key in from)) break;
+      const value: JsonValue | undefined = from[key];
+      if (value === undefined) break;
+      if (index === keys.length - 1) {
+        into[key] = value;
+        break;
+      }
+      const existing = into[key];
+      into =
+        typeof existing === "object" && existing !== null && !Array.isArray(existing) ? existing : (into[key] = {});
+      from = value;
+    }
+  }
+  return reduced;
+}
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
 let previewAction: ActionRequest | null = null;

@@ -193,7 +193,7 @@ pub(super) fn fresh_literal_own_fields(object: &ObjectLit) -> Option<BTreeSet<St
 
 pub(super) fn primitive_constant(expression: &Expr) -> bool {
     match expression.unwrap_parens() {
-        Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_)) => true,
+        literal if js_ast::is_primitive_literal(literal) => true,
         Expr::Unary(unary) if unary.op != UnaryOp::Delete => primitive_constant(&unary.arg),
         Expr::Bin(binary) if !matches!(binary.op, BinaryOp::In | BinaryOp::InstanceOf) => {
             primitive_constant(&binary.left) && primitive_constant(&binary.right)
