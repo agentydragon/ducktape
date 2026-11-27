@@ -316,7 +316,38 @@ lean_library(
 lean_library(
     name = "static_provider_boundary",
     srcs = ["EsmSplit/CoreJS/StaticProviderBoundary.lean"],
-    deps = [":corejs_certificate_support_base"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_nested_module_extension",
+    ],
+)
+
+lean_proof_test(
+    name = "static_provider_boundary_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.StaticProviderBoundary"],
+    required_theorems = ["CoreJS.StaticProviderBoundary.nestedDependencyExtension"],
+    deps = [":static_provider_boundary"],
+)
+
+lean_library(
+    name = "corejs_nested_module_extension",
+    srcs = ["EsmSplit/CoreJS/NestedModuleExtension.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_indexed_allocated_cells",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_nested_module_extension_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.NestedModuleExtension"],
+    required_theorems = [
+        "CoreJS.NestedModuleExtension.prior_allocations_survive",
+        "CoreJS.NestedModuleExtension.nestedModuleExtension",
+    ],
+    deps = [":corejs_nested_module_extension"],
 )
 
 lean_library(
@@ -1468,6 +1499,7 @@ lean_proof_test(
         "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.movedClosure",
         "CoreJS.StaticProviderBoundary.liveCells",
+        "CoreJS.StaticProviderBoundary.nestedDependencyExtension",
         "CoreJS.StaticProviderBoundary.providerPrefix",
         "CoreJS.StaticProviderBoundary.importerContinuation",
         "CoreJS.StaticProviderBoundary.linkedBoundary",

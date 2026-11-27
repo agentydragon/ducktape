@@ -1019,7 +1019,7 @@ private def Module.indexedScope (frames : List (Nat × List (Name × Addr))) (m 
   funext frames m
   simp only [Module.scope, Module.indexedScope, frameIndex_lookup]
 
-private def Program.resolveImportCell (P : Program) (frames : List (Nat × List (Name × Addr))) :
+def Program.resolveImportCell (P : Program) (frames : List (Nat × List (Name × Addr))) :
     Nat → String → Name → Except Abort Addr
   | 0, _, _ => .error (.error .syntax "cyclic re-export of an imported binding")
   | fuel + 1, source, name => do
