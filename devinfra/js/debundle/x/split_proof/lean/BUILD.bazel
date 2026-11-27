@@ -514,6 +514,32 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "corejs_indexed_source_schedule",
+    srcs = ["EsmSplit/CoreJS/IndexedSourceSchedule.lean"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_sparse_projected_order",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_source_schedule_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedSourceSchedule"],
+    required_theorems = [
+        "CoreJS.IndexedSourceSchedule.checkSequence",
+        "CoreJS.IndexedSourceSchedule.check",
+        "CoreJS.IndexedSourceSchedule.constructedRows",
+        "CoreJS.IndexedSourceSchedule.constructedPlacementOwner",
+        "CoreJS.IndexedSourceSchedule.metadataOmitted",
+        "CoreJS.IndexedSourceSchedule.uniquePlanOwner",
+        "CoreJS.IndexedSourceSchedule.assignmentOwnerIsAuthored",
+    ],
+    deps = [":corejs_indexed_source_schedule"],
+)
+
 executable_test(
     name = "corejs_sparse_projected_order_test",
     src = "SparseProjectedOrderTest.lean",
@@ -1154,6 +1180,7 @@ test_runner(
     src = "LocalExportDecodeTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
     deps = [
+        ":corejs_indexed_source_schedule",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":corejs_terminal_constructor",

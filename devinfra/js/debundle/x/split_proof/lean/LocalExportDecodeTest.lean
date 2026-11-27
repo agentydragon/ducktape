@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.TerminalConstructorInput
 import EsmSplit.CoreJS.TerminalConstructor
 import EsmSplit.CoreJS.TerminalFootprints
+import EsmSplit.CoreJS.IndexedSourceSchedule
 import EsmSplit.LowerSplit.SparseArtifact
 import EsmSplit.Cli
 
@@ -94,7 +95,7 @@ private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := 
   | .error "terminal export row must be the final original source unit" => pure ()
   | _ => throw (IO.userError "a real omitted debugger statement was not refused")
 
-private def checkSparse (j : Json) : IO Unit := do
+private def checkSparse (j : Json) (specText : String) : IO Unit := do
   let decoded ← decodeIndexed j
   let p := decoded.program
   let rows := decoded.localExports
@@ -103,9 +104,31 @@ private def checkSparse (j : Json) : IO Unit := do
   require (row.ordinal == 1 && row.names == [("exposed", "seed")]) "interior export or alias changed"
   require (m.body.map Prod.fst == [0, 2]) "interior export shifted executable identities"
   require (m.exports == [("exposed", "seed")]) "interior public binding changed"
-  match TerminalConstructorInput.check (p, rows) with
-  | .error "expected dense executable original IDs followed by one terminal metadata unit" => pure ()
-  | _ => throw (IO.userError "interior export was not refused by the terminal source guard")
+  let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle decoded.nodes
+  let request ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
+  let evidence ← IO.ofExcept (IndexedSourceSchedule.check decoded bundle request)
+  require (evidence.sequence.units.map IndexedSourceSchedule.SourceUnit.ordinal == [0, 1, 2])
+    "complete source schedule dropped or shifted an original ordinal"
+  require (evidence.sequence.units.filterMap IndexedSourceSchedule.SourceUnit.executable? == [0, 2])
+    "executable projection differs from the original source IDs"
+  require (evidence.sequence.units.filterMap IndexedSourceSchedule.SourceUnit.localExport? ==
+      [(1, row.names)])
+    "metadata projection differs from the decoder's ordered export row"
+  require (evidence.plan.execOrder == [0, 1, 2])
+    "actual authored planner does not preserve the source-unit schedule"
+  let constructed := splitProgramIndexed m.body bundle evidence.plan
+  let constructedRows : List (Nat × Stmt) := constructed.loaded.flatMap (·.body)
+  match constructedRows with
+  | [(0, .decl .const "seed" (.num 42)), (2, .decl .const "result" (.var "seed"))] => pure ()
+  | _ => throw (IO.userError "actual indexed constructor changed a statement or its original identity")
+  -- The plan's placement list follows authored module order; the loaded body
+  -- checked above follows execution order. Both preserve the original IDs.
+  require (constructed.fileUnitPlacements == [(2, "entry.mjs"), (0, "worker.mjs")])
+    "actual indexed placements differ from the existing authored owners"
+  require ((1, "entry.mjs") ∈ CoreJS.PlanPlacement.assignments evidence.plan)
+    "actual planner did not retain the metadata ordinal's authored owner"
+  require (request.claimants bundle 1 == ["entry.mjs"])
+    "metadata owner differs from the parsed authored request"
 
 private def checkAliases (j : Json) : IO Unit := do
   let decoded ← decodeIndexed j
@@ -116,6 +139,13 @@ private def checkAliases (j : Json) : IO Unit := do
   require (empty.ordinal == 2 && empty.names.isEmpty) "empty export list was omitted"
   require (m.body.map Prod.fst == [0, 3]) "export metadata became executable"
   require (m.exports == pairs) "alias export table changed"
+  let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle decoded.nodes
+  let sequence ← IO.ofExcept (IndexedSourceSchedule.checkSequence decoded bundle)
+  require (sequence.units.map IndexedSourceSchedule.SourceUnit.ordinal == [0, 1, 2, 3])
+    "source classification changed ordinals around an empty export row"
+  require (sequence.units.filterMap IndexedSourceSchedule.SourceUnit.localExport? ==
+      [(1, aliases.names), (2, [])])
+    "an empty metadata row was not retained by the complete source sequence"
   -- Removing the empty row leaves the public aliases above unchanged.
   match LinkedInput.checkSourceUnitCoverage decoded.nodes.size decoded.program [aliases] with
   | .error "unsupported omitted source node 2" => pure ()
@@ -152,11 +182,12 @@ private def checkRefused (j : Json) (expected : String) : IO Unit := do
 def main : IO UInt32 := do
   let line ← (← IO.getStdin).getLine
   let cases ← IO.ofExcept (Json.parse line >>= Json.getArr?)
-  unless cases.size == 11 do throw (IO.userError "expected nine real parsed sources and the authored spec and source")
+  unless cases.size == 12 do throw (IO.userError "expected parsed sources, the authored specs and source text")
   let specText ← IO.ofExcept cases[9]!.getStr?
   let sourceText ← IO.ofExcept cases[10]!.getStr?
+  let sparseSpecText ← IO.ofExcept cases[11]!.getStr?
   checkGraph cases[0]! specText sourceText
-  checkSparse cases[1]!
+  checkSparse cases[1]! sparseSpecText
   checkAliases cases[2]!
   checkInline cases[3]!
   checkDefault cases[4]!
