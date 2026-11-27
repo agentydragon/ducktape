@@ -541,6 +541,20 @@ lean_proof_test(
     deps = [":corejs_indexed_source_schedule"],
 )
 
+lean_library(
+    name = "corejs_source_row_order",
+    srcs = ["EsmSplit/CoreJS/SourceRowOrder.lean"],
+    deps = [":corejs_indexed_source_schedule"],
+)
+
+lean_proof_test(
+    name = "corejs_source_row_order_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SourceRowOrder"],
+    required_theorems = ["CoreJS.IndexedSourceSchedule.metadataOrderFromItems"],
+    deps = [":corejs_source_row_order"],
+)
+
 executable_test(
     name = "corejs_sparse_projected_order_test",
     src = "SparseProjectedOrderTest.lean",
