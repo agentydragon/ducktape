@@ -61,8 +61,8 @@
       "sha256": "WuDiyOsyPYXZreSv23he2yg5b3sZprJToh4TlkUV6tQ="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-983edc519e08/debundle",
-      "sha256": "mD7cUZ4IhzMnPAku6QORQXudF5fFfG9URLWvNELmFVY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-3b5bcdda5dc1/debundle",
+      "sha256": "O1vN2l3BNQ8Mw1QhIqzSV9BBbgCuAmAJOJ2bl2YmNFA="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-81a6e5b648f2/cluster_health.skill",
@@ -221,8 +221,8 @@
       "sha256": "HNpyTMjDP9ALu8zv7LgQhFqmpTTnBN/y3PgzGhM86l0="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-93c4b372a052/ci_latency.skill",
-      "sha256": "k8SzcqBSYHWKuEgI0jxasqYxN261IcD1lOZN4XHoRgk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-12d3bd91b080/ci_latency.skill",
+      "sha256": "EtO9kbCA0ORMxLqQVMZeoBoMxGeb+lGtvW54ptB3cs4="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-64e2b5617599/seaweed_operator.skill",
