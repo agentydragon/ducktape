@@ -161,6 +161,19 @@ def linkedLayoutBundle (asts units : Array Json) : Bundle :=
 def sourceBundle (nodes : Array Json) : EsmSplit.Bundle :=
   linkedLayoutBundle nodes (Effects.footprintUnits nodes)
 
+/-- An identifier default expression creates its own internal binding. Do not
+treat it as a named export of the operand, which would create a live alias. -/
+def isIdentifierDefault (node : Json) : Bool :=
+  Lower.typ node == "ExportDefaultDeclaration" && Lower.typ (Lower.fld node "declaration") == "Identifier"
+
+/-- Model the implicit binding in the footprint of the original executable
+export row. Its actual eager read, AST, and ordinal are unaffected. -/
+def snapshotSourceBundle (nodes : Array Json) : Bundle :=
+  ((sourceBundle nodes).zip nodes.toList).map fun (row, ast) =>
+    if isIdentifierDefault ast then
+      { row with defs := ["default"], exports := [("default", some "default")] }
+    else row
+
 /-- The entry module keeps the published interface and loads outside imports before the rest of the bundle. -/
 def entryPlacementProblem (B : Bundle) (S : Spec) (ast : Json) (i : Nat) : Option String :=
   let t := Lower.typ ast

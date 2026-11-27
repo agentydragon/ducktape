@@ -1671,7 +1671,9 @@ lean_library(
         ":corejs_checked_split",
         ":corejs_constructed_output",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_default_snapshot",
         ":corejs_indexed_exported_function",
+        ":corejs_indexed_hoisted_swap",
         ":corejs_indexed_inline_constructor",
         ":corejs_indexed_source_facts",
         ":corejs_linked_input",
@@ -1868,11 +1870,75 @@ test_runner(
     ],
 )
 
+lean_library(
+    name = "corejs_hoisted_adjacent_swap",
+    srcs = ["EsmSplit/CoreJS/HoistedAdjacentSwap.lean"],
+    deps = [
+        ":corejs_linked_behavior",
+        ":corejs_split",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_hoisted_adjacent_swap_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.HoistedAdjacentSwap"],
+    required_theorems = [
+        "CoreJS.HoistedAdjacentSwap.runUnit_funDecl",
+        "CoreJS.HoistedAdjacentSwap.runUnits_swap",
+        "CoreJS.HoistedAdjacentSwap.runProgram_eq",
+    ],
+    deps = [":corejs_hoisted_adjacent_swap"],
+)
+
+lean_library(
+    name = "corejs_indexed_hoisted_swap",
+    srcs = ["EsmSplit/CoreJS/IndexedHoistedSwap.lean"],
+    deps = [
+        ":corejs_constructed_output",
+        ":corejs_hoisted_adjacent_swap",
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_exported_function",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+        ":corejs_linked_pivot_check",
+        ":corejs_state_match",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_hoisted_swap_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedHoistedSwap"],
+    required_theorems = [
+        "CoreJS.IndexedHoistedSwap.Construction.checkReadback",
+        "CoreJS.IndexedHoistedSwap.checkBehavior",
+        "CoreJS.IndexedHoistedSwap.construct",
+    ],
+    deps = [":corejs_indexed_hoisted_swap"],
+)
+
+test_runner(
+    name = "acorn_hoisted_cycle_test_runner",
+    src = "AcornHoistedCycleTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":cli",
+        ":corejs_constructed_output",
+        ":corejs_indexed_hoisted_swap",
+        ":corejs_indexed_input_checks",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+        ":lowersplit_input",
+    ],
+)
+
 test_runner(
     name = "linked_input_test_runner",
     src = "LinkedInputTest.lean",
     visibility = [
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
     deps = [
@@ -3707,6 +3773,34 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_indexed_default_snapshot",
+    srcs = ["EsmSplit/CoreJS/IndexedDefaultSnapshot.lean"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_deployment_placement",
+        ":corejs_indexed_inline_constructor",
+        ":corejs_indexed_input_checks",
+        ":corejs_indexed_reorder",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+        ":corejs_plan_placement",
+        ":corejs_primitive_rhs",
+        ":corejs_syntax_match",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_default_snapshot_axioms_test",
+    modules = ["EsmSplit.CoreJS.IndexedDefaultSnapshot"],
+    required_theorems = [
+        "CoreJS.IndexedDefaultSnapshot.Construction.readbackGuarantees",
+        "CoreJS.IndexedDefaultSnapshot.construct",
+        "CoreJS.IndexedDefaultSnapshot.snapshotStep",
+    ],
+    deps = [":corejs_indexed_default_snapshot"],
+)
+
+lean_library(
     name = "corejs_indexed_exported_function",
     srcs = ["EsmSplit/CoreJS/IndexedExportedFunction.lean"],
     deps = [
@@ -3727,6 +3821,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.IndexedExportedFunction"],
     required_theorems = [
         "CoreJS.IndexedExportedFunction.construct",
+        "CoreJS.IndexedExportedFunction.Construction.linkedCaptures",
         "CoreJS.IndexedExportedFunction.Construction.readbackGuarantees",
     ],
     deps = [":corejs_indexed_exported_function"],
