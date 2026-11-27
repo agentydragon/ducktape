@@ -93,7 +93,7 @@ private theorem stmts_after_import_update (m : Module) (condition : Prop) [Decid
 order, independently of the order in which modules are evaluated. -/
 theorem mkPlan_module_ordered (B : Bundle) (S : Spec) {md : Module}
     (member : md ∈ (mkPlan B S).mods) : md.stmts.Pairwise (· < ·) := by
-  simp only [mkPlan, List.mem_map] at member
+  simp only [mkPlan, mkPlanWithImports, finishPlan, List.mem_map] at member
   obtain ⟨mid, ⟨base, ⟨spec, specIn, rfl⟩, rfl⟩, eq⟩ := member
   have same := congrArg Module.stmts eq
   rw [stmts_after_import_update] at same
