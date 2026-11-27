@@ -1,7 +1,7 @@
 //! Command output formatting and stdout emission.
 
 use anyhow::Result;
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use serde::Serialize;
 use std::io::{self, Write};
 
@@ -144,7 +144,7 @@ pub fn write_ndjson_list<T: Serialize, W: Write + ?Sized>(
 mod tests {
     use super::{ReportOutputError, write_ndjson_list, write_report};
     use anyhow::{Result, bail};
-    use peel::OutputFormat;
+    use peel::output_format::OutputFormat;
     use serde::Serialize;
     use std::io::{self, ErrorKind, Write};
 

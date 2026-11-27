@@ -8,7 +8,7 @@ use transform_command::TransformArgs;
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, ValueEnum};
 use graph_provenance::{CurrentRoots, GraphProvenance, sha256};
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use pipeline::{ContractAudit, ContractProbeOutcome};
 use serde::{Deserialize, Serialize};
 use spec::{ChunkExportPurity, RetainedCallbackSignature};

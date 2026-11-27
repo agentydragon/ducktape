@@ -10,7 +10,7 @@ use artifact::{
     ArtifactIndexes, ChunkArtifact, ChunkBundle, ImportReferenceKind, ResolvedImportReference,
 };
 use clap::Args;
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use prepare_chunks::prepare_js_chunks;
 use serde::Serialize;
 use std::io::Write;

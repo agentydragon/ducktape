@@ -104,7 +104,7 @@ pub struct GraphEditArgs {
     pub import_order: Option<PathBuf>,
     /// Output format. Default text on tty, JSON on pipe.
     #[arg(long, value_enum)]
-    pub format: Option<peel::OutputFormat>,
+    pub format: Option<peel::output_format::OutputFormat>,
 }
 impl GraphEditArgs {
     pub fn edits_with_graph(&self) -> bool {
