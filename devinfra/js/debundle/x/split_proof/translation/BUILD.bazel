@@ -432,6 +432,21 @@ js_test(
 )
 
 js_test(
+    name = "iterator_close_boundary_test",
+    data = [
+        ":parser",
+        "//devinfra/js/debundle/x/split_proof:corejs",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "iterator_close_boundary_test.mjs",
+    env = {
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof:corejs)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+    },
+)
+
+js_test(
     name = "corejs_ast_lowering_test",
     timeout = "long",
     data = [
