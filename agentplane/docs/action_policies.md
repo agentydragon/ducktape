@@ -45,7 +45,7 @@ takes the human path. A set has no deny form; see [Rejected](#rejected) for the 
 effective policy is the union of the bindings' sets. An expired binding is equivalent to an absent
 one: the Policy Controller deletes it at `expiresAt`. A subject is every caller proving that account, so bind only an
 account dedicated to one workload. No caller-controlled field selects a binding: subjects resolve
-from the authenticated workload principal or the Connection's ServiceAccount, never from a claimed
+from the authenticated workload principal or the Connection's bound Identity, never from a claimed
 Thread ID or type.
 
 ## Ownership

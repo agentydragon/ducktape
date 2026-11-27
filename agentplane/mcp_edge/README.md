@@ -63,14 +63,6 @@ stream write to clear transport backpressure at five seconds; an exceeded bound 
 stream without another frame. This bound does not guarantee when a queued frame reaches the peer.
 Tool arguments never name the caller Identity.
 
-Existing Connections bound to a ServiceAccount are retained for history but paused by the schema
-migration. No same-name Identity is inferred and no old bearer resolves until an operator explicitly
-rebinds the Connection to a live Identity. The migration retains Connection and grant IDs, consent
-and audit facts, revocation status, and the original ServiceAccount attribution. A rollback to an
-old image does not restore authority: the retained `bound_caller` column is NULL and constrained
-against old-writer updates. Recovery after rollback requires a reviewed forward migration/rebind;
-there is no ServiceAccount fallback.
-
 ## Deployment contract
 
 `AGENTPLANE_MCP_EDGE_CONFIG_FILE` names the complete YAML settings file. It is the only environment

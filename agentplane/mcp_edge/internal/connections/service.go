@@ -135,13 +135,9 @@ func connectionView(c connection) (*pb.Connection, error) {
 		Id: c.id.String(), DisplayName: c.displayName, Version: c.version,
 		CreatedAt: timestamppb.New(c.createdAt), UpdatedAt: timestamppb.New(c.updatedAt),
 	}
-	if c.legacyBoundCaller != nil {
-		view.LegacyBoundCaller = serviceAccount(*c.legacyBoundCaller)
-	}
 	if c.boundIdentity != nil {
 		view.BoundIdentity = identityRef(*c.boundIdentity)
 	}
-	view.IdentityBindingRequired = c.identityBindingRequired
 	for _, g := range c.grants {
 		grantStatus, known := grantStatuses[g.status]
 		if !known {
