@@ -103,15 +103,20 @@ private def outputModule (sourceEntry : Module) (plan : EsmSplit.Plan)
     exports := module.exports ++ (if module.name == plan.entry then sourceEntry.exports else []) }
 
 
-/-- The normalized source imports exactly one named cell. The caller uses this
-same route and reads it from the raw entry file's directory. -/
+/-- The normalized source may import one provider cell under several local
+names. The caller uses this route to read the provider beside the raw entry. -/
 def providerRequest (source : LinkedInput.DecodedSource) : Except String Import := do
-  let [request] := source.source.imports | throw "expected one static import declaration"
-  let [_] := request.names | throw "expected one named provider import"
+  let request :: rest := source.source.imports | throw "expected a static import declaration"
+  unless rest.all (fun other => other.source == request.source) do
+    throw "expected imports from one provider"
+  let names := source.source.imports.flatMap (·.names)
+  let (exported, _) :: _ := names | throw "expected a named provider import"
+  unless names.all (fun (name, _) => name == exported) do
+    throw "expected imports of one provider export"
   unless EsmSplit.safeModulePath request.source && request.source.endsWith ".mjs" &&
       request.source != source.source.name do
     throw "expected a distinct relative .mjs provider"
-  return request
+  return { request with names }
 
 /-- Import metadata has no executable ID, but like an export row it must still
 account for its own original ordinal. No other omitted source items are allowed. -/
@@ -156,7 +161,7 @@ owner. Valid then proves that every original ordinal has its authored owner. -/
 def construct (source : LinkedInput.DecodedSource) (provider : AuthenticatedSource.IndexedSource)
     (request : EsmSplit.Spec) : Except String (Construction source provider request) := do
   let imported ← providerRequest source
-  let [(exported, _)] := imported.names | throw "expected one named provider import"
+  let (exported, _) :: _ := imported.names | throw "expected a named provider import"
   unless imported.source == provider.source.name && provider.source.imports.isEmpty do
     throw "provider does not match the one closed source dependency"
   unless source.source.name == request.entry && request.sequential && !request.privateEntryBody do
