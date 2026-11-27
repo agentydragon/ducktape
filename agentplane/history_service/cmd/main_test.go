@@ -334,9 +334,10 @@ func awaitHealth(t *testing.T, watch healthpb.Health_WatchClient, want healthpb.
 func TestTheServiceReportsServingOnceItsFoldRuns(t *testing.T) {
 	service := start(t, nil)
 	awaitHealth(t, watchHealth(callContext(t), t, service, projection.FoldHealthService), healthpb.HealthCheckResponse_SERVING)
-	if health, err := service.health.Check(t.Context(), &healthpb.HealthCheckRequest{}); err != nil || health.GetStatus() != healthpb.HealthCheckResponse_SERVING {
-		t.Errorf("overall health: %v, %v", health, err)
-	}
+	// The overall status also waits for the Identity view, which a test's stub reports current at once.
+	ctx, cancel := context.WithCancel(callContext(t))
+	defer cancel()
+	awaitHealth(t, watchHealth(ctx, t, service, ""), healthpb.HealthCheckResponse_SERVING)
 }
 
 func TestTheServiceReportsNotServingWhenToldToStop(t *testing.T) {

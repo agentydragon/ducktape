@@ -1,0 +1,23 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "policy_controller_process",
+    srcs = ["policy_controller_process.py"],
+    data = ["//agentplane/policy_controller/cmd:policy-controller"],
+    deps = [
+        "//agentplane/net/peertls:config",
+        "//agentplane/policy_controller:settings",
+        "//agentplane/testing:go_process",
+        "//agentplane/testing:tls",
+        "//devinfra/testing:undeclared_outputs",
+        "//util:net",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
+    ],
+)

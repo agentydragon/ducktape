@@ -12,6 +12,7 @@ _TEST_VISIBILITY = [
     "//agentplane/env/e2e:__subpackages__",
     "//agentplane/grpc:__pkg__",
     "//agentplane/history_service/testing:__pkg__",
+    "//agentplane/policy_controller/testing:__pkg__",
     "//agentplane/session_dispatcher:__subpackages__",
     "//agentplane/sandboxes:__subpackages__",
     "//agentplane/system_tests:__subpackages__",

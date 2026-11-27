@@ -28,7 +28,6 @@ from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settings import IngressSettings, Settings
-from agentplane.history_service.testing.fake_policy_service import fake_policy_service
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
     APP_URI,
@@ -38,6 +37,7 @@ from agentplane.net.peertls.config import (
     ClientTLS,
     PolicyServicePeer,
 )
+from agentplane.policy_controller.testing.policy_controller_process import policy_controller
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, GrpcHealth, go_process
@@ -372,8 +372,14 @@ async def go_history_service(
         listeners = services.enter_context(ExitStack())
         reader_listener = listeners.enter_context(listen_tcp())
         svid_ca = svid_ca or make_ca("history test services")
-        policy_target = await services.enter_async_context(
-            fake_policy_service(api, namespace=policy_namespace, ca=svid_ca, directory=directory / "policy-tls")
+        policy_service = await services.enter_async_context(
+            policy_controller(
+                api.kubeconfig,
+                policy_namespace=policy_namespace,
+                ca=svid_ca,
+                directory=directory / "policy-tls",
+                client_uri=HISTORY_SERVICE_URI,
+            )
         )
         config = directory / "history-service.yaml"
         reader_fd = reader_listener.socket.fileno()
@@ -412,16 +418,7 @@ async def go_history_service(
         )
         settings = Settings(
             reader_service_callers=frozenset({APP_URI, CENTRAL_SAMPLER_URI}),
-            policy_service=PolicyServicePeer(
-                target=policy_target,
-                tls=ClientTLS(
-                    ca_file=ca_file,
-                    server_uri=POLICY_CONTROLLER_URI,
-                    cert_file=server_cert,
-                    key_file=server_key,
-                    client_uri=HISTORY_SERVICE_URI,
-                ),
-            ),
+            policy_service=policy_service,
             request_timeout_s=10,
             rpc=rpc,
             kubeconfig=api.kubeconfig,

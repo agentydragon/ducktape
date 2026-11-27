@@ -22,9 +22,9 @@ from agentplane.environments.testing.environment_service_process import (
 )
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls import config as runtime_transport
+from agentplane.policy_controller.testing.policy_controller_process import policy_controller
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.settings import Settings
-from agentplane.session_dispatcher.testing.policy_service import serve_identities
 from agentplane.testing.go_process import (
     GoProcess,
     GrpcHealth,
@@ -186,12 +186,12 @@ async def run_gateway(
                 directory.mkdir()
                 service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
             policy_service = await listeners.enter_async_context(
-                serve_identities(
+                policy_controller(
                     kubeconfig,
-                    namespace,
+                    policy_namespace=namespace,
                     ca=environment_runtime_ca,
-                    ca_file=environment_runtime_ca_file,
-                    directory=settings_directory,
+                    directory=settings_directory / "policy-controller",
+                    client_uri=runtime_transport.GATEWAY_SESSIONS_URI,
                 )
             )
             effective_settings = Settings(
