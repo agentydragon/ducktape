@@ -34,7 +34,9 @@ explain which findings were confirmed, superseded, resolved, or deferred.
 
 Choose an explicit UTC window, normally seven recent days initially, and pin the
 inspected devel SHA. Record repository, branches, workflow filters, collection time,
-and missing coverage. Keep mainline invocations, PR runs, and selected retry examples
+and missing coverage. The cluster's stored GitHub webhooks hold every job attempt and
+conclusion per head SHA; [CDviz recipes](references/cdviz.md) list failed gates that later
+passed on the same head as rerun-recovery leads. Keep mainline invocations, PR runs, and selected retry examples
 as separate populations. Expand the window when low counts limit conclusions.
 
 Use the `action_report` skill to plan and edit the dashboard.

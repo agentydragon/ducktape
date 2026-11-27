@@ -127,8 +127,5 @@ theorem helper_closed {source bundle request} (boundary : Boundary source bundle
     (Func.mk boundary.helper .normal false [] [.ret (.num boundary.literal)]).free = [] := by
   rfl
 
-#print axioms check
-#print axioms helper_not_exported
-#print axioms helper_closed
 
 end CoreJS.ClosedHelperBoundary

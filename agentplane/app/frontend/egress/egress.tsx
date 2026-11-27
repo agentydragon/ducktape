@@ -9,7 +9,6 @@ import { decisionAt, decisionOutcome, decisionReason, type DecisionGroup, groupD
 import { followWatch } from "../transport/watch_stream";
 import { type StreamConnection } from "../transport/stream_reader";
 import { useStreamStatus } from "../transport/stream_status";
-import type { ServiceAccount } from "../../../proto/identity_pb";
 
 /** The groups whose requests are listed, comma-separated; a group key has no comma in it. */
 const GROUPS_PARAM = "decision_groups";
@@ -213,9 +212,9 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
   );
 }
 
-/** Complete recent windows for the observed execution account. */
-function useEgressDecisions(account: ServiceAccount): { decisions: Decision[] | null; connection: StreamConnection } {
-  const { namespace, name } = account;
+/** Complete recent windows for the Identity, which span every Sandbox and incarnation that has used it. */
+function useEgressDecisions(identity: string): { decisions: Decision[] | null; connection: StreamConnection } {
+  const query = new URLSearchParams({ "filter.identity.name": identity }).toString();
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
   const [connection, setConnection] = useState<StreamConnection>({ phase: "connecting", since: Date.now() });
   useEffect(() => {
@@ -233,7 +232,6 @@ function useEgressDecisions(account: ServiceAccount): { decisions: Decision[] | 
         })
       );
     };
-    const query = new URLSearchParams({ "filter.subject.namespace": namespace, "filter.subject.name": name });
     const stop = followWatch(`/upstream/egress/v1/decisions:watch?${query}`, {
       initialFrameTimeoutMs: 5000,
       idleTimeoutMs: 45_000,
@@ -278,23 +276,24 @@ function useEgressDecisions(account: ServiceAccount): { decisions: Decision[] | 
       active = false;
       stop();
     };
-  }, [namespace, name]);
-  useStreamStatus(`Egress decisions of ${namespace}/${name}`, connection);
+  }, [query]);
+  useStreamStatus(`Egress decisions of Identity ${identity}`, connection);
   return { decisions, connection };
 }
 
-/** The current execution account's recent Egress decisions. */
-export function EgressLog({ account, sandbox }: { account: ServiceAccount; sandbox: string }): JSX.Element {
-  const { decisions, connection } = useEgressDecisions(account);
+/** The Identity's recent Egress decisions: the whole Identity's, not only one Sandbox's. */
+export function EgressLog({ identity }: { identity: string }): JSX.Element {
+  const { decisions, connection } = useEgressDecisions(identity);
   return (
     <Stack gap="xs">
       <Title order={5}>Recent decisions</Title>
       <Text size="xs" c="dimmed">
-        ServiceAccount {account.namespace}/{account.name}; may include earlier Sandbox incarnations.
+        Requests made as Identity {identity}, not only this Sandbox&apos;s: includes every Sandbox using it and earlier
+        incarnations.
       </Text>
       {connection.phase === "reconnecting" && (
         <Text size="sm" c="dimmed">
-          Egress decisions for {sandbox} are unavailable. Reconnecting…
+          Egress decisions for Identity {identity} are unavailable. Reconnecting…
         </Text>
       )}
       {decisions !== null && <DecisionsTable decisions={decisions} />}

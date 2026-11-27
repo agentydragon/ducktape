@@ -176,11 +176,5 @@ theorem rows_same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSpli
     rw [after]
     rfl
 
-#print axioms rows_same_exports_of_order_kept
-#print axioms source_decl_bindings
-#print axioms source_decl_allocation
-#print axioms source_allocation
-#print axioms declarations_same_exports_of_order_kept
-#print axioms same_exports_of_order_kept
 
 end CoreJS.IndexedConstLink

@@ -88,8 +88,5 @@ theorem checkOutput_sound {source : Program} {request : EsmSplit.Spec} {placemen
     (same : decoded = built.val) : ResolvedPlacement.Sound placement requested decoded :=
   same ▸ built.property
 
-#print axioms construct
-#print axioms construct_sound
-#print axioms checkOutput_sound
 
 end CoreJS.SparseCheckedSplit

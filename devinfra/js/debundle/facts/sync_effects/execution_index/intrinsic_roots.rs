@@ -297,15 +297,7 @@ pub(super) fn intrinsic_roots(
 }
 
 pub(super) fn intrinsic_alternative_can_be_unknown(value: &ValueExpr) -> bool {
-    !matches!(
-        value,
-        ValueExpr::Undefined
-            | ValueExpr::NonCallable(_)
-            | ValueExpr::Primitive(_)
-            | ValueExpr::StrictEquality(..)
-            | ValueExpr::LogicalNot(_)
-            | ValueExpr::Void(_)
-    )
+    !value.cannot_denote_an_object()
 }
 
 pub(super) fn intrinsic_roots_read(

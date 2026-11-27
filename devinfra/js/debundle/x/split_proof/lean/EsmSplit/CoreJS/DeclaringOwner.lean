@@ -38,6 +38,5 @@ theorem declared_in_original_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P 
     have names : owner.name = md.name := by simpa using mdClaim
     simp [names]
 
-#print axioms declared_in_original_owner
 
 end CoreJS.DeclaringOwner

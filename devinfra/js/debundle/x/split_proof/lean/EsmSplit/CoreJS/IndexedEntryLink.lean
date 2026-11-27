@@ -68,8 +68,6 @@ theorem sorted_initFunctions_consts (linked : List (Module × Env))
   obtain ⟨name, init, shape⟩ := allConst u member
   exact ⟨.const, name, init, shape⟩
 
-#print axioms indexed_initFunctions_declarations
-#print axioms indexed_initFunctions_consts
 
 /-- The indexed constructor's real linker constructs scopes for every loaded
 module from source/plan validity and source frames, without testing a candidate
@@ -106,8 +104,6 @@ theorem indexed_const_scopes_and_init {body : List (Nat × Stmt)} {B : EsmSplit.
   obtain ⟨linked, linkedScopes⟩ := indexed_scopes_success valid footprints complete frameNames sourceBody
   exact ⟨linked, linkedScopes, indexed_initFunctions_consts linkedScopes sourceConsts⟩
 
-#print axioms indexed_const_scopes_and_init
-#print axioms indexed_scopes_success
 
 /-- The depth-first module schedule always includes the requested entry,
 even when its dependencies contain cycles. -/
@@ -187,12 +183,6 @@ theorem singleton_source_regions {program : Program} {source : Module}
     program.regions = (source.body.map fun row => row.1 + 1).foldl max 0 := by
   simp [Program.regions, singleton]
 
-#print axioms import_free_source_tops
-#print axioms singleton_source_regions
-#print axioms import_free_entry_loaded
-#print axioms import_free_entry_scopes
-#print axioms entry_in_evalOrder
-#print axioms loaded_entry_find
 
 /-- An import-free source with declaration-only body has no link-time function
 hoists in its actual singleton scope list. -/
@@ -217,8 +207,6 @@ theorem source_const_init {source : Module} {frames : List (Nat × List (Name ×
   obtain ⟨name, init, shape⟩ := sourceConsts p member
   exact ⟨.const, name, init, shape⟩
 
-#print axioms source_decl_init
-#print axioms source_const_init
 
 /-- The actual linker returns the constructed scope list in the post-allocation
 state when identity checking succeeds and the const-unit hoist phase is inert.
@@ -240,7 +228,6 @@ theorem link_after_const_allocation {program : Program} {body : List (Nat × Stm
   rw [init]
   rfl
 
-#print axioms link_after_const_allocation
 
 /-- A failure of the shared declaration pass propagates through the actual
 linker unchanged. This includes throws, unknown results, and fuel exhaustion. -/
@@ -258,7 +245,6 @@ theorem link_allocation_failure {program : Program} {body : List (Nat × Stmt)} 
   simp only [M.bind_apply, checked]
   cases allocated : declareTops body start <;> simp [allocated, M.bind_apply]
 
-#print axioms link_allocation_failure
 
 /-- Selecting an entry from the actual list returned by `Program.scopes`
 selects the same first named module as the loaded-module list and pairs it
@@ -543,14 +529,5 @@ theorem row_link_outcomes_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bu
     rw [candidateRegions, sourceFail, targetFail]
     trivial
 
-#print axioms row_link_outcomes_from_plan
-#print axioms row_actual_links_from_allocation
-#print axioms row_resolved_from_plan
-#print axioms row_resolved_entries
-#print axioms export_pairs_equal
-#print axioms resolved_entries_equal
-#print axioms scopes_find
-#print axioms initFunctions_consts
-#print axioms sorted_initFunctions_consts
 
 end CoreJS.IndexedEntryLink

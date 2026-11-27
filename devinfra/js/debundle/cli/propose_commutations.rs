@@ -29,7 +29,7 @@ use graph::{
     PremiseVerdict, SequencedCause, SourceUnitReport,
 };
 use graph_provenance::VerifiedGraphSourceContext;
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use petgraph::algo::{is_cyclic_directed, tarjan_scc};
 use petgraph::graphmap::DiGraphMap;
 use petgraph::visit::EdgeFiltered;

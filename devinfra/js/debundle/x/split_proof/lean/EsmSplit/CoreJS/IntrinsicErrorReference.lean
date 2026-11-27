@@ -230,14 +230,5 @@ theorem productionStillUnknown (fuel : Nat) (s : State W)
       .unknown "host function %Error% is constructed" s :=
   StackReadBoundary.errorConstructionUnknown fuel s constructor
 
-#print axioms successHasOrigin
-#print axioms unsupportedHasNoOrigin
-#print axioms aliasAllocation
-#print axioms shadowRejected
-#print axioms lookalikeRejected
-#print axioms alternateTargetRejected
-#print axioms hostThrowRetained
-#print axioms prototypeThrowRetained
-#print axioms productionStillUnknown
 
 end CoreJS.IntrinsicErrorReference

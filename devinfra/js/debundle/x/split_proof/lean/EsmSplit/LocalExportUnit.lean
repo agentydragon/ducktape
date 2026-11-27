@@ -73,9 +73,5 @@ theorem LocalExportUnit.local_use_and_public {unit : LocalExportUnit} {B : Bundl
   exact ⟨List.mem_map.mpr ⟨(publicName, localName), pair, rfl⟩,
     List.mem_map.mpr ⟨(publicName, localName), pair, rfl⟩⟩
 
-#print axioms LocalExportUnit.local_use_and_public
-#print axioms LocalExportUnit.exact_footprint
-#print axioms LocalExportUnit.footprint_matches
-#print axioms LocalExportUnit.matched_local_use_and_public
 
 end EsmSplit

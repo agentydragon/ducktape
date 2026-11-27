@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use graph_provenance::VerifiedGraphSourceContext;
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use spec::LogicalModule;
 use spec::member_selectors::MemberSelectorSpec;
 use spec_modules::{

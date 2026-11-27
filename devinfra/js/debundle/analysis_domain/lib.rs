@@ -2,7 +2,9 @@
 //! item views, lazy/eager position tracking, whole-chunk dynamic scope, the
 //! builtin summary table, primitive operator results, intrinsic-slot
 //! integrity, chunk-top allocation roots and the TypeScript enum IIFE shape.
-//! Nothing here depends on statement facts, value flow or purity.
+//! Nothing here depends on statement facts, value flow or purity. Matching a
+//! `ModuleItem` down to the declaration it carries belongs to `js_ast`, whose
+//! item views this crate calls instead of restating the item shapes.
 
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 

@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.ExportRows
 import EsmSplit.CoreJS.IndexedEntryLink
+import EsmSplit.CoreJS.OrderedRegion
 import EsmSplit.PlanGlue
 
 /-! Link the actual indexed constructor's complete public surface from
@@ -180,6 +181,49 @@ theorem rows_resolved_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle
     obtain ⟨a, b, original, _, present⟩ := agree pair member
     exact ⟨a, b, original, present⟩
 
+/-- Derive the live export table for an ordered indexed plan from a successful
+source link. Scope agreement fixes function initialization as well as the
+scopes of executable units, so this also covers source links that hoist
+functions. No candidate link is run to check the result. -/
+theorem rows_same_exports_from_source_link {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (sourceTops : sourceProgram.tops = body)
+    (targetTops : (splitProgramIndexed body B P).tops = body)
+    (regions : sourceProgram.regions = (splitProgramIndexed body B P).regions)
+    (scopesAgree : ScopesAgree sourceProgram (splitProgramIndexed body B P))
+    (sourceLinks : ∀ w, LinkedBehavior.CheckedLink sourceProgram w)
+    {rows : List EsmSplit.LocalExportUnit} (sourceRows : SourceRows source rows)
+    {owner : EsmSplit.Module} (planEntry : P.find P.entry = some owner)
+    (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
+    (orderedRows : owner.stmts.filterMap (rowAt rows) = rows) (noGlue : owner.exports = [])
+    (sourceDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    LinkedBehavior.SameExports sourceProgram (splitProgramIndexed body B P) := by
+  intro w
+  let before := sourceLinks w
+  obtain ⟨_, frames, _, after, allocated, sourceScope, targetScope, _, _, _⟩ :=
+    OrderedRegion.matching_link_with_frames regions (sourceTops.trans targetTops.symm) scopesAgree before
+  rw [sourceTops] at allocated
+  obtain ⟨targetLinked, table, targetScopes, _, sourceTable, targetTable, _⟩ :=
+    rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind
+      sourceRows planEntry unitMatches orderedRows noGlue sourceDefs
+  have sourceLinked := Except.ok.inj (sourceScope.symm.trans
+    (IndexedEntryLink.import_free_entry_scopes sourceFind sourceImports frames))
+  have targetLinkedEq : after.linked = targetLinked := Except.ok.inj (targetScope.symm.trans targetScopes)
+  refine ⟨table, table, ?_, ?_, List.Perm.refl _⟩
+  · rw [LinkedBehavior.exports, before.equation]
+    change (EntryExports.resolve sourceProgram.entry before.linked).toOption = some table
+    rw [sourceLinked, sourceTable]
+    rfl
+  · rw [LinkedBehavior.exports, after.equation]
+    change (EntryExports.resolve (splitProgramIndexed body B P).entry after.linked).toOption = some table
+    rw [targetLinkedEq, targetTable]
+    rfl
+
+#print axioms rows_same_exports_from_source_link
+
 /-- The actual planner's consumed-name check supplies the common no-glue
 premise for terminal and interior rows. Source-row provenance, complete unit
 footprints, and the original order of metadata rows remain explicit premises;
@@ -210,13 +254,5 @@ theorem rows_resolved_from_mkPlan {body : List (Nat × Stmt)} {B : EsmSplit.Bund
   rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind sourceRows
     planEntry unitMatches orderedRows (EsmSplit.PlanGlue.mkPlan_no_extra_glue planEntry covered) sourceDefs
 
-#print axioms rowAt_some
-#print axioms selected_row
-#print axioms row_alias_live_cell
-#print axioms rows_scope_cells
-#print axioms rows_resolved_from_plan
-#print axioms rows_resolved_from_mkPlan
-#print axioms indexed_module_dense
-#print axioms indexed_program_dense
 
 end CoreJS.ExportRows

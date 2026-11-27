@@ -1,7 +1,7 @@
 //! Minified/readable names through real graph production and query commands.
 
 use debundle_e2e_graph_support::GraphFixture;
-use peel::resolve_binding_source_units;
+use peel::selection::resolve_binding_source_units;
 use serde_json::json;
 
 #[test]

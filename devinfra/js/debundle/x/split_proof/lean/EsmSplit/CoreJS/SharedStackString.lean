@@ -153,11 +153,5 @@ theorem isolatedSurrogateRefused (state : State W) :
     fromW .illFormedString state =
       .unknown "the world gives a string containing an isolated UTF-16 surrogate" state := rfl
 
-#print axioms movedWrite
-#print axioms mutantLookup
-#print axioms mutantDistinguished
-#print axioms protoKeyExample
-#print axioms overrideThrows
-#print axioms isolatedSurrogateRefused
 
 end CoreJS.SharedStackString

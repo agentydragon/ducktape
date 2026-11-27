@@ -138,8 +138,5 @@ theorem verify_sound {original files source request requested} {placement : Spar
     {proof : PLift (Verified original files built plan)} (_accepted : verify original files built plan = .ok proof) :
     Verified original files built plan := proof.down
 
-#print axioms prepare
-#print axioms verify
-#print axioms verify_sound
 
 end EsmSplit.LowerSplit.SparseArtifact

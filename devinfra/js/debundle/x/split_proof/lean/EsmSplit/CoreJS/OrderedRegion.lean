@@ -34,12 +34,18 @@ theorem planned_scopes (ss : List Stmt) (bundle : EsmSplit.Bundle) (spec : EsmSp
     ScopesAgree (Program.single ss) (splitProgram ss bundle (EsmSplit.mkPlan bundle spec)) :=
   split_scopes_agree valid footprints ordered
 
-/-- Given the real source link, scope agreement constructs the real split link
-with exactly the same state after hoisting and the same captured schedule. -/
-theorem matching_link {source candidate : Program} {w : World}
+/-- The source allocation frames are shared by the two links. The caller can
+use them to prove that public names resolve to the same cells even when
+hoisting changes the state after declaration allocation. -/
+theorem matching_link_with_frames {source candidate : Program} {w : World}
     (regions : source.regions = candidate.regions) (tops : source.tops = candidate.tops)
     (scopes : ScopesAgree source candidate) (before : CheckedLink source w) :
-    ∃ after : CheckedLink candidate w, before.ready = after.ready ∧
+    ∃ (start : State w) (frames : List (Nat × List (Name × Addr))) (allocated : State w)
+        (after : CheckedLink candidate w),
+      declareTops source.tops start = .ok frames allocated ∧
+      source.scopes frames source.loaded = .ok before.linked ∧
+      candidate.scopes frames candidate.loaded = .ok after.linked ∧
+      before.ready = after.ready ∧
       SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
       captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked) := by
   have linked : ((do
@@ -76,10 +82,25 @@ theorem matching_link {source candidate : Program} {w : World}
     rw [M.bind_apply, initialized, sameState]
     rfl
   let after : CheckedLink candidate w := ⟨L', before.ready, afterLink⟩
-  refine ⟨after, rfl, ?_, ?_⟩
+  refine ⟨afterCheck, frames, afterDeclare, after, declared, ?_, candidateScope, rfl, ?_, ?_⟩
+  · simpa [← sourceLinked] using sourceScope
   · simpa [after, ← sourceLinked] using same
   · apply sameUnits_capture
     simpa [after, ← sourceLinked] using same
+
+/-- Given the real source link, scope agreement constructs the real split link
+with exactly the same state after hoisting and the same captured schedule. -/
+theorem matching_link {source candidate : Program} {w : World}
+    (regions : source.regions = candidate.regions) (tops : source.tops = candidate.tops)
+    (scopes : ScopesAgree source candidate) (before : CheckedLink source w) :
+    ∃ after : CheckedLink candidate w, before.ready = after.ready ∧
+      SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
+      captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked) := by
+  obtain ⟨_, _, _, after, _, _, _, ready, same, captured⟩ :=
+    matching_link_with_frames regions tops scopes before
+  exact ⟨after, ready, same, captured⟩
+
+#print axioms matching_link_with_frames
 
 /-- The authored source/spec checks imply the actual links agree, and hence
 every bounded result agrees, including throws, unknowns and fuel exhaustion. -/
@@ -126,11 +147,5 @@ theorem planned_runs_with_exports (ss : List Stmt) (bundle : EsmSplit.Bundle) (s
   rw [runProgram_singleModuleMetadata _ (zip_range_sorted ss) name exports w fuel]
   exact planned_runs ss bundle spec valid footprints ordered w fuel
 
-#print axioms sameUnits_capture
-#print axioms planned_scopes
-#print axioms matching_link
-#print axioms planned_link
-#print axioms planned_runs
-#print axioms planned_runs_with_exports
 
 end CoreJS.OrderedRegion

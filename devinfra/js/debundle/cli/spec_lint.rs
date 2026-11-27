@@ -23,7 +23,7 @@ use anyhow::{Context, Result, ensure};
 use clap::Args as ClapArgs;
 use command_output::write_report;
 use output_layout::SPEC_LINT_REPORT;
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use pipeline::{AnnotationProbe, AnnotationProbeRun};
 use serde::Serialize;
 use serde_json::Value;

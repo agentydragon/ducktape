@@ -8,7 +8,7 @@ use clap::{Args as ClapArgs, Subcommand};
 use command_output::{infallible, write_report};
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use resolved_placement::{ResolvePlacementArgs, ResolvePlacementsArgs};
 use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
 

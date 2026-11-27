@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Args;
-use peel::OutputFormat;
 use peel::assignment::{AssignmentPlan, SourceUnitAssignment};
+use peel::output_format::OutputFormat;
 use serde_json::from_slice;
 use spec::ModulePath;
 

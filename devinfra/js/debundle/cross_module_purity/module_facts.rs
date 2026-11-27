@@ -9,12 +9,13 @@ use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::value::Value;
 use anyhow::{Context, Result, bail};
 use js_ast::SourceLineIndex;
+use js_ast::item_var_decl;
 #[cfg(test)]
 use purity::ChunkCodeGraph;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Spanned;
-use swc_ecma_ast::{Decl, Expr, Lit, ModuleDecl, ModuleItem, Pat, Stmt};
+use swc_ecma_ast::{Expr, Lit, ModuleItem, Pat};
 use value_flow::ChunkValueFlow;
 use value_flow::program_bindings::{ModuleBindings, ResolvedImport, SourceModuleKey};
 
@@ -59,17 +60,6 @@ pub(super) struct PreparationOptions {
     pub(super) collect_imported_array_write_sites: bool,
 }
 
-fn var_decl_for_source_item(item: &ModuleItem) -> Option<&swc_ecma_ast::VarDecl> {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
-            Decl::Var(var) => Some(var),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 fn selected_array_declarator<'a>(
     module: &'a ModulePurityFacts<'_>,
     declaration: &analysis_vocabulary::inputs::SourceDeclaration,
@@ -79,7 +69,7 @@ fn selected_array_declarator<'a>(
         .body
         .get(declaration.body_index)
         .ok_or_else(|| anyhow::anyhow!("{request} selects a missing module item"))?;
-    let var = var_decl_for_source_item(item).ok_or_else(|| {
+    let var = item_var_decl(item).ok_or_else(|| {
         anyhow::anyhow!("{request} must select a direct var/let/const declaration")
     })?;
     let mut matching_declarators =

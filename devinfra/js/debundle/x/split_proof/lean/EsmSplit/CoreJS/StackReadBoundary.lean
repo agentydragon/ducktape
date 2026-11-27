@@ -167,14 +167,5 @@ theorem engineErrorReadUnknown (call : Call W) (state : State W) (message : Stri
     getProp call (.error .type message) (.str "stack") state =
       .unknown "a property of an engine error" state := rfl
 
-#print axioms getPropAt
-#print axioms twoReadsAt
-#print axioms evalReadAt
-#print axioms receiverThrow
-#print axioms evalReceiverEffect
-#print axioms sampleReached
-#print axioms overrideRetained
-#print axioms errorConstructionUnknown
-#print axioms engineErrorReadUnknown
 
 end CoreJS.StackReadBoundary

@@ -1907,8 +1907,8 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   [purity_soundness.md § Declared purity](purity_soundness.md#declared-purity--spec-trust-contracts).
   The validator does not re-verify the body; an incorrect annotation
   produces a buggy debundle, so soundness shifts to the spec author.
-  Under `initializer_purity`, direct eager reads and callback-body read
-  dependencies remain in the dependency graph.
+  Under `initializer_purity`, direct eager reads and unresolved
+  callback-body reads remain graph dependencies.
 
   `chunk_export_purity.<chunk>.pure_exports` is the cross-module form
   of the same contract, addressed to the **defining** chunk rather than
@@ -2521,7 +2521,7 @@ not the module level. A large SCC closing through one
 constraining `(mod_A, mod_B)` edge surfaces as "binding `a` in
 `mod_A` reads binding `b` in `mod_B` at-init; move them together,"
 not "you have a cycle of many modules." See
-[validation.rs::render_cycle_summary](../validation.rs) for the
+[`render_cycle_summary`](../validation/render.rs) for the
 binding-pair blame format.
 
 ### Corollary: the role of the validator
@@ -3234,7 +3234,7 @@ debundler normally does not rewrite program structure. Lazy read edges still emi
 Pass 2 checks whether the remaining graph admits a valid concrete import
 schedule.
 
-`render_cycle_summary` (<../validation.rs>) names the binding pairs to
+`render_cycle_summary` (<../validation/render.rs>) names the binding pairs to
 colocate, per blocking SCC.
 
 ## Architecture
@@ -3423,7 +3423,7 @@ adapter's only answer. The application adapter accepts only a root expression
 statement (`roots/operands.rs` admits `binding = value`). The binding must be
 an unimported, non-`const` binding that is initialized at the prefix (or a
 `var`), that no closure body reads or writes anywhere (including after an
-`await`, which `CallableFacts::{reads,rebinds}` stop recording), and that is
+`await`, which `Callable::{reads,rebinds}` stop recording), and that is
 not exported. Its
 fragment covers the global, heap and host domains and leaves lexical coverage
 unknown, so it seals the statement but never a lexical binding-effect receipt.

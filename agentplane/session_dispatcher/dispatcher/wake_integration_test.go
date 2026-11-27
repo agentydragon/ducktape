@@ -14,9 +14,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// A dispatch attributed only through the retired ServiceAccount and wake-caller columns reads as
-// unattributed and is refused a wake without consulting the lifecycle manager.
-func TestDispatchAttributedOnlyThroughRetiredColumnsDoesNotWake(t *testing.T) {
+// An unattributed dispatch (historically, one attributed only to a ServiceAccount) is refused a
+// wake without consulting the lifecycle manager.
+func TestUnattributedDispatchDoesNotWake(t *testing.T) {
 	ctx := context.Background()
 	queueStore := testStore(t, 3)
 	const uid = "00000000-0000-4000-8000-000000000092"
@@ -28,18 +28,14 @@ func TestDispatchAttributedOnlyThroughRetiredColumnsDoesNotWake(t *testing.T) {
 	}
 	_, err = queueStore.DB.ExecContext(ctx, `UPDATE dispatch SET
 		service_attribution=NULL,
-		actor_identity_name=NULL,actor_identity_uid=NULL,actor_identity_pod_name=NULL,actor_identity_pod_uid=NULL,
-		actor_account_namespace=$2,actor_account_name='test-historical-actor',actor_account_uid='test-historical-actor-uid',
-		effective_caller_account_namespace=$2,effective_caller_account_name='test-historical-caller',
-		effective_caller_account_uid='test-historical-caller-uid',
-		wake_eligible=true,wake_caller_namespace=$2,wake_caller_name='test-historical-caller' WHERE command_id=$1`,
-		row.CommandID, namespace)
+		actor_identity_name=NULL,actor_identity_uid=NULL,actor_identity_pod_name=NULL,actor_identity_pod_uid=NULL
+		WHERE command_id=$1`, row.CommandID)
 	if err != nil {
-		t.Fatal("seed retired-column attribution:", err)
+		t.Fatal("seed unattributed dispatch:", err)
 	}
 	row, err = queueStore.GetDispatch(ctx, row.CommandID)
 	if err != nil || row.Attribution != nil {
-		t.Fatalf("read dispatch attributed through retired columns: %+v %v", row, err)
+		t.Fatalf("read unattributed dispatch: %+v %v", row, err)
 	}
 	deliveryOwner := claimSessionOwner(t, queueStore, row.SessionID)
 	wake := &identityWake{}
@@ -51,7 +47,7 @@ func TestDispatchAttributedOnlyThroughRetiredColumnsDoesNotWake(t *testing.T) {
 		Incarnation: "old-pod", Blocker: "sandbox_suspended", WakeOnSend: true,
 	}, deliveryOwner)
 	if err != nil {
-		t.Fatal("prepare dispatch attributed through retired columns:", err)
+		t.Fatal("prepare unattributed dispatch:", err)
 	}
 	stored, err := queueStore.GetDispatch(ctx, row.CommandID)
 	if err != nil {
@@ -60,7 +56,7 @@ func TestDispatchAttributedOnlyThroughRetiredColumnsDoesNotWake(t *testing.T) {
 	if stored.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_DENIED ||
 		stored.WakeAssessment.GetReason() != environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED ||
 		len(wake.callers) != 0 {
-		t.Fatalf("retired-column attribution gained wake authority: assessment=%+v wake calls=%v",
+		t.Fatalf("unattributed dispatch gained wake authority: assessment=%+v wake calls=%v",
 			stored.WakeAssessment, wake.callers)
 	}
 }

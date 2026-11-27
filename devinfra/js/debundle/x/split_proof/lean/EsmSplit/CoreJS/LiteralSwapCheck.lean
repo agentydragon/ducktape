@@ -144,15 +144,5 @@ theorem throw_order (w : World) :
       (0, .throw (.str "first"), (⟨[], .undef, none⟩ : Env))] (initialState w 2)) = some (.str "second") := by
   constructor <;> cbv
 
-#print axioms SourceSchedule.perm
-#print axioms SourceSchedule.linked
-#print axioms checkSourceSchedule
-#print axioms throw_order
-#print axioms refuses_read
-#print axioms refuses_throw
-#print axioms literal
-#print axioms adjacent
-#print axioms sequence
-#print axioms sequence_sound
 
 end CoreJS.LiteralSwapCheck

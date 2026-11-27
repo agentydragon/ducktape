@@ -26,7 +26,7 @@ use clap::Args as ClapArgs;
 use command_output::write_report;
 use graph::CommutingStatementsDiagnostic;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use pipeline::{TransformRunOptions, run_transform};
 use selector_outcome::{
     Entity, InvalidSelectorError, InvalidSelectorReport, Outcome, Placement, SelectorKind,

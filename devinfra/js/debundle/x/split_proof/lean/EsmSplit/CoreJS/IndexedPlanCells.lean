@@ -107,7 +107,5 @@ theorem module_scope_cells {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S 
     rw [noScope, Option.none_or, lookup]
     simp [isImport]
 
-#print axioms import_cell
-#print axioms module_scope_cells
 
 end CoreJS.IndexedPlanCells

@@ -113,10 +113,5 @@ example : (check ([] : List Name).contains
 example : (check (["later"] : List Name).contains
     (.logical .nullish .null (.var "later"))).isSome = true := by decide
 
-#print axioms check
-#print axioms free_allowed
-#print axioms weaken
-#print axioms restrict
-#print axioms policy_iff
 
 end CoreJS.PrimitiveRhs

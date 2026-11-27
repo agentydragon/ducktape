@@ -96,7 +96,5 @@ theorem checkedMoveSplit_sound {source spec requested}
     (_accepted : checkedMoveSplit source spec requested = .ok result) :
     Sound source spec requested result.split.program := ⟨result.split.sound, result.ordered⟩
 
-#print axioms checkedMoveSplit
-#print axioms checkedMoveSplit_sound
 
 end CoreJS.CheckedMoveSplit
