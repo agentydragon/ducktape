@@ -81,11 +81,14 @@ def nest (seq : List ModName) (need : Std.TreeMap Nat Nat) : Std.TreeMap ModName
 def Spec.moduleOf (S : Spec) (B : Bundle) (i : Nat) : Option ModName :=
   (S.modules.find? fun (_, sels) => sels.any (·.claims B i)).map (·.1)
 
+private def Spec.pickedWithIndex (S : Spec) (decl : Std.TreeMap Name (List Nat))
+    (unitCount : Nat) : List (ModName × List Nat) :=
+  S.modules.map fun (m, sels) =>
+    (m, ((sels.flatMap (·.picks decl unitCount)).foldl (·.insert ·) (∅ : Std.TreeSet Nat)).toList)
+
 /-- For each entry of the spec, the statements its selectors pick, ascending. -/
 def Spec.picked (S : Spec) (B : Bundle) : List (ModName × List Nat) :=
-  let decl := B.declIdx
-  S.modules.map fun (m, sels) =>
-    (m, ((sels.flatMap (·.picks decl B.length)).foldl (·.insert ·) (∅ : Std.TreeSet Nat)).toList)
+  S.pickedWithIndex B.declIdx B.length
 
 /-- Attach glue based on the actual named imports, then add import-only orphan
 edges. The returned map records the consumed local names used for glue. -/
@@ -113,7 +116,7 @@ adding import-only orphan edges. The latter have no names. -/
 def mkPlanWithImports (B : Bundle) (S : Spec) : Plan × Std.TreeMap ModName (List Name) :=
   let arr := B.toArray
   let decl := B.declIdx
-  let picked := S.picked B
+  let picked := S.pickedWithIndex decl B.length
   -- a module name means its first entry in the spec
   let stmtsOf : Std.TreeMap ModName (List Nat) := picked.foldr (fun e acc => acc.insert e.1 e.2) ∅
   -- the module that first claims each statement
