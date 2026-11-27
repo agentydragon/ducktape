@@ -2805,6 +2805,29 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_indexed_alias_capture",
+    srcs = ["EsmSplit/CoreJS/IndexedAliasCapture.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_export_rows_link",
+        ":corejs_indexed_units_agree",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_alias_capture_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedAliasCapture"],
+    required_theorems = [
+        "CoreJS.IndexedAliasCapture.module_capture",
+        "CoreJS.IndexedAliasCapture.public_alias_captured",
+        "CoreJS.IndexedAliasCapture.public_alias_write_through",
+        "CoreJS.IndexedAliasCapture.write_through_shared_cell",
+    ],
+    deps = [":corejs_indexed_alias_capture"],
+)
+
+lean_library(
     name = "corejs_indexed_const_link",
     srcs = ["EsmSplit/CoreJS/IndexedConstLink.lean"],
     deps = [
