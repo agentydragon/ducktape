@@ -406,11 +406,7 @@ fn realize_change(
     Ok(SourceUnitApplyOutcome {
         outcome: MutationOutcome::ownership_edit(
             MutationVerb::Apply,
-            if dry_run {
-                MutationAction::DryRun
-            } else {
-                MutationAction::Applied
-            },
+            MutationAction::for_write(dry_run),
             GateOutcome::ClaimsChecked,
             None,
             vec![
