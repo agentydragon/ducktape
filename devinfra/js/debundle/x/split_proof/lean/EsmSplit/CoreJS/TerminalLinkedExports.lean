@@ -14,7 +14,9 @@ theorem linked_table {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} 
     (valid : EsmSplit.Valid B S P) (footprints : MetadataCells.Footprints ss B)
     {frames : List (Nat × List (Name × Addr))} (hF : FramesOf ((List.range ss.length).zip ss) frames)
     {entry : EsmSplit.Module} (entryFound : P.find P.entry = some entry) (entryLoaded : P.entry ∈ P.evalOrder)
-    {row : EsmSplit.LocalExportUnit} (units : entry.stmts = [row.ordinal]) (glue : entry.exports = [])
+    {row : EsmSplit.LocalExportUnit} {prior : List Nat}
+    (units : entry.stmts = prior ++ [row.ordinal])
+    (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : entry.exports = [])
     (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
     (sourceDefs : TerminalEntryCells.DeclaredRows ss B P row)
     {linked : List (Module × Env)}
@@ -37,7 +39,7 @@ theorem linked_table {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} 
   have rightFind : linked.find? (fun (m, _) => m.name == P.entry) =
       some (moduleOf ss B P entry, candidateEnv) := linkedFind
   have exports : (moduleOf ss B P entry).exports = row.names :=
-    TerminalEntryTable.exact_exports units glue rowFootprint
+    TerminalEntryTable.exact_exports units unpublished glue rowFootprint
   apply TerminalEntryTable.resolve_table sourceFind rightFind rfl exports
   intro pair member
   exact bindings pair member

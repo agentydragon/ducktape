@@ -26,7 +26,7 @@ theorem selected_owners {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spe
     (allUnits : B.length = row.ordinal + 1)
     (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S)) (entry : EsmSplit.Module)
     (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
-    (units : entry.stmts = [row.ordinal])
+    (owned : row.ordinal ∈ entry.stmts)
     (source : TerminalExportPlacement.TerminalSource)
     (sourceOrdinal : source.exportOrdinal = row.ordinal)
     (sourceIds : source.module.body.map Prod.fst = List.range ss.length)
@@ -36,7 +36,7 @@ theorem selected_owners {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spe
       (i, ss[i]) ∈ (moduleOf ss B (EsmSplit.mkPlan B S) m).body ↔ (i, m.name) ∈ selection.selected) ∧
     (row.ordinal, entry.name) ∈ selection.selected ∧
     (∀ owner, (row.ordinal, owner) ∈ selection.selected → owner = entry.name) := by
-  have owners := TerminalPlanOwnership.all_original_owners row terminal allUnits valid entry found units
+  have owners := TerminalPlanOwnership.all_original_owners row terminal allUnits valid entry found owned
   have selectedId : ∀ i, i < ss.length → ∃ owner, (i, owner) ∈ selection.selected := by
     intro i hi
     have hin : i ∈ source.exportOrdinal :: source.module.body.map Prod.fst := by

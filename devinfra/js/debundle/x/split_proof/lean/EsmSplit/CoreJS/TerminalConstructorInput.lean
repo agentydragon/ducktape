@@ -77,14 +77,15 @@ theorem planned_family {input : Program × List EsmSplit.LocalExportUnit} (check
     (footprints : MetadataCells.Footprints (checked.terminal.source.body.map Prod.snd) B)
     (ordered : ProjectedOrder.Kept (checked.terminal.source.body.map Prod.snd) (EsmSplit.mkPlan B S))
     (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
-    (units : entry.stmts = [checked.terminal.row.ordinal]) (glue : entry.exports = [])
+    {prior : List Nat} (units : entry.stmts = prior ++ [checked.terminal.row.ordinal])
+    (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : entry.exports = [])
     (rowFootprint : checked.terminal.row.FootprintMatches (B.stmt checked.terminal.row.ordinal))
     (sourceDefs : MetadataCells.RowLocalsDefined (checked.terminal.source.body.map Prod.snd) B checked.terminal.row) :
     LinkedBehavior.SameExports input.1 (splitProgram (checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S)) ∧
       ∀ w fuel, runProgram w fuel input.1 =
         runProgram w fuel (splitProgram (checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S)) := by
   have result := TerminalPlanFamily.family (all_const checked) valid footprints ordered
-    checked.terminal.source.name checked.terminal.row entry found units glue rowFootprint sourceDefs
+    checked.terminal.source.name checked.terminal.row entry found units unpublished glue rowFootprint sourceDefs
   have shape := source_shape checked
   rw [checked.terminal.fullTable] at shape
   change input.1 = TerminalPlanLink.source checked.terminal.source.name checked.terminal.row.names
