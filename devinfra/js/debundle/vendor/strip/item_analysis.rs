@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use analysis::{EffectCell, StatementFacts};
+use analysis::facts::statement_facts::{EffectCell, StatementFacts};
 use analyze::analyze_vendor_prune_chunk;
 use anyhow::{Result, bail};
 use binding_targets::{declaration_name_strings, public_export_name};

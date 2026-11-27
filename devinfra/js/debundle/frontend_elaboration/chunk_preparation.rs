@@ -113,7 +113,7 @@ fn prepare_chunk<'a>(
         }
     }
     let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::collect_chunk_source_facts(
+    let structural_analysis = analysis::facts::analyze::collect_chunk_source_facts(
         &runtime_ast.module,
         Some(SourceLocator {
             source_path: &runtime_file.metadata.source_path,

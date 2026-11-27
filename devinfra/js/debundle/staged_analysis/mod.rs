@@ -3,7 +3,7 @@
 //! Everything that computes, encodes or loads saved facts belongs to this
 //! closure. Ownership planning, lowering and output reports depend on it.
 
-use analysis::facts::ExportReentryPolicy;
+use analysis::facts::analyze::ExportReentryPolicy;
 use analysis_artifact::{AnalysisArtifactBody, AnalysisArtifactHeader};
 use analysis_codec::ContextOrdinals;
 use analysis_projection::AnalysisSpec;

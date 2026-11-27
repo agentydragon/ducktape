@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use analysis::facts::ExportReentryPolicy;
+use analysis::facts::analyze::ExportReentryPolicy;
 use analysis_vocabulary::inputs::{HostBehaviorKey, ProgramPremiseKey};
 use serde::Serialize;
 

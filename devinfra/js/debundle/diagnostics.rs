@@ -87,7 +87,7 @@ impl<'a> Diagnostics<'a> {
     pub fn record_purity_completion_disagreements(
         &self,
         chunk: &str,
-        facts: &crate::facts::ChunkFactAnalysis,
+        facts: &crate::facts::statement_facts::ChunkFactAnalysis,
     ) {
         for fact in &facts.facts {
             let Some(evidence) = fact.purity_completion_disagreement() else {

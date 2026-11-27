@@ -1,3 +1,4 @@
+use super::statement_facts::{LocalRecordFactoryPurityCertificate, StatementFacts};
 use super::*;
 use analysis_vocabulary::effect::{Effect, HavocCause, InvokeSite};
 use analysis_vocabulary::inputs::ProofDependencies;

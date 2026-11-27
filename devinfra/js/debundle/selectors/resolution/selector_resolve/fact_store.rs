@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use analysis::facts::StructuralChunkSourceFacts;
+use analysis::facts::statement_facts::StructuralChunkSourceFacts;
 use chunk_facts::{RelationalFactNeeds, extract_relational_facts};
 use selector_ir::{SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram};
 use source_identity::SourceUnitId;

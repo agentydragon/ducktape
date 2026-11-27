@@ -1,5 +1,6 @@
 //! Shared fact computation and loaded-fact validation, independent of lowering.
-use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
+use analysis::facts::analyze::ExportReentryPolicy;
+use analysis::facts::statement_facts::{ChunkFactAnalysis, StructuralChunkSourceFacts};
 use analysis_projection::AnalysisProjection;
 use analysis_vocabulary::execution_evidence::SourceLocator;
 use analysis_vocabulary::inputs::AnalysisInputs;
@@ -42,7 +43,7 @@ pub fn analyze_logical_chunk(
         chunk_runtime_entry(artifact, chunk_id, file)?;
     let source_path = runtime_file.metadata.source_path.as_str();
     let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::collect_chunk_source_facts(
+    let structural_analysis = analysis::facts::analyze::collect_chunk_source_facts(
         &runtime_ast.module,
         Some(SourceLocator {
             source_path,
@@ -324,7 +325,7 @@ pub fn compute_logical_chunk_facts(
                 .with_context(|| {
                     format!("missing prepared program value flow for chunk {chunk_id}")
                 })?;
-            let structural_analysis = analysis::facts::complete_chunk_structural_with_flow(
+            let structural_analysis = analysis::facts::analyze::complete_chunk_structural_with_flow(
                 structural_analysis,
                 &analysis_inputs.assumptions.argument_inputs,
                 flow.clone(),

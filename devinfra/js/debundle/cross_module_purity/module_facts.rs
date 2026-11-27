@@ -374,14 +374,15 @@ impl<'a> ModulePurityFacts<'a> {
         structural_flow: Option<Arc<ChunkValueFlow>>,
         options: PreparationOptions,
     ) -> PreparedModulePurityFacts<'a> {
-        let source = analysis::facts::collect_chunk_source_facts_from_items(self.body, None);
+        let source =
+            analysis::facts::analyze::collect_chunk_source_facts_from_items(self.body, None);
         let structural = match structural_flow {
-            Some(flow) => analysis::facts::complete_chunk_structural_with_flow(
+            Some(flow) => analysis::facts::analyze::complete_chunk_structural_with_flow(
                 source,
                 &inputs.assumptions.argument_inputs,
                 flow,
             ),
-            None => analysis::facts::complete_chunk_structural_with_inputs(
+            None => analysis::facts::analyze::complete_chunk_structural_with_inputs(
                 source,
                 &inputs.assumptions.native_operation_inputs,
                 &inputs.inferred_set_constructions,

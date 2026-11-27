@@ -546,7 +546,7 @@ fn assemble_statement_facts(
         global_reads,
         havoc,
         trusted_summary_discharged,
-        heap_contents: analysis::facts::HeapContentCells::default(),
+        heap_contents: analysis::facts::statement_facts::HeapContentCells::default(),
         heap_one_shot_allocations: BTreeSet::new(),
         deferred_heap_allocations: BTreeSet::new(),
         heap_native_integrity_uses: Vec::new(),

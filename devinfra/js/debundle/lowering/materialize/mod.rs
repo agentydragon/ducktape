@@ -25,7 +25,8 @@ use crate::{
     AtomicGroupOwnerCompletionReport, ChunkModulesCounts, ChunkModulesReport, ExportReentryReport,
     GateRejectionPolicy, GraphReportSelection, ReportEmission, RequestedLogicalModule,
 };
-use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
+use analysis::facts::analyze::ExportReentryPolicy;
+use analysis::facts::statement_facts::{ChunkFactAnalysis, StructuralChunkSourceFacts};
 use analysis::{EntryDestination, ImportedSourceTarget, PlannedModule, top_level_id};
 use analysis_projection::AnalysisProjection;
 use anyhow::{Context, Result, ensure};
