@@ -5,11 +5,12 @@ selector tasks live in <../TODO.md>; selector syntax, resolution, and current
 commands are specified in <../docs/selectors.md>,
 <../docs/selector_resolution.md>, and <../SPEC.md>.
 
-Every invocation resolves one exact spec against its configured input program.
-A prior spec may be an author's manual starting point, but tools do not compare
-source snapshots or generate migrations. Candidate selectors are suggestions:
-the author decides semantic intent, and the shared resolver proves whether a
-candidate uniquely selects its target.
+Tools work inside the one-spec, one-configured-input-program boundary
+(<../SPEC.md> § Input and spec scope): a prior spec may be an author's manual
+starting point, but tools never compare source snapshots or generate
+migrations. Candidate selectors stay suggestions — the author decides semantic
+intent, and the shared resolver proves whether a candidate uniquely selects its
+target.
 
 ## Remaining work
 
