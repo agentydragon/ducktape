@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
+	"github.com/agentydragon/ducktape/agentplane/net/httpconnect"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 )
@@ -25,6 +25,9 @@ const (
 	untrustedWorkloadTokenHeader = identity.UntrustedWorkloadTokenHeader
 	readinessPath                = "/readyz"
 	maxHeadBytes                 = 64 * 1024
+	// idleTimeout ends a workload's keep-alive connection idle between requests. It outlasts
+	// typical client pools (Go's 90s), so a client rarely reuses a connection as it closes.
+	idleTimeout = 2 * time.Minute
 )
 
 type sidecar struct {
@@ -73,7 +76,7 @@ func (s *sidecar) run(ctx context.Context) error {
 func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes *platformRoutes) error {
 	s.workloadContext = ctx
 	s.proxyListener = proxyListener
-	s.proxyServer = &http.Server{Handler: s.proxyHandler(), MaxHeaderBytes: maxHeadBytes}
+	s.proxyServer = newProxyServer(s.proxyHandler())
 	s.routes = routes
 	s.bindReadiness(readinessListener)
 	var serving sync.WaitGroup
@@ -119,6 +122,14 @@ func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener ne
 			return nil
 		}
 		return err
+	}
+}
+
+// newProxyServer serves the workload's proxy listener. A hijacked CONNECT has no deadline: the
+// server clears it before the handler runs, and idleTimeout applies only between requests.
+func newProxyServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler: handler, MaxHeaderBytes: maxHeadBytes, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: idleTimeout,
 	}
 }
 
@@ -299,49 +310,39 @@ func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Reques
 		_ = upstream.Close()
 	}()
 
-	upstreamRequest := request.Clone(request.Context())
-	upstreamRequest.RequestURI = ""
-	upstreamRequest.URL = &url.URL{Host: authority}
-	upstreamRequest.Host = authority
-	upstreamRequest.Body = nil
-	rewriteRequest(upstreamRequest)
-	if err := upstreamRequest.WriteProxy(upstream); err != nil {
-		slog.Warn("writing CONNECT to central proxy failed", "error", err)
-		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
-		return
-	}
-	upstreamReader := bufio.NewReader(upstream)
-	response, err := http.ReadResponse(upstreamReader, upstreamRequest)
-	if err != nil {
-		slog.Warn("reading CONNECT response from central proxy failed", "error", err)
-		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
-		return
-	}
-	if response.StatusCode/100 != 2 {
-		defer response.Body.Close()
-		for name, values := range response.Header {
+	// Open bounds the handshake and ends it when the workload hangs up.
+	hop := &http.Request{Header: request.Header.Clone()}
+	rewriteRequest(hop)
+	tunnel, err := httpconnect.Open(request.Context(), upstream, authority, hop.Header)
+	var refused *httpconnect.RefusedError
+	switch {
+	case errors.As(err, &refused):
+		for name, values := range refused.Response.Header {
 			for _, value := range values {
 				writer.Header().Add(name, value)
 			}
 		}
 		writer.Header().Set("Connection", "close")
-		writer.WriteHeader(response.StatusCode)
-		if _, err := io.Copy(writer, response.Body); err != nil {
+		writer.WriteHeader(refused.Response.StatusCode)
+		if _, err := io.Copy(writer, refused.Response.Body); err != nil {
 			slog.Warn("relaying CONNECT refusal from central proxy failed", "error", err)
 		}
 		return
+	case err != nil:
+		slog.Warn("CONNECT through central proxy failed", "error", err)
+		refuse(writer, http.StatusBadGateway, "proxy-unreachable")
+		return
 	}
-	_ = response.Body.Close()
 	client, buffered, err := http.NewResponseController(writer).Hijack()
 	if err != nil {
 		slog.Warn("hijacking CONNECT client failed", "error", err)
 		return
 	}
 	defer client.Close()
-	if err := writeResponseHead(client, response); err != nil {
+	if _, err := io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
 		return
 	}
-	if err := pipeDuplex(client, buffered.Reader, upstream, upstreamReader, halfCloseWrite); err != nil {
+	if err := pipeDuplex(client, buffered.Reader, upstream, tunnel, halfCloseWrite); err != nil {
 		slog.Warn("CONNECT relay ended with connection error", "address", s.config.Proxy.Address, "error", err)
 	}
 }
@@ -360,18 +361,6 @@ func rewriteRequest(request *http.Request) {
 func refuse(writer http.ResponseWriter, status int, reason string) {
 	writer.Header().Set(refusedHeader, "reason="+reason)
 	writer.WriteHeader(status)
-}
-
-// writeResponseHead relays the response head before an opaque CONNECT tunnel.
-func writeResponseHead(writer io.Writer, response *http.Response) error {
-	if _, err := fmt.Fprintf(writer, "HTTP/%d.%d %s\r\n", response.ProtoMajor, response.ProtoMinor, response.Status); err != nil {
-		return err
-	}
-	if err := response.Header.Write(writer); err != nil {
-		return err
-	}
-	_, err := io.WriteString(writer, "\r\n")
-	return err
 }
 
 func (s *sidecar) track(conn net.Conn, add bool) {

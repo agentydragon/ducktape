@@ -3,21 +3,38 @@ package httpconnect
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"time"
 )
 
-const handshakeTimeout = 10 * time.Second
+const (
+	handshakeTimeout = 10 * time.Second
+	// maxRefusalBody bounds the refusal body Open reads into a RefusedError.
+	maxRefusalBody = 64 * 1024
+)
+
+// RefusedError is a CONNECT the proxy answered with other than 200. Response's body has been read
+// into memory, so it outlives the closed connection.
+type RefusedError struct {
+	Authority string
+	Response  *http.Response
+}
+
+func (e *RefusedError) Error() string {
+	return fmt.Sprintf("CONNECT to %q refused: %s", e.Authority, e.Response.Status)
+}
 
 // Open sends a CONNECT request over connection and returns the established
 // tunnel. The caller supplies the already-dialed connection and the only
 // request headers to send. Calling Open transfers ownership of connection:
 // Open closes it on every error, and the caller owns the returned connection
-// on success.
+// on success. A refusal is a *RefusedError.
 func Open(ctx context.Context, connection net.Conn, authority string, headers http.Header) (net.Conn, error) {
 	keep := false
 	defer func() {
@@ -61,11 +78,16 @@ func Open(ctx context.Context, connection net.Conn, authority string, headers ht
 		return nil, handshakeError(handshakeCtx, authority, "read response", err)
 	}
 	if response.StatusCode != http.StatusOK {
-		_ = connection.Close()
-		if response.Body != nil {
-			_ = response.Body.Close()
+		body, err := io.ReadAll(io.LimitReader(response.Body, maxRefusalBody+1))
+		_ = response.Body.Close()
+		if err != nil {
+			return nil, handshakeError(handshakeCtx, authority, "read refusal body", err)
 		}
-		return nil, fmt.Errorf("CONNECT to %q refused: %s", authority, response.Status)
+		if len(body) > maxRefusalBody {
+			return nil, fmt.Errorf("CONNECT to %q refused (%s) with a body over %d bytes", authority, response.Status, maxRefusalBody)
+		}
+		response.Body = io.NopCloser(bytes.NewReader(body))
+		return nil, &RefusedError{Authority: authority, Response: response}
 	}
 	if err := handshakeCtx.Err(); err != nil {
 		return nil, fmt.Errorf("CONNECT handshake canceled: %w", err)
