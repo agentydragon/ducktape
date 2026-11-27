@@ -38,6 +38,9 @@ OVH_REGION_NODE_SELECTOR: Mapping[str, str] = {REGION_LABEL: OVH_REGION}
 PROXMOX_REGION_NODE_SELECTOR: Mapping[str, str] = {REGION_LABEL: PROXMOX_REGION}
 # The registered hostname: the topology key for one-Pod-per-host rules.
 HOSTNAME_LABEL = "kubernetes.io/hostname"
+# Per-node disk class, pinned by media-specific workloads and exported to Prometheus by
+# kube-state-metrics (monitoring/stack.py allowlist).
+STORAGE_TIER_LABEL = "storage.allegedly.works/tier"
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.
 CONTROL_PLANE_TAINT_KEY = "node-role.kubernetes.io/control-plane"
 CONTROL_PLANE_TOLERATION = k8s.Toleration(key=CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule")

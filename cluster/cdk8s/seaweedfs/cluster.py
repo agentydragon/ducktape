@@ -327,7 +327,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         node_scheduling.HOSTNAME_LABEL: "ovh-ns103656",
-                        "storage.allegedly.works/piraeus-ready": "true",
+                        piraeus_storage.PIRAEUS_READY_LABEL: "true",
                     },
                 ),
                 "hdd-piraeus-103711": _volume_topology(
@@ -339,7 +339,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         node_scheduling.HOSTNAME_LABEL: "ovh-ns103711",
-                        "storage.allegedly.works/piraeus-ready": "true",
+                        piraeus_storage.PIRAEUS_READY_LABEL: "true",
                     },
                 ),
                 "hdd-piraeus-102453": _volume_topology(
@@ -351,7 +351,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     node_selector={
                         **node_scheduling.HIL_OVH_NODE_SELECTOR,
                         node_scheduling.HOSTNAME_LABEL: "ovh-ns102453",
-                        "storage.allegedly.works/piraeus-ready": "true",
+                        piraeus_storage.PIRAEUS_READY_LABEL: "true",
                     },
                 ),
                 # The OVH NVMe groups serve Forgejo git via the seaweedfs-ovh-ssd
@@ -373,7 +373,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     max_volume_counts=200,
                     node_selector={
                         node_scheduling.HOSTNAME_LABEL: "ovh-ns104952",
-                        "storage.allegedly.works/piraeus-ready": "true",
+                        piraeus_storage.PIRAEUS_READY_LABEL: "true",
                     },
                 ),
                 "ssd-piraeus-104963": _volume_topology(
@@ -384,7 +384,7 @@ def seaweed(scope: Construct) -> Seaweed:
                     max_volume_counts=200,
                     node_selector={
                         node_scheduling.HOSTNAME_LABEL: "ovh-ns104963",
-                        "storage.allegedly.works/piraeus-ready": "true",
+                        piraeus_storage.PIRAEUS_READY_LABEL: "true",
                     },
                 ),
             },

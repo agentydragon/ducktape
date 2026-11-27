@@ -260,7 +260,7 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     # Auto-diskful needs the consumer to have the HDD pool locally.
-                    node_selector={**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"},
+                    node_selector={**node_scheduling.HIL_OVH_NODE_SELECTOR, node_scheduling.STORAGE_TIER_LABEL: "hdd"},
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     security_context=k8s.PodSecurityContext(fs_group=1000, fs_group_change_policy="OnRootMismatch"),
                     containers=[

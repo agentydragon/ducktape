@@ -286,7 +286,7 @@ def _values() -> dict[str, object]:
             # Kubernetes labels; this narrow allowlist lets dashboards join node
             # device/cAdvisor metrics to the authoritative hdd/ssd classification
             # without maintaining a node-name regex.
-            "metricLabelsAllowlist": ["nodes=[storage.allegedly.works/tier]"],
+            "metricLabelsAllowlist": [f"nodes=[{node_scheduling.STORAGE_TIER_LABEL}]"],
             "rbac": {
                 "extraRules": [
                     {"apiGroups": [group], "resources": [resource], "verbs": ["list", "watch"]}

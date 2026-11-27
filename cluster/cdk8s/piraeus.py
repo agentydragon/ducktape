@@ -28,33 +28,44 @@ NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"
 CLUSTER_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/cluster"
 
-_PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
 # Controller Pods can run on any prepared OVH node.
-_CONTROLLER_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", node_scheduling.REGION_LABEL: node_scheduling.OVH_REGION}
-_CLUSTER_NODE_AFFINITY = {
-    "nodeSelectorTerms": [{"matchExpressions": [{"key": _PIRAEUS_READY_LABEL, "operator": "In", "values": ["true"]}]}]
+_CONTROLLER_NODE_SELECTOR = {
+    piraeus_storage.PIRAEUS_READY_LABEL: "true",
+    node_scheduling.REGION_LABEL: node_scheduling.OVH_REGION,
 }
+_CLUSTER_NODE_AFFINITY = {
+    "nodeSelectorTerms": [
+        {"matchExpressions": [{"key": piraeus_storage.PIRAEUS_READY_LABEL, "operator": "In", "values": ["true"]}]}
+    ]
+}
+
+
+def _prepared_node_selector(hostname: str) -> dict[str, str]:
+    """The nodeSelector for one DRBD-prepared host: prepared satellite plus hostname."""
+    return {piraeus_storage.PIRAEUS_READY_LABEL: "true", node_scheduling.HOSTNAME_LABEL: hostname}
+
+
 _VOLUME_GROUPS = {"ssd": "piraeus_ssd", "hdd": "piraeus_hdd"}
 _THIN_POOL = "data"
-_FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"}
+_FIRST_NODE_SELECTOR = _prepared_node_selector("ovh-ns1001419")
 _FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"
-_HDD_FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns103656"}
+_HDD_FIRST_NODE_SELECTOR = _prepared_node_selector("ovh-ns103656")
 _HDD_FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"
-_HDD_NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns103711"}
+_HDD_NEXT_NODE_SELECTOR = _prepared_node_selector("ovh-ns103711")
 _HDD_NEXT_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H48V6A"
-_HDD_LAST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns102453"}
+_HDD_LAST_NODE_SELECTOR = _prepared_node_selector("ovh-ns102453")
 _HDD_LAST_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V3H370PN"
-_NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns104952"}
+_NEXT_NODE_SELECTOR = _prepared_node_selector("ovh-ns104952")
 _NEXT_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"
-_THIRD_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns104963"}
+_THIRD_NODE_SELECTOR = _prepared_node_selector("ovh-ns104963")
 _THIRD_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"
-_OPTIPLEX_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "optiplex"}
+_OPTIPLEX_SELECTOR = _prepared_node_selector("optiplex")
 _OPTIPLEX_DATA_DEVICE = "/dev/disk/by-partlabel/r-piraeus"
-_WYRM2_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "wyrm2"}
+_WYRM2_SELECTOR = _prepared_node_selector("wyrm2")
 # Atlas zvols hot-added with these Proxmox disk serials: rpool/data (single NVMe) and tank (raidz2).
 _WYRM2_SSD_DATA_DEVICE = "/dev/disk/by-id/virtio-piraeus-ssd"
 _WYRM2_HDD_DATA_DEVICE = "/dev/disk/by-id/virtio-piraeus-hdd"
-_RUGGED_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "rugged"}
+_RUGGED_SELECTOR = _prepared_node_selector("rugged")
 # The opened LUKS partition behind rugged's root (nix/nixos/hosts/rugged/default.nix crypttab).
 _RUGGED_DATA_DEVICE = "/dev/mapper/piraeus-ssd"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
@@ -266,7 +277,7 @@ def cluster_chart(app: App) -> Chart:
                                     k8s.NodeSelectorTerm(
                                         match_expressions=[
                                             k8s.NodeSelectorRequirement(
-                                                key=_PIRAEUS_READY_LABEL, operator="In", values=["true"]
+                                                key=piraeus_storage.PIRAEUS_READY_LABEL, operator="In", values=["true"]
                                             )
                                         ]
                                     )
