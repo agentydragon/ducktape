@@ -2,9 +2,20 @@ spec.yaml:
   accept:
     stdout: ""
     exports:
+      main/entry.js:
+        include:
+          - "a"
+          - "b"
+          - "FirstFn"
       main/modules/residual/unhandled.js:
         include:
           - "FirstFn"
           - "b"
         exclude:
           - "a"
+    emitted_probes:
+      identity.probe.mjs:
+        stdout: |
+          true true true
+          {"name":"a","descriptor":{"value":"a","writable":false,"enumerable":false,"configurable":true}}
+          {"name":"FirstFn","descriptor":{"value":"FirstFn","writable":false,"enumerable":false,"configurable":true}}

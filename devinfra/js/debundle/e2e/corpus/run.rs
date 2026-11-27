@@ -122,6 +122,18 @@ pub(super) fn run(case: &Case) {
                     assert_node_output(&script_path, &expected_probe.stdout, "");
                 }
             }
+            for (probe, expected_probe) in &expected.emitted_probes {
+                relative(probe);
+                let script = format!(
+                    "import {{ pathToFileURL }} from 'node:url';\nconst entryPath = {};\nconst entry = await import(pathToFileURL(entryPath));\nconst {{ default: probe }} = await import({});\nawait probe(entry, pathToFileURL(entryPath), pathToFileURL({}));\n",
+                    serde_json::to_string(fixture.entry_path.to_str().unwrap()).unwrap(),
+                    serde_json::to_string(root.join(probe).to_str().unwrap()).unwrap(),
+                    serde_json::to_string(fixture.source_path.to_str().unwrap()).unwrap()
+                );
+                let script_path = root.join(".fixture/emitted-probe.mjs");
+                write_text_file(&script_path, &script);
+                assert_node_output(&script_path, &expected_probe.stdout, "");
+            }
         }
         Expectation::Reject { reject: expected } => {
             let fixture =
