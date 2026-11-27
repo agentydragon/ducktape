@@ -4030,12 +4030,69 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_turn",
+    srcs = ["EsmSplit/CoreJS/Turn.lean"],
+    deps = [":corejs_value"],
+)
+
+lean_library(
+    name = "corejs_program_turn",
+    srcs = ["EsmSplit/CoreJS/ProgramTurn.lean"],
+    deps = [
+        ":corejs_eval",
+        ":corejs_scope",
+        ":corejs_turn",
+    ],
+)
+
+lean_library(
+    name = "corejs_turn_publication",
+    srcs = ["EsmSplit/CoreJS/TurnPublication.lean"],
+    deps = [
+        ":corejs_constructed_output",
+        ":corejs_linked_behavior",
+        ":corejs_primitive_await",
+        ":corejs_program_turn",
+    ],
+)
+
+lean_library(
+    name = "corejs_literal_reorder_turn",
+    srcs = ["EsmSplit/CoreJS/LiteralReorderTurn.lean"],
+    deps = [
+        ":corejs_turn_publication",
+        ":literal_reorder_construct",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_turn_publication_axioms_test",
+    allow_empty = True,
+    modules = [
+        "EsmSplit.CoreJS.LiteralReorderTurn",
+        "EsmSplit.CoreJS.ProgramTurn",
+        "EsmSplit.CoreJS.TurnPublication",
+    ],
+    required_theorems = [
+        "CoreJS.LiteralReorderConstruct.Construction.checkTurnReadback",
+        "CoreJS.LiteralReorderConstruct.Construction.turnPublication",
+        "CoreJS.TurnPublication.drains",
+        "CoreJS.TurnPublication.ordinary",
+        "CoreJS.checkTurnPublication_sameAcceptance",
+        "CoreJS.erase_does_not_determine_checkpoint",
+        "CoreJS.runProgram_eq_erase",
+    ],
+    deps = [":corejs_literal_reorder_turn"],
+)
+
+lean_library(
     name = "corejs_primitive_await",
     srcs = ["EsmSplit/CoreJS/PrimitiveAwait.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [
         ":corejs_async_prefix",
         ":corejs_eval",
+        ":corejs_turn",
     ],
 )
 
@@ -4062,6 +4119,7 @@ lean_library(
         ":corejs_from_estree",
         ":corejs_linked_input",
         ":corejs_primitive_await",
+        ":corejs_program_turn",
         ":corejs_scope",
         ":corejs_split",
         ":estree_units",
@@ -4094,7 +4152,7 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.PrimitiveAwaitCorrespondence"],
     required_theorems = [
-        "CoreJS.PrimitiveAwait.Job.capture_corresponds",
+        "CoreJS.Job.capture_corresponds",
         "CoreJS.PrimitiveAwait.drain_corresponds",
         "CoreJS.PrimitiveAwait.onResume_capture",
         "CoreJS.PrimitiveAwait.onResume_corresponds",

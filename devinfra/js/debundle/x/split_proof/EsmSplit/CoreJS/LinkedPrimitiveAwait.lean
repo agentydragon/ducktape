@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.PrimitiveAwait
+import EsmSplit.CoreJS.ProgramTurn
 import EsmSplit.CoreJS.Scope
 import EsmSplit.CoreJS.Split
 import EsmSplit.ESTreeUnits
@@ -105,35 +106,20 @@ private def prefixOf (cut : Cut) (args : List Val) (fuel : Nat) : M W Prefix := 
   | .ret value => pure (.completed value)
   | _ => unknown "model: invalid control flow before await"
 
-inductive Immediate (W : World) (α : Type) where
-  | ok (value : α) (turn : Turn W)
-  | throw (reason : Val) (turn : Turn W)
-  | unknown (reason : String) (turn : Turn W)
-  | fuel
+abbrev Immediate := TurnResult
 
 /-- Erase the driver-only result: keep the exact shared result, including
 abrupt reasons and their heap, cell, world and output state. A pending queue
 is a separate observation and cannot in general be erased for a split proof. -/
-def Immediate.shared : Immediate W α → Res W Unit
-  | .ok _ turn => .ok () turn.state
-  | .throw reason turn => .throw reason turn.state
-  | .unknown reason turn => .unknown reason turn.state
-  | .fuel => .fuel
+def Immediate.shared (outcome : Immediate W α) : Res W Unit :=
+  (outcome.map fun _ => ()).erase
 
 def Immediate.pending : Immediate W α → Option (List Job)
   | .ok _ turn | .throw _ turn | .unknown _ turn => some turn.jobs
   | .fuel => none
 
-private def thenSync {α β : Type} (step : M W α) (turn : Turn W)
-    (next : α → Turn W → Immediate W β) : Immediate W β :=
-  match step turn.state with
-  | .ok value s => next value { turn with state := s }
-  | .throw reason s => .throw reason { turn with state := s }
-  | .unknown why s => .unknown why { turn with state := s }
-  | .fuel => .fuel
-
 private def ordinary (fuel : Nat) (unit : LinkedUnit) (turn : Turn W) : Immediate W Unit :=
-  thenSync (runUnit fuel unit.env unit.id unit.stmt) turn (fun _ next => .ok () next)
+  TurnResult.andThen (runUnit fuel unit.env unit.id unit.stmt) turn (fun _ next => .ok () next)
 
 private def directCall? : Stmt → Option (Option Name × Name × List Expr)
   | .decl .const name (.call (.var callee) args) => some (some name, callee, args)
@@ -152,12 +138,12 @@ private def runUnitWithCuts (cuts : List (Name × Cut)) (fuel : Nat) (unit : Lin
     | none => ordinary fuel unit turn
     | some cut =>
       let entered := { turn with state := { turn.state with region := unit.id + 1 } }
-      thenSync (readVar unit.env name) entered fun callee prepared =>
+      TurnResult.andThen (readVar unit.env name) entered fun callee prepared =>
         if callee != .obj cut.callee then ordinary fuel unit turn else
-        thenSync (evalArgs (n + 1) unit.env args) prepared fun argv evaluated =>
+        TurnResult.andThen (evalArgs (n + 1) unit.env args) prepared fun argv evaluated =>
           match launch promiseProto (prefixOf cut argv) (n + 1) evaluated with
           | .ok promise started =>
-            thenSync (finishDirect unit.env target promise) started fun _ done => .ok () done
+            TurnResult.andThen (finishDirect unit.env target promise) started fun _ done => .ok () done
           | .unknown why stopped => .unknown why stopped
           | .fuel => .fuel
   | _, _ => ordinary fuel unit turn
@@ -283,8 +269,8 @@ def entryEnv (entry : String) (linked : List (Module × Env)) : Option Env :=
 private def runLinked (fuel : Nat) (parts : List (Nat × FromESTree.PrimitiveAwaitParts))
     (units : List LinkedUnit) (turn : Turn W) : Immediate W Unit :=
   match parts with
-  | [] => thenSync (runUnits fuel units) turn fun () done => .ok () done
-  | parts => thenSync (bindCuts units parts) turn fun cuts ready => runUnitsWithCuts cuts fuel units ready
+  | [] => TurnResult.andThen (runUnits fuel units) turn fun () done => .ok () done
+  | parts => TurnResult.andThen (bindCuts units parts) turn fun cuts ready => runUnitsWithCuts cuts fuel units ready
 
 private theorem runLinked_same (fuel : Nat) (parts : List (Nat × FromESTree.PrimitiveAwaitParts))
     {us vs : List LinkedUnit} (units : SameUnits us vs) (turn : Turn W) :
@@ -296,19 +282,8 @@ private theorem runLinked_same (fuel : Nat) (parts : List (Nat × FromESTree.Pri
   | cons head tail =>
     simp only [runLinked]
     rw [bindCuts_same (W := W) units]
-    unfold thenSync
+    unfold TurnResult.andThen
     split <;> first | rfl | exact runUnitsWithCuts_same _ _ units _
-
-def Immediate.map {α β : Type} (f : α → β) : Immediate W α → Immediate W β
-  | .ok value turn => .ok (f value) turn
-  | .throw why turn => .throw why turn
-  | .unknown why turn => .unknown why turn
-  | .fuel => .fuel
-
-/-- Entry environments differ between placements. Project them away after
-checking their public addresses, keeping the entire state and pending queue. -/
-def Immediate.observed (outcome : Immediate W α) : Immediate W Unit :=
-  outcome.map fun _ => ()
 
 private theorem observed_map {α β : Type} (f : α → β) (outcome : Immediate W α) :
     (outcome.map f).observed = outcome.observed := by cases outcome <;> rfl
@@ -316,7 +291,7 @@ private theorem observed_map {α β : Type} (f : α → β) (outcome : Immediate
 /-- The module phase never runs a continuation. Its callers can separately use
 `PrimitiveAwait.drain` on the returned turn. -/
 def runImmediate (W : World) (fuel : Nat) (input : Input) : Immediate W Env :=
-  thenSync (link input.program) ⟨initialState W input.program.regions, []⟩ fun linked entered =>
+  withLinkedTurn W input.program fun linked entered =>
     match entryEnv input.program.entry linked with
     | some env => (runLinked fuel input.cuts (unitsOf linked) entered).map fun () => env
     | none => .unknown "expected the linked entry module" entered
@@ -331,7 +306,7 @@ theorem runImmediate_same {W : World} {a b : Input} {left right : List (Module �
     (bEntry : (entryEnv b.program.entry right).isSome = true)
     (cuts : a.cuts = b.cuts) (units : SameUnits (unitsOf left) (unitsOf right)) (fuel : Nat) :
     (runImmediate W fuel a).observed = (runImmediate W fuel b).observed := by
-  simp only [runImmediate, thenSync, aLink, bLink]
+  simp only [runImmediate, withLinkedTurn, TurnResult.andThen, aLink, bLink]
   cases ha : entryEnv a.program.entry left with
   | none => simp [ha] at aEntry
   | some ea =>
@@ -350,7 +325,7 @@ theorem noCuts_agree {W : World} {input : Input} {mod : Module} {env : Env} {rea
     let shared := runProgram W fuel input.program
     immediate.shared = shared ∧
       immediate.pending = (match shared with | .fuel => none | _ => some []) := by
-  simp only [runImmediate, runProgram, M.bind_apply, thenSync, entryEnv, runLinked, linked, cuts]
+  simp only [runImmediate, withLinkedTurn, runProgram, M.bind_apply, TurnResult.andThen, entryEnv, runLinked, linked, cuts]
   cases runUnits fuel (unitsOf [(mod, env)]) ready <;> exact ⟨rfl, rfl⟩
 
 end CoreJS.LinkedPrimitiveAwait

@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.AsyncPrefix
 import EsmSplit.CoreJS.Eval
+import EsmSplit.CoreJS.Turn
 
 /-!
 An explicit FIFO for one discarded primitive `await` per activation. A caller
@@ -21,21 +22,6 @@ variable {W : World}
 inductive Prefix where
   | completed (value : Val)
   | suspended (operand : Val) (env : Env) (body : List Stmt)
-
-structure Job where
-  promise : Addr
-  region : Nat
-  env : Env
-  body : List Stmt
-
-/-- Keep the continuation's receiver and home object, and the addresses of
-the bindings referenced by its remaining code. No binding value is copied. -/
-def Job.capture (job : Job) : Job :=
-  { job with env := job.env.capture (freeStmts job.body) }
-
-structure Turn (W : World) where
-  state : State W
-  jobs : List Job := []
 
 /-- Evaluation fuel follows CoreJS: a fuel outcome makes no claim about an
 intermediate state. The separate drain quota can pause with a resumable turn. -/
@@ -154,3 +140,14 @@ theorem runJob_keeps_result {job : Job} {fuel : Nat} {s next : State W} {rest : 
   simp [runJob, pending, ran, restoreRegion]
 
 end CoreJS.PrimitiveAwait
+
+namespace CoreJS
+
+/-- Extract an explicit checkpoint from an immediate outcome. Even throws
+and refusals can have previously queued jobs. Fuel has no resumable turn. -/
+def TurnResult.checkpoint (jobFuel quota : Nat) :
+    TurnResult W Unit → Option (PrimitiveAwait.Result W PrimitiveAwait.Drained)
+  | .ok _ turn | .throw _ turn | .unknown _ turn => some (PrimitiveAwait.drain jobFuel quota turn)
+  | .fuel => none
+
+end CoreJS

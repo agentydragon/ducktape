@@ -11,7 +11,7 @@ variable {W : World}
 
 /-- Correspondence for continuations after choosing the same allocation
 identity and code on both sides. Extra unused bindings may differ. -/
-structure Job.Corresponds (left right : Job) : Prop where
+structure _root_.CoreJS.Job.Corresponds (left right : Job) : Prop where
   promise : left.promise = right.promise
   region : left.region = right.region
   body : left.body = right.body
@@ -22,7 +22,7 @@ inductive QueueCorresponds : List Job → List Job → Prop where
   | cons {head head' : Job} {tail tail' : List Job} : head.Corresponds head' → QueueCorresponds tail tail' →
       QueueCorresponds (head :: tail) (head' :: tail')
 
-def Turn.Corresponds (left right : Turn W) : Prop :=
+def _root_.CoreJS.Turn.Corresponds (left right : Turn W) : Prop :=
   left.state = right.state ∧ QueueCorresponds left.jobs right.jobs
 
 /-- Retain exact state and refusal reason, and keep queue correspondence for
@@ -33,7 +33,7 @@ def Result.Corresponds {α : Type} : Result W α → Result W α → Prop
   | .fuel, .fuel => True
   | _, _ => False
 
-theorem Job.capture_corresponds (job : Job) : job.capture.Corresponds job := by
+theorem _root_.CoreJS.Job.capture_corresponds (job : Job) : job.capture.Corresponds job := by
   refine ⟨rfl, rfl, rfl, rfl, rfl, fun x hx => ?_⟩
   change x ∈ freeStmts job.body at hx
   show ((freeStmts job.body).eraseDups.filterMap fun y => (job.env.vars.lookup y).map (y, ·)).lookup x = _

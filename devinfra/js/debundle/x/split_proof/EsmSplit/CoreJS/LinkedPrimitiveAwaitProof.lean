@@ -68,18 +68,14 @@ def checkStagedImmediate (source files : Json) (plan : EsmSplit.Plan) :
 
 /-- With any chosen checkpoint policy, identical immediate outcomes yield
 identical explicit drain observations, including refusal and the remaining tail. -/
-def Immediate.drain? (fuel quota : Nat) : Immediate W Unit → Option (PrimitiveAwait.Result W PrimitiveAwait.Drained)
-  | .ok _ turn | .throw _ turn | .unknown _ turn => some (PrimitiveAwait.drain fuel quota turn)
-  | .fuel => none
-
 theorem StagedImmediate.drains {source files plan} (h : StagedImmediate source files plan) :
     ∃ placed : Placed, decodePlacedChecked source files plan = .ok placed ∧
       SameExports placed.before.program placed.after.program ∧
       ∀ w fuel jobFuel quota,
-        (runImmediate w fuel placed.before).observed.drain? jobFuel quota =
-        (runImmediate w fuel placed.after).observed.drain? jobFuel quota := by
+        (runImmediate w fuel placed.before).observed.checkpoint jobFuel quota =
+        (runImmediate w fuel placed.after).observed.checkpoint jobFuel quota := by
   obtain ⟨placed, decoded, exported, immediate⟩ := h
   exact ⟨placed, decoded, exported, fun w fuel jobFuel quota =>
-    congrArg (Immediate.drain? jobFuel quota) (immediate w fuel)⟩
+    congrArg (TurnResult.checkpoint jobFuel quota) (immediate w fuel)⟩
 
 end CoreJS.LinkedPrimitiveAwait
