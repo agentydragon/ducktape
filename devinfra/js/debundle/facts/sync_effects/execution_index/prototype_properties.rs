@@ -896,8 +896,8 @@ impl IterativeRules for CapabilityContainmentRules<'_> {
         Self::propose_roots(plan, &mut state, context);
     }
 
-    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        merge_union(key, current, contribution)
+    fn merge(_key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        merge_union(current, contribution)
     }
 }
 

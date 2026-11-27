@@ -92,7 +92,7 @@ impl IterativeRules for StableImportRules<'_> {
         }
     }
 
-    fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        merge_became_true(key, current, contribution)
+    fn merge(_key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        merge_became_true(current, contribution)
     }
 }

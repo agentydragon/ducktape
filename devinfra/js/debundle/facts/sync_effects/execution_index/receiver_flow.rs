@@ -4,7 +4,7 @@ use super::ExecutionIndex;
 use super::intrinsic_roots::{NativeReceiverRoot, NativeReceiverRoots, intrinsic_roots};
 use analysis_vocabulary::inputs::{NativeIntrinsic, ValueInputRef};
 use analysis_vocabulary::value::{Kind, Value};
-use inference::{FactContext, IterativeInference, IterativeRules};
+use inference::{FactContext, IterativeInference, IterativeRules, merge_became_true, merge_union};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::*;
@@ -48,18 +48,21 @@ pub(super) struct ReceiverFlowFact {
 
 impl ReceiverFlowFact {
     pub(super) fn merge(&mut self, contribution: Self) -> bool {
-        let previous = self.clone();
-        self.roots.extend(contribution.roots);
-        self.callable_targets.extend(contribution.callable_targets);
-        self.callable_dependencies
-            .extend(contribution.callable_dependencies);
-        self.capture_dependencies
-            .extend(contribution.capture_dependencies);
-        self.outcomes.extend(contribution.outcomes);
-        self.opaque |= contribution.opaque;
-        self.safe |= contribution.safe;
-        self.complete |= contribution.complete;
-        *self != previous
+        let mut changed = merge_union(&mut self.roots, contribution.roots);
+        changed |= merge_union(&mut self.callable_targets, contribution.callable_targets);
+        changed |= merge_union(
+            &mut self.callable_dependencies,
+            contribution.callable_dependencies,
+        );
+        changed |= merge_union(
+            &mut self.capture_dependencies,
+            contribution.capture_dependencies,
+        );
+        changed |= merge_union(&mut self.outcomes, contribution.outcomes);
+        changed |= merge_became_true(&mut self.opaque, contribution.opaque);
+        changed |= merge_became_true(&mut self.safe, contribution.safe);
+        changed |= merge_became_true(&mut self.complete, contribution.complete);
+        changed
     }
 }
 
