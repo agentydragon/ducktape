@@ -32,10 +32,6 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 -m devinfra.ci.precommit_file_selection
 
-      # ============================================================================
-      # ENVIRONMENT SETUP
-      # ============================================================================
-
       - uses: ./.github/actions/setup-nix-devtools
         with:
           installables: ".#precommit"
@@ -43,10 +39,6 @@ jobs:
       - name: Install Ansible Galaxy roles
         if: steps.changed-files.outputs.needs_ansible_roles == 'true'
         uses: ./.github/actions/ansible-galaxy-roles
-
-      # ============================================================================
-      # PRE-COMMIT RUN
-      # ============================================================================
 
       - name: Run pre-commit
         env:
