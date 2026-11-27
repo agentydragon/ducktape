@@ -164,6 +164,63 @@ function checkNewRoutes(root, names) {
   }
 }
 
+function canonicalDirectory(dir) {
+  const absolute = path.resolve(dir);
+  if (dir !== absolute || !fs.lstatSync(absolute).isDirectory() || fs.realpathSync(absolute) !== absolute)
+    throw new Error(`expected a canonical package directory: ${dir}`);
+  return absolute;
+}
+
+function overlapsDirectories(left, right) {
+  const overlaps = (parent, child) => {
+    const relative = path.relative(parent, child);
+    return (
+      relative === "" || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(".." + path.sep))
+    );
+  };
+  return overlaps(left, right) || overlaps(right, left);
+}
+
+function readNodePackage(dir, result, entry, provider, caller) {
+  const root = canonicalDirectory(dir);
+  if (overlapsDirectories(root, canonicalDirectory(path.dirname(result))))
+    throw new Error("scratch overlaps the original package root");
+  const names = [entry, provider, caller];
+  if (
+    new Set(names).size !== 3 ||
+    !names.every((name) => typeof name === "string" && name.endsWith(".js") && /^[A-Za-z0-9_.~-]+$/.test(name))
+  )
+    throw new Error("expected distinct flat .js routes for entry, provider, and caller");
+  const readFixed = (name) => {
+    const file = path.join(root, name);
+    if (!fs.lstatSync(file, { throwIfNoEntry: false })?.isFile())
+      throw new Error(`expected a regular package file: ${name}`);
+    return utf8.decode(fs.readFileSync(file));
+  };
+  const manifest = readFixed("package.json");
+  if (JSON.parse(manifest)?.type !== "module") throw new Error('package.json must explicitly declare "type": "module"');
+  writeJson(result, {
+    manifest,
+    entry: linkedProgram(readFixed(entry)),
+    provider: linkedProgram(readFixed(provider)),
+    caller: readFixed(caller),
+  });
+}
+
+function checkNodePackageDestination(source, destination, scratch, mode) {
+  const root = canonicalDirectory(source);
+  const out = path.resolve(destination);
+  if (out !== destination) throw new Error("expected a canonical package destination");
+  canonicalDirectory(path.dirname(out));
+  if (overlapsDirectories(root, out)) throw new Error("destination overlaps the original package root");
+  const work = canonicalDirectory(scratch);
+  if (overlapsDirectories(work, root) || overlapsDirectories(work, out))
+    throw new Error("scratch overlaps a package root");
+  if (mode === "reread") canonicalDirectory(out);
+  else if (mode !== "fresh") throw new Error("expected a fresh or reread package destination");
+  else if (fs.lstatSync(out, { throwIfNoEntry: false })) throw new Error("owned package destination must not exist");
+}
+
 try {
   const [mode, ...args] = process.argv.slice(2);
   if (mode === "--print") {
@@ -192,6 +249,12 @@ try {
   } else if (mode === "--check-new-routes") {
     const [root, names] = args;
     checkNewRoutes(fs.realpathSync(root), readJson(names));
+  } else if (mode === "--read-node-package") {
+    const [entry, provider, caller, root, result] = args;
+    readNodePackage(root, result, entry, provider, caller);
+  } else if (mode === "--check-node-package-destination") {
+    const [readback, source, destination, scratch] = args;
+    checkNodePackageDestination(source, destination, scratch, readback);
   } else if (mode === "--read-modules") {
     const [directory, names, output] = args;
     const root = fs.realpathSync(directory);
