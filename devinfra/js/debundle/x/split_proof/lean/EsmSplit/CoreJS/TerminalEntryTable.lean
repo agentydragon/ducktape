@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.TerminalEntryNames
+import EsmSplit.CoreJS.ExportRows
 import EsmSplit.CoreJS.LinkedBehavior
 
 /-! Ordered entry export tables for a terminal metadata row. Cell
@@ -15,28 +16,39 @@ theorem exact_exports {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : md.exports = [])
     (footprint : row.FootprintMatches (B.stmt row.ordinal)) :
     (moduleOf ss B P md).exports = row.names := by
-  have empty : ∀ ids : List Nat, (∀ i ∈ ids, (B.stmt i).exports = []) →
-      ids.flatMap (fun i => (B.stmt i).exports) = [] := by
-    intro ids
-    induction ids with
-    | nil => simp
-    | cons i rest ih =>
-      intro h
-      simp only [List.flatMap_cons]
-      rw [h i (by simp)]
-      simp only [List.nil_append]
-      apply ih
-      intro j hj
-      exact h j (by simp [hj])
-  change md.namedExports B = row.names
-  simp only [EsmSplit.Module.namedExports, EsmSplit.Module.namedExportsFrom, glue, List.nil_append,
-    EsmSplit.Module.publishedFrom, units, List.flatMap_append, empty prior unpublished,
-    List.nil_append, List.flatMap_cons, List.flatMap_nil, List.append_nil,
-    EsmSplit.Bundle.toArray_getD, footprint.exports, EsmSplit.localExports, List.filterMap_map]
-  generalize row.names = names
-  induction names with
-  | nil => rfl
-  | cons pair rest ih => cases pair <;> simp [Function.comp_def]
+  by_cases absent : row.ordinal ∉ prior
+  · have onlyRow : ∀ id ∈ md.stmts, id ≠ row.ordinal → (B.stmt id).exports = [] := by
+      intro id member different
+      rw [units, List.mem_append] at member
+      rcases member with inPrior | inLast
+      · exact unpublished id inPrior
+      · simp only [List.mem_singleton] at inLast
+        exact (different inLast).elim
+    have matched := ExportRows.singleton_matches footprint onlyRow
+    have selected : md.stmts.filterMap (ExportRows.rowAt [row]) = [row] := by
+      rw [units, List.filterMap_append, ExportRows.singleton_absent row prior absent]
+      simp [ExportRows.rowAt_singleton]
+    change md.namedExports B = row.names
+    simpa using ExportRows.exact_entry_exports matched selected glue
+  · have inPrior : row.ordinal ∈ prior := Classical.not_not.mp absent
+    have noExports := unpublished row.ordinal inPrior
+    rw [footprint.exports] at noExports
+    have emptyNames : row.names = [] := List.map_eq_nil_iff.mp noExports
+    have unitEmpty : ∀ id ∈ md.stmts, (B.stmt id).exports = [] := by
+      intro id member
+      rw [units, List.mem_append] at member
+      rcases member with inPrior | inLast
+      · exact unpublished id inPrior
+      · simp only [List.mem_singleton] at inLast
+        subst id
+        exact unpublished row.ordinal inPrior
+    have matched : ∀ id ∈ md.stmts, ExportRows.UnitMatches B [] id := by
+      intro id member
+      simpa [ExportRows.UnitMatches, ExportRows.rowAt] using unitEmpty id member
+    have selected : md.stmts.filterMap (ExportRows.rowAt []) = [] := by
+      simp [ExportRows.rowAt]
+    change md.namedExports B = row.names
+    simpa [emptyNames] using ExportRows.exact_entry_exports matched selected glue
 
 /-- If two actual linked entry environments resolve each local to the same
 present address, the complete ordered public table resolves to exactly the

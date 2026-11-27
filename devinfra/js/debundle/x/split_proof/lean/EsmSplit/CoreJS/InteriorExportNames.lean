@@ -1,19 +1,18 @@
 import EsmSplit.CoreJS.DeclaringOwner
+import EsmSplit.CoreJS.ExportRows
 import EsmSplit.LocalExportUnit
 import EsmSplit.MetadataImports
 
 /-! Source/plan facts for one non-executable local export list at its original
-ordinal. The source may contain executable units on either side of the row. -/
+ordinal, independent of its position among executable units. -/
 
 namespace CoreJS.InteriorExportNames
 
-/-- The actual source table and original identity of an interior local export
+/-- The actual source table and original identity of a local export
 list. The typed row comes from the same source as the CoreJS module. -/
 structure SourceRow (source : Module) (row : EsmSplit.LocalExportUnit) : Prop where
   exports : source.exports = row.names
   absent : row.ordinal ∉ source.body.map Prod.fst
-  before : ∃ id ∈ source.body.map Prod.fst, id < row.ordinal
-  after : ∃ id ∈ source.body.map Prod.fst, row.ordinal < id
 
 /-- An authored owner in a faithful full plan retains the original metadata
 unit. The row must not occur as a source executable unit. -/
@@ -42,38 +41,6 @@ theorem row_pair_published {B : EsmSplit.Bundle} {owner : EsmSplit.Module} {row 
   refine ⟨row.ordinal, owned, ?_⟩
   simpa only [EsmSplit.Bundle.toArray_getD] using hexport
 
-private theorem exports_without_row (B : EsmSplit.Bundle) (ordinal : Nat) :
-    ∀ ids : List Nat, ordinal ∉ ids →
-      (∀ id ∈ ids, id ≠ ordinal → (B.stmt id).exports = []) →
-      ids.flatMap (fun id => (B.stmt id).exports) = []
-  | [], _, _ => rfl
-  | id :: rest, absent, onlyRow => by
-    have notHead : id ≠ ordinal := fun eq => absent (by simp [eq])
-    have headEmpty := onlyRow id (by simp) notHead
-    have absentRest : ordinal ∉ rest := fun h => absent (by simp [h])
-    have restOnly : ∀ id ∈ rest, id ≠ ordinal → (B.stmt id).exports = [] :=
-      fun id member ne => onlyRow id (by simp [member]) ne
-    simp [headEmpty, exports_without_row B ordinal rest absentRest restOnly]
-
-private theorem exports_with_one_row (B : EsmSplit.Bundle) (ordinal : Nat) :
-    ∀ ids : List Nat, ids.Nodup → ordinal ∈ ids →
-      (∀ id ∈ ids, id ≠ ordinal → (B.stmt id).exports = []) →
-      ids.flatMap (fun id => (B.stmt id).exports) = (B.stmt ordinal).exports
-  | [], _, selected, _ => by simp at selected
-  | id :: rest, unique, selected, only => by
-    by_cases same : id = ordinal
-    · subst id
-      have absent : ordinal ∉ rest := (List.nodup_cons.mp unique).1
-      have tail : rest.flatMap (fun id => (B.stmt id).exports) = [] :=
-        exports_without_row B ordinal rest absent (fun j hj ne => only j (by simp [hj]) ne)
-      simp [tail]
-    · have later : ordinal ∈ rest := (List.mem_cons.mp selected).resolve_left (Ne.symm same)
-      have head := only id (by simp) same
-      have tailOnly : ∀ j ∈ rest, j ≠ ordinal → (B.stmt j).exports = [] :=
-        fun j hj ne => only j (by simp [hj]) ne
-      have tail := exports_with_one_row B ordinal rest (List.nodup_cons.mp unique).2 later tailOnly
-      simp [head, tail]
-
 /-- If the one original row is the only exporting unit in the authored entry,
 its actual planner export table is precisely the original ordered row. The
 entry can also own executable units before or after the metadata. -/
@@ -81,15 +48,9 @@ theorem exact_public_table {B : EsmSplit.Bundle} {owner : EsmSplit.Module} {row 
     (unique : owner.stmts.Nodup) (owned : row.ordinal ∈ owner.stmts) (glue : owner.exports = [])
     (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
     (footprint : row.FootprintMatches (B.stmt row.ordinal)) : owner.namedExports B = row.names := by
-  have full : owner.stmts.flatMap (fun id => (B.stmt id).exports) = (B.stmt row.ordinal).exports :=
-    exports_with_one_row B row.ordinal owner.stmts unique owned onlyRow
-  unfold EsmSplit.Module.namedExports EsmSplit.Module.namedExportsFrom EsmSplit.Module.publishedFrom
-  simp only [glue, List.nil_append, EsmSplit.Bundle.toArray_getD, full, footprint.exports,
-    EsmSplit.localExports, List.filterMap_map]
-  generalize row.names = names
-  induction names with
-  | nil => rfl
-  | cons pair rest ih => cases pair <;> simp [Function.comp_def]
+  have matched := ExportRows.singleton_matches footprint onlyRow
+  have selected := ExportRows.singleton_selection row owner.stmts unique owned
+  simpa using ExportRows.exact_entry_exports matched selected glue
 
 /-- Every row local resolves to its authored original declaration owner. The
 row owner either declares it or imports it from that exact owner; no value
