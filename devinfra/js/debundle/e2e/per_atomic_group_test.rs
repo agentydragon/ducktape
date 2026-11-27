@@ -1068,11 +1068,6 @@ fn ownership_subset_exports_selected_graph_and_passes_normal_gate() {
         &["--ownership-subset", subset_path],
     );
     assert_preserved_entry_output(&fixture, "before,residual,after\n");
-    let graph: serde_json::Value = read_gzip_json(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("dependency_graph.json.gz"),
-    );
+    let graph: serde_json::Value = read_gzip_json(&fixture.report_path("dependency_graph.json.gz"));
     assert_eq!(graph["ownership_subset"], serde_json::json!([]));
 }

@@ -154,12 +154,7 @@ fn bounded_callback_fallback_excludes_post_await_binding_write() {
         &["--effect-conflicts-jsonl"],
     );
     assert_preserved_entry_output(&fixture, "326 0\n");
-    let rows = read_jsonl(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl"),
-    );
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     assert!(
         !rows.is_empty(),
         "the emitted order must exercise effect relocation"

@@ -105,13 +105,7 @@ fn generated_residual_modules_are_reported_and_report_is_opt_in() {
             .with_import_order(&["__auto/atomic_groups/0000", "a"])
     };
     let without = run_fixture_with_args(opts(), &["--ownership-subset", subset_path]);
-    assert!(
-        !without
-            .report_root
-            .join(&without.chunk_id)
-            .join("residual_atomic_groups.json")
-            .exists()
-    );
+    assert!(!without.report_path("residual_atomic_groups.json").exists());
     let fixture = run_fixture_with_args(
         opts(),
         &[

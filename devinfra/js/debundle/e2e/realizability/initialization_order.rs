@@ -66,14 +66,8 @@ fn flat_fixture_without_graph_export_keeps_output_and_gate_verdict() {
     assert_entry_output(&ordinary, "7\n");
     assert_entry_output(&with_graphs, "7\n");
 
-    let ordinary_assessment = ordinary
-        .report_root
-        .join(&ordinary.chunk_id)
-        .join("candidate_relocation_assessment.json");
-    let graph_assessment = with_graphs
-        .report_root
-        .join(&with_graphs.chunk_id)
-        .join("candidate_relocation_assessment.json");
+    let ordinary_assessment = ordinary.report_path("candidate_relocation_assessment.json");
+    let graph_assessment = with_graphs.report_path("candidate_relocation_assessment.json");
     let ordinary_assessment: serde_json::Value = read_json(&ordinary_assessment);
     let graph_assessment: serde_json::Value = read_json(&graph_assessment);
     assert_eq!(ordinary_assessment["legacy_gate_accepts"], true);
@@ -83,14 +77,8 @@ fn flat_fixture_without_graph_export_keeps_output_and_gate_verdict() {
         graph_assessment["legacy_gate_accepts"],
     );
 
-    let ordinary_graph = ordinary
-        .report_root
-        .join(&ordinary.chunk_id)
-        .join("dependency_graph.json.gz");
-    let graph_graph = with_graphs
-        .report_root
-        .join(&with_graphs.chunk_id)
-        .join("dependency_graph.json.gz");
+    let ordinary_graph = ordinary.report_path("dependency_graph.json.gz");
+    let graph_graph = with_graphs.report_path("dependency_graph.json.gz");
     assert!(
         !ordinary_graph.exists(),
         "ordinary fixture exported a dependency graph"

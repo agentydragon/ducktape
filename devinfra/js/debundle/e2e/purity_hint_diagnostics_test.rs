@@ -37,12 +37,7 @@ fn hint_free_function_chain_is_reported_as_independent() {
         "stderr: {}",
         fixture.stderr,
     );
-    let report: HintReport = read_json(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("modules.json"),
-    );
+    let report: HintReport = read_json(&fixture.report_path("modules.json"));
     assert_eq!(report.redundant_purity_hints.len(), 2);
     for hint in report.redundant_purity_hints {
         assert_eq!(
@@ -68,12 +63,7 @@ fn hint_depending_on_another_assertion_is_explicit() {
         )],
     ));
     assert_entry_output(&fixture, "7\n");
-    let report: HintReport = read_json(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("modules.json"),
-    );
+    let report: HintReport = read_json(&fixture.report_path("modules.json"));
     let [hint] = report.redundant_purity_hints.as_slice() else {
         panic!(
             "only the wrapper hint is removable: {:?}",

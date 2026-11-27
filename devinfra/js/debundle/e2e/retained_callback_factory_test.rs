@@ -798,10 +798,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
         );
     }
     for path in [
-        rejected
-            .report_root
-            .join(&rejected.chunk_id)
-            .join("dependency_graph.json.gz"),
+        rejected.report_path("dependency_graph.json.gz"),
         rejected.modules_root.clone(),
         rejected.source_root.clone(),
     ] {

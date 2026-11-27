@@ -44,9 +44,7 @@ pub trait FixtureGraphExt {
 
 impl FixtureGraphExt for Fixture {
     fn dependency_graph_path(&self) -> PathBuf {
-        self.report_root
-            .join(&self.chunk_id)
-            .join("dependency_graph.json.gz")
+        self.report_path("dependency_graph.json.gz")
     }
 }
 

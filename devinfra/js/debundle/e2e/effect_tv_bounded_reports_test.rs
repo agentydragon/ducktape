@@ -112,12 +112,7 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     assert_eq!(examples(&report).len(), 20);
     assert_eq!(report["examples_truncated"], true);
     assert_eq!(report["full_detail_export_available"], true);
-    let rows = read_jsonl(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl"),
-    );
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     assert_full_rows_match_summary(&report, &rows);
 }
 

@@ -48,10 +48,7 @@ export { wrapper, A, B, C };
     );
     let args = ["--ownership-subset", selection.path().to_str().unwrap()];
     let fixture = run_fixture_with_graphs_and_args(options(MemberPurity::Pure), &args);
-    let graph_path = fixture
-        .report_root
-        .join(&fixture.chunk_id)
-        .join("dependency_graph.json.gz");
+    let graph_path = fixture.report_path("dependency_graph.json.gz");
     let graph: serde_json::Value = read_gzip_json(&graph_path);
     let expected_selection = serde_json::json!([
         {"module": "values/middle"},

@@ -65,10 +65,7 @@ fn large_module_provenance_stays_bounded_and_reports_keep_all_bindings() {
         fs::read_to_string(harness.join("app").join(MODULE_PATH)).unwrap()
     );
     for report_file in [
-        fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("chunk.json"),
+        fixture.report_path("chunk.json"),
         harness.join(&report_path),
     ] {
         let report: serde_json::Value = read_json(&report_file);

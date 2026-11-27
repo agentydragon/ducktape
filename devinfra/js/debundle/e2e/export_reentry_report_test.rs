@@ -3,14 +3,9 @@
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 use serde_json::Value;
-use std::path::PathBuf;
 
 const CHUNK_ID: &str = "static/provider";
 const REPORT_NAME: &str = "export_reentry.json";
-
-fn report_path(report_root: &std::path::Path, chunk_id: &str) -> PathBuf {
-    report_root.join(chunk_id).join(REPORT_NAME)
-}
 
 fn has_loader_failure(report: &Value, reason: &str, source_chunk: &str) -> bool {
     report["loader"]["failures"]
@@ -55,7 +50,7 @@ fn selected_builtin_leaves_are_reported_with_source_uses() {
             NodeBuiltinModule::FsPromises,
         ])),
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
     assert_eq!(report["policy"], "no_static_importer_reentry");
     assert_eq!(report["closure_blockers"]["examples"], Value::Array(vec![]));
     assert_eq!(
@@ -115,7 +110,7 @@ fn declared_bun_modules_and_node_builtins_are_static_leaves() {
             ..builtin_policy(&[NodeBuiltinModule::Querystring, NodeBuiltinModule::Assert])
         }),
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
     assert_eq!(report["policy"], "no_static_importer_reentry");
     let leaves: Vec<_> = report["host_builtin_leaves"]["examples"]
         .as_array()
@@ -150,7 +145,7 @@ fn unselected_bare_and_replacement_packages_remain_unresolved() {
         .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
     assert_eq!(report["policy"], "conservative");
     assert_eq!(
         report["host_builtin_leaves"]["examples"][0]["specifier"],
@@ -177,7 +172,7 @@ fn attributed_builtin_request_remains_unsupported() {
         .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
     assert_eq!(report["policy"], "conservative");
     assert!(has_reason(
         &report,
@@ -204,7 +199,7 @@ fn builtin_leaf_set_is_closed_and_unused_assertion_is_not_evidence() {
             .with_chunk_import_order(CHUNK_ID, &["residual"])
             .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
     assert_eq!(report["host_builtin_leaves"]["total"], 0);
 }
 
@@ -225,7 +220,7 @@ fn builtin_leaf_does_not_remove_application_require_or_static_cycle_blockers() {
         .with_admission_overrides(&["a5_import_meta"])
         .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
     assert_eq!(report["policy"], "conservative");
     assert_eq!(
         report["host_builtin_leaves"]["examples"][0]["specifier"],
@@ -254,7 +249,7 @@ fn supported_case_reports_no_static_importer_reentry() {
         .with_chunk_id(CHUNK_ID)
         .with_chunk_import_order(CHUNK_ID, &["values"]),
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
 
     assert_eq!(report["policy"], "no_static_importer_reentry");
     assert_eq!(
@@ -285,7 +280,7 @@ fn static_import_of_empty_source_does_not_block_export_reentry_proof() {
             .with_chunk_import_order(CHUNK_ID, &["values"])
             .with_extra_chunks(&extra_chunks),
         );
-        let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+        let report: Value = read_json(&fixture.report_path(REPORT_NAME));
         assert_eq!(report["policy"], expected_policy);
         assert_eq!(
             has_reason(
@@ -339,7 +334,7 @@ export const value = 1;
             &format!("fixture-provider={}", bundle_root.path().display()),
         ],
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
 
     assert_eq!(report["policy"], "conservative");
     assert!(has_loader_failure(&report, "opaque_loader_site", CHUNK_ID));
@@ -391,7 +386,7 @@ fn incomplete_artifact_is_reported_for_selected_chunk() {
         .with_extra_chunks(&extra_chunks)
         .with_prune_other_chunks(),
     );
-    let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
+    let report: Value = read_json(&fixture.report_path(REPORT_NAME));
 
     assert_eq!(report["policy"], "conservative");
     assert!(has_reason(
@@ -421,7 +416,8 @@ export { a, b, c, d };
         .with_import_order(&["mod_x", "mod_y", "residual"]),
     );
     assert!(!rejected.cycles().is_empty());
-    let rejection_report: Value = read_json(&report_path(&rejected.report_root, "static/app"));
+    let rejection_report: Value =
+        read_json(&rejected.report_root.join("static/app").join(REPORT_NAME));
     assert_eq!(rejection_report["policy"], "no_static_importer_reentry");
 
     let accepted = run_dry_run_fixture(FixtureOpts::new(
@@ -429,7 +425,11 @@ export { a, b, c, d };
         vec![logical_module("values", &[Member::new("value")])],
     ));
     assert!(
-        !report_path(&accepted.report_root, "static/app").exists(),
+        !accepted
+            .report_root
+            .join("static/app")
+            .join(REPORT_NAME)
+            .exists(),
         "accepted dry run must not write export-reentry diagnostics",
     );
 }
@@ -468,7 +468,7 @@ fn bounded_loader_evidence_keeps_complete_explicit_export() {
     };
     let default = run_fixture(opts());
     assert_entry_output(&default, "ready\n");
-    let default_summary: Value = read_json(&report_path(&default.report_root, CHUNK_ID));
+    let default_summary: Value = read_json(&default.report_path(REPORT_NAME));
     // Fail old unbounded output before requesting the newly introduced flag.
     let requests = &default_summary["loader"]["requests"];
     if let Some(legacy) = requests.as_array() {
@@ -484,10 +484,10 @@ fn bounded_loader_evidence_keeps_complete_explicit_export() {
     let full_path = |root: &std::path::Path| root.join(CHUNK_ID).join("export_reentry.full.json");
     assert!(!full_path(&default.report_root).exists());
     let exported = run_fixture_with_args(opts(), &["--full-report", "export_reentry"]);
-    let summary: Value = read_json(&report_path(&exported.report_root, CHUNK_ID));
+    let summary: Value = read_json(&exported.report_path(REPORT_NAME));
     assert_eq!(
         summary,
-        read_json::<Value>(&report_path(&default.report_root, CHUNK_ID))
+        read_json::<Value>(&default.report_path(REPORT_NAME))
     );
     let complete: Value = read_json(&full_path(&exported.report_root));
     assert_eq!(summary["policy"], complete["policy"]);
