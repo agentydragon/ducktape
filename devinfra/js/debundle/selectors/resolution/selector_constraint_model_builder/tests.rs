@@ -101,7 +101,7 @@ fn collect_satisfying_tuples(
         return;
     };
 
-    for value in model.variable_domain_values(variable) {
+    for &value in model.variable_domain_values(variable) {
         assignment.insert(variable.id, value);
         collect_satisfying_tuples(model, variables, variable_index + 1, assignment, rows);
     }
