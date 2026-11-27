@@ -64,7 +64,6 @@ func (p *Proxy) connectPassthrough(w http.ResponseWriter, request *http.Request,
 	incoming, buffered, err := http.NewResponseController(w).Hijack()
 	if err != nil {
 		refuse(decision.Unavailable, caller)
-		http.Error(w, "CONNECT requires HTTP/1.1", http.StatusHTTPVersionNotSupported)
 		return
 	}
 	defer incoming.Close()
