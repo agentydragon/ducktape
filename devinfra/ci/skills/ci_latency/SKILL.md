@@ -65,6 +65,8 @@ test or an idle cluster does not establish a fast CI path. Show which queue bloc
 required feedback, why work cannot start, and which concrete routing, capacity,
 resource or workload change could remove that wait. Keep unknown routing and
 unobserved provider limits explicit rather than pooling them into an average.
+For recycled runners, measure the warm-hit rate per test from run receipts and pool-wide from
+executor metrics ([runner reuse](references/executor_queues.md#measure-runner-reuse)).
 
 ## Compare execution architectures before narrowing the search
 
