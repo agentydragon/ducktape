@@ -311,8 +311,8 @@ state. `WatchInboxEntries` reports at most 100 retained, unacknowledged entry id
 lifecycle fields; it never returns provider payloads. `WatchSubscriptions` reports subscription
 state. Each watch starts with current state; entry and subscription watches then send changes.
 A missing inbox is a state, since inboxes are created lazily. `WatchInbox` takes a `field_mask` of `Inbox`
-fields; it sends a frame only when one of them changes. Empty watches every field, including
-`delivery.next_work_at`, which changes with each worker claim. Reconnecting starts from fresh state.
+fields, required; it sends a frame only when one of them changes. `delivery.next_work_at` changes with
+each worker claim. Reconnecting starts from fresh state.
 Watches send heartbeats and revalidate authorization; they do not end on a fixed lease. Reading
 never acknowledges entries. Workloads can read an inbox only when running as the Identity recorded by
 the Session Dispatcher; the configured

@@ -49,14 +49,10 @@ func TestAnInboxWatchSeesChangesInItsSet(t *testing.T) {
 	}
 }
 
-func TestAnEmptyInboxFieldSetWatchesEveryField(t *testing.T) {
-	fields, err := newInboxFields(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inbox := inboxWithNextWork(timestamppb.Now())
-	if !proto.Equal(fields.apply(proto.Clone(inbox).(*pb.Inbox)), inbox) {
-		t.Fatal("the legacy empty set reduced the inbox")
+func TestAnEmptyInboxFieldSetIsRejected(t *testing.T) {
+	_, err := newInboxFields(nil)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("code = %v, want InvalidArgument", status.Code(err))
 	}
 }
 
