@@ -156,8 +156,7 @@ base LV. Re-run when Nix config changes. The rootfs updates infrequently
 ### Guest init: process_api via initramfs
 
 Anthropic's `process_api` is a ~3.3MB static Rust binary that serves as
-PID 1 in Claude Code web Firecracker VMs. Full reverse-engineered source
-(5,752 lines, 10 modules) at <devinfra/claude/web_env/re/process_api/>.
+PID 1 in Claude Code web Firecracker VMs.
 
 We use it as our guest init, following Anthropic's architecture:
 
@@ -347,8 +346,8 @@ Post-restore, Bazel queries take ~0.3s (warm Skyframe) instead of ~15s.
 
 ### Anthropic's Snapstart
 
-Anthropic's own `process_api` (reverse-engineered in
-`devinfra/claude/web_env/re/process_api/`) implements this exact pattern:
+Anthropic's own `process_api` (from reverse-engineering the binary) implements
+this exact pattern:
 
 - **Template mode**: Boot VM, run full init, write `"SNAPSTART_READY\n"` to
   serial port. Host snapshots the frozen VM.

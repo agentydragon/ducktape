@@ -688,6 +688,12 @@ reuse before removing raw YAML from graph export inputs.
   [A11 obligation](docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).
   Measure the cost and reach of a mandatory whole-chunk check before changing
   that contract. Purity consumers follow <plans/abstract_interpreter.md>.
+- **Above-chunk-root import paths.** `lowering/imports/imports_runtime.rs:198-203`
+  rebases an unresolved relative specifier (extra-file asset) with
+  `"../".repeat(depth)` + `normalize_relative_module_specifier`, not an artifact
+  path helper. Open: are specifiers that climb above the chunk root supported?
+  No → reject them and use the shared helper. Yes → add `rebase_relative_specifier`
+  to `artifacts/paths.rs` and call it here. Results differ only above the root.
 
 ## Retained spec capabilities
 

@@ -197,12 +197,7 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
                 .premises
                 .get_or_insert_with(Default::default);
             for &read in &self.reads {
-                premises.insert(
-                    keys[read.index()]
-                        .as_ref()
-                        .expect("read inference cell has a key")
-                        .clone(),
-                );
+                premises.insert(cell_key(keys, read).clone());
             }
             premises.extend(self.sealed_reads.iter().cloned());
         }

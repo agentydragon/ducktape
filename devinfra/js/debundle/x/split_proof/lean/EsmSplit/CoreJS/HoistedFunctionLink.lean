@@ -1,6 +1,7 @@
 import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.Move
+import EsmSplit.CoreJS.OrderedRegion
 import EsmSplit.CoreJS.Split
 import EsmSplit.Split
 
@@ -133,66 +134,6 @@ private theorem runUnits_move_inert (fuel : Nat) (pivot : LinkedUnit)
     | unknown why state => simp [M.bind_apply, hpre]
     | fuel => simp [M.bind_apply, hpre]
 
-/-- If two links use the same declarations and their units match after sorting
-by original identity, linking from the same state produces the same ready
-state. The execution order of the modules is immaterial to hoisting. -/
-theorem matching_sorted {source candidate : Program} {w : World}
-    (regions : source.regions = candidate.regions) (tops : source.tops = candidate.tops)
-    (scopes : ∀ frames, FramesOf source.tops frames →
-      ∃ sourceLinked candidateLinked,
-        source.scopes frames source.loaded = .ok sourceLinked ∧
-        candidate.scopes frames candidate.loaded = .ok candidateLinked ∧
-        SameUnits
-          ((unitsOf sourceLinked).mergeSort fun a b => decide (a.1 ≤ b.1))
-          ((unitsOf candidateLinked).mergeSort fun a b => decide (a.1 ≤ b.1)))
-    (before : CheckedLink source w) :
-    ∃ after : CheckedLink candidate w,
-      before.ready = after.ready ∧
-      ∃ frames sourceLinked candidateLinked,
-        FramesOf source.tops frames ∧
-        source.scopes frames source.loaded = .ok sourceLinked ∧
-        candidate.scopes frames candidate.loaded = .ok candidateLinked ∧
-        before.linked = sourceLinked ∧ after.linked = candidateLinked ∧
-        SameUnits
-          ((unitsOf sourceLinked).mergeSort fun a b => decide (a.1 ≤ b.1))
-          ((unitsOf candidateLinked).mergeSort fun a b => decide (a.1 ≤ b.1)) := by
-  have linkedSource : ((do
-      checkIdentities source.tops
-      let frames ← declareTops source.tops
-      let linked ← lift (source.scopes frames source.loaded)
-      initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))
-      pure linked) : M w _) (initialState w source.regions) = .ok before.linked before.ready := by
-    simpa [link, linkUsingScopes] using before.equation
-  obtain ⟨_, afterCheck, check, linkedSource⟩ := bind_ok linkedSource
-  obtain ⟨frames, afterDeclare, declared, linkedSource⟩ := bind_ok linkedSource
-  obtain ⟨sourceLinked, candidateLinked, sourceScope, candidateScope, same⟩ :=
-    scopes frames (declareTops_names _ declared)
-  rw [sourceScope] at linkedSource
-  change ((initFunctions ((unitsOf sourceLinked).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ =>
-      pure sourceLinked) : M w _) afterDeclare = .ok before.linked before.ready at linkedSource
-  obtain ⟨_, sourceReady, initialized, returned⟩ := bind_ok linkedSource
-  have sourceLinkedEq : sourceLinked = before.linked := by injection returned
-  have sourceReadyEq : sourceReady = before.ready := by injection returned
-  have initializedCandidate :
-      initFunctions ((unitsOf candidateLinked).mergeSort fun a b => decide (a.1 ≤ b.1))
-        afterDeclare = .ok () before.ready := by
-    rw [← initFunctions_same same, ← sourceReadyEq]
-    exact initialized
-  have afterLink : link candidate (initialState w candidate.regions) =
-      .ok candidateLinked before.ready := by
-    rw [← regions]
-    unfold link linkUsingScopes
-    rw [← tops]
-    simp only [M.bind_apply, check, declared, candidateScope, lift, pure]
-    change ((initFunctions ((unitsOf candidateLinked).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ =>
-      pure candidateLinked) : M w _) afterDeclare = .ok candidateLinked before.ready
-    rw [M.bind_apply, initializedCandidate]
-    rfl
-  let after : CheckedLink candidate w := ⟨candidateLinked, before.ready, afterLink⟩
-  refine ⟨after, rfl, frames, sourceLinked, candidateLinked,
-    declareTops_names _ declared, sourceScope, candidateScope, sourceLinkedEq.symm, ?_, same⟩
-  rfl
-
 /-- The two actual links for an authored plan start from the same ready state.
 The candidate units retain their plan execution order and their free names
 resolve to the source bundle's live cells. -/
@@ -217,13 +158,7 @@ theorem planned_linked_pair {ss : List Stmt} {bundle : EsmSplit.Bundle} {spec : 
   let candidate := splitProgram ss bundle plan
   have hperm : plan.execOrder.Perm (List.range ss.length) := valid_perm valid footprints.1
   obtain ⟨hregions, htops⟩ := split_holds_statements (B := bundle) hperm
-  have scopeData : ∀ frames, FramesOf source.tops frames →
-      ∃ sourceLinked candidateLinked,
-        source.scopes frames source.loaded = .ok sourceLinked ∧
-        candidate.scopes frames candidate.loaded = .ok candidateLinked ∧
-        SameUnits
-          ((unitsOf sourceLinked).mergeSort fun a b => decide (a.1 ≤ b.1))
-          ((unitsOf candidateLinked).mergeSort fun a b => decide (a.1 ≤ b.1)) := by
+  have scopeData : OrderedRegion.HoistScopesAgree source candidate := by
     intro frames hframes
     have hF : FramesOf ((List.range ss.length).zip ss) frames := by
       simpa only [source, single_tops] using hframes
@@ -259,18 +194,15 @@ theorem planned_linked_pair {ss : List Stmt} {bundle : EsmSplit.Bundle} {spec : 
         exact candidateAgreement u' ((List.mergeSort_perm _ _).mem_iff.1 hu')
     exact ⟨[(bundleModule ss, bundleEnv ss frames)], candidateLinked,
       sourceScope, candidateScope, sameSorted⟩
-  obtain ⟨after, readyEq, frames, sourceLinked, candidateLinked, hF,
-      sourceScope, candidateScope, sourceLinkedEq, candidateLinkedEq, _⟩ :=
-    matching_sorted hregions htops scopeData before
-  have hFrames : FramesOf ((List.range ss.length).zip ss) frames := by
-    simpa only [source, single_tops] using hF
-  obtain ⟨candidateLinked', candidateScope', candidateKeys, candidateAgreement⟩ :=
-    split_units_agree valid footprints hFrames
-  have candidateListEq : candidateLinked = candidateLinked' := by
-    rw [candidateScope] at candidateScope'
-    injection candidateScope'
-  refine ⟨after, readyEq, frames, sourceLinked, candidateLinked, hFrames,
-    sourceScope, candidateScope, sourceLinkedEq, candidateLinkedEq, ?_, ?_⟩
+  obtain ⟨_, frames, _, after, _, declared, sourceScope, candidateScope, readyEq⟩ :=
+    OrderedRegion.matching_hoist_link_with_frames hregions htops scopeData before
+  have hF : FramesOf ((List.range ss.length).zip ss) frames := by
+    simpa only [source, single_tops] using declareTops_names _ declared
+  obtain ⟨candidateLinked, candidateScope', candidateKeys, candidateAgreement⟩ :=
+    split_units_agree valid footprints hF
+  have candidateListEq := Except.ok.inj (candidateScope.symm.trans candidateScope')
+  refine ⟨after, readyEq, frames, before.linked, after.linked, hF,
+    sourceScope, candidateScope, rfl, rfl, ?_, ?_⟩
   · rw [candidateListEq, candidateKeys]
   · intro u hu
     rw [candidateListEq] at hu

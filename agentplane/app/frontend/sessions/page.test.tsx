@@ -303,7 +303,7 @@ beforeEach(() => {
             snapshot: {
               summaries: (threadRows ?? [sharedThreadView()])
                 .filter((row) => ids.includes(row.metadata.threadId))
-                .map((row) => toJson(SessionSummarySchema, row.summary)),
+                .map((row) => toJson(SessionSummarySchema, create(SessionSummarySchema, row.summary))),
             },
           });
         }

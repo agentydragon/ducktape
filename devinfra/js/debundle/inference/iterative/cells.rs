@@ -26,6 +26,16 @@ impl FactId {
     }
 }
 
+/// A live cell always carries its key: a cell enters the table with one, is
+/// never re-keyed, and leaves by handing it back. Reading a cell's key
+/// therefore has no fallback - a missing key means the table was built wrong -
+/// and one wording covers every read of `keys`.
+pub(super) fn cell_key<Key>(keys: &[Option<Key>], id: CellId) -> &Key {
+    keys[id.index()]
+        .as_ref()
+        .expect("live inference cell has a key")
+}
+
 pub(super) struct InferenceCell {
     pub(super) fact: Option<FactId>,
     pub(super) readers: Vec<usize>,
@@ -86,9 +96,15 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
     }
 
     pub(super) fn key(&self, id: CellId) -> &Key {
-        self.keys[id.index()]
-            .as_ref()
-            .expect("live inference cell has a key")
+        cell_key(&self.keys, id)
+    }
+
+    /// Read a live cell's key and leave the slot empty, so a caller retiring
+    /// the cell gets the key it must drop from the ID map in the same step.
+    fn take_key(&mut self, id: CellId) -> Key {
+        let key = cell_key(&self.keys, id).clone();
+        self.keys[id.index()] = None;
+        key
     }
 
     pub(super) fn cell(&self, id: CellId) -> &InferenceCell {
@@ -170,9 +186,7 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
         if cell.fact.is_some() || !cell.readers.is_empty() {
             return;
         }
-        let key = self.keys[id.index()]
-            .take()
-            .expect("live inference cell has a key");
+        let key = self.take_key(id);
         assert_eq!(self.ids.remove(&key), Some(id));
         self.cells[id.index()] = InferenceCell {
             fact: None,

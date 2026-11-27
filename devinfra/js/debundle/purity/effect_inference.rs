@@ -7,7 +7,7 @@
 
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::purity::{Purity, PurityReason, PurityRule};
-use inference::{FactChange, FactContext, IterativeInference, IterativeRules};
+use inference::{FactContext, IterativeInference, IterativeRules};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 use std::cmp::Reverse;
@@ -138,32 +138,6 @@ pub enum PurityRuleKey {
     Effects(PurityFunctionKey),
 }
 
-/// Typed adapter seam for registering purity rules in a larger shared store.
-/// A dispatcher can implement this by projecting its own enum key/fact types
-/// onto these purity-specific variants.
-pub(crate) trait PurityFactContext {
-    fn read_purity(&mut self, key: PurityKey) -> Option<&PurityFact>;
-    fn propose_purity(&mut self, key: PurityKey, contribution: PurityFact) -> FactChange;
-    fn assume_purity(&mut self, dependencies: &ProofDependencies);
-}
-
-impl<C> PurityFactContext for C
-where
-    C: FactContext<PurityKey, PurityFact>,
-{
-    fn read_purity(&mut self, key: PurityKey) -> Option<&PurityFact> {
-        self.read(key)
-    }
-
-    fn propose_purity(&mut self, key: PurityKey, contribution: PurityFact) -> FactChange {
-        self.propose(key, contribution)
-    }
-
-    fn assume_purity(&mut self, dependencies: &ProofDependencies) {
-        self.assume(dependencies)
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PurityFact {
     Body(Arc<PurityBodyTransfer>),
@@ -259,85 +233,6 @@ impl PurityEffectRules {
             .collect()
     }
 
-    pub(crate) fn evaluate(&self, rule: &PurityRuleKey, context: &mut impl PurityFactContext) {
-        match rule {
-            PurityRuleKey::Body(key) => {
-                let Some(body) = self.bodies.get(key) else {
-                    return;
-                };
-                context.assume_purity(&body.dependencies);
-                context.propose_purity(
-                    PurityKey::Body(key.clone()),
-                    PurityFact::Body(Arc::clone(body)),
-                );
-            }
-            PurityRuleKey::Effects(key) => {
-                let Some(PurityFact::Body(_)) =
-                    context.read_purity(PurityKey::Body(key.clone())).cloned()
-                else {
-                    return;
-                };
-                let mut effectful = self.direct_effectful.contains(key);
-                for callee in self.callees_by_caller.get(key).into_iter().flatten() {
-                    #[cfg(test)]
-                    self.work_counts
-                        .initial_call_edges
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    effectful |= matches!(
-                        context.read_purity(PurityKey::Effects(callee.clone())),
-                        Some(PurityFact::Effects(true))
-                    );
-                }
-                context.propose_purity(
-                    PurityKey::Effects(key.clone()),
-                    PurityFact::Effects(effectful),
-                );
-            }
-        }
-    }
-
-    fn evaluate_changed(
-        &self,
-        rule: &PurityRuleKey,
-        changed: &BTreeSet<PurityKey>,
-        context: &mut impl FactContext<PurityKey, PurityFact>,
-    ) {
-        let PurityRuleKey::Effects(caller) = rule else {
-            self.evaluate(rule, context);
-            return;
-        };
-
-        // A rule may first run before its body-completion fact exists. In
-        // that case the new body enables all its outgoing reads at once.
-        if changed.contains(&PurityKey::Body(caller.clone())) {
-            self.evaluate(rule, context);
-            return;
-        }
-
-        let mut effectful = self.direct_effectful.contains(caller);
-        let callees = self.callees_by_caller.get(caller);
-        for changed_key in changed {
-            let PurityKey::Effects(callee) = changed_key else {
-                continue;
-            };
-            if !callees.is_some_and(|callees| callees.contains(callee)) {
-                continue;
-            }
-            #[cfg(test)]
-            self.work_counts
-                .changed_call_edges
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            effectful |= matches!(
-                context.read_purity(PurityKey::Effects(callee.clone())),
-                Some(PurityFact::Effects(true))
-            );
-        }
-        context.propose_purity(
-            PurityKey::Effects(caller.clone()),
-            PurityFact::Effects(effectful),
-        );
-    }
-
     /// Compatibility path for one module. The same typed rules are used by
     /// callers that register them in a larger shared inference universe.
     pub fn solve_to_purities(self) -> BTreeMap<PurityFunctionKey, Arc<Purity>> {
@@ -405,16 +300,81 @@ impl IterativeRules for PurityEffectRules {
     const EVALUATES_CHANGES: bool = true;
 
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
-        PurityEffectRules::evaluate(self, rule, context)
+        match rule {
+            PurityRuleKey::Body(key) => {
+                let Some(body) = self.bodies.get(key) else {
+                    return;
+                };
+                context.assume(&body.dependencies);
+                context.propose(
+                    PurityKey::Body(key.clone()),
+                    PurityFact::Body(Arc::clone(body)),
+                );
+            }
+            PurityRuleKey::Effects(key) => {
+                let Some(PurityFact::Body(_)) = context.read(PurityKey::Body(key.clone())).cloned()
+                else {
+                    return;
+                };
+                let mut effectful = self.direct_effectful.contains(key);
+                for callee in self.callees_by_caller.get(key).into_iter().flatten() {
+                    #[cfg(test)]
+                    self.work_counts
+                        .initial_call_edges
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    effectful |= matches!(
+                        context.read(PurityKey::Effects(callee.clone())),
+                        Some(PurityFact::Effects(true))
+                    );
+                }
+                context.propose(
+                    PurityKey::Effects(key.clone()),
+                    PurityFact::Effects(effectful),
+                );
+            }
+        }
     }
 
     fn evaluate_changed(
         &self,
-        rule: &Self::Rule,
-        changed: &BTreeSet<Self::Key>,
-        context: &mut impl FactContext<Self::Key, Self::Fact>,
+        rule: &PurityRuleKey,
+        changed: &BTreeSet<PurityKey>,
+        context: &mut impl FactContext<PurityKey, PurityFact>,
     ) {
-        PurityEffectRules::evaluate_changed(self, rule, changed, context)
+        let PurityRuleKey::Effects(caller) = rule else {
+            self.evaluate(rule, context);
+            return;
+        };
+
+        // A rule may first run before its body-completion fact exists. In
+        // that case the new body enables all its outgoing reads at once.
+        if changed.contains(&PurityKey::Body(caller.clone())) {
+            self.evaluate(rule, context);
+            return;
+        }
+
+        let mut effectful = self.direct_effectful.contains(caller);
+        let callees = self.callees_by_caller.get(caller);
+        for changed_key in changed {
+            let PurityKey::Effects(callee) = changed_key else {
+                continue;
+            };
+            if !callees.is_some_and(|callees| callees.contains(callee)) {
+                continue;
+            }
+            #[cfg(test)]
+            self.work_counts
+                .changed_call_edges
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            effectful |= matches!(
+                context.read(PurityKey::Effects(callee.clone())),
+                Some(PurityFact::Effects(true))
+            );
+        }
+        context.propose(
+            PurityKey::Effects(caller.clone()),
+            PurityFact::Effects(effectful),
+        );
     }
 
     fn merge(key: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
@@ -601,6 +561,7 @@ pub(crate) fn call_reason(name: &str, span: Span) -> PurityReason {
 mod tests {
     use super::*;
     use analysis_vocabulary::inputs::ValueInputRef;
+    use inference::FactChange;
     use swc_common::{BytePos, DUMMY_SP};
 
     fn function(module: &str, binding: &str, source_key: u32) -> PurityFunctionKey {

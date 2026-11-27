@@ -32,6 +32,13 @@ ts_library(
 )
 
 ts_library(
+    name = "summary_fields",
+    srcs = ["summary_fields.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//agentplane/history_service/api/history:history_service_pb"],
+)
+
+ts_library(
     name = "model_catalog",
     srcs = ["model_catalog.ts"],
     tsconfig = TSCONFIG,
@@ -1084,6 +1091,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":summary_fields",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -1106,6 +1114,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":facade_body",
+        ":summary_fields",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/app_config:client",

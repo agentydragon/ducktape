@@ -34,6 +34,7 @@ mod strict_provider;
 mod top_level_scan;
 mod visit;
 
+pub use input_validation::positively_identified_contradiction;
 use js_ast::item_var_decl;
 use native_write_census::{
     ArraySpreadNativeIteratorPremise, NativeSlotOverlap, array_spread_protocol_slot_overlap,

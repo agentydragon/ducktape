@@ -664,8 +664,7 @@ pub(super) fn build_final_module_report(
                 .collect();
             let source_unit_ids = assignment_analysis
                 .inputs()
-                .source_unit_report_ids_for_bindings(binding_ids.iter())
-                .expect("module report bindings belong to the analysis chunk");
+                .report_source_unit_ids_for_bindings(binding_ids.iter());
             let binding_source_units = sorted
                 .iter()
                 .map(|(binding_name, _)| {
@@ -675,8 +674,7 @@ pub(super) fn build_final_module_report(
                     );
                     let source_unit_ids = assignment_analysis
                         .inputs()
-                        .source_unit_ids_for_binding(&binding_id)
-                        .expect("module report bindings belong to the analysis chunk")
+                        .report_source_unit_ids_for_binding(&binding_id)
                         .iter()
                         .copied()
                         .map(source_unit_key)

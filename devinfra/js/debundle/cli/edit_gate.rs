@@ -115,6 +115,24 @@ impl GraphEditArgs {
         self.edits_with_graph() && !self.dry_run
     }
 
+    /// Warn that `--no-verify` leaves `edit` unchecked.
+    pub fn warn_no_verify(
+        &self,
+        stderr: &mut (dyn std::io::Write + Send),
+        edit: &str,
+    ) -> Result<()> {
+        if self.no_verify {
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "warning: --no-verify skips the realizability gate; {edit} will not be \
+                     re-checked for cross-module cycles."
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn gate<'a>(
         &'a self,
         source_context: Option<&'a VerifiedGraphSourceContext>,
@@ -452,8 +470,7 @@ fn write_rejection_artifact<T: Serialize>(
     value: &T,
 ) -> Result<()> {
     let path = rejection_artifact_path(dependency_graph_path, filename);
-    fs::write(&path, serde_json::to_string_pretty(value)?)
-        .with_context(|| format!("writing {}", path.display()))
+    report_io::write_json(path, value)
 }
 
 /// Remove the previous gate result when replacing it with a completed

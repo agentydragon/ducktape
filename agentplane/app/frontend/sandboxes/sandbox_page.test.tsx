@@ -285,7 +285,7 @@ async function render(
         found
           ? Response.json({
               metadata: toJson(ThreadMetadataSchema, found.metadata),
-              summary: toJson(SessionSummarySchema, found.summary),
+              summary: toJson(SessionSummarySchema, create(SessionSummarySchema, found.summary)),
             })
           : Response.json({ detail: "not found" }, { status: 404 })
       );

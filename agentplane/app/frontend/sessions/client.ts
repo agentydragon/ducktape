@@ -31,7 +31,6 @@ import {
   ReadSessionEventsResponseSchema,
   ReadSessionObservationsResponseSchema,
   SessionSummarySchema,
-  type SessionSummary,
   type ReadSessionObservationsResponse,
   type ReadThreadEntitiesResponse,
 } from "../../../history_service/api/history/history_service_pb";
@@ -56,11 +55,12 @@ import {
   type Session,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { facadeBody } from "./facade_body";
+import type { ThreadSummary } from "./summary_fields";
 
 /** App metadata and its History projection stay in their generated wire shapes. */
 export interface ThreadView {
   metadata: ThreadMetadata;
-  summary: SessionSummary;
+  summary: ThreadSummary;
   session?: Session;
 }
 export interface ThreadListing {
@@ -572,7 +572,7 @@ function assertKnownEnum(
   }
 }
 
-function validateThread(metadata: ThreadMetadata, summary: SessionSummary): void {
+function validateThread(metadata: ThreadMetadata, summary: ThreadSummary): void {
   if (!metadata.createdAt) throw new Error("App returned Thread metadata without created_at");
   const attachment = summary.attached;
   const spec = attachment?.spec;
@@ -616,7 +616,7 @@ export function selectThreadWindow(
   openThreadId: string | null,
   sessions: readonly Session[],
   metadata: ReadonlyMap<string, ThreadMetadata>,
-  summaries: ReadonlyMap<string, SessionSummary>
+  summaries: ReadonlyMap<string, ThreadSummary>
 ): ThreadWindow {
   const search = listing.search?.toLowerCase() ?? null;
   const candidates = sessions
