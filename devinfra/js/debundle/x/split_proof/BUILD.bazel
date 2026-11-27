@@ -3985,3 +3985,41 @@ lean_proof_test(
     ],
     deps = [":primitive_rhs_frame"],
 )
+
+lean_library(
+    name = "corejs_async_prefix",
+    srcs = ["EsmSplit/CoreJS/AsyncPrefix.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [":corejs_value"],
+)
+
+lean_library(
+    name = "corejs_async_prefix_frame",
+    srcs = ["EsmSplit/CoreJS/AsyncPrefixFrame.lean"],
+    deps = [
+        ":corejs_async_prefix",
+        ":corejs_frame",
+        ":corejs_request_allocation",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_async_prefix_axioms_test",
+    allow_empty = True,
+    modules = [
+        "EsmSplit.CoreJS.AsyncPrefix",
+        "EsmSplit.CoreJS.AsyncPrefixFrame",
+    ],
+    required_theorems = [
+        "CoreJS.AsyncPrefix.allocate_fresh",
+        "CoreJS.AsyncPrefix.allocate_reachFrame",
+        "CoreJS.AsyncPrefix.invoke_after_allocate",
+        "CoreJS.AsyncPrefix.invoke_zero",
+        "CoreJS.AsyncPrefix.settle_frame",
+        "CoreJS.AsyncPrefix.settlement_edges",
+    ],
+    deps = [
+        ":corejs_async_prefix",
+        ":corejs_async_prefix_frame",
+    ],
+)

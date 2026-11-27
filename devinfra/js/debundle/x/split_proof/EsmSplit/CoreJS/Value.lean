@@ -117,6 +117,12 @@ inductive Code where
   independent of changes to the function's public `prototype` property. -/
   | opaque (code part : Nat) (cells : List (Option Addr)) (constructor : Bool)
 
+inductive PromiseSlot where
+  | pending
+  | fulfilled (value : Val)
+  | rejected (reason : Val)
+  deriving DecidableEq
+
 structure Obj where
   proto : Option Addr
   props : List (PropertyKey × Property)
@@ -125,6 +131,8 @@ structure Obj where
   array : Bool := false
   regexp : Option RegExpData := none
   frozen : Bool := false
+  /-- Internal Promise state, independent of ordinary properties. -/
+  promise : Option PromiseSlot := none
 
 /-- A binding: `value` is `none` until it is initialized (the temporal dead zone). -/
 structure Binding where

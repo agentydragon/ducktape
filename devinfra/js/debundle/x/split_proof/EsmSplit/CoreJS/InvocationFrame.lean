@@ -112,7 +112,7 @@ private theorem reachFrame_invokesOpaque {r R cells A n}
 private theorem objectCode_safe {A : HeapNode → Prop} {o : Obj}
     (safe : ∀ n ∈ o.nodes, A n) {code : Code} (hc : o.code = some code) :
     ∀ n ∈ code.nodes, A n :=
-  fun node hn => safe node (List.mem_append_right _ (List.mem_flatMap.mpr ⟨code, by simp [hc], hn⟩))
+  fun node hn => safe node (List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨code, by simp [hc], hn⟩)))
 
 theorem callFn_reachFrame_of_steps {r R cells A n} (away : Away r R A)
     (conversation : ∀ code inner told, (∀ a, some a ∈ inner → A (.cell a)) →

@@ -132,3 +132,19 @@ js_test(
     env = _DIFFERENTIAL_ENV,
     tags = ["manual"],
 )
+
+test_runner(
+    name = "async_prefix_test_runner",
+    src = "AsyncPrefixTest.lean",
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:corejs_async_prefix",
+        "//devinfra/js/debundle/x/split_proof:corejs_eval",
+    ],
+)
+
+js_test(
+    name = "async_prefix_differential_test",
+    data = [":async_prefix_test_runner"],
+    entry_point = "async_prefix_differential_test.mjs",
+    env = {"ASYNC_PREFIX_TEST": "$(rootpath :async_prefix_test_runner)"},
+)
