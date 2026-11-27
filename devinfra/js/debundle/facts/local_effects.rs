@@ -575,10 +575,7 @@ fn vendor_prune_inline_namespace_iife_target(
     if !local_effect_context.declared_bindings.contains(&target) {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     if function.function.params.len() == 1 {
@@ -627,10 +624,7 @@ fn vendor_prune_for_each_local_effect_target(
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
+    let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
         return None;
     };
     if static_member_name(&member.prop).as_deref() != Some("forEach") {
@@ -656,10 +650,7 @@ fn vendor_prune_static_object_iteration(expr: &Expr) -> bool {
     {
         return false;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return false;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
+    let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
         return false;
     };
     let Expr::Ident(object) = member.obj.unwrap_parens() else {
@@ -805,10 +796,7 @@ pub fn local_namespace_iife_target(call: &CallExpr) -> Option<Id> {
         return None;
     }
     let target = local_namespace_iife_arg_target(&call.args[0].expr)?;
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     if function.function.params.len() != 1 {
@@ -891,10 +879,7 @@ fn local_commonjs_module_iife_target(
     {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     if function.function.params.len() != 1 {
@@ -1011,10 +996,7 @@ fn commonjs_nested_iife_mutates_param(call: &CallExpr, param: &str) -> Option<bo
     if !call.args.is_empty() {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     if !function.function.params.is_empty() {

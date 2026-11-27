@@ -281,10 +281,7 @@ pub(super) fn discarded_synchronous_iife(item: &ModuleItem) -> Option<u32> {
     let Expr::Call(call) = value else {
         return None;
     };
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Fn(function) = callee.unwrap_parens() else {
+    let Some(Expr::Fn(function)) = js_ast::callee_expr(call) else {
         return None;
     };
     (function.ident.is_none()

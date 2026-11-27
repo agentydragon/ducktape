@@ -47,10 +47,7 @@ fn object_from_entries_plain_array_chain_root(
     if call.args.len() != 1 || call.args[0].spread.is_some() || shadowed.contains("Object") {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
+    let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
         return None;
     };
     if !matches!(
@@ -131,10 +128,7 @@ fn receiver_stage(call: &CallExpr, method: &[&str], graph: &PlainArrays<'_>) -> 
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
+    let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
         return None;
     };
     if !matches!(&member.prop, MemberProp::Ident(prop) if method.contains(&prop.sym.as_ref()))

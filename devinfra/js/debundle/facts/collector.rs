@@ -129,10 +129,7 @@ impl StatementFactsCollector {
     }
 
     fn is_known_promise_reaction_call(&self, node: &CallExpr) -> bool {
-        let Callee::Expr(callee) = &node.callee else {
-            return false;
-        };
-        let Expr::Member(member) = callee.unwrap_parens() else {
+        let Some(Expr::Member(member)) = js_ast::callee_expr(node) else {
             return false;
         };
         if !matches!(
@@ -170,10 +167,7 @@ impl StatementFactsCollector {
     }
 
     fn is_async_direct_function_call(&self, call: &CallExpr) -> bool {
-        let Callee::Expr(callee) = &call.callee else {
-            return false;
-        };
-        let Expr::Ident(ident) = callee.unwrap_parens() else {
+        let Some(Expr::Ident(ident)) = js_ast::callee_expr(call) else {
             return false;
         };
         self.async_direct_function_bindings.contains(&ident.to_id())
@@ -183,10 +177,7 @@ impl StatementFactsCollector {
         if !self.promise_global_unshadowed {
             return false;
         }
-        let Callee::Expr(callee) = &call.callee else {
-            return false;
-        };
-        let Expr::Member(member) = callee.unwrap_parens() else {
+        let Some(Expr::Member(member)) = js_ast::callee_expr(call) else {
             return false;
         };
         matches!(member.obj.as_ref().unwrap_parens(), Expr::Ident(obj) if obj.sym.as_ref() == "Promise")

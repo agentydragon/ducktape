@@ -762,6 +762,7 @@ py_library(
     name = "environment_transport",
     srcs = ["environment_transport.py"],
     deps = [
+        "//agentplane/environments/testing:environment_inventory",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/environments/v1:environment_service_pb2_grpc",
         "//agentplane/grpc:calls",

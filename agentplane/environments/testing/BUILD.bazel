@@ -1,4 +1,5 @@
-load("//devinfra/python:defs.bzl", "py_library")
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -22,5 +23,29 @@ py_library(
         "@pypi//protobuf",
         "@pypi//types_protobuf",  # keep: mypy follows generated SandboxDestination stubs
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "environment_inventory",
+    srcs = ["environment_inventory.py"],
+    deps = [
+        "//agentplane/environments/v1:environment_service_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "test_environment_inventory",
+    srcs = ["test_environment_inventory.py"],
+    deps = [
+        ":environment_inventory",
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

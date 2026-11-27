@@ -1977,7 +1977,10 @@ lean_library(
 executable_test(
     name = "corejs_terminal_source_test",
     src = "TerminalSourceTest.lean",
-    deps = [":corejs_terminal_source"],
+    deps = [
+        ":corejs_interior_export_names",
+        ":corejs_terminal_source",
+    ],
 )
 
 lean_proof_test(
@@ -2017,11 +2020,7 @@ lean_proof_test(
 lean_library(
     name = "corejs_terminal_entry_names",
     srcs = ["EsmSplit/CoreJS/TerminalEntryNames.lean"],
-    deps = [
-        ":corejs_declaring_owner",
-        ":local_export_unit",
-        ":metadata_imports",
-    ],
+    deps = [":corejs_interior_export_names"],
 )
 
 lean_proof_test(
@@ -2072,6 +2071,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/TerminalEntryTable.lean"],
     deps = [
         ":corejs_certificate_support_base",
+        ":corejs_export_rows",
         ":corejs_terminal_entry_names",
     ],
 )
@@ -2513,6 +2513,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/InteriorExportNames.lean"],
     deps = [
         ":corejs_declaring_owner",
+        ":corejs_export_rows",
         ":local_export_unit",
         ":metadata_imports",
     ],
@@ -2742,4 +2743,48 @@ lean_proof_test(
         "CoreJS.LexicalFunctionSource.lexical_uninitialized",
     ],
     deps = [":lexical_function_source"],
+)
+
+lean_library(
+    name = "corejs_export_rows",
+    srcs = ["EsmSplit/CoreJS/ExportRows.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":local_export_unit",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_export_rows_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ExportRows"],
+    required_theorems = [
+        "CoreJS.ExportRows.exact_entry_exports",
+        "CoreJS.ExportRows.fold_entry_exports",
+    ],
+    deps = [":corejs_export_rows"],
+)
+
+lean_library(
+    name = "corejs_export_rows_link",
+    srcs = ["EsmSplit/CoreJS/ExportRowsLink.lean"],
+    deps = [
+        ":corejs_export_rows",
+        ":corejs_indexed_entry_link",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_export_rows_link_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ExportRowsLink"],
+    required_theorems = [
+        "CoreJS.ExportRows.indexed_module_dense",
+        "CoreJS.ExportRows.indexed_program_dense",
+        "CoreJS.ExportRows.rowAt_some",
+        "CoreJS.ExportRows.rows_resolved_from_plan",
+        "CoreJS.ExportRows.selected_row",
+        "CoreJS.ExportRows.rows_scope_cells",
+    ],
+    deps = [":corejs_export_rows_link"],
 )
