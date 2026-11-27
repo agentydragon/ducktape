@@ -1154,6 +1154,14 @@ lean_library(
     ],
 )
 
+lean_proof_test(
+    name = "corejs_single_module_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SingleModule"],
+    required_theorems = ["CoreJS.runProgram_singleModuleMetadata"],
+    deps = [":corejs_single_module"],
+)
+
 lean_library(
     name = "corejs_checked_split",
     srcs = ["EsmSplit/CoreJS/CheckedSplit.lean"],
@@ -1647,10 +1655,7 @@ lean_proof_test(
     name = "slice_certificate_axioms_test",
     allow_empty = True,
     modules = ["EsmSplit.LowerSplit.SliceCertificate"],
-    required_theorems = [
-        "CoreJS.runProgram_singleModuleMetadata",
-        "EsmSplit.LowerSplit.certifySlice_sound",
-    ],
+    required_theorems = ["EsmSplit.LowerSplit.certifySlice_sound"],
     deps = [
         ":lowersplit_certified",
         ":lowersplit_diagnostic",
