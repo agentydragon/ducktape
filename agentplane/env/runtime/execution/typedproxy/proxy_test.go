@@ -235,6 +235,55 @@ func TestResumeClosesPreviousConnectionFiles(t *testing.T) {
 	}
 }
 
+// A handle the backend already released is closed, not a cleanup failure: resume still succeeds.
+func TestResumeAfterBackendReleasedHandle(t *testing.T) {
+	core := native.New()
+	t.Cleanup(func() { _ = core.Close() })
+	p, err := New(context.Background(), connect(t, typedbackend.New(core)), func(ctx context.Context, _ *pb.ExecutionScope, _ bool, fn func(context.Context) error) error {
+		return fn(ctx)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+	client := connect(t, p)
+	scope := &pb.ExecutionScope{SessionId: "one"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	old, err := client.OpenSession(ctx, &pb.OpenSessionRequest{Scope: scope, RequestId: "open"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := old.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := first.GetExecutionSessionId()
+	path := filepath.Join(t.TempDir(), "sample")
+	if err := os.WriteFile(path, []byte("hello"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := client.OpenFile(ctx, &pb.OpenFileRequest{Scope: scope, ExecutionSessionId: id, RequestId: "file", HandleId: "released-handle", Path: (&url.URL{Scheme: "file", Path: path}).String()})
+	if err != nil || opened.GetStatus().GetOutcome() != pb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("open file: %v %v", opened, err)
+	}
+	// Release the handle behind the proxy, which still tracks it.
+	backendSession, err := core.Session(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backendSession.CloseFile("released-handle"); err != nil {
+		t.Fatal(err)
+	}
+	newer, err := client.OpenSession(ctx, &pb.OpenSessionRequest{Scope: scope, RequestId: "resume", ResumeSessionId: &id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response, err := newer.Recv(); err != nil || response.GetStatus().GetOutcome() != pb.ExecutionStatus_OUTCOME_COMPLETED {
+		t.Fatalf("resume after released handle: %v %v", response, err)
+	}
+}
+
 type delayedCloseBackend struct {
 	pb.UnimplementedExecutorServer
 	entered, release chan struct{}
