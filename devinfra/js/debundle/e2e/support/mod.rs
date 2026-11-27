@@ -122,24 +122,25 @@ pub struct RejectedFixture {
     _root: CaseWorkspace,
 }
 
+/// One report beside a run's chunk directory: the report root, the chunk, and
+/// the file name. Every fixture kind answers for its own chunk.
+fn chunk_report(report_root: &Path, chunk: &str, filename: &str) -> PathBuf {
+    report_root.join(chunk).join(filename)
+}
+
 impl Fixture {
+    /// The per-chunk report file `filename`, beside the run's gate evidence.
+    pub fn report_path(&self, filename: &str) -> PathBuf {
+        chunk_report(&self.report_root, &self.chunk_id, filename)
+    }
+
     /// `translation_validation.json`: translation validation beside the gate's verdict.
     pub fn translation_validation(&self) -> Value {
-        read_json(
-            &self
-                .report_root
-                .join(&self.chunk_id)
-                .join("translation_validation.json"),
-        )
+        read_json(&self.report_path("translation_validation.json"))
     }
 
     pub fn effect_translation_validation(&self) -> Value {
-        read_json(
-            &self
-                .report_root
-                .join(&self.chunk_id)
-                .join("effect_translation_validation.json"),
-        )
+        read_json(&self.report_path("effect_translation_validation.json"))
     }
 
     /// `global_resolution.json`: the report-only check that every source
@@ -209,7 +210,7 @@ impl RejectedFixture {
     /// The per-chunk gate evidence report (`cycles.json` or
     /// `atomic_group_conflicts.json`).
     pub fn report_path(&self, filename: &str) -> PathBuf {
-        self.report_root.join(&self.chunk_id).join(filename)
+        chunk_report(&self.report_root, &self.chunk_id, filename)
     }
 
     /// `cycles.json`: one entry per blocking SCC, with its `modules` and `cut`.

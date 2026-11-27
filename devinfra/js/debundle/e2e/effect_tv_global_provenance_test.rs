@@ -52,12 +52,7 @@ fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
         &["--effect-conflicts-jsonl"],
         1,
     );
-    let rows = read_jsonl(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl"),
-    );
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     let pair = rows
         .iter()
         .find(|pair| pair["runs_first"]["unit"] == 7 && pair["runs_later"]["unit"] == 6)
@@ -177,12 +172,7 @@ fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
             &["--effect-conflicts-jsonl"],
             1,
         );
-        let rows = read_jsonl(
-            &fixture
-                .report_root
-                .join(&fixture.chunk_id)
-                .join("effect_conflicts.jsonl"),
-        );
+        let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
         assert_eq!(
             rows.iter()
                 .flat_map(|row| row["cells"].as_array().unwrap())
@@ -227,12 +217,7 @@ fn opaque_callback_accesses_retain_their_assumption_without_contaminating_other_
     let mut opts = composed_global_access_fixture().with_import_order(&["inner", "outer"]);
     opts.source = &source;
     let fixture = run_rejection_fixture_with_args(opts, &["--effect-conflicts-jsonl"], 1);
-    let rows = read_jsonl(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl"),
-    );
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     let cell = rows
         .iter()
         .flat_map(|row| row["cells"].as_array().unwrap())
@@ -295,12 +280,7 @@ fn default_export_value_evaluation_keeps_child_global_effects() {
         &["--effect-conflicts-jsonl"],
         1,
     );
-    let rows = read_jsonl(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl"),
-    );
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     assert!(
         rows.iter().any(|row| row["runs_first"]["unit"] == 5
             && row["cells"]
@@ -358,12 +338,7 @@ fn default_cell_provenance_is_bounded_but_full_stream_keeps_every_site() {
         &["--effect-conflicts-jsonl"],
         1,
     );
-    let rows = read_jsonl(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl"),
-    );
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     let report = fixture.effect_translation_validation();
     let find_write = |pairs: &[Value]| {
         pairs
@@ -450,13 +425,7 @@ fn hoisted_functions_have_no_evaluation_write_but_function_expressions_do() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "1 2\n");
-    assert!(
-        !fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl")
-            .exists()
-    );
+    assert!(!fixture.report_path("effect_conflicts.jsonl").exists());
     let report = fixture.effect_translation_validation();
     assert_eq!(report["full_semantic_precision"], false, "{report:#}");
     assert!(

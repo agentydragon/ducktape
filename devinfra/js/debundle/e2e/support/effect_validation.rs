@@ -95,12 +95,7 @@ pub fn examples(report: &Value) -> &[Value] {
 
 /// The per-chunk `candidate_relocation_assessment.json` of an accepted run.
 pub fn candidate_relocation_assessment(fixture: &Fixture) -> Value {
-    read_json(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("candidate_relocation_assessment.json"),
-    )
+    read_json(&fixture.report_path("candidate_relocation_assessment.json"))
 }
 
 /// `assert_effect_verdict_accepts`, with the inversions accepted as

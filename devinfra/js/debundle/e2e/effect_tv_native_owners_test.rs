@@ -139,12 +139,7 @@ console.log(observed === observed, pattern.test('x'));\n";
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
     assert_eq!(report["counts"]["havoc_pairs"], 1, "{report:#}");
     assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
-    let rows = read_jsonl(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl"),
-    );
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     let creation_pair = rows
         .iter()
         .find(|pair| pair["runs_first"]["unit"] == 1 && pair["runs_later"]["unit"] == 0)
@@ -285,12 +280,7 @@ console.log(marker);\n";
         report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
         "new RegExp remains outside the literal-only proof: {report:#}"
     );
-    let rows = read_jsonl(
-        &fixture
-            .report_root
-            .join(&fixture.chunk_id)
-            .join("effect_conflicts.jsonl"),
-    );
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     let constructor_pair = rows
         .iter()
         .find(|pair| pair["runs_first"]["unit"] == 2 && pair["runs_later"]["unit"] == 0)
