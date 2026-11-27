@@ -189,9 +189,8 @@ swapped conflicting pairs, not only the first.
 
 - **Abstract interpreter** (<abstract_interpreter.md>):
   - Step 7 supplies the effect sets.
-  - Step 9 ("`EffectsDisjoint` and gate consumption") is this gate's pair
-    check. TV needs it applied to swapped pairs only, not to every
-    `Sequenced` edge.
+  - TV applies the `commuting_statements` pair check to swapped pairs only,
+    not to every `Sequenced` edge.
   - The purity migration preserves one per-chunk context. TV reads the
     settled per-statement result and adds no constraint on it.
 - **Staged pipeline** (<../docs/bazel_integration.md>):
