@@ -142,6 +142,11 @@ Reuse a `Runfiles` instance for related lookups within an operation: `CreateOrRa
 
 - `a/b/c.py` → `a/b/test_c.py`; cross-module tests get descriptive names.
 - Shared fixtures in `conftest.py`; never import fixtures into `test_*.py` (F811), import them in the nearest `conftest.py`.
+- **A conftest reaches every test beneath it**, its imports and Bazel deps included (gazelle wires the conftest chain
+  into each `py_test`). Register an expensive fixture there only when the tests beneath use it. Expensive means a whole
+  service or another subsystem, a browser, an external binary, or a container or VM image. Otherwise register it per
+  module with `pytest_plugins = ("<module>",)` and `# gazelle:include_dep //<target>`, or give its users a
+  subdirectory with its own conftest. Cheap helpers may be shared widely.
 - Assertions in tests, setup in fixtures. Update tests in the same change as the code.
 - **Test-only values** (names, hosts, URLs, paths) are unmistakably fake, never production identifiers. A test of the actual production config may assert a literal production value only when an outside system holds it, naming that consumer.
 - **Code is not its deployment:** a code test never reads cluster manifests or synthesizes the cluster chart. A test beside the manifests may parse them with the code's model, but not exercise the code's behavior on them (<cluster/cdk8s/AGENTS.md>).
