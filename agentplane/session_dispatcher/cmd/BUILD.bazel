@@ -6,9 +6,8 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/cmd",
     visibility = ["//agentplane/session_dispatcher:__subpackages__"],
     deps = [
+        "//agentplane/servicemain",
         "//agentplane/session_dispatcher/internal/app",
-        "@com_github_go_logr_logr//:logr",
-        "@io_k8s_sigs_controller_runtime//pkg/log",
     ],
 )
 
