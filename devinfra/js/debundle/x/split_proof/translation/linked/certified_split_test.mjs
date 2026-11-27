@@ -200,6 +200,7 @@ if (runCase("grouped-declarations-and-placement")) {
   const reordered = path.join(root, "reordered");
   const movedVerdict = requestFile(rawSource, reordered, all);
   assert.equal(movedVerdict.status, "certified", JSON.stringify(movedVerdict));
+  assert.equal(movedVerdict.scope, "literal-reorder");
   assert.equal(movedVerdict.strategy, "compiled-constructor");
   assert.equal(movedVerdict.guarantee, all);
   assert.deepEqual(requestFile(rawSource, reordered, all, "--check-output"), movedVerdict);
@@ -211,6 +212,26 @@ if (runCase("grouped-declarations-and-placement")) {
   assert.deepEqual(moduleEvaluationOrder(reordered, entry), [right, left, entry]);
   assert.deepEqual(await observe(pathToFileURL(rawSource)), [["result", 1]]);
   assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
+
+  // Duplicate an original selector within one owner, before the planner can deduplicate it.
+  prepare(source, { ...placement3, [left]: ["#0", "#0"] }, [right, left]);
+  const snapshot = () =>
+    fs
+      .readdirSync(reordered)
+      .sort()
+      .map((name) => [name, fs.readFileSync(path.join(reordered, name))]);
+  const before = snapshot();
+  for (const guarantee of [all, normal]) {
+    const fresh = path.join(root, `duplicate-selector-${guarantee}`);
+    for (const output of [fresh, reordered]) {
+      const refused = requestFile(rawSource, output, guarantee);
+      assert.equal(refused.status, "rejected", JSON.stringify(refused));
+      assert.match(refused.reason, /an original unit is selected more than once/);
+    }
+    assert(!fs.existsSync(fresh));
+    assert.deepEqual(snapshot(), before);
+  }
+  prepare(source, placement3, [right, left]);
 
   // a and result have equal values, but exporting a changes the public live cell.
   const entryFile = path.join(reordered, entry);
