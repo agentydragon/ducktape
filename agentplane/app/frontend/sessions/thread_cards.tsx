@@ -183,8 +183,6 @@ export function UserInputBubble({
         bubbleAttributes={{
           className: "transcript-inspection-owner",
           "data-message-phase": phase,
-          "data-has-action": action ? "true" : undefined,
-          "data-has-aside": progress || action ? "true" : undefined,
         }}
         pending={pending}
         aside={

@@ -530,6 +530,22 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         await expect(no_op.locator(".agentplane-command-progress")).to_have_count(0)
     await input_row.scroll_into_view_if_needed()
     await view.capture()
+    failed_input = page.locator('[data-command-id="progress-failed-input"]')
+    applied_input = page.locator('[data-command-id="progress-applied-input"]')
+    await expect(failed_input.get_by_role("alert")).to_have_text("Execution failed")
+    await expect(applied_input.locator('[data-stage="effected"]')).to_be_attached()
+    await failed_input.scroll_into_view_if_needed()
+    await wait_for_stable(page)
+    bubble_selector = ".transcript-user-bubble"
+    pending_box = await input_row.locator(bubble_selector).bounding_box()
+    assert pending_box
+    for row in (failed_input, applied_input):
+        box = await row.locator(bubble_selector).bounding_box()
+        assert box
+        assert box["width"] == pytest.approx(pending_box["width"], abs=1)
+        assert box["x"] == pytest.approx(pending_box["x"], abs=1)
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="input_bubble_widths")
     effected = page.locator('[data-command-id="progress-effected"]')
     await expect(effected).to_contain_text("applied-model")
     await expect(effected.locator(".agentplane-command-check")).to_have_count(1)
@@ -565,7 +581,6 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await view.capture(name="effort_detail")
     await effort_details.click()
     await expect(page.get_by_role("dialog", name="Delivery details")).to_have_count(0)
-    applied_input = page.locator('[data-command-id="progress-applied-input"]')
     input_hit = applied_input.locator(".agentplane-command-progress-hit")
     await expect(applied_input.locator(".agentplane-command-light")).to_have_count(0)
     await expect(input_hit).to_have_css("opacity", "0")
@@ -782,12 +797,6 @@ async def test_outstanding_command_conversation(view: VisualPage, app: Agentplan
     await expect(model_status).to_have_accessible_name("Outcome unknown · latest delivery attempt returned an error")
     await expect(model.get_by_role("alert")).to_have_count(0)
     await _expect_command_lights(model, ["done", "failed", "future", "future"])
-    if viewport.has_touch:
-        model_bubble = await model.locator(".transcript-user-bubble").bounding_box()
-        queued_bubble = await queued.locator(".transcript-user-bubble").bounding_box()
-        assert model_bubble
-        assert queued_bubble
-        assert queued_bubble["width"] > model_bubble["width"]
     await view.page.mouse.move(0, 0)
     await view.capture(name="outstanding_controls_and_new_input")
     model_collapsed = await model.bounding_box()
