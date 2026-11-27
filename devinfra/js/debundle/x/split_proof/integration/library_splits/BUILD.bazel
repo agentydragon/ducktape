@@ -123,3 +123,25 @@ js_test(
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
     tags = ["manual"],
 )
+
+js_test(
+    name = "acorn_line_info",
+    size = "medium",
+    args = ["$(rootpath :real_bundles/acorn.mjs)"],
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":real_bundles/acorn.mjs",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "acorn_line_info.mjs",
+    env = {
+        "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+    },
+    tags = ["manual"],
+)
