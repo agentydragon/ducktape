@@ -11,15 +11,15 @@ namespace CoreJS.IndexedInlinePlan
 
 open AuthenticatedSource (IndexedSource)
 
-private def lexicalDeclaration : Stmt → Bool
-  | .decl .let_ _ _ | .decl .const _ _ => true
+private def topLevelDeclaration : Stmt → Bool
+  | .decl _ _ _ => true
   | _ => false
 
-private theorem lexicalDeclaration_sound {stmt : Stmt} (accepted : lexicalDeclaration stmt = true) :
+private theorem topLevelDeclaration_sound {stmt : Stmt} (accepted : topLevelDeclaration stmt = true) :
     ∃ kind name init, stmt = .decl kind name init := by
   cases stmt with
   | decl kind name init => exact ⟨kind, name, init, rfl⟩
-  | _ => simp [lexicalDeclaration] at accepted
+  | _ => simp [topLevelDeclaration] at accepted
 
 structure InlineOnlySource (decoded : IndexedSource) where
   source : Module
@@ -29,7 +29,7 @@ structure InlineOnlySource (decoded : IndexedSource) where
   noLocalExports : decoded.localExports = []
   safePath : EsmSplit.safeModulePath decoded.source.name = true
   ordered : decoded.source.body.Pairwise (fun a b => a.1 ≤ b.1)
-  declarations : ∀ p ∈ decoded.source.body, lexicalDeclaration p.2 = true
+  declarations : ∀ p ∈ decoded.source.body, topLevelDeclaration p.2 = true
 
 /-- Check the shared decoder's complete source identity, import boundary and
 original declaration shape. In particular, `.decl .let_ name .undef` remains
@@ -49,8 +49,8 @@ def checkSource (decoded : IndexedSource) : Except String (InlineOnlySource deco
       (decoded.source.body.Pairwise (fun a b => a.1 ≤ b.1))) |
     throw "decoded inline source rows are not in original ordinal order"
   let .isTrue declarations := (inferInstance : Decidable
-      (∀ p ∈ decoded.source.body, lexicalDeclaration p.2 = true)) |
-    throw "expected top-level let or const declaration rows"
+      (∀ p ∈ decoded.source.body, topLevelDeclaration p.2 = true)) |
+    throw "expected simple top-level declaration rows"
   return ⟨decoded.source, rfl, programEntry, imports, noLocalExports, safePath, ordered, declarations⟩
 
 structure Checked (decoded : IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) where
@@ -106,7 +106,7 @@ private theorem orderedPlan {decoded B S} (checked : Checked decoded B S) :
 private theorem declarations {decoded B S} (checked : Checked decoded B S) :
     ∀ p ∈ decoded.source.body, ∃ kind name init, p.2 = .decl kind name init := by
   intro p member
-  exact lexicalDeclaration_sound (checked.source.declarations p member)
+  exact topLevelDeclaration_sound (checked.source.declarations p member)
 
 /-- For every modeled world and fuel, order-kept indexed construction has the
 same outcomes, including throws, unknown results and fuel exhaustion. -/
