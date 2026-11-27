@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { writeDeployment } from "../testing/deployment_manifest.mjs";
 import path from "node:path";
 
@@ -10,6 +10,31 @@ const spec = path.join(root, "spec.json");
 const host = path.join(root, "host.json");
 const out = path.join(root, "out");
 mkdirSync(root, { recursive: true });
+const fakeBin = path.join(root, "bin");
+const leanMarker = path.join(root, "lean-invoked");
+mkdirSync(fakeBin);
+writeFileSync(path.join(fakeBin, "lean"), '#!/usr/bin/env bash\nprintf attempted > "$FAKE_LEAN_MARKER"\nexit 97\n', {
+  mode: 0o755,
+});
+const env = {
+  ...process.env,
+  PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+  FAKE_LEAN_MARKER: leanMarker,
+  LEAN_PATH: path.join(root, "untrusted-imports"),
+  LEAN_SRC_PATH: path.join(root, "untrusted-sources"),
+  LEAN_SYSROOT: path.join(root, "untrusted-sdk"),
+};
+
+function run(sourceFile, specFile, dest, args = []) {
+  const manifest = writeDeployment(sourceFile, specFile, dest);
+  const result = spawnSync(process.env.LOWERSPLIT, [manifest, dest, ...args], { encoding: "utf8", env });
+  assert.ifError(result.error);
+  const verdict = JSON.parse(result.stdout);
+  assert.equal(result.status, verdict.status === "certified" ? 0 : 1, result.stdout + result.stderr);
+  return { ...result, verdict };
+}
+
+// This previously required generated per-input proofs, including the large AST gate.
 const payload = "x".repeat(220_000);
 writeFileSync(path.join(root, "provider.mjs"), "export {};\n");
 writeFileSync(
@@ -18,29 +43,36 @@ writeFileSync(
 );
 writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2", "#3", "#4"] } }));
 writeFileSync(host, JSON.stringify({ profile: "browser-page" }));
+mkdirSync(out);
+const sentinel = path.join(out, "sentinel.bin");
+const original = Buffer.from([0, 19, 127, 255]);
+writeFileSync(sentinel, original);
+const denied = run(source, spec, out, ["--require", "normal-completion", "--host-contract", host]);
+assert.equal(denied.verdict.status, "rejected", denied.stdout + denied.stderr);
+assert.equal(denied.verdict.reason_code, "no_compiled_rule", denied.stdout + denied.stderr);
+assert.deepEqual(readdirSync(out), ["sentinel.bin"]);
+assert.deepEqual(readFileSync(sentinel), original);
 
-function certify(checkOutput) {
-  const args = [writeDeployment(source, spec, out), out, "--require", "normal-completion", "--host-contract", host];
-  if (checkOutput) args.push("--check-output");
-  // Generated proofs must use the build-selected SDK and imports.
-  const run = spawnSync(process.env.LOWERSPLIT, args, {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      LEAN_PATH: path.join(root, "untrusted-imports"),
-      LEAN_SRC_PATH: path.join(root, "untrusted-sources"),
-      LEAN_SYSROOT: path.join(root, "untrusted-sdk"),
-    },
-  });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const verdict = JSON.parse(run.stdout);
-  assert.equal(verdict.status, "certified", run.stdout + run.stderr);
-  assert.equal(verdict.scope, "linked-programs", run.stdout + run.stderr);
-  assert.match(run.stderr, /"phase":"execution_proof"/, run.stderr);
-  assert.match(run.stderr, /"phase":"ast_correspondence"/, run.stderr);
-  assert.doesNotMatch(run.stderr, /"phase":"LinkedReplayInput"/, run.stderr);
-  return verdict;
-}
-
-const emitted = certify(false);
-assert.deepEqual(certify(true), emitted);
+// Check an existing output tree as well as a request to publish one. The
+// unchanged single-file placement lets the input be used as the disk fixture.
+const readbackOut = path.join(root, "generated-only-readback");
+mkdirSync(readbackOut);
+writeFileSync(path.join(readbackOut, "entry.mjs"), readFileSync(source));
+writeFileSync(path.join(readbackOut, "provider.mjs"), readFileSync(path.join(root, "provider.mjs")));
+const readbackFiles = readdirSync(readbackOut);
+const beforeReadback = readbackFiles.map((file) => readFileSync(path.join(readbackOut, file)));
+const deniedReadback = run(source, spec, readbackOut, [
+  "--require",
+  "normal-completion",
+  "--host-contract",
+  host,
+  "--check-output",
+]);
+assert.equal(deniedReadback.verdict.status, "rejected", deniedReadback.stdout + deniedReadback.stderr);
+assert.equal(deniedReadback.verdict.reason_code, "no_compiled_rule", deniedReadback.stdout + deniedReadback.stderr);
+assert.deepEqual(readdirSync(readbackOut), readbackFiles);
+assert.deepEqual(
+  readbackFiles.map((file) => readFileSync(path.join(readbackOut, file))),
+  beforeReadback
+);
+assert(!existsSync(leanMarker), "split or check-output invoked lean from PATH");

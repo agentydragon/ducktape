@@ -2,7 +2,6 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load(":executable_test.bzl", "executable_test", "test_runner")
-load(":generated_proof_toolchain.bzl", "generated_proof_toolchain")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
 lean_library(
@@ -319,7 +318,6 @@ lean_library(
     name = "corejs_linked_input",
     srcs = [
         # Keep import order for the native Lean rule.
-        "EsmSplit/CertificateData.lean",
         "EsmSplit/CoreJS/DeploymentPlacement.lean",
         "EsmSplit/CoreJS/LinkedInput.lean",
     ],
@@ -388,20 +386,28 @@ lean_proof_test(
 )
 
 lean_library(
-    name = "corejs_certificate_generation_support",
+    name = "corejs_certificate_probe",
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/LinkedCertificate/QuoteCoreJS.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteJson.lean",
         "EsmSplit/CoreJS/LinkedCertificate/Probe.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean",
     ],
     deps = [
         ":corejs_certificate_proof",
         ":corejs_link_world",
         ":corejs_structural",
     ],
+)
+
+lean_library(
+    name = "corejs_certificate_generation_support",
+    srcs = [
+        "EsmSplit/CertificateData.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteJson.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean",
+    ],
+    deps = [":corejs_certificate_probe"],
 )
 
 lean_library(
@@ -1007,7 +1013,7 @@ lean_library(
         "EsmSplit/LowerSplit/Certified.lean",
     ],
     deps = [
-        ":corejs_certificates",
+        ":corejs_certificate_probe",
         ":corejs_indexed_checked_split",
         ":corejs_runtime",
         ":corejs_single_module",
@@ -1045,25 +1051,12 @@ lean_binary(
     deps = [":lowersplit_diagnostic_core_modules"],
 )
 
-generated_proof_toolchain(
-    name = "lowersplit_generated_proof_config",
-    binary_name = "lowersplit_core",
-    deps = [":corejs_certificate_proof"],
-)
-
-filegroup(
-    name = "lowersplit_generated_proof_files",
-    srcs = [":lowersplit_generated_proof_config"],
-    output_group = "proof_files",
-)
-
 lean_library(
     name = "lowersplit_core_modules",
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/LowerSplit.lean",
-        ":lowersplit_generated_proof_config",
-        "EsmSplit/LowerSplitBazelMain.lean",
+        "EsmSplit/LowerSplitMain.lean",
     ],
     visibility = ["//visibility:private"],
     deps = [":lowersplit_workflows"],
@@ -1071,7 +1064,6 @@ lean_library(
 
 lean_binary(
     name = "lowersplit_core",
-    data = [":lowersplit_generated_proof_files"],
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
     deps = [":lowersplit_core_modules"],
 )
