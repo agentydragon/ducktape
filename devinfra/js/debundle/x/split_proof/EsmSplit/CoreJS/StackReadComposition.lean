@@ -107,13 +107,13 @@ theorem movedWithReachedReads (stack : String) (genuine : Val → Prop)
   have putMarked (value : Val) : setProp noCall (.obj registry) (.str stack) value (marked W) =
       .ok () (written W stack value) := by
     simp [setProp, stringKey, registry, lookupProp, getState, State.objectCount, findProp,
-      State.objAt, getObj, defineOwn, applyDesc, modifyObj, setOwn, initial, marked, written,
+      State.objAt, getObj, defineOwn, ownIndexWrite, applyDesc, modifyObj, defineOwnProps, setOwn, initial, marked, written,
       SharedStackString.initial, emptyObject, receiverObject, StackReadBoundary.overrideObject,
       bind, pure, lift, Except.pure]
   have putInitial (value : Val) : setProp noCall (.obj registry) (.str stack) value (initial W) =
       .ok () (writtenBeforeMark W stack value) := by
     simp [setProp, stringKey, registry, lookupProp, getState, State.objectCount, findProp,
-      State.objAt, getObj, defineOwn, applyDesc, modifyObj, setOwn, initial, marked, written,
+      State.objAt, getObj, defineOwn, ownIndexWrite, applyDesc, modifyObj, defineOwnProps, setOwn, initial, marked, written,
       writtenBeforeMark, SharedStackString.initial, emptyObject, receiverObject,
       StackReadBoundary.overrideObject, bind, pure, lift, Except.pure]
   have markWritten (value : Val) : setCell marker (.bool true) (writtenBeforeMark W stack value) =

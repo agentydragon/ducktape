@@ -35,7 +35,7 @@ private theorem add_fresh {s t : State W} (ho : s.objAt a = some (record xs))
   have hg : getObj a s = .ok (record xs) s := by simp [getObj, ho]
   unfold createData defineOwn at h
   rw [bind_of_ok hg] at h
-  simp only [record, hl] at h
+  simp [record, hl, ownIndexWrite, defineOwnProps, applyDesc] at h
   change modifyObj a (fun o => { o with props := setOwn o.props k (.data v true true true) }) s = .ok () t at h
   have hm := modifyObj_self ho h
   simp only [record, setOwn, ha, Bool.false_eq_true, ite_false] at hm

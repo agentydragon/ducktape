@@ -2,6 +2,24 @@
 // the same and end the same way. `end` is how both must end, when that is the point of the case.
 export const moduleCases = [
   {
+    name: "dense index writes grow and overwrite the shared array in place",
+    end: "normal",
+    files: {
+      "state.mjs": `export const xs = [];`,
+      "main.mjs": `
+        import { xs } from "./state.mjs";
+        const alias = xs;
+        const fresh = [];
+        console.log(alias.length, fresh.length, alias === fresh);
+        console.log(xs[0] = 7, alias[0], alias.length, fresh.length);
+        const later = [alias[0], alias.length];
+        alias[0] = 8;
+        xs[1] = later;
+        console.log(xs[0], xs.length, xs[1] === later, later[0], later[1], fresh.length);
+      `,
+    },
+  },
+  {
     name: "var destructuring exports each binding and retains the original receiver",
     end: "normal",
     files: {

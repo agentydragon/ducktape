@@ -867,8 +867,8 @@ export const cases = [
     end: "unknown",
   },
   {
-    name: "a write to an array is not modelled",
-    source: `const a = [1]; console.log(a[0]); a[1] = 2;`,
+    name: "an array write that creates a hole is not modelled",
+    source: `const a = [1]; console.log(a[0]); a[2] = 2;`,
     end: "unknown",
   },
 ];

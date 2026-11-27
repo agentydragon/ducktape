@@ -17,7 +17,7 @@ theorem setProp_fresh_data {s : State W} {a : Addr} {o : Obj} {key : String}
       modifyObj a (fun obj => { obj with props := setOwn obj.props (.str key) (.data value true true true) }) s := by
   have converted : (toKey (.str key) : M W PropertyKey) = pure (.str key) := rfl
   simp [setProp, converted, lift, lookupProp, getState, bind, pure, Except.pure, absent,
-    getObj, obj, defineOwn, ordinary, extensible, own, applyDesc]
+    getObj, obj, defineOwn, ownIndexWrite, defineOwnProps, ordinary, extensible, own, applyDesc]
 
 
 private theorem key_absent (props : List (PropertyKey × Property)) (key : PropertyKey)

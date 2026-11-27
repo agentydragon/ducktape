@@ -121,7 +121,7 @@ structure Obj where
   proto : Option Addr
   props : List (PropertyKey × Property)
   code : Option Code := none
-  /-- An array: defining a property on it changes `length`, which is not modelled. -/
+  /-- An array with its indexed properties and length stored in `props`. -/
   array : Bool := false
   regexp : Option RegExpData := none
   frozen : Bool := false
@@ -847,13 +847,42 @@ def applyDesc (current : Option Property) (d : Desc) : Except Abort (Option Prop
       else if !cur.configurable && ((← differs d.get g) || (← differs d.set st)) then pure none
       else pure (some (.accessor (d.get.getD g) (d.set.getD st) e c))
 
+/-- An ECMAScript array-index property name: canonical decimal spelling, excluding `2^32 - 1`. -/
+def arrayIndex? (key : String) : Option Nat := do
+  let index ← key.toNat?
+  if index < 4294967295 ∧ toString index = key then some index else none
+
+/-- An existing index can be redefined in place. A new index must be
+exactly at a writable length; writes that create or fill holes and changes
+to the length property itself are outside this fragment. -/
+def arrayIndexWrite (o : Obj) (k : PropertyKey) : Option (Option Nat) := do
+  let i ← k.string? >>= arrayIndex?
+  let .data (.num n) writable false false ← o.props.lookup (.str "length") | none
+  let len := (Num.truncInt n).toNat
+  if n != Float.ofNat len || len > 4294967295 then none
+  else if i < len && (o.props.lookup k).isSome then some none
+  else if i == len && writable && (o.props.lookup k).isNone then some (some (len + 1))
+  else none
+
+/-- Only a successful indexed append also replaces the length property. -/
+def defineOwnProps (growth : Option Nat) (o : Obj) (k : PropertyKey) (p : Property) :
+    List (PropertyKey × Property) :=
+  let props := setOwn o.props k p
+  match growth with
+  | some len => setOwn props (.str "length") (.data (.num (Float.ofNat len)) true false false)
+  | none => props
+
+/-- Non-array definitions never update a length property. -/
+def ownIndexWrite (o : Obj) (k : PropertyKey) : Option (Option Nat) :=
+  if o.array && !o.frozen && k.string?.isSome then arrayIndexWrite o k else some none
+
 /-- `DefinePropertyOrThrow` on the object at `a`. -/
 def defineOwn (a : Addr) (k : PropertyKey) (d : Desc) : M W Unit := do
-  let o ← getObj a
-  if o.frozen && (o.props.lookup k).isNone then throwErr .type "cannot add property to a frozen object" else
-  if o.array && !o.frozen && k.string?.isSome then unknown "a property is defined on an array" else
-  match ← lift (applyDesc (o.props.lookup k) d) with
-  | some p => modifyObj a fun o => { o with props := setOwn o.props k p }
+  let original ← getObj a
+  if original.frozen && (original.props.lookup k).isNone then throwErr .type "cannot add property to a frozen object" else
+  if (ownIndexWrite original k).isNone then unknown "a property is defined on an array" else
+  match ← lift (applyDesc (original.props.lookup k) d) with
+  | some p => modifyObj a fun o => { o with props := defineOwnProps ((ownIndexWrite original k).getD none) o k p }
   | none => throwErr .type s!"cannot redefine property: {k}"
 
 /-- `CreateDataPropertyOrThrow`. -/
@@ -1093,11 +1122,6 @@ def readRegExp (call : Call W) (getter : RegExpGetter) (receiver : Val) : M W Va
   | .source => regexpSlot a (← getObj a).regexp none
   | .flag c => regexpSlot a (← getObj a).regexp (some c)
   | .flags => .str <$> regexpFlags call receiver regexpFlagOrder
-
-/-- An ECMAScript array-index property name: canonical decimal spelling, excluding `2^32 - 1`. -/
-def arrayIndex? (key : String) : Option Nat := do
-  let index ← key.toNat?
-  if index < 4294967295 ∧ toString index = key then some index else none
 
 /-- Own keys in order: array indices numerically, other strings in insertion order, then symbols. -/
 def ownPropertyKeys (props : List (PropertyKey × Property)) : List PropertyKey :=

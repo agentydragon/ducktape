@@ -79,7 +79,7 @@ theorem movedWrite (stack : String) (left right : Nat → M W Val)
   rw [leftEq, rightEq]
   simp [original, moved, write, bind, pure, setCell, marker, setProp, stringKey,
     registry, lift, lookupProp, getState, State.objectCount, findProp,
-    State.objAt, getObj, defineOwn, applyDesc, modifyObj, setOwn, initial, final, Except.pure]
+    State.objAt, getObj, defineOwn, ownIndexWrite, applyDesc, modifyObj, defineOwnProps, setOwn, initial, final, Except.pure]
 
 /-- Reading back the written own data property exposes the changed value. -/
 theorem mutantLookup (stack : String) :
