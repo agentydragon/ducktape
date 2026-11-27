@@ -58,6 +58,12 @@ only normal completion. The CLI stages and reparses output before publication.
 An unsupported request exits nonzero without creating or replacing the destination.
 The same constructor must accept before `--check-output` can verify an existing tree.
 
+For a flat owned Node package, the
+[callable provider example](integration/library_splits/LODASH_SORTED_UNIQ.md#ordinary-cli)
+shows how to declare the package root, provider and unchanged caller. This
+route requires an explicit `--require all-outcomes` and a fresh destination
+for publication.
+
 Host-dependent, structural and multi-chunk checks cannot publish output.
 The [construction roadmap](CONSTRUCTION_ROADMAP.md) tracks coverage. For the
 scope of earlier artifact certificates, see the

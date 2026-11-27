@@ -55,9 +55,7 @@ the root of a replacement package with the exact same manifest preserves
 their file format, including for the untouched caller. An extra generated
 module does not change that scope when it is a sibling in the same root.
 
-The production [deployment manifest](../../EsmSplit/LowerSplit/Input.lean)
-declares source routes and placements, with no way to declare a Node package
-root, its fixed manifest, or the caller's placement in that root. The
+For a request without an explicit package declaration, the
 [staging checker](../../EsmSplit/SplitFiles.lean) checks the generated
 JavaScript as ESM syntax and compares listed fixed files by bytes; that
 parse does not establish the loader's interpretation of a `.js` file.
@@ -90,14 +88,46 @@ before promotion; it rereads the same paths after renaming the whole root.
 The reread mode uses the same comparison and never edits the supplied tree.
 The proof callback gets the reparsed generated JavaScript and the captured
 provider AST, after its bytes have been checked. The manifest and untouched
-caller remain fixed assets. The fixture exercises the hook on the original
-graph; it does not certify the proposed split.
+caller remain fixed assets.
 
-An externally managed package root would require evidence for the actual
-destination's enclosing package and a check that staging cannot change that
-scope. The hook refuses that case. The production CLI still has no package
-declaration, and the gate remains closed until the callable proof and
-artifact hook are wired together.
+## Ordinary CLI
+
+Declare the package in the deployment manifest and use the original
+authored [spec](lodash_sorted_uniq/split.json):
+
+```json
+{
+  "entry": "_baseSortedUniq.js",
+  "chunks": [
+    {
+      "path": "_baseSortedUniq.js",
+      "source": "/absolute/path/to/lodash-es/_baseSortedUniq.js",
+      "spec": "split.json"
+    }
+  ],
+  "owned_node_package": {
+    "root": "/absolute/path/to/lodash-es",
+    "provider": "eq.js",
+    "caller": "sortedUniq.js"
+  }
+}
+```
+
+Pass `--require all-outcomes` for publication and reread. The CLI requires
+the chunk source to match the declared entry route and the fixed caller to
+import only that entry's default as a static dependency. The callable
+constructor checks the provider pinned by the actual import and requires
+the original import and executable default to stay in the entry. Both
+publication and `--check-output` call the linked proof on the independently
+reparsed generated files and the byte-checked provider.
+
+The fixture runs the public caller directly in the published package and
+checks NaN, positive zero, original object identities, and that the
+entry snapshots the function exported by the helper. It refuses an
+existing destination for fresh publication and checks that failed rereads
+leave tampered provider, caller, manifest, and default-cell files unchanged.
+The opt-in is confined to an owned root; there is no enclosing-package
+lookup for externally managed destinations.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:lodash_sorted_uniq_test

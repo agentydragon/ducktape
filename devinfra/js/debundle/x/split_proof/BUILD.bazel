@@ -1680,6 +1680,7 @@ lean_library(
         ":cli",
         ":corejs_split",
         ":effects",
+        ":owned_node_package",
         ":split_files",
     ],
 )
@@ -1722,6 +1723,7 @@ lean_library(
     deps = [
         ":cli",
         ":corejs_authenticated_source",
+        ":corejs_callable_default_provider",
         ":corejs_checked_split",
         ":corejs_constructed_output",
         ":corejs_indexed_checked_split",
@@ -1739,6 +1741,7 @@ lean_library(
         ":literal_reorder_construct",
         ":lowersplit_input",
         ":ordered_const_syntax",
+        ":owned_node_package",
         ":terminal_export_placement",
     ],
 )
