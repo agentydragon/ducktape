@@ -8,6 +8,7 @@ import (
 	"time"
 
 	pb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedbackend"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -137,7 +138,8 @@ func (p *Proxy) OpenSession(r *pb.OpenSessionRequest, stream pb.Executor_OpenSes
 					break
 				}
 				outcome := response.GetStatus()
-				if outcome.GetOutcome() != pb.ExecutionStatus_OUTCOME_COMPLETED && !(outcome.GetOutcome() == pb.ExecutionStatus_OUTCOME_REJECTED && outcome.GetMessage() == "file handle not found") {
+				alreadyClosed := outcome.GetOutcome() == pb.ExecutionStatus_OUTCOME_REJECTED && outcome.GetUpstreamCode() == typedbackend.UnknownFileCode
+				if outcome.GetOutcome() != pb.ExecutionStatus_OUTCOME_COMPLETED && !alreadyClosed {
 					cleanupErr = errors.New("file handle close was not confirmed")
 					break
 				}
