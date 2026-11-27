@@ -133,6 +133,8 @@ jobs:
           git commit -m 'chore: pin BuildBuddy runner image [skip ci]'
           git pull --rebase origin "$GITHUB_REF_NAME"
           python3 devinfra/buildbuddy/images/runner/build.py verify --state "$RUNNER_TEMP/runner-image/state.json"
+          # Not the shared commit-and-push-as-app action: this job re-verifies the
+          # runner-image state between the commit and the push.
           # A further branch advance is rejected by the ordinary non-force push.
           set +x
           for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do

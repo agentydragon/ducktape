@@ -79,9 +79,6 @@ jobs:
           login_password: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
           context: x/rtl_tcp
 
-  # `pin-digests` pushes via the ducktape-automation GitHub App so the commit
-  # bypasses the main-protection ruleset (github-actions can't bypass on
-  # personal-account repos).
   pin-digests:
     name: Pin Digests
     needs: [freecad-image]
@@ -104,38 +101,11 @@ jobs:
       - name: Pin freecad_test
         run: python3 devinfra/update_image_pin.py freecad_test --digest "${{ needs.freecad-image.outputs.digest }}"
 
-      - name: Commit and push
-        env:
-          APP_TOKEN: ${{ steps.app.outputs.token }}
-          APP_SLUG: ${{ steps.app.outputs.app_slug }}
-          APP_USER_ID: ${{ steps.app.outputs.user_id }}
-        run: |
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
-
-          git add devinfra/image_pins.json
-
-          if git diff --cached --quiet; then
-            echo "Image pins already up to date"
-            exit 0
-          fi
-
-          MSG="chore: pin freecad_test image digest [skip ci]"
-
-          git commit -m "$MSG"
-
-          BRANCH="${GITHUB_REF_NAME}"
-          if ! git pull --rebase origin "$BRANCH"; then
-            echo "::error::Rebase failed"
-            git status
-            exit 1
-          fi
-
-          # Push as the ducktape-automation App via URL-embedded HTTP Basic
-          # auth — see the corresponding comment in sync-pins.yml for why the
-          # extraheader-replacement approach didn't work.
-          set +x
-          for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
-            git config --local --unset-all "$key"
-          done
-          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"
+      - name: Push the pin update as the automation App
+        uses: ./.github/actions/commit-and-push-as-app
+        with:
+          token: ${{ steps.app.outputs.token }}
+          app_slug: ${{ steps.app.outputs.app_slug }}
+          user_id: ${{ steps.app.outputs.user_id }}
+          paths: devinfra/image_pins.json
+          message: "chore: pin freecad_test image digest [skip ci]"
