@@ -37,6 +37,13 @@ js_test(
     shard_count = 6,
 )
 
+js_test(
+    name = "member_rename_boundary_test",
+    data = _RUNNER_DATA + ["run_cases.mjs"],
+    entry_point = "member_rename_boundary_test.mjs",
+    env = _RUNNER_ENV,
+)
+
 js_binary(
     name = "summarize_debundle_cases",
     data = ["//devinfra/js/debundle/x/split_proof:reporting"],

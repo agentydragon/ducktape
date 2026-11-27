@@ -269,7 +269,7 @@ function runCase(dir, specName, expected, id) {
       return unsupported("input does not parse as a module", error.message);
     }
     const spec = parseYaml(readFileSync(path.join(dir, specName), "utf8"));
-    let plan;
+    let plan, resolvedUnits;
     try {
       // Corpus specs omit the fixture input paths; preserve explicit overrides.
       mkdirSync(path.join(stage, ".fixture"), { recursive: true });
@@ -294,6 +294,7 @@ function runCase(dir, specName, expected, id) {
         throw new Error("resolved placement does not identify the checker input");
       }
       plan = translate(spec, chunk, analysis.statements, placement);
+      resolvedUnits = placement.units;
     } catch (error) {
       if (error instanceof Unsupported) return unsupported(error.cause, error.detail);
       throw error;
@@ -311,6 +312,7 @@ function runCase(dir, specName, expected, id) {
           stage,
           chunkFile,
           plan,
+          resolvedUnits,
           want: wanted(expected),
           providers: Object.values(expected.accept.runtime_files ?? {}),
           run,
