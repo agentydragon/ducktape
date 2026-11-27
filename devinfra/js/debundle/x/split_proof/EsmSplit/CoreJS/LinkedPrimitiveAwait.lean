@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.PrimitiveAwait
+import EsmSplit.CoreJS.Scope
 import EsmSplit.ESTreeUnits
 
 /-!
@@ -58,7 +59,9 @@ private def prefixOf (cut : Cut) (args : List Val) (fuel : Nat) : M W Prefix := 
   let env ← enterFunction cut.parts.scope cut.closed .undef args
   match ← execStmts fuel env cut.parts.before with
   | .normal =>
-    let operand ← evalExpr fuel env cut.parts.operand
+    -- Each preceding item uses one layer of execStmts. At the cut
+    -- the list and the expression statement each consume one more.
+    let operand ← evalExpr (fuel - cut.parts.before.length - 2) env cut.parts.operand
     pure (.suspended operand env cut.parts.after)
   | .ret value => pure (.completed value)
   | _ => unknown "model: invalid control flow before await"
@@ -68,6 +71,19 @@ inductive Immediate (W : World) (α : Type) where
   | throw (reason : Val) (turn : Turn W)
   | unknown (reason : String) (turn : Turn W)
   | fuel
+
+/-- Erase the driver-only result: keep the exact shared result, including
+abrupt reasons and their heap, cell, world and output state. A pending queue
+is a separate observation and cannot in general be erased for a split proof. -/
+def Immediate.shared : Immediate W α → Res W Unit
+  | .ok _ turn => .ok () turn.state
+  | .throw reason turn => .throw reason turn.state
+  | .unknown reason turn => .unknown reason turn.state
+  | .fuel => .fuel
+
+def Immediate.pending : Immediate W α → Option (List Job)
+  | .ok _ turn | .throw _ turn | .unknown _ turn => some turn.jobs
+  | .fuel => none
 
 private def thenSync {α β : Type} (step : M W α) (turn : Turn W)
     (next : α → Turn W → Immediate W β) : Immediate W β :=
@@ -122,12 +138,29 @@ def runImmediate (W : World) (fuel : Nat) (input : Input) : Immediate W Env :=
   thenSync (link input.program) ⟨initialState W input.program.regions, []⟩ fun linked entered =>
     match linked with
     | [(_, env)] =>
-      thenSync (bindCuts env input.cuts) entered fun cuts ready =>
-        match runUnitsWithCuts cuts fuel (unitsOf linked) ready with
-        | .ok () done => .ok env done
-        | .throw reason stopped => .throw reason stopped
-        | .unknown why stopped => .unknown why stopped
-        | .fuel => .fuel
+      match input.cuts with
+      | [] => thenSync (runUnits fuel (unitsOf linked)) entered fun () done => .ok env done
+      | parts =>
+        thenSync (bindCuts env parts) entered fun cuts ready =>
+          match runUnitsWithCuts cuts fuel (unitsOf linked) ready with
+          | .ok () done => .ok env done
+          | .throw reason stopped => .throw reason stopped
+          | .unknown why stopped => .unknown why stopped
+          | .fuel => .fuel
     | _ => .unknown "expected exactly one linked module" entered
+
+/-- Once a module has linked, the no-cut path agrees with the shared
+evaluator at every bound. Equality retains object identity and all stateful
+outcomes; the queue is empty whenever the shared result has state. -/
+theorem noCuts_agree {W : World} {input : Input} {mod : Module} {env : Env} {ready : State W}
+    (cuts : input.cuts = [])
+    (linked : link input.program (initialState W input.program.regions) = .ok [(mod, env)] ready)
+    (fuel : Nat) :
+    let immediate := runImmediate W fuel input
+    let shared := runProgram W fuel input.program
+    immediate.shared = shared ∧
+      immediate.pending = (match shared with | .fuel => none | _ => some []) := by
+  simp only [runImmediate, runProgram, M.bind_apply, thenSync, linked, cuts]
+  cases runUnits fuel (unitsOf [(mod, env)]) ready <;> exact ⟨rfl, rfl⟩
 
 end CoreJS.LinkedPrimitiveAwait

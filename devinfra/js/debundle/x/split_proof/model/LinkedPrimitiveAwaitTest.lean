@@ -36,14 +36,19 @@ private def observed (env : Env) (immediate : Turn World.probe) : Except String 
 
 private def probe (input : Json) : Except String Json := do
   let source ← input.getObjVal? "source"
+  let fuel := (input.getObjValAs? Nat "fuel").toOption.getD 100
+  let statusOnly := (input.getObjValAs? Bool "statusOnly").toOption.getD false
   let input ← LinkedPrimitiveAwait.decode source "fixture.mjs"
-  let result := LinkedPrimitiveAwait.runImmediate World.probe 100 input
+  let result := LinkedPrimitiveAwait.runImmediate World.probe fuel input
   match result with
   | .unknown why turn => return Json.mkObj [("unknown", toJson why), ("jobs", toJson turn.jobs.length)]
   | .throw (.str why) turn => return Json.mkObj [("throw", toJson why), ("jobs", toJson turn.jobs.length)]
   | .throw _ _ => throw "unexpected module throw"
-  | .fuel => throw "unexpected fuel exhaustion"
-  | .ok env immediate => observed env immediate
+  | .fuel => return Json.mkObj [("end", toJson "fuel")]
+  | .ok env immediate =>
+    if statusOnly then
+      return Json.mkObj [("end", toJson "normal"), ("jobs", toJson immediate.jobs.length)]
+    else observed env immediate
 
 def main : IO Unit := do
   let line ← (← IO.getStdin).getLine

@@ -4062,6 +4062,15 @@ lean_library(
         ":corejs_from_estree",
         ":corejs_linked_input",
         ":corejs_primitive_await",
+        ":corejs_scope",
         ":estree_units",
     ],
+)
+
+lean_proof_test(
+    name = "corejs_linked_primitive_await_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedPrimitiveAwait"],
+    required_theorems = ["CoreJS.LinkedPrimitiveAwait.noCuts_agree"],
+    deps = [":corejs_linked_primitive_await"],
 )

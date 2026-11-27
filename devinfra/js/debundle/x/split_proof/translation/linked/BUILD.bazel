@@ -234,3 +234,10 @@ js_test(
     entry_point = "var_constructor_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
 )
+
+js_test(
+    name = "await_placement_boundary_test",
+    data = _TEST_DATA,
+    entry_point = "await_placement_boundary_test.mjs",
+    env = _TEST_ENV,
+)

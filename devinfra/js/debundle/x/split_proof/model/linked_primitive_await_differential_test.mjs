@@ -4,10 +4,10 @@ import { readFileSync } from "node:fs";
 import { dump } from "../translation/parser.mjs";
 import { atReturn, duringTurn, first, payload, second, trace } from "./linked_primitive_await_fixture.mjs";
 
-function model(source) {
+function model(source, options = {}) {
   return JSON.parse(
     execFileSync(process.env.LINKED_PRIMITIVE_AWAIT_TEST, {
-      input: JSON.stringify({ source: dump(source, { includeOpaqueCaptures: true }) }) + "\n",
+      input: JSON.stringify({ source: dump(source, { includeOpaqueCaptures: true }), ...options }) + "\n",
       encoding: "utf8",
     })
   );
@@ -52,3 +52,13 @@ assert.deepEqual(model("async function f() { await { then() {} }; } f();"), {
   jobs: 0,
 });
 assert.deepEqual(model('async function f() { await 0; } f(); throw "stop";'), { throw: "stop", jobs: 1 });
+
+// Compare against an ordinary statement at the same position. The await
+// operand must not run on fuel that can't reach the ordinary expression.
+for (const fuel of [4, 5, 6]) {
+  const options = { fuel, statusOnly: true };
+  const awaited = model("async function f() { await 0; } f();", options);
+  const ordinary = model("async function f() { 0; } f();", options);
+  assert.equal(awaited.end, ordinary.end);
+  assert.deepEqual(awaited, fuel < 6 ? { end: "fuel" } : { end: "normal", jobs: 1 });
+}
