@@ -470,11 +470,11 @@ def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.len
 
 /-- Slots reserved after the existing prototype objects. The global object is host-owned. -/
 inductive RealmSlot where
-  | errorPrototype | errorConstructor | globalObject
+  | errorPrototype | errorConstructor | globalObject | promisePrototype
   deriving DecidableEq, BEq, Repr
 
 /-- The same ordered list determines addresses and materializes the corresponding objects. -/
-def realmSlots : List RealmSlot := [.errorPrototype, .errorConstructor, .globalObject]
+def realmSlots : List RealmSlot := [.errorPrototype, .errorConstructor, .globalObject, .promisePrototype]
 
 def realmSlotAddr (slot : RealmSlot) (_present : realmSlots.contains slot = true) : Addr :=
   ⟨0, arrayIteratorProto.index + 1 + realmSlots.idxOf slot⟩
@@ -483,6 +483,7 @@ def errorProto : Addr := realmSlotAddr .errorPrototype (by decide)
 def errorConstructor : Addr := realmSlotAddr .errorConstructor (by decide)
 /-- An empty synthetic global object. Hosts must supply a complete snapshot before use. -/
 def globalObject : Addr := realmSlotAddr .globalObject (by decide)
+def promiseProto : Addr := realmSlotAddr .promisePrototype (by decide)
 
 def arrayIteratorPrototype : Obj :=
   { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }
@@ -519,11 +520,18 @@ def errorConstructorObject : Obj :=
     ("name", .data (.str "Error") false false true),
     ("prototype", .data (.obj errorProto) false false false)] }
 
+/-- The intrinsic prototype exists even without a global Promise binding.
+Its methods cannot run until the Promise jobs are modeled. -/
+def promisePrototype : Obj :=
+  { proto := some objectProto, props := (PropertyKey.str "constructor", Property.data (.host "%Promise%") true false true) ::
+      (hostMembers "Promise.prototype" ["then", "catch", "finally"] ++ [stringTag "Promise"]) }
+
 /-- Materialize the reserved slots in the same order used by `realmSlotAddr`. -/
 def realmSlotObject : RealmSlot → Obj
   | .errorPrototype => errorPrototype
   | .errorConstructor => errorConstructorObject
   | .globalObject => { proto := none, props := [] }
+  | .promisePrototype => promisePrototype
 
 /-- The intrinsic prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
 def builtins : Array Obj := #[

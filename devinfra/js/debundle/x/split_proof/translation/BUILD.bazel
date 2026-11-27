@@ -493,6 +493,7 @@ js_library(
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/lowering:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
     ],

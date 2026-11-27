@@ -380,6 +380,7 @@ lean_library(
     name = "corejs_fuel",
     srcs = ["EsmSplit/CoreJS/Fuel.lean"],
     deps = [
+        ":corejs_async_prefix",
         ":corejs_eval",
         ":corejs_iterator",
     ],
@@ -696,6 +697,7 @@ lean_library(
 lean_library(
     name = "corejs_linked_input",
     srcs = ["EsmSplit/CoreJS/LinkedInput.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [
         ":corejs_deployment_placement",
         ":corejs_entry_exports",
@@ -925,6 +927,7 @@ lean_library(
     name = "corejs_invocation_frame",
     srcs = ["EsmSplit/CoreJS/InvocationFrame.lean"],
     deps = [
+        ":corejs_async_prefix_frame",
         ":corejs_binding_frame",
         ":corejs_host_frame",
         ":corejs_request_property",
@@ -1989,6 +1992,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/Eval.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [
+        ":corejs_async_prefix",
         ":corejs_iterator",
         ":module_order",
     ],
@@ -4014,6 +4018,7 @@ lean_proof_test(
         "CoreJS.AsyncPrefix.allocate_fresh",
         "CoreJS.AsyncPrefix.allocate_reachFrame",
         "CoreJS.AsyncPrefix.invoke_after_allocate",
+        "CoreJS.AsyncPrefix.invokeBody_reachFrame",
         "CoreJS.AsyncPrefix.invoke_zero",
         "CoreJS.AsyncPrefix.settle_frame",
         "CoreJS.AsyncPrefix.settlement_edges",

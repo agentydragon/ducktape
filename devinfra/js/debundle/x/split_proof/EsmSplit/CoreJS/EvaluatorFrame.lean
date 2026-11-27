@@ -100,9 +100,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
           (safe : ∀ node ∈ closed.nodes, A node) (ht : SafeVal A this) (ha : ∀ a ∈ args, SafeVal A a) :
           ReachFrame r R cells A (SafeVal A) (do
             let env ← enterFunction f closed this args
-            match ← execStmts n env f.body with
-            | .ret v => pure v
-            | _ => pure .undef : M W Val) := by
+            Flow.functionResult (← execStmts n env f.body) : M W Val) := by
         apply (enterCall cells f closed this args .undef safe ht ha (fun _ h => by cases h)).bind
         intro env henv
         apply (prev.stmts cells env f.body henv).bind
@@ -151,7 +149,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
         exact evalFields_reachFrame_step away env ha (fun e => prev.expr cells env e safe)
           (fun fs => prev.fields cells env a fs safe ha) fs
       · intro cells
-        exact callFn_reachFrame_of_steps away convo (runBody cells)
+        exact callFn_reachFrame_of_steps away (Ne.symm hr) object convo (runBody cells)
       · intro cells
         exact constructTarget_reachFrame_of_steps away (Ne.symm hr) objectRoot (allocate cells) (prev.call cells).getter convo
           (prev.fields cells) (enterCall cells) (prev.stmts cells) (prev.args cells) (prev.construct cells)

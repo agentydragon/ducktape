@@ -26,6 +26,9 @@ theorem allocate_reachFrame {r R cells A} (prototype : Addr) (root : A (.obj pro
   subst node
   exact root
 
+private theorem pureResult (value : Val) (s : State W) :
+    (pure value : M W Val) s = .ok value s := rfl
+
 /-- Settlement only replaces the one internal slot. It keeps all other objects,
 the bindings, the current allocation region, and the world and output of the body. -/
 theorem settle_frame {s t : State W} {promise : Addr} {result : PromiseSlot} {v : Val}
@@ -33,13 +36,17 @@ theorem settle_frame {s t : State W} {promise : Addr} {result : PromiseSlot} {v 
     v = .obj promise ∧
       (∀ a, a ≠ promise → t.objAt a = s.objAt a) ∧
       t.cells = s.cells ∧ t.region = s.region ∧ t.world = s.world ∧ t.out = s.out := by
-  cases found : (s.objAt promise).bind (·.promise) with
-  | none => simp [settle, found] at done
-  | some slot =>
-    cases slot <;> cases result <;> simp [settle, found] at done
-    all_goals
-      rcases done with ⟨rfl, rfl⟩
-      exact ⟨rfl, fun a ha => objAt_modify s promise _ a ha, rfl, rfl, rfl, rfl⟩
+  cases found : s.objAt promise with
+  | none => simp [settle, getObj, found, M.bind_apply] at done
+  | some obj =>
+    cases slot : obj.promise with
+    | none => simp [settle, getObj, found, M.bind_apply, slot, unknown] at done
+    | some current =>
+      cases current <;> cases result <;>
+        simp [settle, getObj, found, M.bind_apply, slot, modifyObj, unknown, pureResult] at done
+      all_goals
+        rcases done with ⟨rfl, rfl⟩
+        exact ⟨rfl, fun a ha => objAt_modify s promise _ a ha, rfl, rfl, rfl, rfl⟩
 
 /-- A rejection reason can itself be an object; the promise's internal edge
 keeps that object in the same reachability envelope as the caller. -/
@@ -55,5 +62,52 @@ theorem settlement_edges {A : HeapNode → Prop} {obj : Obj} {value : Val}
     rcases h with old | payload
     · exact Or.inl (by simp only [Obj.nodes, List.mem_append]; exact Or.inl old)
     · exact Or.inr (safe _ payload)
+
+private theorem settle_reachFrame {r R cells A} (away : Away r R A) {promise : Addr}
+    (hp : A (.obj promise)) {value : Val} (safe : SafeVal A value) (reject : Bool) :
+    ReachFrame r R cells A (SafeVal A)
+      (settle promise (if reject then .rejected value else .fulfilled value) : M W Val) := by
+  unfold settle
+  apply (reachFrame_getObj away hp).bind
+  intro obj _
+  cases obj.promise with
+  | none => cases reject <;> exact reachFrame_unknown r R cells A _ _
+  | some slot =>
+    cases slot with
+    | pending =>
+      cases reject
+      · apply (reachFrame_modifyObj away promise hp
+          (fun o => { o with promise := some (.fulfilled value) })
+          (fun o => settlement_edges (obj := o) safe false)).bind
+        intro _ _
+        exact reachFrame_pure r R cells A (P := SafeVal A) (Val.obj promise) (safeVal_obj.2 hp)
+      · apply (reachFrame_modifyObj away promise hp
+          (fun o => { o with promise := some (.rejected value) })
+          (fun o => settlement_edges (obj := o) safe true)).bind
+        intro _ _
+        exact reachFrame_pure r R cells A (P := SafeVal A) (Val.obj promise) (safeVal_obj.2 hp)
+    | fulfilled | rejected => cases reject <;> exact reachFrame_unknown r R cells A _ _
+
+private theorem complete_reachFrame {r R cells A} (away : Away r R A) (promise : Addr)
+    (hp : A (.obj promise)) (result : Except Val Val)
+    (safe : match result with | .ok value => SafeVal A value | .error value => SafeVal A value) :
+    ReachFrame r R cells A (SafeVal A) (complete promise result : M W Val) := by
+  cases result with
+  | error v => exact settle_reachFrame away hp safe true
+  | ok v =>
+    cases v <;> first
+      | exact settle_reachFrame away hp safe false
+      | exact reachFrame_unknown r R cells A _ _
+
+theorem invokeBody_reachFrame {r R cells A} (away : Away r R A) (prototype : Addr)
+    (root : A (.obj prototype)) (outside : ∀ a : Addr, a.region ≠ r → A (.obj a))
+    {body : M W Val} (run : ReachFrame r R cells A (SafeVal A) body) :
+    ReachFrame r R cells A (SafeVal A) (invokeBody prototype body) := by
+  unfold invokeBody
+  apply (allocate_reachFrame prototype root outside).bind
+  intro promise hp
+  apply run.attempt.bind
+  intro outcome safe
+  cases outcome <;> exact complete_reachFrame (cells := cells) away promise hp _ safe
 
 end CoreJS.AsyncPrefix

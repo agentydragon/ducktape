@@ -372,6 +372,18 @@ private partial def namesOfType (kind : String) (j : Json) : List String :=
   | .arr items => items.toList.flatMap (namesOfType kind)
   | _ => []
 
+/-- Conservatively exclude suspension syntax, including in nested functions.
+No call that reaches this body can require suspending its evaluation. -/
+private partial def hasAsyncSuspension (j : Json) : Bool :=
+  match j with
+  | .obj fields =>
+    (field j "type").toOption == some "AwaitExpression" ||
+      ((field j "type").toOption == some "ForOfStatement" &&
+        (j.getObjValAs? Bool "await").toOption != some false) ||
+      fields.toList.any (hasAsyncSuspension ∘ Prod.snd)
+  | .arr items => items.any hasAsyncSuspension
+  | _ => false
+
 private def privateMember? (j : Json) : Option String := do
   guard ((field j "type").toOption == some "MemberExpression" &&
     (j.getObjValAs? Bool "computed").toOption == some false &&
@@ -978,8 +990,17 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
       "async generator invocation requires asynchronous suspension semantics")
     return .complete (← deferredFunction j .generator name self arity "generator invocation requires suspension semantics")
   if async then
-    -- makeFunc captures the enclosing this as well as named cells. No async
-    -- callable enters the ordinary function evaluator.
+    -- Start with declarations, not arrows or methods (whose receiver context differs).
+    if kind == .normal && (field j "type").toOption == some "FunctionDeclaration" &&
+        tags.all (· == "Identifier") && !needsOpaqueContext j (checkPrivateNames := true) then
+      let body ← j.getObjVal? "body"
+      if !hasAsyncSuspension body && (field body "type").toOption == some "BlockStatement" then
+        let params ← parameters.toList.mapM localBinding
+        if params.Nodup then
+          if let .ok stmts := linkedBlockBody profile imports .function body (allowFunctions := true) then
+            let functions := (funDecls stmts).map Func.name
+            if functions.Nodup && !functions.any (fun x => params.contains x || (varNamesOf stmts).contains x) then
+              return .complete (.mk name .asyncFn self params stmts)
     return .complete (← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics")
   let j ← if kind == .arrow then pure j else prepareNewTargetFunction j
   let parameters ← j.getObjValAs? (Array Json) "params"

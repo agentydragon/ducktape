@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AsyncPrefixFrame
 import EsmSplit.CoreJS.BindingFrame
 import EsmSplit.CoreJS.HostFrame
 import EsmSplit.CoreJS.Request.Property
@@ -115,15 +116,14 @@ private theorem objectCode_safe {A : HeapNode → Prop} {o : Obj}
   fun node hn => safe node (List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨code, by simp [hc], hn⟩)))
 
 theorem callFn_reachFrame_of_steps {r R cells A n} (away : Away r R A)
+    (promiseRoot : A (.obj promiseProto)) (outside : ∀ a : Addr, a.region ≠ r → A (.obj a))
     (conversation : ∀ code inner told, (∀ a, some a ∈ inner → A (.cell a)) →
       ReachFrame r R inner A (SafeVal A) (converse n code inner told : M W Val))
     (run : ∀ f closed this args, (∀ node ∈ Env.nodes closed, A node) → SafeVal A this →
       (∀ a ∈ args, SafeVal A a) →
       ReachFrame r R cells A (SafeVal A) (do
         let env ← enterFunction f closed this args
-        match ← execStmts n env f.body with
-        | .ret v => pure v
-        | _ => pure .undef : M W Val)) :
+        Flow.functionResult (← execStmts n env f.body) : M W Val)) :
     CallFramed r R cells A (callFn (n + 1) : Call W) := by
   intro callee this args hc ht ha
   cases callee
@@ -147,7 +147,12 @@ theorem callFn_reachFrame_of_steps {r R cells A n} (away : Away r R A)
         split
         · exact reachFrame_typeError "class constructor cannot be invoked without 'new'"
         · cases h : f.opaqueBody with
-          | none => exact run f closed this args caps ht ha
+          | none =>
+            have runBody := run f closed this args caps ht ha
+            by_cases isAsync : (f.kind == .asyncFn) = true
+            · simpa only [ite_eq_left isAsync] using
+                (AsyncPrefix.invokeBody_reachFrame away promiseProto promiseRoot outside runBody)
+            · simpa only [ite_eq_right isAsync] using runBody
           | some body =>
             rcases body with ⟨code, part, free, refusal⟩
             cases refusal with

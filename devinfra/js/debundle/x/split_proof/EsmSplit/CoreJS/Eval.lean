@@ -1,4 +1,5 @@
 import Std.Data.HashMap.Lemmas
+import EsmSplit.CoreJS.AsyncPrefix
 import EsmSplit.CoreJS.Iterator
 import EsmSplit.ModuleOrder
 
@@ -23,6 +24,11 @@ inductive Flow where
   | ret (v : Val)
   | brk
   | cont
+
+/-- The value of a completed ordinary function body. -/
+def Flow.functionResult : Flow → M W Val
+  | .ret v => pure v
+  | _ => pure .undef
 
 /-- What an assignment writes to. -/
 inductive Ref where
@@ -637,10 +643,10 @@ def callFn : Nat → Val → Val → List Val → M W Val
             (.run code part (← toW callee) (← toW (if f.kind == .arrow then closed.this else this))
               (← args.mapM toW) false)
         | none =>
-          let env ← enterFunction f closed this args
-          match ← execStmts n env f.body with
-          | .ret v => pure v
-          | _ => pure .undef
+          let run : M W Val := do
+            let env ← enterFunction f closed this args
+            Flow.functionResult (← execStmts n env f.body)
+          if f.kind == .asyncFn then AsyncPrefix.invokeBody promiseProto run else run
       | some (.host name) => hostCall name this args
       | some (.opaque code part cells _) => do
         converse n code cells (.run code part (← toW callee) (← toW this) (← args.mapM toW) false)
