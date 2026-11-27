@@ -156,7 +156,6 @@ _UNSHARDED_TESTS = [
     "arithmetic_observer_test",
     "arithmetic_test",
     "arrays_test",
-    "async_methods_test",
     "bitwise_test",
     "derived_defaults_test",
     "derived_fields_test",
