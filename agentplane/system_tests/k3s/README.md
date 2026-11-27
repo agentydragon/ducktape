@@ -9,7 +9,8 @@ Application charts, databases, certificates issued for a particular run, the pyt
 adapter, and workload cleanup belong to [`deployment/`](../deployment/README.md). Optional
 KubeVirt controllers, VM volumes and guest evidence belong to [`vm/`](../vm/README.md).
 
-Retention requires the executor-injected `AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1` permission. A
+Retention requires the executor-injected `AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1` permission;
+`AGENTPLANE_K3S_RETAIN_RUNNING=0` keeps only the image store instead (`retain_running_baseline`). A
 missing, unhealthy, dirty or incompatible baseline rebuilds cold. Infrastructure fingerprints
 include their actual helpers and pinned releases/images; per-action workload changes do not enter
 that compatibility boundary. Snapshot publication uses BuildBuddy's default save policy.

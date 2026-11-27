@@ -54,6 +54,10 @@ executor permission, the stack starts fresh infrastructure and stops k3s during 
 when setup or a scenario fails. Local BuildBuddy credentials and `CI` do not enable retention.
 If an action without permission restores a previously retained snapshot, it first stops the server
 identified by the ownership marker, then starts and tears down its own fresh node.
+`AGENTPLANE_K3S_RETAIN_RUNNING=0` in the test environment opts a permitted suite out of keeping k3s
+running: teardown stops k3s and a recycled runner keeps only its image store. `test_vm` uses it because
+its running KubeVirt baseline exceeds the KVM workers' 2 GiB paused-runner cap
+([#20575](https://github.com/agentydragon/ducktape/issues/20575)).
 
 Pod/MCP/real-model suites share one tmpfs snapshot family. Managed VM suites with retention
 use a separate disk-backed snapshot family. Baseline fingerprints include the layer mode, k3s, CRDs,

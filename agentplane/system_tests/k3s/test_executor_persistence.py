@@ -264,6 +264,34 @@ def test_no_retention_without_executor_permission(
     assert not retained_root.exists()
 
 
+@pytest.mark.parametrize(
+    ("permission", "retain", "expected"),
+    [
+        ("1", None, True),
+        ("1", "1", True),
+        ("1", "0", False),
+        (None, "1", False),  # The test environment can only disable retention, never grant it.
+        (None, None, False),
+    ],
+)
+def test_retain_running_baseline_needs_permission_and_honours_opt_out(
+    monkeypatch: pytest.MonkeyPatch, permission: str | None, retain: str | None, expected: bool
+) -> None:
+    for name, value in (("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", permission), ("AGENTPLANE_K3S_RETAIN_RUNNING", retain)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    assert baseline.retain_running_baseline() is expected
+
+
+def test_retain_running_baseline_rejects_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", "1")
+    monkeypatch.setenv("AGENTPLANE_K3S_RETAIN_RUNNING", "no")
+    with pytest.raises(ValueError, match="AGENTPLANE_K3S_RETAIN_RUNNING"):
+        baseline.retain_running_baseline()
+
+
 def _action_workspace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     workspace = tmp_path / "action-workspace"
     test_tmpdir = workspace / "_tmp/test"

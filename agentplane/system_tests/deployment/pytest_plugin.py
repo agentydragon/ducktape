@@ -18,7 +18,7 @@ from agentplane.system_tests.deployment.stack import Stack, StackInputs, running
 from agentplane.system_tests.deployment.virtualization import RuntimeFactory
 from agentplane.system_tests.driver import scripted_upstream
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.k3s.baseline import node_ip
+from agentplane.system_tests.k3s.baseline import node_ip, retain_running_baseline
 
 # All suites use the same scenario hooks, including batched-case duration reporting.
 # gazelle:include_dep //agentplane/system_tests:conftest
@@ -105,7 +105,7 @@ def deployment(
             models=_models(inputs, scripted_listener),
             runtime_factory=runtime_factory,
             validate_vm_shutdown=lambda: request.session.testsfailed == 0,
-            persist_infrastructure=os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") == "1",
+            persist_infrastructure=retain_running_baseline(),
         ) as stack,
         pytest.MonkeyPatch.context() as environment,
     ):
