@@ -34,9 +34,6 @@ inputs:
     default: ""
 
 outputs:
-  pin_tag:
-    description: The branch-timestamp-sha7 tag (useful for Flux ImagePolicy)
-    value: ${{ steps.meta.outputs.pin_tag }}
   digest:
     description: Digest Buildx pushed, so a later job can pin it without querying the registry
     value: ${{ steps.build.outputs.digest }}
@@ -56,7 +53,6 @@ runs:
           TAGS="$TAGS,${{ inputs.image }}:latest"
         fi
         echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
-        echo "pin_tag=$PINNED_TAG" >> "$GITHUB_OUTPUT"
 
     - name: Log in to the registry
       uses: docker/login-action@v4
