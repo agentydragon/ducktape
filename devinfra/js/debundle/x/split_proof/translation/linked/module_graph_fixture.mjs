@@ -20,3 +20,20 @@ export function moduleGraphFixture(count = 16) {
   modules[entry] = [`#${2 * count}`];
   return { names, expected, source, entry, order, spec: { entry, modules, order, sequential: true } };
 }
+
+// Nonterminal standalone metadata at source ordinal #1, with #2 still
+// executable. Keep this authored placement shared by the planner and Lean
+// decoder tests so both check the same source and request.
+export function sparseNonterminalFixture() {
+  const source = "const seed = 42;\nexport { seed as exposed };\nconst result = seed;\n";
+  const entry = "entry.mjs";
+  return {
+    source,
+    spec: {
+      entry,
+      modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] },
+      order: ["worker.mjs"],
+      sequential: true,
+    },
+  };
+}

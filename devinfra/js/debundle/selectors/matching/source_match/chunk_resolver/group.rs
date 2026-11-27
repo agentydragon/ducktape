@@ -56,13 +56,11 @@ pub(super) fn group_matches_declarator_holes(
         let mut resolved = BTreeMap::new();
         for (target, (target_decl_idx, target_binding_idx)) in &target_locations {
             let Some(Some(candidate_decl_idx)) = alignment.site.get(*target_decl_idx) else {
-                return Err(SourceMatchError::binding(
+                return Err(SourceMatchError::matched_hole(
                     request_id,
                     selector,
                     target,
-                    BindingProblem::MatchedHole {
-                        hole: ProjectionHole::Declarators,
-                    },
+                    ProjectionHole::Declarators,
                 )
                 .into());
             };
@@ -176,13 +174,11 @@ pub(super) fn candidate_target_binding(
     )
     .ok_or_else(|| MatcherError::invariant(MatcherInvariant::DeclaratorAlignment))?;
     let Some(Some(candidate_decl_idx)) = alignment.site.get(target_decl_idx) else {
-        return Err(SourceMatchError::binding(
+        return Err(SourceMatchError::matched_hole(
             request_id,
             selector,
             target,
-            BindingProblem::MatchedHole {
-                hole: ProjectionHole::Declarators,
-            },
+            ProjectionHole::Declarators,
         )
         .into());
     };
@@ -226,13 +222,11 @@ pub(super) fn group_matches_general(
         let mut resolved = BTreeMap::new();
         for (target, (target_item_idx, target_binding_idx)) in &target_locations {
             let Some(Some(body_idx)) = alignment.site.get(*target_item_idx) else {
-                return Err(SourceMatchError::binding(
+                return Err(SourceMatchError::matched_hole(
                     request_id,
                     selector,
                     target,
-                    BindingProblem::MatchedHole {
-                        hole: ProjectionHole::StatementList,
-                    },
+                    ProjectionHole::StatementList,
                 )
                 .into());
             };
