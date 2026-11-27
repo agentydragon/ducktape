@@ -91,7 +91,6 @@ let
   # own smaller package set above.
   devToolsCommon = [
     ducktapePkgs.bbapi
-    ducktapePkgs.skills
     pkgs.openssl
     # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;
     # include a guaranteed Python runtime with pyyaml for that path.
