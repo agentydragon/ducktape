@@ -1,5 +1,8 @@
 # Public placement ladder
 
+See the [ordinary CLI workload cohort](WORKLOAD_COHORT.md) for the four pinned
+libraries, Acorn consumer projections, and corpus checkpoints.
+
 These are complete source files and authored placements, not isolated-unit
 acceptance counts. The corpus rung uses the placement in
 [`certificate_test.mjs`](../../debundle_cases/certificate_test.mjs). The
