@@ -3555,6 +3555,10 @@ flowchart LR
     POLICY_SUBJECTS_IDENTITY_ONLY[Unscheduled decision: retire Sandbox-scoped grants and ServiceAccount subjects]
     IDENTITY_OWNERSHIP_DESIGN -. binding shape .-> POLICY_SUBJECTS_IDENTITY_ONLY
     POLICY_SUBJECTS_IDENTITY_ONLY -. launcher grant shape .-> ORCHESTRATION_V1_BACKEND_GRANTS
+    SANDBOX_IDENTITY_SURFACES[Unscheduled: Sandbox page and CLI read and show the Identity, not a ServiceAccount]
+    ACTION_POLICY_IDENTITY_SUBJECT[Unscheduled decision: read an Identity's Action policy]
+    POLICY_SUBJECTS_IDENTITY_ONLY -. ServiceAccount subject shape .-> ACTION_POLICY_IDENTITY_SUBJECT
+    ACTION_POLICY_IDENTITY_SUBJECT -. Policies tab Action section .-> SANDBOX_IDENTITY_SURFACES
     IDENTITY_OWNERSHIP_DESIGN -. cross-store invariants .-> RECORD_COLOCATION_DESIGN
     SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
     SESSION_ACCESS_GROUPING_DESIGN --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox target, grant and migration]
@@ -3706,6 +3710,57 @@ rollout, check the applied app/Gateway revisions and, with disposable resources,
 running rebind cases and the credential-refused cleanup/retry path. Identity-system acceptance owns
 cutover scenarios; missing live evidence alone is not a separate gate when suitable automated
 evidence exists.
+
+### `SANDBOX_IDENTITY_SURFACES` — Sandbox page and CLI read and show the Identity
+
+**Unscheduled; found 2026-11-26 by an audit prompted by the blank Egress log tab.** Since #15742 a
+Sandbox runs as an Identity and has no execution ServiceAccount (`executionAccount` is null on staging
+for `public-coder-ducktape-1`; `spec.identity` is set). These surfaces still read or show a
+ServiceAccount. The Egress log tab is fixed separately in #20501 (reads `filter.identity.name`).
+
+- **Policies tab** (`sandboxes/sandbox_page.tsx`, `usePolicyResources`): queries bindings by the
+  ServiceAccount selector, so it stays on "Waiting for policy resources…" (observed on staging).
+  `GrantSandboxPolicyBinding` already binds the Identity (`policy_controller/internal/rpc/sandbox_bindings.go`),
+  so a grant made here would not list. Read by the `identity` selector; fix the ServiceAccount labels
+  in `sandboxes/policy_bindings.tsx`.
+- **Status tab "ServiceAccount" row** (`sandboxes/sandbox_status_view.tsx`): falls back to the
+  Sandbox's own name, naming an account that does not exist; its help text ("the subject its policy
+  bindings name") describes the Identity. The Identity is already shown above it by
+  `EnvironmentIdentity`; drop or relabel the row.
+- **Langfuse links** (Sandbox menu in `sandbox_page.tsx`, Thread menu in `sessions/conversation.tsx`):
+  filter on `agentplane.namespace` and `agentplane.service_account`, but LLM ingress attributes an
+  Identity caller by `agentplane.identity` and `agentplane.identity_uid` instead
+  (`llm_ingress/internal/server/config.go`). The Sandbox menu falls back to the Sandbox name and the
+  Thread menu passes empty strings. Needs an Identity metadata-key setting (`app/settings.py`,
+  `frontend_config.go`; add the setting in code before a manifest sets it). Derived from code, not
+  yet checked against Langfuse.
+- **CLI** (`cli/internal/environments/environments.go`, `environmentText`): prints a blank
+  `account=/ uid=`; print the Identity name.
+- **Fixtures:** the visual harness's `ready-sandbox` still carries an `executionAccount`, and its
+  `BINDINGS` name that ServiceAccount as subject; `FakeEgressAdmin` and `app/test_live.py` filter only
+  by ServiceAccount, which is why no test saw the blank tab. The delete-confirmation scenarios share
+  the `referenced-identity` binding query; rerun them when re-subjecting `BINDINGS`.
+
+**Exit:** each surface above reads or shows the Identity; pr-visuals images reviewed for the Policies
+and Status tabs; one Langfuse link opened against a real Identity Sandbox's traces. Independent of
+`POLICY_SUBJECTS_IDENTITY_ONLY`, which covers the backend shapes, not these readers; the
+[Identity UI](#app_identities_ui--identities-in-the-app) slices share the screens.
+
+### `ACTION_POLICY_IDENTITY_SUBJECT` — read an Identity's effective Action policy
+
+**Unscheduled decision, found 2026-11-26 in the same audit.** `GetActionPolicyRequest.subject` and
+`/upstream/actions/v1/action-policy:watch` accept only a ServiceAccount
+(`action_service/api/contracts/action_service.proto`), so the Policies tab's Action policy section
+(`actions/policy.tsx`, `ActionPolicyWatch`) has nothing to ask for an Identity Sandbox. It is hidden
+today only because the tab stops earlier (`SANDBOX_IDENTITY_SURFACES`). Needs a backend contract change.
+
+**Question for review:** does reading an Identity's policy follow the ServiceAccount form's
+authorization? Recommendation: yes, one rule for both subject kinds, since the policy is derived from the
+same bindings. Alternatives: operator-only reads, or the Identity form for callers' own policy only.
+Coordinate with `POLICY_SUBJECTS_IDENTITY_ONLY`: if ServiceAccount subjects retire, the ServiceAccount
+form leaves after the Identity form lands. **Exit:** decision recorded; the Action Service contract and
+[SPEC](../action_service/SPEC.md) accept an Identity subject, and the Policies tab shows an Identity
+Sandbox's effective Action policy.
 
 ### `SESSION_SUBAGENT_DELEGATION` — a Session creates and messages a sub-Session
 
