@@ -241,31 +241,10 @@ impl ExecutionIndex {
             } else {
                 self.top_callback_result_writes[self.owner.0].push(write);
             }
-            if let Expr::Ident(receiver) = binding_targets::transparent_target_expr(&member.obj)
-                && let Some(key) = static_prop(&member.prop)
-            {
+            if let Expr::Ident(receiver) = binding_targets::transparent_target_expr(&member.obj) {
                 let write = MemberValueWrite {
                     receiver: receiver.to_id(),
-                    property: Some(key),
-                    value: ValueExpr::from_expr(&assignment.right),
-                    site: assignment.span.into(),
-                    owner: self.owner,
-                };
-                if let Some(callable) = self.current {
-                    self.callables
-                        .get_mut(&callable)
-                        .unwrap()
-                        .member_value_writes
-                        .push(write);
-                } else {
-                    self.top_member_value_writes[self.owner.0].push(write);
-                }
-            } else if let Expr::Ident(receiver) =
-                binding_targets::transparent_target_expr(&member.obj)
-            {
-                let write = MemberValueWrite {
-                    receiver: receiver.to_id(),
-                    property: None,
+                    property: static_prop(&member.prop),
                     value: ValueExpr::from_expr(&assignment.right),
                     site: assignment.span.into(),
                     owner: self.owner,
