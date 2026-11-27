@@ -505,12 +505,13 @@ export function SandboxPage({
           {vmConsoleAvailable && <Tabs.Tab value="console">Console</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value="egress_log" pt="sm">
-          {target && sandbox?.executionAccount?.account && (
-            <EgressLog
-              key={`${target.namespace}/${target.name}/${target.uid}/${sandbox.executionAccount.account.namespace}/${sandbox.executionAccount.account.name}/${sandbox.executionAccount.uid}`}
-              account={sandbox.executionAccount.account}
-              sandbox={target.name}
-            />
+          {target && sandbox?.identityName && (
+            <EgressLog key={`${target.namespace}/${target.name}/${target.uid}`} identity={sandbox.identityName} />
+          )}
+          {sandbox && !sandbox.identityName && (
+            <Text role="status" size="sm" c="dimmed">
+              This Sandbox has no Identity, so there is no egress log to show.
+            </Text>
           )}
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">

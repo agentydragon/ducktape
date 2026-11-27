@@ -1,12 +1,10 @@
 // @vitest-environment happy-dom
-import { create } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { ServiceAccountSchema } from "../../../proto/identity_pb";
 import { stubWatchFetch } from "../testing/watch";
 import { EgressLog } from "./egress";
 
@@ -15,7 +13,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("reads generated snapshots, clears on disconnect, and cancels when the account changes", async () => {
+it("reads generated snapshots, clears on disconnect, and cancels when the Identity changes", async () => {
   vi.useFakeTimers();
   const fetch = stubWatchFetch();
   const container = document.createElement("div");
@@ -24,12 +22,14 @@ it("reads generated snapshots, clears on disconnect, and cancels when the accoun
     root.render(
       <MantineProvider>
         <MemoryRouter>
-          <EgressLog key={name} sandbox="box" account={create(ServiceAccountSchema, { namespace: "test", name })} />
+          <EgressLog key={name} identity={name} />
         </MemoryRouter>
       </MantineProvider>
     );
   await act(async () => render("first"));
-  expect(fetch.served[0]?.url.searchParams.get("filter.subject.name")).toBe("first");
+  expect(fetch.served[0]?.url.searchParams.get("filter.identity.name")).toBe("first");
+  expect(fetch.served[0]?.url.searchParams.has("filter.subject.name")).toBe(false);
+  expect(container.textContent).toContain("every Sandbox using it");
   await act(async () =>
     fetch.served[0]?.send({
       snapshot: {
@@ -71,7 +71,7 @@ it("reads generated snapshots, clears on disconnect, and cancels when the accoun
   expect(container.textContent).toContain("unavailable");
   await act(async () => render("second"));
   expect(fetch.served[0]?.signal?.aborted).toBe(true);
-  expect(fetch.served[1]?.url.searchParams.get("filter.subject.name")).toBe("second");
+  expect(fetch.served[1]?.url.searchParams.get("filter.identity.name")).toBe("second");
   await act(async () => fetch.served[1]?.send({ snapshot: { decisions: [] } }));
   expect(container.textContent).toContain("No decisions yet.");
   await act(async () => root.unmount());
