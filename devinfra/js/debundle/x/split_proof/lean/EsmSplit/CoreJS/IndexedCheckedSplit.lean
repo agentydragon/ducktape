@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.IndexedConstLink
 import EsmSplit.CoreJS.IndexedInputChecks
+import EsmSplit.CoreJS.ExportRowsOrder
 
 /-! A checked original-ID constructor. All checks inspect source and plan; the
 returned CoreJS program is the indexed constructor, not a replayed pair. -/
@@ -49,6 +50,34 @@ private theorem places {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : Es
   · rw [SparseProjectedOrder.split_indexed_fileUnitPlacements safe]
     exact List.Perm.refl _
 
+/-- Source-only facts used by the constructor. Production obtains these from
+ the decoder's item sequence; independent CoreJS callers can check them. -/
+structure SourceFacts (original : Program) (B : EsmSplit.Bundle)
+    (rows : List EsmSplit.LocalExportUnit) where
+  source : Module
+  singleton : original.modules = [source]
+  coverage : ((source.body.map Prod.fst) ++ rows.map (·.ordinal)).Perm (List.range B.length)
+  unique : (rows.map (·.ordinal)).Nodup
+  ordered : rows.Pairwise (fun a b => a.ordinal < b.ordinal)
+  absent : ∀ row ∈ rows, row.ordinal ∉ source.body.map Prod.fst
+
+/-- Check source facts for a standalone CoreJS caller. -/
+def SourceFacts.check (original : Program) (B : EsmSplit.Bundle) (rows : List EsmSplit.LocalExportUnit) :
+    Except String (SourceFacts original B rows) := do
+  match single : original.modules with
+  | [source] =>
+    let .isTrue coverage := (inferInstance : Decidable
+      (((source.body.map Prod.fst) ++ rows.map (·.ordinal)).Perm (List.range B.length))) |
+      throw "source units do not cover original ordinals once"
+    let .isTrue unique := (inferInstance : Decidable ((rows.map (·.ordinal)).Nodup)) |
+      throw "export ordinals are duplicated"
+    let .isTrue ordered := (inferInstance : Decidable (rows.Pairwise (fun a b => a.ordinal < b.ordinal))) |
+      throw "export ordinals are not in source order"
+    let .isTrue absent := (inferInstance : Decidable (∀ row ∈ rows, row.ordinal ∉ source.body.map Prod.fst)) |
+      throw "export ordinal is executable"
+    return ⟨source, single, coverage, unique, ordered, absent⟩
+  | _ => throw "expected one source module"
+
 /-- The computed candidate and its strict obligations use the actual source,
 planner bundle, original rows, and supplied request. -/
 structure Construction (source : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
@@ -84,120 +113,124 @@ private theorem forRequest {source output : Program} (requested : Guarantee)
     intro w _ n final
     rw [runs w n]
 
-/-- Check only source and plan conditions before returning the sole constructed graph. -/
+/-- Construct from source facts and the actual authored plan. -/
 def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
-    (rows : List EsmSplit.LocalExportUnit) (requested : Guarantee) :
-    Except String (Construction original B S rows requested) := do
+    (rows : List EsmSplit.LocalExportUnit) (requested : Guarantee)
+    (facts : SourceFacts original B rows) : Except String (Construction original B S rows requested) := do
   let .isTrue publicEntry := (inferInstance : Decidable (S.privateEntryBody = false)) |
     throw "checked split requires no private entry body"
   let .isTrue orderRequiresSequential := (inferInstance : Decidable (S.order ≠ [] → S.sequential = true)) |
     throw "an explicit module order requires a sequential request"
   let .isTrue metadataSelectorsOnce := (inferInstance : Decidable (MetadataSelectorsOnce B S rows)) |
     throw "each metadata row must be selected exactly once"
-  match single : original.modules with
-  | [source] =>
-    if sourceEntry : original.entry = source.name then
-      if sourceImports : source.imports = [] then
-        if sourceSafe : EsmSplit.safeModulePath source.name = true then
-          let body := source.body
-          if checked : IndexedInputChecks.FootprintChecks body B then
-            if defined : IndexedInputChecks.DefinitionChecks body B then
-              if ordered : body.Pairwise (fun a b => a.1 ≤ b.1) then
-                if consts : ∀ p ∈ body, isConst p.2 = true then
-                  let P := EsmSplit.mkPlan B S
-                  let .isTrue schedule := (inferInstance : Decidable
-                      (S.sequential = true → P.evalOrder = S.order ++ [S.entry])) |
-                    throw "constructed modules do not follow the requested order"
-                  if valid : EsmSplit.Valid B S P then
-                    if kept : SparseProjectedOrder.OrderKept body P then
-                      if safe : ∀ m ∈ P.mods, EsmSplit.safeModulePath m.name = true then
-                        let labels := assignments body P
-                        if coverage : (labels.map Prod.fst).Perm (body.map Prod.fst) then
-                          if sourceCoverage : ((body.map Prod.fst) ++ rows.map (·.ordinal)).Perm
-                              (List.range B.length) then
-                            if table : source.exports = rows.flatMap (·.names) then
-                              if unique : (rows.map (·.ordinal)).Nodup then
-                                if absent : ∀ row ∈ rows, row.ordinal ∉ body.map Prod.fst then
-                                  if rowDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id ∈ List.range B.length,
-                                      pair.2 ∈ (B.stmt id).defs then
-                                    match planEntry : P.find P.entry with
-                                    | none => throw "plan has no entry"
-                                    | some owner =>
-                                      if matched : ∀ id ∈ owner.stmts, ExportRows.UnitMatches B rows id then
-                                        if rowOrder : owner.stmts.filterMap (ExportRows.rowAt rows) = rows then
-                                          if glue : owner.exports = [] then
-                                            have found : original.find original.entry = some source := by
-                                              simp [Program.find, single, sourceEntry]
-                                            have footprint := (IndexedInputChecks.checked_footprints checked).1
-                                            have freeFootprint := (IndexedInputChecks.checked_footprints checked).2
-                                            have complete := IndexedInputChecks.checked_definitions defined
-                                            have sourceConsts : ∀ p ∈ body, ∃ name init,
-                                                p.2 = .decl .const name init := fun p hp => isConst_sound (consts p hp)
-                                            have sourceRows : ExportRows.SourceRows source rows := ⟨table, unique, absent⟩
-                                            have defs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧
-                                                pair.2 ∈ (B.stmt id).defs := by
-                                              intro pair hp
-                                              obtain ⟨id, inRange, nameIn⟩ := rowDefs pair hp
-                                              exact ⟨id, List.mem_range.1 inRange, nameIn⟩
-                                            have ownerIn : owner ∈ P.mods := List.mem_of_find?_eq_some planEntry
-                                            have entryName : owner.name = S.entry := by
-                                              have eq := List.find?_some planEntry
-                                              have nameEq : owner.name = P.entry := by
-                                                simpa [EsmSplit.Plan.find] using eq
-                                              exact nameEq.trans rfl
-                                            have rowFacts : ∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧
-                                                S.claimants B row.ordinal = [owner.name] := by
-                                              intro row member
-                                              obtain ⟨owned, _⟩ := ExportRows.selected_row matched rowOrder member
-                                              have within := valid.2.2.1.2.2.2.2.2.1 owner ownerIn row.ordinal owned
-                                              exact ⟨owned, (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal
-                                                (List.mem_range.2 within)).1 owned⟩
-                                            have rowOwner : ∀ row ∈ rows, S.claimants B row.ordinal = [S.entry] := by
-                                              intro row member
-                                              simpa [entryName] using (rowFacts row member).2
-                                            have rowPlaced : ∀ row ∈ rows, ∃ entry, P.find P.entry = some entry ∧
-                                                row.ordinal ∈ entry.stmts ∧ ∀ stmt, (row.ordinal, stmt) ∉ body := by
-                                              intro row member
-                                              refine ⟨owner, planEntry, (rowFacts row member).1, ?_⟩
-                                              intro stmt inBody
-                                              exact absent row member (List.mem_map.2 ⟨(row.ordinal, stmt), inBody, rfl⟩)
-                                            have runs := IndexedUnitsAgree.indexed_run_same_of_order_kept valid
-                                              footprint freeFootprint complete rfl sourceImports found single ordered kept
-                                            have exports := IndexedConstLink.rows_same_exports_of_order_kept valid footprint complete
-                                              rfl sourceImports found single ordered kept sourceConsts sourceRows planEntry
-                                              matched rowOrder glue defs
-                                            have placed := places (B := B) (source := source) rfl single sourceSafe safe
-                                              footprint.uniqueIds coverage
-                                            have ownerProof : ∀ id ownerName, (id, ownerName) ∈ labels →
-                                                S.claimants B id = [ownerName] := by
-                                              intro id ownerName member
-                                              apply SparseProjectedOrder.split_indexed_authored_owner valid.2.2.1 safe
-                                              rw [SparseProjectedOrder.split_indexed_fileUnitPlacements safe]
-                                              exact member
-                                            return ⟨body, sourceCoverage, P, rfl, publicEntry, orderRequiresSequential, schedule,
-                                              splitProgramIndexed body B P, rfl, labels, rfl,
-                                              placed, ownerProof, metadataSelectorsOnce, rowOwner, rowPlaced,
-                                              exports, runs, forRequest requested runs⟩
-                                          else throw "entry needs unsupported glue exports"
-                                        else throw "entry export rows differ from source order"
-                                      else throw "entry units differ from source export metadata"
-                                  else throw "export local lacks a declaration"
-                                else throw "export ordinal is executable"
-                              else throw "export ordinals are duplicated"
-                            else throw "source public table differs from export rows"
-                          else throw "source units do not cover original ordinals once"
-                        else throw "plan does not cover original executable units once"
-                      else throw "plan has an unsupported module path"
-                    else throw "plan changes the original execution order"
-                  else throw "plan failed source and linkage checks"
-                else throw "only const source rows are supported"
-              else throw "source rows are not sorted"
-            else throw "a planner declaration has no source row"
-          else throw "source and planner footprints differ"
-        else throw "unsupported source module path"
-      else throw "source imports are unsupported"
-    else throw "source entry differs from its module"
-  | _ => throw "expected one source module"
+  let source := facts.source
+  have single := facts.singleton
+  if sourceEntry : original.entry = source.name then
+    if sourceImports : source.imports = [] then
+      if sourceSafe : EsmSplit.safeModulePath source.name = true then
+        let body := source.body
+        if checked : IndexedInputChecks.FootprintChecks body B then
+          if defined : IndexedInputChecks.DefinitionChecks body B then
+            if ordered : body.Pairwise (fun a b => a.1 ≤ b.1) then
+              if consts : ∀ p ∈ body, isConst p.2 = true then
+                let planned := EsmSplit.mkPlanWithImports B S
+                let P := planned.1
+                let .isTrue schedule := (inferInstance : Decidable
+                  (S.sequential = true → P.evalOrder = S.order ++ [S.entry])) |
+                  throw "constructed modules do not follow the requested order"
+                if valid : EsmSplit.Valid B S P then
+                  if kept : SparseProjectedOrder.OrderKept body P then
+                    if safe : ∀ m ∈ P.mods, EsmSplit.safeModulePath m.name = true then
+                      let labels := assignments body P
+                      if coverage : (labels.map Prod.fst).Perm (body.map Prod.fst) then
+                        if table : source.exports = rows.flatMap (·.names) then
+                          if declared : ExportRows.LocalsDeclared source B then
+                            match planEntry : P.find P.entry with
+                            | none => throw "plan has no entry"
+                            | some owner =>
+                              if matched : ∀ id ∈ owner.stmts, ExportRows.UnitMatches B rows id then
+                                if authoredRows : ∀ row ∈ rows, S.claimants B row.ordinal = [S.entry] then
+                                  if coveredNames : EsmSplit.PlanGlue.Covered (owner.published B)
+                                      (EsmSplit.dedup ((planned.2.getD owner.name []).reverse)) then
+                                    have found : original.find original.entry = some source := by
+                                      simp [Program.find, single, sourceEntry, source]
+                                    have footprint := (IndexedInputChecks.checked_footprints checked).1
+                                    have freeFootprint := (IndexedInputChecks.checked_footprints checked).2
+                                    have complete := IndexedInputChecks.checked_definitions defined
+                                    have sourceConsts : ∀ p ∈ body, ∃ name init,
+                                        p.2 = .decl .const name init := fun p hp => isConst_sound (consts p hp)
+                                    have sourceRows : ExportRows.SourceRows source rows := ⟨table, facts.unique, facts.absent⟩
+                                    have defs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧
+                                        pair.2 ∈ (B.stmt id).defs := by
+                                      intro pair hp
+                                      exact ExportRows.row_locals_declared sourceRows declared hp
+                                    have within : ∀ row ∈ rows, row.ordinal < B.length := by
+                                      intro row member
+                                      apply List.mem_range.mp
+                                      apply facts.coverage.mem_iff.mp
+                                      exact List.mem_append_right _ (List.mem_map.mpr ⟨row, member, rfl⟩)
+                                    have rowOrder : owner.stmts.filterMap (ExportRows.rowAt rows) = rows :=
+                                      ExportRows.mkPlan_select_source_rows valid planEntry facts.ordered within authoredRows
+                                    have covered : EsmSplit.PlanGlue.EntryCovered B S owner := by
+                                      simpa [EsmSplit.PlanGlue.EntryCovered, planned] using coveredNames
+                                    have glue : owner.exports = [] :=
+                                      EsmSplit.PlanGlue.mkPlan_no_extra_glue planEntry covered
+                                    have ownerIn : owner ∈ P.mods := List.mem_of_find?_eq_some planEntry
+                                    have entryName : owner.name = S.entry := by
+                                      have eq := List.find?_some planEntry
+                                      have nameEq : owner.name = P.entry := by
+                                        simpa [EsmSplit.Plan.find] using eq
+                                      exact nameEq.trans rfl
+                                    have rowFacts : ∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧
+                                        S.claimants B row.ordinal = [owner.name] := by
+                                      intro row member
+                                      obtain ⟨owned, _⟩ := ExportRows.selected_row matched rowOrder member
+                                      have within := valid.2.2.1.2.2.2.2.2.1 owner ownerIn row.ordinal owned
+                                      exact ⟨owned, (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal
+                                        (List.mem_range.2 within)).1 owned⟩
+                                    have rowOwner : ∀ row ∈ rows, S.claimants B row.ordinal = [S.entry] := by
+                                      intro row member
+                                      simpa [entryName] using (rowFacts row member).2
+                                    have rowPlaced : ∀ row ∈ rows, ∃ entry, P.find P.entry = some entry ∧
+                                        row.ordinal ∈ entry.stmts ∧ ∀ stmt, (row.ordinal, stmt) ∉ body := by
+                                      intro row member
+                                      refine ⟨owner, planEntry, (rowFacts row member).1, ?_⟩
+                                      intro stmt inBody
+                                      exact facts.absent row member (List.mem_map.2 ⟨(row.ordinal, stmt), inBody, rfl⟩)
+                                    have runs := IndexedUnitsAgree.indexed_run_same_of_order_kept valid
+                                      footprint freeFootprint complete rfl sourceImports found single ordered kept
+                                    have exports := IndexedConstLink.rows_same_exports_of_order_kept valid footprint complete
+                                      rfl sourceImports found single ordered kept sourceConsts sourceRows planEntry
+                                      matched rowOrder glue defs
+                                    have placed := places (B := B) (source := source) rfl single sourceSafe safe
+                                      footprint.uniqueIds coverage
+                                    have ownerProof : ∀ id ownerName, (id, ownerName) ∈ labels →
+                                        S.claimants B id = [ownerName] := by
+                                      intro id ownerName member
+                                      apply SparseProjectedOrder.split_indexed_authored_owner valid.2.2.1 safe
+                                      rw [SparseProjectedOrder.split_indexed_fileUnitPlacements safe]
+                                      exact member
+                                    return ⟨body, facts.coverage, P, rfl, publicEntry, orderRequiresSequential, schedule,
+                                      splitProgramIndexed body B P, rfl, labels, rfl,
+                                      placed, ownerProof, metadataSelectorsOnce, rowOwner, rowPlaced,
+                                      exports, runs, forRequest requested runs⟩
+
+                                  else throw "entry needs unsupported glue exports"
+                                else throw "export row is not authored in entry"
+                              else throw "entry units differ from source export metadata"
+                          else throw "export local lacks a declaration"
+                        else throw "source public table differs from export rows"
+                      else throw "plan does not cover original executable units once"
+                    else throw "plan has an unsupported module path"
+                  else throw "plan changes the original execution order"
+                else throw "plan failed source and linkage checks"
+              else throw "only const source rows are supported"
+            else throw "source rows are not sorted"
+          else throw "a planner declaration has no source row"
+        else throw "source and planner footprints differ"
+      else throw "unsupported source module path"
+    else throw "source imports are unsupported"
+  else throw "source entry differs from its module"
 
 theorem construct_sound {source B S rows requested} (built : Construction source B S rows requested) :
     Places built.assignment source built.program ∧ SameExports source built.program ∧

@@ -1090,6 +1090,7 @@ lean_library(
     deps = [
         ":corejs_certificates",
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
         ":corejs_runtime",
         ":corejs_single_module",
@@ -1239,6 +1240,7 @@ test_runner(
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
     deps = [
         ":corejs_indexed_checked_split",
+        ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
         ":corejs_linked_input",
         ":corejs_runtime",
@@ -2832,9 +2834,30 @@ lean_library(
     name = "corejs_indexed_checked_split",
     srcs = ["EsmSplit/CoreJS/IndexedCheckedSplit.lean"],
     deps = [
+        ":corejs_export_rows_order",
         ":corejs_indexed_const_link",
         ":corejs_indexed_input_checks",
     ],
+)
+
+lean_library(
+    name = "corejs_indexed_source_facts",
+    srcs = ["EsmSplit/CoreJS/IndexedSourceFacts.lean"],
+    deps = [
+        ":corejs_indexed_checked_split",
+        ":corejs_indexed_source_schedule",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_source_facts_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedSourceFacts"],
+    required_theorems = [
+        "CoreJS.IndexedCheckedSplit.SourceFacts.fromSequence",
+        "CoreJS.IndexedCheckedSplit.metadataOrderFromItems",
+    ],
+    deps = [":corejs_indexed_source_facts"],
 )
 
 lean_proof_test(

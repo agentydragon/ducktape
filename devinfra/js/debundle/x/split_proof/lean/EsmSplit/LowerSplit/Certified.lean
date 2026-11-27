@@ -2,7 +2,7 @@ import EsmSplit.Cli
 import EsmSplit.CoreJS.Declaration.Artifacts
 import EsmSplit.CoreJS.JointStatic
 import EsmSplit.CoreJS.IndexedCheckedSplit
-import EsmSplit.CoreJS.IndexedSourceSchedule
+import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
@@ -345,20 +345,21 @@ private structure LocalExportSource where
   source : CoreJS.Program
   rows : List LocalExportUnit
   bundle : Bundle
+  facts : CoreJS.IndexedCheckedSplit.SourceFacts source bundle rows
 
 private def decodeLocalExportSource (original : Json) (sourceText entry : String) : Except String LocalExportSource := do
   let decoded ← CoreJS.LinkedInput.decodeIndexedSource original sourceText entry
   let source := decoded.program
   let bundle := sourceBundle decoded.nodes
   let sequence ← CoreJS.IndexedSourceSchedule.checkSequence decoded bundle
-  let m := sequence.source
+  let m := decoded.source
   let rows := decoded.localExports
   unless !rows.isEmpty do throw "expected a local export row"
   unless m.exports == rows.flatMap (·.names) do throw "local export rows differ from the public export table"
   unless (CoreJS.OrderedConstSyntax.checkBody m.body).isSome &&
       (CoreJS.OrderedConstSyntax.checkEarlierReads [] m.body).isSome do
     throw "expected unique const declarations with source primitive initializers and earlier reads"
-  return ⟨source, rows, bundle⟩
+  return ⟨source, rows, bundle, CoreJS.IndexedCheckedSplit.SourceFacts.fromSequence sequence⟩
 
 /-- Construct from the actual indexed source, bundle, export rows and authored
 placement. Both terminal and interior rows use the same proof and writer. -/
@@ -372,7 +373,7 @@ private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
   unless decide (CoreJS.IndexedCheckedSplit.MetadataSelectorsOnce input.bundle spec input.rows) do
     return some (← emitVerdict options.request.label (.error "each metadata row must be selected exactly once")
       "indexed-local-exports")
-  let .ok built := CoreJS.IndexedCheckedSplit.construct input.source input.bundle spec input.rows .allOutcomes |
+  let .ok built := CoreJS.IndexedCheckedSplit.construct input.source input.bundle spec input.rows .allOutcomes input.facts |
     return none
   try
     match ← stageConstructed built.program src out work options timings with
