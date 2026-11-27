@@ -87,17 +87,11 @@ both are set.
 
 Graph-backed spec queries and edits compare the saved graph's engine and
 captured input bytes and YAML path membership with the current roots before
-using the graph. The graph records both a logical chunk source path and the
-physical input file whose bytes were parsed. Source-backed selectors keep the
-logical path as their parser and graph identity while using the verified
-physical input bytes. This supports JS-list aliases such as
-`virtual/chunk.js` backed by `snapshot/provider.js` without accepting an
-unrelated same-byte copy. `--source-root` is a consistency boundary for
-selector lookup: the verified input must be inside it, and if the logical path
-exists there it must identify that exact input. It does not relocate graph
-inputs. Use `--graph-source-root` to explicitly relocate captured physical
-inputs, preserving each path relative to the recorded graph source root; the
-selector root, when supplied too, must contain the relocated input.
+using the graph. Logical `source_path` versus physical `input_file` identity,
+the `--source-root` lookup boundary and `--graph-source-root` relocation:
+[SPEC § Querying a saved graph](../SPEC.md#querying-a-saved-graph). Example: a
+JS-list alias `virtual/chunk.js` backed by `snapshot/provider.js` resolves, an
+unrelated same-byte copy does not.
 
 Plain `graph-summary` reads the saved report without verifying the current
 engine, source, packages or YAML. Its success establishes report readability;
