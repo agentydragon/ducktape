@@ -8,20 +8,9 @@ namespace CoreJS.IndexedAllocatedCells
 variable {W : World}
 
 /-- A completed allocation sequence retains every cell it returned. -/
-theorem newCells_present : ∀ (bs : List (Name × Binding)) {s s' : State W} {frame : List (Name × Addr)},
-    newCells bs s = .ok frame s' → ∀ p ∈ frame, ∃ b, s'.cellAt p.2 = some b
-  | [], s, s', frame, h => by unfold newCells at h; cases h; simp
-  | (x, b) :: rest, s, s', frame, h => by
-    unfold newCells at h
-    obtain ⟨a, t1, ha, h⟩ := bind_ok h
-    obtain ⟨tail, t2, ht, h⟩ := bind_ok h
-    cases h
-    intro p hp
-    rcases List.mem_cons.1 hp with rfl | hp
-    · have keep := newCells_keeps rest (Extends.refl t1)
-      rw [ht] at keep
-      exact ⟨b, keep.cells a b (newCell_value ha)⟩
-    · exact newCells_present rest ht p hp
+theorem newCells_present (bs : List (Name × Binding)) {s s' : State W} {frame : List (Name × Addr)}
+    (h : newCells bs s = .ok frame s') : ∀ p ∈ frame, ∃ b, s'.cellAt p.2 = some b :=
+  (newCells_allocation bs h).2.2.present
 
 /-- Allocating top-level frames preserves cells that existed before allocation. -/
 theorem declareTops_preserves_cells : ∀ (tops : List (Nat × Stmt)) {s s' : State W}
