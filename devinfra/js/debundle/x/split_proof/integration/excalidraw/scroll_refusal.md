@@ -72,7 +72,7 @@ or exercises its lazy dependency graph.
    but cache the arrow itself after it. Both orders complete; the returned
    field's identity differs. Neither a syntactically bare imported call nor the
    shape of its result is sufficient to prove commutation. The existing
-   [CoreJS wrapper theorem](../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
+   [CoreJS wrapper theorem](../../EsmSplit/CoreJS/WrapperLinked.lean)
    covers a modeled wrapper, not this provider and placement.
 2. **Specify typed-array allocation over a verified constructor value.** The
    first original lowering failure names the ambient `Uint8Array` lookup.
