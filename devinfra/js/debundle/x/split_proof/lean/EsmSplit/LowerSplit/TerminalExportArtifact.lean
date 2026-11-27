@@ -1,6 +1,8 @@
-import EsmSplit.LowerSplit.SparseArtifact
+import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedPivotCertificate
 import EsmSplit.CoreJS.LinkWorld
+import EsmSplit.ESTreeEmit
+import EsmSplit.LowerSplit.Input
 
 /-! A bounded artifact proof for a single const declaration followed by a
 local named-export list. The authored spec assigns both original AST units. -/
@@ -9,7 +11,6 @@ namespace EsmSplit.LowerSplit.TerminalExportArtifact
 
 open Lean (Json)
 open CoreJS CoreJS.LinkedBehavior
-open EsmSplit.LowerSplit.SparseArtifact (sourceBundle)
 
 /-- These fields retain the exact authored source positions, including the
 non-executable export-list position, rather than deriving a compact request. -/

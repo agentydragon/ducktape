@@ -949,6 +949,7 @@ lean_library(
 
 lean_library(
     name = "sparse_checked_artifact",
+    testonly = True,
     srcs = ["EsmSplit/LowerSplit/SparseArtifact.lean"],
     deps = [
         ":corejs_linked_input",
@@ -975,8 +976,10 @@ lean_library(
     srcs = ["EsmSplit/LowerSplit/TerminalExportArtifact.lean"],
     deps = [
         ":corejs_link_world",
+        ":corejs_linked_input",
         ":corejs_structural",
-        ":sparse_checked_artifact",
+        ":lowersplit_input",
+        ":lowersplit_support",
     ],
 )
 
@@ -1054,7 +1057,6 @@ lean_library(
         ":named_declaration_split",
         ":ordered_const_syntax",
         ":planner",
-        ":sparse_checked_artifact",
     ],
 )
 
@@ -1202,8 +1204,8 @@ test_runner(
         ":corejs_terminal_constructor_input",
         ":corejs_terminal_footprints",
         ":local_export_unit",
+        ":lowersplit_input",
         ":planner",
-        ":sparse_checked_artifact",
     ],
 )
 
