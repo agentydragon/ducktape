@@ -6,6 +6,8 @@ identities for hoist initialization. This says nothing about eager order. -/
 
 namespace CoreJS.IndexedSortedScopes
 
+open LinkedBehavior
+
 /-- Valid full-plan coverage and actual executable footprints already imply
 that projecting away metadata retains every executable source ID exactly once. -/
 theorem executable_coverage {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
