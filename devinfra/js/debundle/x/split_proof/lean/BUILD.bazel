@@ -306,7 +306,7 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.SharedProviderBoundary"],
     required_theorems = [
-        "CoreJS.LinkedBehavior.runUnits_append",
+        "CoreJS.runUnits_append",
         "CoreJS.LinkedBehavior.SharedProvider.providerPrefixResult",
         "CoreJS.LinkedBehavior.SharedProvider.run_eq",
         "CoreJS.LinkedBehavior.SharedProvider.providerOccursOnce",
