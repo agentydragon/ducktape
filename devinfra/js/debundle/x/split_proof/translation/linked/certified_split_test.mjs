@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { split } from "../testing/split.mjs";
 import { dump } from "../parser.mjs";
-import { caseShard } from "./harness.mjs";
+import { caseShard, moduleEvaluationOrder, observe as observeFresh } from "./harness.mjs";
 
 const root = process.env.TEST_TMPDIR;
 const runCase = caseShard();
@@ -167,12 +167,60 @@ if (runCase("grouped-declarations-and-placement")) {
   assert.equal(leakageRefusal.reason_code, "no_constructed_rule");
   assert(!fs.existsSync(leakage));
 
-  const reordered = path.join(root, "reordered");
-  prepare(source, placement3, [right, left]);
-  for (const request of [all, normal]) {
-    assert.equal(check(reordered, request, "rejected").reason_code, "no_constructed_rule");
-    assert(!fs.existsSync(reordered));
+  // A forced right-before-left schedule for b = a observes the temporal dead zone.
+  // The cycle forces right to evaluate before left despite right importing a.
+  const forced = path.join(root, "forced-dependent-swap");
+  fs.mkdirSync(forced);
+  fs.writeFileSync(path.join(forced, right), 'import { a } from "./left.mjs"; export const b = a;');
+  fs.writeFileSync(path.join(forced, left), 'import "./right.mjs"; export const a = 1;');
+  fs.writeFileSync(path.join(forced, entry), 'import "./left.mjs"; import "./right.mjs"; export const result = 1;');
+  assert.deepEqual(observeFresh(path.join(forced, entry), "result"), { error: "ReferenceError" });
+
+  const rawSource = path.join(root, "literal-swap-source.mjs");
+  const dependent = source.replace("b = 2", "b = a");
+  fs.writeFileSync(rawSource, dependent);
+  prepare(dependent, placement3, [right, left]);
+  assert.deepEqual(observeFresh(rawSource, "result"), { result: 1 });
+  for (const guarantee of [all, normal]) {
+    const fresh = path.join(root, `dependent-fresh-${guarantee}`);
+    assert.equal(requestFile(rawSource, fresh, guarantee).status, "rejected");
+    assert(!fs.existsSync(fresh));
+    const existing = path.join(root, `dependent-existing-${guarantee}`);
+    fs.mkdirSync(existing);
+    const sentinel = path.join(existing, "sentinel.txt");
+    fs.writeFileSync(sentinel, "preserve existing bytes\n");
+    assert.equal(requestFile(rawSource, existing, guarantee).status, "rejected");
+    assert.deepEqual(fs.readdirSync(existing), ["sentinel.txt"]);
+    assert.equal(fs.readFileSync(sentinel, "utf8"), "preserve existing bytes\n");
   }
+
+  // Original request 8ccb05394d872465: retain its source, ordinals and owners.
+  fs.writeFileSync(rawSource, source);
+  prepare(source, placement3, [right, left]);
+  const reordered = path.join(root, "reordered");
+  const movedVerdict = requestFile(rawSource, reordered, all);
+  assert.equal(movedVerdict.status, "certified", JSON.stringify(movedVerdict));
+  assert.equal(movedVerdict.strategy, "compiled-constructor");
+  assert.equal(movedVerdict.guarantee, all);
+  assert.deepEqual(requestFile(rawSource, reordered, all, "--check-output"), movedVerdict);
+  assert.equal(requestFile(rawSource, reordered, normal, "--check-output").guarantee, all);
+  assert.deepEqual(fs.readdirSync(reordered).sort(), [entry, left, right].sort());
+  assert.match(fs.readFileSync(path.join(reordered, left), "utf8"), /\bconst a = 1\s*;/);
+  assert.match(fs.readFileSync(path.join(reordered, right), "utf8"), /\bconst b = 2\s*;/);
+  assert.match(fs.readFileSync(path.join(reordered, entry), "utf8"), /\bconst result = a\s*;/);
+  assert.deepEqual(moduleEvaluationOrder(reordered, entry), [right, left, entry]);
+  assert.deepEqual(await observe(pathToFileURL(rawSource)), [["result", 1]]);
+  assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
+
+  // a and result have equal values, but exporting a changes the public live cell.
+  const entryFile = path.join(reordered, entry);
+  const emitted = fs.readFileSync(entryFile, "utf8");
+  const wrongCell = emitted.replace(/export \{[^}]*\}/, "export { a as result }");
+  assert.notEqual(wrongCell, emitted);
+  fs.writeFileSync(entryFile, wrongCell);
+  assert.deepEqual(observeFresh(entryFile, "result"), { result: 1 });
+  assert.equal(requestFile(rawSource, reordered, all, "--check-output").status, "rejected");
+  assert.equal(fs.readFileSync(entryFile, "utf8"), wrongCell);
 }
 
 if (runCase("hashbang-and-literal-type")) {
