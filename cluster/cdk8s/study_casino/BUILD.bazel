@@ -6,6 +6,7 @@ py_library(
     data = ["readonly-role.sql"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",

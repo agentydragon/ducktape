@@ -10,6 +10,7 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -160,7 +161,7 @@ def chart(app: App) -> Chart:
         chart,
         "agentydragon-admin",
         metadata=k8s.ObjectMeta(name="oidc-ksbx-agentydragon-admin"),
-        subjects=[k8s.Subject(kind="User", name="oidc-ksbx:agentydragon", api_group="rbac.authorization.k8s.io")],
-        role_ref=k8s.RoleRef(kind="ClusterRole", name="cluster-admin", api_group="rbac.authorization.k8s.io"),
+        subjects=[k8s.Subject(kind="User", name="oidc-ksbx:agentydragon", api_group=RBAC_GROUP)],
+        role_ref=k8s.RoleRef(kind="ClusterRole", name="cluster-admin", api_group=RBAC_GROUP),
     )
     return chart

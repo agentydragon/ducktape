@@ -667,6 +667,7 @@ py_library(
         "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
         "//cluster/cdk8s:agent_access_profiles",
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/providers/agentplane:identity",

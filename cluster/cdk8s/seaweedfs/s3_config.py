@@ -14,6 +14,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.seaweedfs import namespace
@@ -39,7 +40,7 @@ def chart(app: App) -> Chart:
         chart,
         "reader-binding",
         metadata=k8s.ObjectMeta(name=_READER, namespace=namespace.NAME),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_READER),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_READER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_READER, namespace=namespace.NAME)],
     )
     # In-namespace SecretStore that the global + per-tenant ExternalSecrets read from.

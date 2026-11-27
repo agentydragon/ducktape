@@ -49,6 +49,7 @@ py_library(
     deps = [
         ":tabby",
         ":tabby_endpoint",
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",

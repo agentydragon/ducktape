@@ -23,6 +23,7 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s import agent_access_profiles as access, namespaces
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.flux import DUCKTAPE_SOURCE, NAMESPACE, Kustomization, flux_kustomization
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.generation import write_charts
@@ -101,7 +102,7 @@ def chart(app: App) -> Chart:
         chart,
         "finance-spend-config-applier-binding",
         metadata=k8s.ObjectMeta(name=spend_policy_role, namespace=spend.POLICY_SOURCE.namespace),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=spend_policy_role),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=spend_policy_role),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_SPEND_POLICY_APPLIER, namespace=NAMESPACE)],
     )
     # Flux's private Finance source gets a distinct repo-scoped read-only credential.

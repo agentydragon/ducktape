@@ -215,7 +215,7 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
         scope,
         "local-db-reader-binding",
         metadata=k8s.ObjectMeta(name="attic-local-db-reader", namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="attic-local-db-reader"),
+        role_ref=k8s.RoleRef(api_group=api_resource.RBAC_GROUP, kind="Role", name="attic-local-db-reader"),
         subjects=[k8s.Subject(kind="ServiceAccount", name="attic-local-db-reader", namespace=NAMESPACE)],
     )
     secret_store(
@@ -474,7 +474,7 @@ def _rotation(scope: Construct) -> None:
         scope,
         "rotator-binding",
         metadata=k8s.ObjectMeta(name=_ROTATOR, namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_ROTATOR),
+        role_ref=k8s.RoleRef(api_group=api_resource.RBAC_GROUP, kind="Role", name=_ROTATOR),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_ROTATOR, namespace=NAMESPACE)],
     )
     k8s.KubeCronJob(

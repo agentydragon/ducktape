@@ -13,6 +13,7 @@ from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.container_resources import quantities, sandbox_limits
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno.janitor import ApiResource, janitor
@@ -23,7 +24,6 @@ NAME = "agent-rbac-base"
 NAMESPACE = "claude-sandbox"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/agent-rbac-base"
 
-_RBAC_GROUP = "rbac.authorization.k8s.io"
 _ADMIN_ROLE = "admin"
 _READ = ["get", "list", "watch"]
 _SANDBOX_USERS = "oidc-ksbx-groups:kubectl-sandbox-users"
@@ -121,15 +121,15 @@ def _add_sandbox(chart: Chart) -> None:
         chart,
         "admin-binding",
         metadata=k8s.ObjectMeta(name=_ADMIN_ROLE, namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="Role", name=_ADMIN_ROLE),
-        subjects=[k8s.Subject(kind="Group", name=_SANDBOX_USERS, api_group=_RBAC_GROUP)],
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_ADMIN_ROLE),
+        subjects=[k8s.Subject(kind="Group", name=_SANDBOX_USERS, api_group=RBAC_GROUP)],
     )
     k8s.KubeRoleBinding(
         chart,
         "ollama-consumer-binding",
         metadata=k8s.ObjectMeta(name="claude-ollama-consumer", namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="ClusterRole", name="ollama-api-consumer"),
-        subjects=[k8s.Subject(kind="Group", name=_SANDBOX_USERS, api_group=_RBAC_GROUP)],
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="ClusterRole", name="ollama-api-consumer"),
+        subjects=[k8s.Subject(kind="Group", name=_SANDBOX_USERS, api_group=RBAC_GROUP)],
     )
     # The sandbox is ephemeral by contract: agents get full CRUD and a shared quota, and nothing
     # here is GitOps-managed, so forgotten experiments otherwise linger and pin the quota forever.
@@ -216,7 +216,7 @@ def _add_cluster_roles(chart: Chart) -> None:
         ("source.toolkit.fluxcd.io", ("gitrepositories", "helmrepositories", "ocirepositories", "helmcharts")),
         ("storage.k8s.io", ("storageclasses", "volumeattachments")),
         ("trust.cert-manager.io", ("bundles",)),
-        (_RBAC_GROUP, ("roles", "rolebindings", "clusterroles", "clusterrolebindings")),
+        (RBAC_GROUP, ("roles", "rolebindings", "clusterroles", "clusterrolebindings")),
         # keep-sorted end
     )
     # All objects in these groups are readable, including arbitrary EnvironmentConfig data and

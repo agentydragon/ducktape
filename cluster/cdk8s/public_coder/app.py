@@ -23,6 +23,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.agentplane import platform_routes
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.container_resources import container_resources
@@ -68,7 +69,6 @@ _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gate
 # The OpenClaw config uses the same proxy for Matrix login-password substitution.
 _EGRESS_PROXY = egress_proxy_url.PROXY_URL
 _NO_PROXY = f"127.0.0.1,localhost,{litellm.SERVICE.host},{litellm.SERVICE.fqdn}"
-_RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
 
@@ -563,7 +563,7 @@ def _rbac(scope: Construct) -> None:
                 api_groups=["apps"], resources=["deployments", "statefulsets", "daemonsets", "replicasets"], verbs=_READ
             ),
             k8s.PolicyRule(api_groups=["networking.k8s.io"], resources=["networkpolicies", "ingresses"], verbs=_READ),
-            k8s.PolicyRule(api_groups=[_RBAC_GROUP], resources=["roles", "rolebindings"], verbs=_READ),
+            k8s.PolicyRule(api_groups=[RBAC_GROUP], resources=["roles", "rolebindings"], verbs=_READ),
             # Flux kustomizations and sources -- useful for diagnosing reconciliation.
             k8s.PolicyRule(api_groups=["kustomize.toolkit.fluxcd.io"], resources=["kustomizations"], verbs=_READ),
             k8s.PolicyRule(

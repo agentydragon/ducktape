@@ -12,6 +12,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces, node_scheduling, pod_policy
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -43,7 +44,7 @@ def _rbac(chart: Chart) -> None:
         chart,
         "node-tainter-binding",
         metadata=k8s.ObjectMeta(name=NAME),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind=nodes.kind, name=nodes.name),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind=nodes.kind, name=nodes.name),
         subjects=subjects,
     )
     leases = k8s.KubeRole(
@@ -58,7 +59,7 @@ def _rbac(chart: Chart) -> None:
         chart,
         "lease-reader-binding",
         metadata=k8s.ObjectMeta(name=NAME, namespace=_NODE_LEASE_NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind=leases.kind, name=leases.name),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind=leases.kind, name=leases.name),
         subjects=subjects,
     )
 

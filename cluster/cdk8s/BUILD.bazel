@@ -576,6 +576,7 @@ py_library(
     srcs = ["restic_backup.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":api_resource",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -819,6 +820,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":agent_access_profiles",
+        ":api_resource",
         ":flux",
         ":generation",
         ":manifest_roots",
@@ -910,6 +912,7 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":api_resource",
         ":container_resources",
         ":gateway",
         ":manifest_roots",
@@ -952,6 +955,7 @@ py_library(
     name = "roaming_node_controller",
     srcs = ["roaming_node_controller.py"],
     deps = [
+        ":api_resource",
         ":container_resources",
         ":manifest_roots",
         ":namespaces",
@@ -987,6 +991,7 @@ py_library(
     name = "airlock",
     srcs = ["airlock.py"],
     deps = [
+        ":api_resource",
         ":config_format",
         ":container_resources",
         ":flux",
@@ -1078,6 +1083,7 @@ py_library(
     name = "descheduler",
     srcs = ["descheduler.py"],
     deps = [
+        ":api_resource",
         ":helm",
         ":manifest_roots",
         ":piraeus_storage",
@@ -1157,6 +1163,7 @@ py_library(
     srcs = ["tana_mcp.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
+        ":api_resource",
         ":container_resources",
         ":external_creds",
         ":flux",
@@ -1252,6 +1259,7 @@ py_library(
     srcs = ["agent_rbac_base.py"],
     visibility = ["//cluster/cdk8s/public_coder:__pkg__"],
     deps = [
+        ":api_resource",
         ":container_resources",
         ":flux",
         ":manifest_roots",
@@ -1511,6 +1519,7 @@ py_library(
     srcs = ["headlamp.py"],
     visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
+        ":api_resource",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1545,6 +1554,7 @@ py_library(
     name = "volsync",
     srcs = ["volsync.py"],
     deps = [
+        ":api_resource",
         ":flux",
         ":helm",
         ":manifest_roots",
@@ -2007,6 +2017,7 @@ py_library(
     srcs = ["langfuse.py"],
     visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
+        ":api_resource",
         ":flux",
         ":gateway",
         ":helm",
@@ -2311,6 +2322,7 @@ py_library(
     srcs = ["agent_access_profiles.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
+        ":api_resource",
         ":namespace_access",
         "//agentplane/crds:kubernetesroleset",
         "//agentplane/crds:policyset",

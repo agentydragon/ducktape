@@ -32,12 +32,12 @@ from cluster.cdk8s.agentplane.kubernetes_grants import (
     RoleBindingGrant,
     RoleRef,
 )
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
 from cluster.cdk8s.plaid_mcp import db, pgweb as plaid_pgweb, spend
 from cluster.cdk8s.providers.agentplane.kubernetes_role_set import KubernetesRule
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 
-RBAC_GROUP = "rbac.authorization.k8s.io"
 COINBASE_POLICY = "coinbase"
 OVH_BILLING_POLICY = "ovh-billing"
 PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"

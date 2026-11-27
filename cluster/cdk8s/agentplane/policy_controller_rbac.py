@@ -15,9 +15,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant, RoleBindingGrant
 from cluster.cdk8s.agentplane.managed_account_admission import add_managed_account_admission
 from cluster.cdk8s.agentplane.policy_controller import NAME
-from cluster.cdk8s.api_resource import custom_resource, named_resource
-
-_RBAC = "rbac.authorization.k8s.io"
+from cluster.cdk8s.api_resource import RBAC_GROUP, custom_resource, named_resource
 
 
 class PolicyControllerRbac(Construct):
@@ -96,9 +94,11 @@ class PolicyControllerRbac(Construct):
                 ),
                 RolePolicyRule(resources=[custom_resource("", "events")], verbs=["create", "patch"]),
                 # RoleBindings in its own namespace; binding_delegation.py grants the same elsewhere.
-                RolePolicyRule(resources=[custom_resource(_RBAC, "rolebindings")], verbs=["create", "delete", "patch"]),
+                RolePolicyRule(
+                    resources=[custom_resource(RBAC_GROUP, "rolebindings")], verbs=["create", "delete", "patch"]
+                ),
                 *(
-                    RolePolicyRule(resources=[named_resource(_RBAC, "roles", name)], verbs=["bind"])
+                    RolePolicyRule(resources=[named_resource(RBAC_GROUP, "roles", name)], verbs=["bind"])
                     for name in own_roles
                 ),
             ],
@@ -172,17 +172,20 @@ class PolicyControllerRbac(Construct):
             rules=[
                 # Its labeled native bindings, and role metadata to retry a binding whose role is missing.
                 k8s.PolicyRule(
-                    api_groups=[_RBAC],
+                    api_groups=[RBAC_GROUP],
                     resources=["rolebindings", "clusterrolebindings", "roles", "clusterroles"],
                     verbs=["get", "list", "watch"],
                 ),
                 k8s.PolicyRule(
-                    api_groups=[_RBAC], resources=["clusterrolebindings"], verbs=["create", "delete", "patch"]
+                    api_groups=[RBAC_GROUP], resources=["clusterrolebindings"], verbs=["create", "delete", "patch"]
                 ),
                 *(
                     [
                         k8s.PolicyRule(
-                            api_groups=[_RBAC], resources=["clusterroles"], resource_names=cluster_roles, verbs=["bind"]
+                            api_groups=[RBAC_GROUP],
+                            resources=["clusterroles"],
+                            resource_names=cluster_roles,
+                            verbs=["bind"],
                         )
                     ]
                     if cluster_roles
@@ -194,6 +197,6 @@ class PolicyControllerRbac(Construct):
             self,
             "cluster-role-binding",
             metadata=k8s.ObjectMeta(name=cluster_role_name),
-            role_ref=k8s.RoleRef(api_group=_RBAC, kind="ClusterRole", name=cluster_role_name),
+            role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="ClusterRole", name=cluster_role_name),
             subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=namespace)],
         )

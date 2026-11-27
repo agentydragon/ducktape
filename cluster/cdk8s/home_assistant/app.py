@@ -33,6 +33,7 @@ from volsync_replicationsource_crds.backube.volsync import (
 )
 
 from cluster.cdk8s import node_scheduling, piraeus_storage
+from cluster.cdk8s.api_resource import RBAC_GROUP
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -400,7 +401,7 @@ def _token_provisioner(scope: Construct) -> None:
         scope,
         "token-provisioner-binding",
         metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=NAMESPACE),
-        role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_TOKEN_PROVISIONER),
+        role_ref=k8s.RoleRef(api_group=RBAC_GROUP, kind="Role", name=_TOKEN_PROVISIONER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_TOKEN_PROVISIONER, namespace=NAMESPACE)],
     )
     labels = {"app.kubernetes.io/name": "home-assistant-token-provisioner"}

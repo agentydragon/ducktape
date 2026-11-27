@@ -1,4 +1,5 @@
-"""RBAC rule resources for kinds cdk8s_plus_34 has no constant for."""
+"""RBAC rule resources, and the API group that RBAC objects name, for the kinds and
+groups cdk8s_plus_34 has no constant for."""
 
 from __future__ import annotations
 
@@ -6,6 +7,8 @@ from typing import cast
 
 import jsii
 from cdk8s_plus_34 import ApiResource, IApiEndpoint, IApiResource
+
+RBAC_GROUP = "rbac.authorization.k8s.io"
 
 
 def custom_resource(api_group: str, resource_type: str) -> IApiResource:
