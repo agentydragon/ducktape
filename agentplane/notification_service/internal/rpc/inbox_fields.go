@@ -11,17 +11,16 @@ import (
 )
 
 // inboxFields is the set of Inbox fields a watch sends. A watch compares and sends only these, so a change to any
-// other field is invisible to it. The zero value is every field.
+// other field is invisible to it.
 type inboxFields struct {
 	mask fmutils.NestedMask
 }
 
-// newInboxFields validates the request's field mask: unknown paths and paths through a repeated field are
-// INVALID_ARGUMENT. `id` and `session_id` are always included, since a frame must say which inbox it is.
-// CLEANUP(added 2026-11-27): an empty mask watches every field; reject it once the app and `agentplane` send one.
+// newInboxFields validates the request's field mask: an empty set, unknown paths and paths through a repeated
+// field are INVALID_ARGUMENT. `id` and `session_id` are always included, since a frame must say which inbox it is.
 func newInboxFields(requested *fieldmaskpb.FieldMask) (inboxFields, error) {
 	if len(requested.GetPaths()) == 0 {
-		return inboxFields{}, nil
+		return inboxFields{}, status.Error(codes.InvalidArgument, "WatchInbox needs a field_mask naming the Inbox fields to watch")
 	}
 	mask := proto.Clone(requested).(*fieldmaskpb.FieldMask)
 	if !mask.IsValid(&pb.Inbox{}) {

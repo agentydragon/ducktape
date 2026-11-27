@@ -220,8 +220,8 @@ message WatchInboxRequest {
   string session_id = 1;
   // The `Inbox` fields to watch (`delivery.next_work_at`, `latest_notice.confirmed`, ...). The watch sends a frame
   // only when one of them changes, and the frame carries only them; `id` and `session_id` are always included.
-  // Empty watches every field. A watch of every field also wakes on `delivery.next_work_at`, which flips between a
-  // time and unset with each worker claim, so a reader that does not show it should not ask for it.
+  // Required. `delivery.next_work_at` flips between a time and unset with each worker claim, so a reader that does
+  // not show it should not ask for it.
   google.protobuf.FieldMask field_mask = 2;
 }
 message WatchInboxResponse {

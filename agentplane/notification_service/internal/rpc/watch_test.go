@@ -15,13 +15,11 @@ import (
 
 type inboxWatch = grpc.ServerStreamingClient[pb.WatchInboxResponse]
 
+var everyInboxField = &fieldmaskpb.FieldMask{Paths: []string{"last_cursor", "acknowledged", "covered", "expired_through", "retired", "delivery_error", "latest_notice", "delivery"}}
+
 func (s testServer) watchInbox(t *testing.T, session string) inboxWatch {
 	t.Helper()
-	stream, err := s.client.WatchInbox(bearing(t, operatorCaller), &pb.WatchInboxRequest{SessionId: session})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return stream
+	return s.watchInboxFields(t, session, everyInboxField.GetPaths()...)
 }
 
 func (s testServer) watchInboxFields(t *testing.T, session string, fields ...string) inboxWatch {
@@ -172,7 +170,7 @@ func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
 func TestSessionWatchContinuesWhenItsSessionHasNoPlacement(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "watch-fence")
-	stream, err := s.client.WatchInbox(bearing(t, identityCaller), &pb.WatchInboxRequest{SessionId: testSession})
+	stream, err := s.client.WatchInbox(bearing(t, identityCaller), &pb.WatchInboxRequest{SessionId: testSession, FieldMask: everyInboxField})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +205,7 @@ func TestWorkloadWatchBoundsDispatcherIdentityLookups(t *testing.T) {
 			// The client deadline bounds a broken service; a backend timeout must end the watch first.
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
-			stream, err := s.client.WatchInbox(context.WithValue(ctx, callerContextKey{}, identityCaller), &pb.WatchInboxRequest{SessionId: testSession})
+			stream, err := s.client.WatchInbox(context.WithValue(ctx, callerContextKey{}, identityCaller), &pb.WatchInboxRequest{SessionId: testSession, FieldMask: everyInboxField})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -230,7 +228,7 @@ func TestWorkloadWatchBoundsDispatcherIdentityLookups(t *testing.T) {
 func TestInboxWatchRevalidatesRevokedWorkloadBeforeSendingChanges(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "revoked-watch")
-	stream, err := s.client.WatchInbox(bearing(t, identityCaller), &pb.WatchInboxRequest{SessionId: testSession})
+	stream, err := s.client.WatchInbox(bearing(t, identityCaller), &pb.WatchInboxRequest{SessionId: testSession, FieldMask: everyInboxField})
 	if err != nil {
 		t.Fatal(err)
 	}
