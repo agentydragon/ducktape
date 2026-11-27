@@ -167,14 +167,5 @@ theorem uncovered_adds_public_name {B : Bundle} {S : Spec} {entry : Module}
       have inGlue : pair.1 ∈ entry.exports.map Prod.fst := by rw [h]; simp
       exact disjoint pair.1 inSource pair.1 inGlue rfl
 
-#print axioms published_contains_iff
-#print axioms glue_length
-#print axioms covered_of_glue_empty
-#print axioms glue_empty_of_covered
-#print axioms finishPlan_glue
-#print axioms mkPlan_glue_equation
-#print axioms mkPlan_no_extra_glue
-#print axioms mkPlan_no_extra_glue_iff
-#print axioms uncovered_adds_public_name
 
 end EsmSplit.PlanGlue

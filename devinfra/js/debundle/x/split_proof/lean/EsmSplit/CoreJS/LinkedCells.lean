@@ -200,11 +200,5 @@ theorem allocation_rejects_alias (W : World) :
 
 end LinkedCellsExamples
 
-#print axioms BindingAllocation.present
-#print axioms BindingAllocation.binding_present
-#print axioms newCells_allocation
-#print axioms newCells_distinct
-#print axioms declareTops_bundleEnv_injective
-#print axioms LinkedCellsExamples.allocation_rejects_alias
 
 end CoreJS

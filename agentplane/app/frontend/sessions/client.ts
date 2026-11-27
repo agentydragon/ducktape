@@ -19,6 +19,8 @@ import {
   ReadNativeFramesResponseSchema,
   ReadThreadEntitiesRequestSchema,
   ReadThreadEntitiesResponseSchema,
+  ThreadEntityKind,
+  type ThreadEntity,
   type ReadEntityEvidenceRequest,
   type ReadEntityEvidenceResponse,
   type ReadNativeFramesRequest,
@@ -485,6 +487,31 @@ export async function threadScope(
     if (error instanceof HttpError && error.status === 404) return null;
     throw error;
   }
+}
+
+export async function readThreadCommands(
+  threadId: string,
+  commandIds: readonly string[],
+  signal: AbortSignal
+): Promise<ThreadEntity[]> {
+  if (!commandIds.length) return [];
+  const request = create(ReadThreadEntitiesRequestSchema, {
+    sessionId: threadId,
+    window: {
+      case: "keys",
+      value: { keys: commandIds.map((entityId) => ({ entityKind: ThreadEntityKind.COMMAND, entityId })) },
+    },
+  });
+  const response = fromJson(
+    ReadThreadEntitiesResponseSchema,
+    await historyJson(`/sessions/${encodeURIComponent(threadId)}/entities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: facadeBody(toJson(ReadThreadEntitiesRequestSchema, request), "sessionId"),
+      signal,
+    })
+  );
+  return response.entities.filter((row) => row.sessionId === threadId && row.entity.case === "command");
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {

@@ -154,7 +154,5 @@ theorem nestedModuleExtension
   · exact IndexedAllocatedCells.declareTops_preserves_cells extensionTops extensionAllocation
       address binding providerAllocated
 
-#print axioms prior_allocations_survive
-#print axioms nestedModuleExtension
 
 end CoreJS.NestedModuleExtension

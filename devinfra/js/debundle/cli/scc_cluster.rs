@@ -6,11 +6,11 @@ use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use command_output::{infallible, write_ndjson_list, write_report};
 use graph::DependencyGraphInput;
+use peel::explain::{DEFAULT_DESCRIBE_LIMIT, ExplainDirection};
+use peel::output_format::OutputFormat;
+use peel::plan::CommonArgs as PeelCommonArgs;
 use peel::plan::LimitReport;
-use peel::{
-    CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainDirection, OutputFormat,
-    resolve_binding_source_units,
-};
+use peel::selection::resolve_binding_source_units;
 
 /// Args for `debundle scc`.
 #[derive(Debug, ClapArgs)]

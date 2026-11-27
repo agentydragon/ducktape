@@ -35,8 +35,6 @@ theorem pivotFrameOk_move {W : World} {ready : State W} {pre crossed : List Prep
       runUnits n (pre.map (·.unit) ++ [pivot] ++ crossed.map (·.unit) ++ suffix) ready = .ok () final :=
   checkedPivot_move n final localStep (pivotFrameOk_sound ok)
 
-#print axioms checkedPivot_move
-#print axioms pivotFrameOk_move
 
 private theorem Access.linkState {w cells A} {s : State World.probe} (access : Access cells A s) :
     Access cells A (linkState w s) := by

@@ -1501,9 +1501,3 @@ theorem replayPremised_pair {premises : HostPremises} {source candidate : Progra
     exact candidateReplay
 
 end CoreJS.LinkedBehavior
-
-#print axioms CoreJS.LinkedBehavior.replayPremised_hoisted
-#print axioms CoreJS.LinkedBehavior.replayPremised
-#print axioms CoreJS.LinkedBehavior.replayPremised_pair
-#print axioms CoreJS.LinkedBehavior.replayPremisedDynamicWitness
-#print axioms CoreJS.LinkedBehavior.evalExpr_void

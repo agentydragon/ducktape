@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
+use js_ast::synthesized_string_argument;
 use readoff_render::kept_spans_for_anchor_sets;
 use source_match_holes::AST_CONTAINS_STRING_PREDICATE;
 use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
@@ -73,14 +74,7 @@ fn descendant_string_selector(
         callee: Callee::Expr(Box::new(Expr::Ident(ident_node(
             AST_CONTAINS_STRING_PREDICATE,
         )))),
-        args: vec![ExprOrSpread {
-            spread: None,
-            expr: Box::new(Expr::Lit(Lit::Str(Str {
-                span: DUMMY_SP,
-                value: value.into(),
-                raw: None,
-            }))),
-        }],
+        args: vec![synthesized_string_argument(value)],
         type_args: None,
     })));
     let mut decls = Vec::new();

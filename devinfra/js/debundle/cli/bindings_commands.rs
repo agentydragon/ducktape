@@ -13,7 +13,7 @@ use comment::{BindingCommentArgs, run_binding_comment_cmd};
 use edit_gate::GraphEditArgs;
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use outcome::{MutationOutcome, MutationVerb, emit_gate_rejection_json};
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use serde::Serialize;
 use std::path::PathBuf;
 

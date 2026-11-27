@@ -23,6 +23,7 @@ type NoticeStore interface {
 	AcknowledgeNotice(context.Context, threadstore.NoticeScope, threadstore.NoticeRevision) error
 	FindNoticeAcknowledgements(context.Context, threadstore.NoticeScope, []threadstore.NoticeRevision) ([]threadstore.NoticeAcknowledgement, error)
 	ListNoticeAcknowledgements(context.Context, threadstore.NoticeScope, *int64, int) ([]threadstore.NoticeAcknowledgement, error)
+	ListExecutionFailureAcknowledgements(context.Context, threadstore.NoticeScope, *int64, int) ([]threadstore.NoticeAcknowledgement, error)
 }
 
 func noticeRevision(n *apppb.CommandNoticeRevision) (threadstore.NoticeRevision, error) {
@@ -108,7 +109,18 @@ func (h *Handler) ListCommandNoticeAcknowledgements(ctx context.Context, request
 		return nil, err
 	}
 	var before *int64
+	list := h.store.ListNoticeAcknowledgements
+	prefix := ""
+	if request.GetExecutionFailures() {
+		list = h.store.ListExecutionFailureAcknowledgements
+		prefix = "execution:"
+	}
 	if token := request.GetPageToken(); token != "" {
+		var ok bool
+		token, ok = strings.CutPrefix(token, prefix)
+		if !ok {
+			return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token")
+		}
 		// A positive int64 is at most 19 decimal digits.
 		if len(token) > base64.RawURLEncoding.EncodedLen(19) {
 			return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token")
@@ -120,7 +132,7 @@ func (h *Handler) ListCommandNoticeAcknowledgements(ctx context.Context, request
 		}
 		before = &n
 	}
-	rows, err := h.store.ListNoticeAcknowledgements(ctx, scope, before, int(size))
+	rows, err := list(ctx, scope, before, int(size))
 	if errors.Is(err, threadstore.ErrNoticeCursor) {
 		return nil, status.Error(codes.InvalidArgument, "Invalid notice history page token for this operator and Session")
 	}
@@ -130,7 +142,7 @@ func (h *Handler) ListCommandNoticeAcknowledgements(ctx context.Context, request
 	var next *string
 	if len(rows) > int(size) {
 		rows = rows[:size]
-		token := base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(rows[len(rows)-1].ID, 10)))
+		token := prefix + base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(rows[len(rows)-1].ID, 10)))
 		next = &token
 	}
 	result := noticeAcknowledgements(rows)

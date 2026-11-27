@@ -387,7 +387,5 @@ theorem Stmt.bindingFootprint {W : World} {s : Stmt} {summary : BindingSummary}
           simpa [BindingSummary.seq, BindingSummary.readCells, BindingSummary.writeCells] using hc
   | _ => simp [Stmt.bindingSummary] at hs
 
-#print axioms Expr.bindingFootprint
-#print axioms Stmt.bindingFootprint
 
 end CoreJS

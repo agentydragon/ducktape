@@ -34,7 +34,7 @@ private theorem isConst_sound {stmt : Stmt} (accepted : isConst stmt = true) :
   case decl kind name init =>
     cases kind <;> simp [isConst] at accepted ⊢
 
-private theorem places {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+theorem places {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
     (singleton : sourceProgram.modules = [source]) (sourceSafe : EsmSplit.safeModulePath source.name = true)
     (safe : ∀ m ∈ P.mods, EsmSplit.safeModulePath m.name = true)
@@ -237,7 +237,5 @@ theorem construct_sound {source B S rows requested} (built : Construction source
       ScheduleEquivalent requested (fun _ => True) source built.program :=
   ⟨built.placement, built.sameExports, built.behavior⟩
 
-#print axioms construct
-#print axioms construct_sound
 
 end CoreJS.IndexedCheckedSplit

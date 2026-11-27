@@ -37,6 +37,5 @@ theorem verify_sound {original files source spec requested} {built : Constructio
     Sound original files built :=
   proof.down
 
-#print axioms verify_sound
 
 end EsmSplit.LowerSplit.CheckedArtifact

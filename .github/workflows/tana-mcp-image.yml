@@ -25,28 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Compute tag
-        id: meta
-        shell: bash
-        run: echo "pin_tag=devel-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
-
-      - name: Login to Forgejo registry
-        env:
-          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
-          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
-        shell: bash
-        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
+      - uses: ./.github/actions/oci-build-push
         with:
+          image: ${{ env.IMAGE }}
+          registry: git.allegedly.works
+          login_username: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+          login_password: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
           context: tana/mcp_server
-          push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ github.sha }}
-            ${{ env.IMAGE }}:${{ steps.meta.outputs.pin_tag }}
-            ${{ env.IMAGE }}:latest
-          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+          cache_from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache_to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max

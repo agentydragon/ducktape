@@ -57,8 +57,6 @@ theorem select_ordered_rows {ids : List Nat} {rows : List EsmSplit.LocalExportUn
   exact perm.eq_of_pairwise (le := fun a b => a.ordinal < b.ordinal)
     (fun a b _ _ ab ba => False.elim (Nat.lt_asymm ab ba)) selectedOrdered rowsOrdered
 
-#print axioms rowAt_found
-#print axioms select_ordered_rows
 
 end CoreJS.ExportRows
 
@@ -99,7 +97,6 @@ theorem mkPlan_module_ordered (B : Bundle) (S : Spec) {md : Module}
   rw [← same]
   exact picked_map_ordered (S.picked B) (fun entry inPicked => picked_ordered S B inPicked) _
 
-#print axioms mkPlan_module_ordered
 
 end EsmSplit
 
@@ -127,6 +124,5 @@ theorem mkPlan_select_source_rows {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
   exact (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal
     (List.mem_range.2 (within row inRows))).2 (by simpa [entryName] using claims row inRows)
 
-#print axioms mkPlan_select_source_rows
 
 end CoreJS.ExportRows

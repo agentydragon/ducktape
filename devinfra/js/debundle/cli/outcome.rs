@@ -14,7 +14,7 @@
 //! non-zero. See docs/cli.md § "Rejection diagnostics".
 
 use anyhow::Result;
-use peel::OutputFormat;
+use peel::output_format::OutputFormat;
 use serde::Serialize;
 
 use edit_gate::{Gate, GateRejection, GateRejectionReport};

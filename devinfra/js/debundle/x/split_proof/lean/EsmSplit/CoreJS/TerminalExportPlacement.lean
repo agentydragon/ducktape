@@ -123,9 +123,5 @@ theorem wrong_owner_not_placed {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : Es
   rw [authored] at h
   exact different (by simpa using h.symm)
 
-#print axioms resolve
-#print axioms resolve_sound
-#print axioms terminal_export_in_owner
-#print axioms wrong_owner_not_placed
 
 end CoreJS.TerminalExportPlacement

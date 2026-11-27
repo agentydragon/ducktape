@@ -1,0 +1,66 @@
+name: Commit and push as the automation App
+description: |
+  Commit the listed paths as the ducktape-automation App and push them to a branch,
+  rebasing onto its latest tip first. Pair it with mint-automation-token: only the App
+  is a bypass actor for the main-protection ruleset, so `GITHUB_TOKEN` pushes of
+  machine-made commits fail there.
+
+inputs:
+  token:
+    description: App installation token from mint-automation-token
+    required: true
+  app_slug:
+    description: App slug from mint-automation-token
+    required: true
+  user_id:
+    description: Bot user id from mint-automation-token
+    required: true
+  paths:
+    description: Workspace-relative paths to stage, separated by spaces
+    required: true
+  message:
+    description: Commit message; leave out [skip ci] when the push must run CI
+    required: true
+  branch:
+    description: Branch to rebase onto and push
+    required: false
+    default: ${{ github.ref_name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Commit, rebase, and push
+      shell: bash
+      env:
+        APP_TOKEN: ${{ inputs.token }}
+        APP_SLUG: ${{ inputs.app_slug }}
+        APP_USER_ID: ${{ inputs.user_id }}
+        PATHS: ${{ inputs.paths }}
+        MESSAGE: ${{ inputs.message }}
+        BRANCH: ${{ inputs.branch }}
+      run: |
+        set -euo pipefail
+        read -r -a paths <<< "$PATHS"
+        git config user.name "${APP_SLUG}[bot]"
+        git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+        git add -- "${paths[@]}"
+        if git diff --cached --quiet; then
+          echo "Nothing changed in ${PATHS}; leaving ${BRANCH} alone"
+          exit 0
+        fi
+        git commit -m "$MESSAGE"
+        if ! git pull --rebase origin "$BRANCH"; then
+          echo "::error::Rebase onto ${BRANCH} failed"
+          git status
+          exit 1
+        fi
+        # actions/checkout parks its own Authorization header in an
+        # `includeif.gitdir:` config file, which would outrank this credential.
+        # Drop those includes and push to an explicit URL carrying the App token
+        # as HTTP Basic auth; replacing the extraheader in place did not work
+        # (PRs #1505 and #1508). `set +x` keeps the token out of the trace.
+        set +x
+        for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
+          git config --local --unset-all "$key"
+        done
+        git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"

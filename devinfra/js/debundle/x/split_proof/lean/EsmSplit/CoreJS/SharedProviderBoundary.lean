@@ -72,10 +72,5 @@ theorem SharedProvider.sameExports {source candidate : Program}
   rw [exportsMatch_from_checked (boundary w).before (boundary w).after]
   exact (boundary w).entryCells
 
-#print axioms runUnits_append
-#print axioms SharedProvider.providerPrefixResult
-#print axioms SharedProvider.run_eq
-#print axioms SharedProvider.providerOccursOnce
-#print axioms SharedProvider.sameExports
 
 end CoreJS.LinkedBehavior

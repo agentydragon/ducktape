@@ -190,11 +190,5 @@ theorem linked_alias_iff {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Sp
   intro u v hu hv
   rw [agreement u hu, agreement v hv]
 
-#print axioms module_scope_cells
-#print axioms module_export_cells
-#print axioms linked_scope_cells
-#print axioms linked_export_cells
-#print axioms linked_alias_iff
-#print axioms original_cell_of_bound
 
 end CoreJS.EntryExportCells
