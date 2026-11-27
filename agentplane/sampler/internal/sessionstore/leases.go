@@ -73,7 +73,10 @@ func (s *Store) RecoverableSessions(ctx context.Context, exclude []string, limit
 	rows, err := s.db.QueryContext(ctx, `SELECT ss.id FROM sampler_session ss JOIN sampler_conversation c ON c.id=ss.conversation_id
 		WHERE (ss.blocked=FALSE OR c.code_host_instance IS NOT NULL AND c.code_host_instance<>$5::uuid)
 		AND (c.owner IS NULL OR c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
-		AND NOT (ss.id=ANY($1::varchar[])) AND `+sessionWork+`
+		AND NOT (ss.id=ANY($1::varchar[])) AND (`+sessionWork+`
+		OR (ss.blocked AND c.code_host_instance IS NOT NULL AND c.code_host_instance<>$5::uuid
+		    AND ss.setup_state NOT IN (4,5)
+		    AND ss.blocked_reason LIKE 'code-mode host is shutting down;%'))
 		ORDER BY ss.id LIMIT $4`, pq.Array(exclude), int32(sessionpb.SetupState_SETUP_STATE_RUNNING),
 		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED), limit, instanceID)
 	if err != nil {

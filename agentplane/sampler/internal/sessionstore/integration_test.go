@@ -1030,6 +1030,37 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 // The state staging Session d05a1f28 was left in: blocked by an earlier owner on host loss with
 // one unresolved nested intent and nothing live. A later runtime must pick it up, settle it and
 // unblock it without an operator.
+func TestStoreCodeHostShutdownBlockWithoutWorkIsRecoverable(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	previous := uuid.NewString()
+	if err := store.StampCodeHostInstance(t.Context(), owner, previous); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("code-mode host is shutting down")); err != nil {
+		t.Fatal(err)
+	}
+	successor := uuid.NewString()
+	if ids, err := store.RecoverableSessions(t.Context(), nil, 10, successor); err != nil || len(ids) != 0 {
+		t.Fatalf("live owner selected: %v %v", ids, err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	if ids, err := store.RecoverableSessions(t.Context(), nil, 10, previous); err != nil || len(ids) != 0 {
+		t.Fatalf("same host selected: %v %v", ids, err)
+	}
+	if ids, err := store.RecoverableSessions(t.Context(), nil, 10, successor); err != nil || len(ids) != 1 || ids[0] != session.ID {
+		t.Fatalf("shutdown block not selected: %v %v", ids, err)
+	}
+	newOwner := claim(t, store, session)
+	if changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, protocol.ExecEncodingFreeform); err != nil || !changed {
+		t.Fatalf("reconcile: %v %v", changed, err)
+	}
+	if got, err := store.GetSession(t.Context(), session.ID, "fixture-account"); err != nil || got.Blocked {
+		t.Fatalf("still blocked: %+v %v", got, err)
+	}
+}
+
 func TestStoreCodeHostLossSettlesUnresolvedExecutorIntentAndUnblocks(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
