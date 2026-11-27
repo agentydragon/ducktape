@@ -712,6 +712,15 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_authenticated_source",
+    srcs = ["EsmSplit/CoreJS/AuthenticatedSource.lean"],
+    deps = [
+        ":corejs_linked_input",
+        ":estree_units",
+    ],
+)
+
+lean_library(
     name = "corejs_linked_input_census",
     srcs = ["EsmSplit/CoreJS/LinkedInputCensus.lean"],
     deps = [
@@ -1112,6 +1121,7 @@ lean_library(
     name = "corejs_indexed_source_schedule",
     srcs = ["EsmSplit/CoreJS/IndexedSourceSchedule.lean"],
     deps = [
+        ":corejs_authenticated_source",
         ":corejs_linked_input",
         ":corejs_plan_placement",
         ":corejs_sparse_projected_order",
@@ -1141,7 +1151,10 @@ lean_proof_test(
 lean_library(
     name = "corejs_source_row_order",
     srcs = ["EsmSplit/CoreJS/SourceRowOrder.lean"],
-    deps = [":corejs_indexed_source_schedule"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_indexed_source_schedule",
+    ],
 )
 
 lean_proof_test(
@@ -1685,6 +1698,7 @@ lean_library(
     srcs = ["EsmSplit/LowerSplit/Certified.lean"],
     deps = [
         ":cli",
+        ":corejs_authenticated_source",
         ":corejs_checked_split",
         ":corejs_constructed_output",
         ":corejs_indexed_checked_split",
@@ -1829,6 +1843,7 @@ test_runner(
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
     deps = [
         ":cli",
+        ":corejs_authenticated_source",
         ":corejs_indexed_checked_split",
         ":corejs_indexed_source_facts",
         ":corejs_indexed_source_schedule",
@@ -1850,6 +1865,7 @@ test_runner(
     ],
     deps = [
         ":cli",
+        ":corejs_authenticated_source",
         ":corejs_dynamic_imports",
         ":corejs_indexed_inline_constructor",
         ":corejs_linked_input",
@@ -3704,6 +3720,7 @@ lean_library(
     name = "corejs_indexed_source_facts",
     srcs = ["EsmSplit/CoreJS/IndexedSourceFacts.lean"],
     deps = [
+        ":corejs_authenticated_source",
         ":corejs_indexed_checked_split",
         ":corejs_source_row_order",
     ],
@@ -3734,6 +3751,7 @@ lean_library(
     name = "corejs_indexed_inline_plan",
     srcs = ["EsmSplit/CoreJS/IndexedInlinePlan.lean"],
     deps = [
+        ":corejs_authenticated_source",
         ":corejs_indexed_input_checks",
         ":corejs_indexed_reorder",
         ":corejs_indexed_source_schedule",
@@ -3758,6 +3776,7 @@ lean_library(
     name = "corejs_indexed_inline_constructor",
     srcs = ["EsmSplit/CoreJS/IndexedInlineConstructor.lean"],
     deps = [
+        ":corejs_authenticated_source",
         ":corejs_indexed_checked_split",
         ":corejs_indexed_inline_plan",
         ":corejs_primitive_rhs",

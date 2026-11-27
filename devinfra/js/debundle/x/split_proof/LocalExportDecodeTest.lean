@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.TerminalConstructorInput
 import EsmSplit.CoreJS.TerminalConstructor
@@ -18,16 +19,16 @@ private def onlyModule (p : Program) : IO Module := do
 private def decode (j : Json) : IO (Program × List EsmSplit.LocalExportUnit) :=
   IO.ofExcept (LinkedInput.decodeSingletonSourceWithLocalExports j "entry.mjs")
 
-private def decodeIndexed (j : Json) : IO LinkedInput.IndexedSource :=
+private def decodeIndexed (j : Json) : IO AuthenticatedSource.IndexedSource :=
   IO.ofExcept do
     let sourceText ← j.getObjValAs? String "sourceText"
-    LinkedInput.decodeIndexedSource j sourceText "entry.mjs"
+    AuthenticatedSource.decodeIndexedSource j sourceText "entry.mjs"
 
 private def require (ok : Bool) (why : String) : IO Unit :=
   unless ok do throw (IO.userError why)
 
 private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
-  let decoded ← IO.ofExcept (LinkedInput.decodeIndexedSource j sourceText "entry.mjs")
+  let decoded ← IO.ofExcept (AuthenticatedSource.decodeIndexedSource j sourceText "entry.mjs")
   let p := decoded.program
   let rows := decoded.localExports
   let m ← onlyModule p
@@ -86,12 +87,12 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   | _ => throw (IO.userError "a non-const original statement was not refused")
 
 private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := do
-  let classification ← IO.ofExcept (LinkedInput.decodeSourceClassification j sourceText "entry.mjs")
+  let classification ← IO.ofExcept (AuthenticatedSource.decodeSourceClassification j sourceText "entry.mjs")
   require (classification.sourceItems.map LinkedInput.SourceItem.ordinal == List.range 34)
     "decoded source classification omitted or renumbered the debugger slot"
   require (classification.sourceItems.filterMap LinkedInput.SourceItem.omitted? == [33])
     "decoded source classification lost the skipped debugger marker"
-  match LinkedInput.checkIndexedSource classification with
+  match AuthenticatedSource.checkIndexedSource classification with
   | .error "unsupported omitted source node 33" => pure ()
   | _ => throw (IO.userError "the checked constructor did not refuse the classified debugger")
   let input ← decode j
@@ -103,8 +104,8 @@ private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := 
 
 private def checkSparse (j : Json) (specText : String) : IO Unit := do
   let sourceText ← IO.ofExcept (j.getObjValAs? String "sourceText")
-  let classification ← IO.ofExcept (LinkedInput.decodeSourceClassification j sourceText "entry.mjs")
-  let decoded ← IO.ofExcept (LinkedInput.checkIndexedSource classification)
+  let classification ← IO.ofExcept (AuthenticatedSource.decodeSourceClassification j sourceText "entry.mjs")
+  let decoded ← IO.ofExcept (AuthenticatedSource.checkIndexedSource classification)
   let p := decoded.program
   let rows := decoded.localExports
   let m ← onlyModule p
@@ -180,7 +181,7 @@ private def checkAliases (j : Json) : IO Unit := do
       ((sequence.source.body.map Prod.fst) ++ decoded.localExports.map (·.ordinal)).Perm
         (List.range bundle.length) := sequence.sourceCoverage
   -- Removing the empty row leaves the public aliases above unchanged.
-  match LinkedInput.checkSourceUnitCoverage decoded.nodes.size decoded.program [aliases] with
+  match AuthenticatedSource.checkSourceUnitCoverage decoded.nodes.size decoded.program [aliases] with
   | .error "unsupported omitted source node 2" => pure ()
   | _ => throw (IO.userError "dropping an empty row passed original ordinal coverage")
 

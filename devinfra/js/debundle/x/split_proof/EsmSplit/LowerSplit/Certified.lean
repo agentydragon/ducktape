@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.Cli
 import EsmSplit.CoreJS.ConstructedOutput
 import EsmSplit.CoreJS.IndexedCheckedSplit
@@ -62,7 +63,7 @@ private def stageConstructed (program : CoreJS.Program) (src : BundleInput)
       | .error reason => .error { reason }
 
 private def tryInlineDeclarations (chunk : DeploymentChunk) (src : BundleInput)
-    (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.LinkedInput.IndexedSource)
+    (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.AuthenticatedSource.IndexedSource)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
@@ -123,7 +124,7 @@ private structure LocalExportSource where
   bundle : Bundle
   facts : CoreJS.IndexedCheckedSplit.SourceFacts source bundle rows
 
-private def decodeLocalExportSource (decoded : CoreJS.LinkedInput.IndexedSource) : Except String LocalExportSource := do
+private def decodeLocalExportSource (decoded : CoreJS.AuthenticatedSource.IndexedSource) : Except String LocalExportSource := do
   let source := decoded.program
   let bundle := sourceBundle decoded.nodes
   let sequence ← CoreJS.IndexedSourceSchedule.checkSequence decoded bundle
@@ -139,7 +140,7 @@ private def decodeLocalExportSource (decoded : CoreJS.LinkedInput.IndexedSource)
 /-- Construct from the actual indexed source, bundle, export rows and authored
 placement. Both terminal and interior rows use the same proof and writer. -/
 private def tryLocalExports (chunk : DeploymentChunk) (src : BundleInput)
-    (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.LinkedInput.IndexedSource)
+    (classified : CoreJS.LinkedInput.DecodedSource) (indexed : Except String CoreJS.AuthenticatedSource.IndexedSource)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
   unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
@@ -189,9 +190,9 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
   if let .authored spec := chunk.placement then
     if spec.sequential then
-      if let .ok classified := CoreJS.LinkedInput.decodeSourceClassification src.program src.source spec.entry then
+      if let .ok classified := CoreJS.AuthenticatedSource.decodeSourceClassification src.program src.source spec.entry then
         if let some verdict ← rejectDuplicateTerminalSelectors chunk classified options then return verdict
-        let indexed := CoreJS.LinkedInput.checkIndexedSource classified
+        let indexed := CoreJS.AuthenticatedSource.checkIndexedSource classified
         if let some verdict ← tryLocalExports chunk src classified indexed out work options timings then return verdict
         if let some verdict ← tryInlineDeclarations chunk src classified indexed out work options timings then return verdict
   noConstructor options.request.label s!"no constructor accepts the requested placement of {chunk.path}"

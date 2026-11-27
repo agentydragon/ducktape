@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.PlanPlacement
 import EsmSplit.CoreJS.SparseProjectedOrder
@@ -72,12 +73,12 @@ private theorem localExportRowsFromUnits (units : List SourceUnit) :
 
 /-- The decoder's separate executable and metadata rows form one complete
 source sequence against the actual original node count and bundle. -/
-structure Sequence (decoded : LinkedInput.IndexedSource) (bundle : Bundle) where
+structure Sequence (decoded : AuthenticatedSource.IndexedSource) (bundle : Bundle) where
   source : CoreJS.Module := decoded.source
   sourceEq : source = decoded.source
   singleton : decoded.program.modules = [decoded.source] := decoded.singleton
   decoderCoverage : List.Perm
-    (LinkedInput.sourceUnitIds decoded.program decoded.localExports)
+    (AuthenticatedSource.sourceUnitIds decoded.program decoded.localExports)
     (List.range decoded.nodes.size)
   units : List SourceUnit
   unitsEq : units = decoded.sourceItems
@@ -98,7 +99,7 @@ structure Sequence (decoded : LinkedInput.IndexedSource) (bundle : Bundle) where
 
 /-- Check the complete ordinal classification from the shared source decoder.
 This rejects missing or duplicate units and never discards empty metadata rows. -/
-def checkSequence (decoded : LinkedInput.IndexedSource) (bundle : Bundle) :
+def checkSequence (decoded : AuthenticatedSource.IndexedSource) (bundle : Bundle) :
     Except String (Sequence decoded bundle) := do
   let .isTrue countMatches := (inferInstance : Decidable
       (bundle.length = decoded.nodes.size)) |
@@ -117,7 +118,7 @@ def checkSequence (decoded : LinkedInput.IndexedSource) (bundle : Bundle) :
     rw [localExportRowsFromUnits, decoded.localExportProjection]
   have sourceCoverage : ((source.body.map Prod.fst) ++ decoded.localExports.map (·.ordinal)).Perm
       (List.range bundle.length) := by
-    simpa [LinkedInput.sourceUnitIds, decoded.singleton, countMatches] using decoded.coverage
+    simpa [AuthenticatedSource.sourceUnitIds, decoded.singleton, countMatches] using decoded.coverage
   have coveredIdsNodup :
       ((source.body.map Prod.fst) ++ decoded.localExports.map (·.ordinal)).Nodup :=
     sourceCoverage.nodup_iff.mpr List.nodup_range
@@ -187,7 +188,7 @@ theorem noOmittedSourceRows {decoded bundle}
 /-- Evidence that the actual `mkPlan` preserves the full source-unit order;
 the sparse executable projection is checked separately for the real indexed
 CoreJS constructor. -/
-structure Evidence (decoded : LinkedInput.IndexedSource) (bundle : Bundle)
+structure Evidence (decoded : AuthenticatedSource.IndexedSource) (bundle : Bundle)
     (request : Spec) where
   sequence : Sequence decoded bundle
   plan : Plan
@@ -200,7 +201,7 @@ structure Evidence (decoded : LinkedInput.IndexedSource) (bundle : Bundle)
 /-- Check only the original decoded source, actual bundle, and authored
 request. No replacement request, split-time Lean, or candidate execution is
 introduced. -/
-def check (decoded : LinkedInput.IndexedSource) (bundle : Bundle) (request : Spec) :
+def check (decoded : AuthenticatedSource.IndexedSource) (bundle : Bundle) (request : Spec) :
     Except String (Evidence decoded bundle request) := do
   let sequence ← checkSequence decoded bundle
   let plan := EsmSplit.mkPlan bundle request

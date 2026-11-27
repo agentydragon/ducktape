@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.SourceRowOrder
 
@@ -8,7 +9,7 @@ open IndexedSourceSchedule
 /-- Project the decoder's source-item trace into CoreJS facts. The row order
 is derived by induction over all source items, while coverage supplies
 uniqueness and disjointness. No executions or syntax projections are compared. -/
-def SourceFacts.fromSequence {decoded : LinkedInput.IndexedSource} {B : EsmSplit.Bundle}
+def SourceFacts.fromSequence {decoded : AuthenticatedSource.IndexedSource} {B : EsmSplit.Bundle}
     (sequence : IndexedSourceSchedule.Sequence decoded B) : SourceFacts decoded.program B decoded.localExports := by
   have bodyEq : sequence.source.body = decoded.source.body := by
     rw [← sequence.executableRows, sequence.unitsEq]

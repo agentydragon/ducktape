@@ -642,7 +642,7 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : Ho
 /-! The one-pass decoded source shape is available before construction-specific
 coverage is enforced. Callers that need to distinguish an unsupported source
 slot from a different route can inspect these nodes and classifications, then
-use `checkIndexedSource` without parsing the input again. -/
+check construction coverage without parsing the input again. -/
 structure DecodedSource where
   nodes : Array Json
   program : Program
@@ -657,7 +657,9 @@ structure DecodedSource where
   sourceProjection : List.Perm (sourceItems.map SourceItem.ordinal)
     (((source.body.map Prod.fst ++ localExports.map (·.ordinal)) ++ sourceItems.filterMap SourceItem.omitted?))
 
-private def decodeSingletonSourceNodes (nodes : Array Json) (entry : String) :
+/-- Classify already extracted nodes. Callers requiring authenticated source
+must obtain them from `ESTreeUnits.checkedNodes`. -/
+def decodeSingletonSourceNodes (nodes : Array Json) (entry : String) :
     Except String DecodedSource := do
   let original ← (parse .linked .empty "bundle.mjs" nodes 0).mapError StructuralRefusal.reason
   let source := original.numbered entry 0
@@ -700,46 +702,6 @@ def decodeSingletonSourceWithLocalExports (source : Json) (entry : String) :
 standalone export-unit identities. -/
 def decodeSingletonSource (source : Json) (entry : String) : Except String Program :=
   Prod.fst <$> decodeSingletonSourceWithLocalExports source entry
-
-/-- Executable units and standalone export rows account for separate source
-ordinals. An empty export row still contributes its ordinal. -/
-def sourceUnitIds (program : Program) (localExports : List EsmSplit.LocalExportUnit) : List Nat :=
-  program.modules.flatMap (fun m => m.body.map Prod.fst) ++ localExports.map (·.ordinal)
-
-def checkSourceUnitCoverage (count : Nat) (program : Program) (localExports : List EsmSplit.LocalExportUnit) :
-    Except String (PLift ((sourceUnitIds program localExports).Perm (List.range count))) := do
-  let ids := sourceUnitIds program localExports
-  let expected := List.range count
-  if covered : ids.Perm expected then return ⟨covered⟩
-  if let some ordinal := expected.find? (!ids.contains ·) then
-    throw s!"unsupported omitted source node {ordinal}"
-  throw "executable units and local export rows do not cover each source ordinal once"
-
-/-- The indexed source retains the linked decoder's CoreJS classification and
-the original node count used by source-unit coverage. -/
-structure IndexedSource extends DecodedSource where
-  coverage : (sourceUnitIds program localExports).Perm (List.range nodes.size)
-
-/-- Enforce indexed construction coverage on a classification that has already
-been decoded. This preserves the exact refusal and does not parse or lower the
-source a second time. -/
-def checkIndexedSource (decoded : DecodedSource) : Except String IndexedSource := do
-  unless decoded.source.imports.isEmpty do throw "checked construction requires an import-free original"
-  unless !decoded.hasTemplates do throw "checked construction does not install template objects"
-  let ⟨coverage⟩ ← checkSourceUnitCoverage decoded.nodes.size decoded.program decoded.localExports
-  return { toDecodedSource := decoded, coverage := coverage }
-
-/-- Decode the CoreJS source and complete source-item trace once, before
-construction-specific coverage is applied. -/
-def decodeSourceClassification (original : Json) (sourceText entry : String) :
-    Except String DecodedSource := do
-  let nodes ← ESTreeUnits.checkedNodes original sourceText
-  decodeSingletonSourceNodes nodes entry
-
-/-- Retain the full source ordinals for an authored constructor. A node the
-linked model skips, such as a debugger or empty statement, prevents coverage. -/
-def decodeIndexedSource (original : Json) (sourceText entry : String) : Except String IndexedSource := do
-  checkIndexedSource (← decodeSourceClassification original sourceText entry)
 
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use

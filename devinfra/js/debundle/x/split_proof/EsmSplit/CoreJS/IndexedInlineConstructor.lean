@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedInlinePlan
 import EsmSplit.CoreJS.PrimitiveRhs
@@ -35,7 +36,7 @@ instance (body : List (Nat × Stmt)) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
   unfold SelectorsOnce
   infer_instance
 
-structure Construction (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) where
+structure Construction (decoded : AuthenticatedSource.IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) where
   checked : IndexedInlinePlan.Checked decoded B S
   publicEntry : S.privateEntryBody = false
   sequential : S.sequential = true
@@ -52,7 +53,7 @@ structure Construction (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundl
 
 /-- Check only decoded-source and authored-plan facts, then return the actual
 indexed construction with its placement, live exports and all-outcome proofs. -/
-def construct (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
+def construct (decoded : AuthenticatedSource.IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
     Except String (Construction decoded B S) := do
   let .isTrue publicEntry := (inferInstance : Decidable (S.privateEntryBody = false)) |
     throw "checked split requires no private entry body"
@@ -82,7 +83,7 @@ def construct (decoded : LinkedInput.IndexedSource) (B : EsmSplit.Bundle) (S : E
 
 /-- For an original dense body, the indexed constructor yields exactly the
 existing dense CoreJS program when supplied the same source-derived bundle. -/
-theorem dense_program {decoded : LinkedInput.IndexedSource} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+theorem dense_program {decoded : AuthenticatedSource.IndexedSource} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     (built : Construction decoded B S) {statements : List Stmt}
     (dense : decoded.source.body = (List.range statements.length).zip statements) :
     built.program = splitProgram statements B (EsmSplit.mkPlan B S) := by

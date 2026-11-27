@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.IndexedInputChecks
 import EsmSplit.CoreJS.IndexedReorder
 import EsmSplit.CoreJS.IndexedSourceSchedule
@@ -8,7 +9,7 @@ the plan must keep executable order. -/
 
 namespace CoreJS.IndexedInlinePlan
 
-open LinkedInput (IndexedSource)
+open AuthenticatedSource (IndexedSource)
 
 private def lexicalDeclaration : Stmt → Bool
   | .decl .let_ _ _ | .decl .const _ _ => true
