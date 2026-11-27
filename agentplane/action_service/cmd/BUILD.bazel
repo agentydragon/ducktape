@@ -51,6 +51,7 @@ go_library(
         "//agentplane/postgres/probes",
         "//agentplane/postgres/wakeups",
         "//agentplane/sandboxes/api",
+        "//agentplane/servicemain",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/watchhealth",
         "@in_gopkg_yaml_v3//:yaml_v3",

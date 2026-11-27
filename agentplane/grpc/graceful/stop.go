@@ -1,4 +1,4 @@
-// Package graceful stops gRPC servers, letting the calls in flight finish first.
+// Package graceful serves and stops gRPC and HTTP servers, letting the calls in flight finish first.
 package graceful
 
 import (

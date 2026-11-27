@@ -5,19 +5,12 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
 	"time"
-
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
@@ -36,6 +29,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client" // Distinguish GitHub transport from the Kubernetes client.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
@@ -50,21 +44,18 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/servicemain"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	migrationOnlyDatabaseURLEnv = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
-	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
-	shutdownGrace = 5 * time.Second
 	// readHeaderTimeout bounds a request's headers. There is no other server timeout: the operator's watches
 	// stream for their lease, and the webhook handler bounds itself.
 	readHeaderTimeout = 10 * time.Second
@@ -280,7 +271,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 	sourceWorker := &sources.Worker{Store: inboxes, Providers: providers}
 	maintenance := github.Maintenance{Fanout: githubFanout, Retention: c.GitHub.Retention}
-	failed := make(chan error, workers*2+4)
+	failed := make(chan error, workers*2+1)
 	// The workers outlive the listeners, so a claim in progress is released before the database closes: the
 	// deferred cancel ends them, and the wait after it returns once they have released their claims.
 	workContext, stopWorkers := context.WithCancel(context.WithoutCancel(ctx))
@@ -295,53 +286,22 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	})
 	defer running.Wait()
 	defer stopWorkers()
-	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(grpcListener)) }()
-	go func() { failed <- fmt.Errorf("HTTP listener: %w", server.Serve(httpListener)) }()
-
-	var result error
-	select {
-	case result = <-failed:
-	case <-ctx.Done():
-		result = ctx.Err()
-	}
-	health.Drain()
-	notifications.Drain()
-	stopped, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
-	defer cancel()
-	// Stop the webhook listener before draining workload and backend gRPC calls.
-	if err := server.Shutdown(stopped); err != nil {
-		server.Close()
-	}
-	graceful.Stop(stopped, grpcServer)
-	return result
+	// The webhook listener stops before workload and backend gRPC calls drain.
+	return graceful.Serve(ctx, graceful.Group{
+		GRPC:     []graceful.GRPC{{Name: "gRPC", Server: grpcServer, Listener: grpcListener}},
+		HTTP:     []graceful.HTTP{{Name: "HTTP", Server: server, Listener: httpListener}},
+		Failures: failed,
+		Drain: func() {
+			health.Drain()
+			notifications.Drain()
+		},
+	})
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	handled, err := migrate.RunOnly(ctx, os.Args[1:], migrationOnlyDatabaseURLEnv, migrations.Up)
-	if err != nil {
-		slog.Error("Notification Service migration failed", "error", err)
-		os.Exit(1)
-	}
-	if handled {
-		return
-	}
-	c, err := loadConfig()
-	if err != nil {
-		slog.Error("invalid Notification Service configuration", "error", err)
-		os.Exit(2)
-	}
-	shutdownTracing, err := observability.Init(ctx, "notification-service")
-	if err != nil {
-		slog.Error("Notification Service tracing setup failed", "error", err)
-		os.Exit(1)
-	}
-	err = run(ctx, c)
-	shutdownTracing()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("Notification Service stopped", "error", err)
-		os.Exit(1)
-	}
+	servicemain.Main(servicemain.Service[config]{
+		Name: "Notification Service", TraceName: "notification-service",
+		Migrations: servicemain.Migrations{DatabaseURLEnv: migrationOnlyDatabaseURLEnv, Up: migrations.Up},
+		Load:       loadConfig, Run: run,
+	})
 }

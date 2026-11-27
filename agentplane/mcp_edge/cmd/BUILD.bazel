@@ -33,6 +33,7 @@ go_library(
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",
         "//agentplane/postgres/wakeups",
+        "//agentplane/servicemain",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@org_golang_google_grpc//:grpc",
