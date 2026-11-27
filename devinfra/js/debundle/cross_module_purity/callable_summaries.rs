@@ -138,9 +138,7 @@ impl IterativeRules for CallableProjectionRules<'_> {
     }
 
     fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let previous = current.clone();
-        current.merge(contribution);
-        *current != previous
+        current.merge(contribution)
     }
 }
 
