@@ -1,4 +1,4 @@
-use analysis_domain::item_views::{TopLevelItemView, var_decl_of_item};
+use analysis_domain::item_views::TopLevelItemView;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::SourceLocator;
 use analysis_vocabulary::inputs::{
@@ -9,6 +9,7 @@ use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::value::Value;
 use anyhow::{Context, Result, bail};
 use js_ast::SourceLineIndex;
+use js_ast::item_var_decl;
 #[cfg(test)]
 use purity::ChunkCodeGraph;
 use std::collections::{BTreeMap, BTreeSet};
@@ -68,7 +69,7 @@ fn selected_array_declarator<'a>(
         .body
         .get(declaration.body_index)
         .ok_or_else(|| anyhow::anyhow!("{request} selects a missing module item"))?;
-    let var = var_decl_of_item(item).ok_or_else(|| {
+    let var = item_var_decl(item).ok_or_else(|| {
         anyhow::anyhow!("{request} must select a direct var/let/const declaration")
     })?;
     let mut matching_declarators =

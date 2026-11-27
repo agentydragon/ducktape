@@ -9,9 +9,9 @@ use super::*;
 use crate::semantic_inference::{SemanticFacts, SemanticKey};
 use analysis_domain::builtins::{self, Invocation};
 use analysis_domain::dynamic_scope::DynamicScopeFact;
-use analysis_domain::item_views::var_decl_of_item;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
+use js_ast::item_var_decl;
 use std::sync::Arc;
 use value_flow::ChunkValueFlow;
 
@@ -53,7 +53,7 @@ impl LocalClassConstructionShapes {
         }
 
         for (ordinal, item) in body.iter().enumerate() {
-            let Some(var) = var_decl_of_item(item.as_module_item()) else {
+            let Some(var) = item_var_decl(item.as_module_item()) else {
                 continue;
             };
             for declarator in &var.decls {
