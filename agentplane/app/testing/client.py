@@ -24,6 +24,7 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_f
 
 from agentplane.app import app_service_pb2
 from agentplane.app.testing.models import ThreadView, thread_view_from_proto_json
+from agentplane.environments.testing.environment_inventory import EnvironmentInventory
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
@@ -154,19 +155,8 @@ class Client:
     async def sandbox_snapshots(self) -> AsyncGenerator[list[environment_service_pb2.EnvironmentDescriptor]]:
         """Yield complete inventories reconstructed from the EnvironmentService watch."""
 
-        def key(environment: environment_service_pb2.EnvironmentDescriptor) -> tuple[str, str]:
-            if (
-                not environment.HasField("target")
-                or not environment.target.namespace
-                or not environment.target.name
-                or not environment.target.uid
-            ):
-                raise RuntimeError("EnvironmentService returned a descriptor without its target")
-            return environment.target.namespace, environment.target.name
-
         while True:
-            pending: dict[tuple[str, str], environment_service_pb2.EnvironmentDescriptor] | None = {}
-            current: dict[tuple[str, str], environment_service_pb2.EnvironmentDescriptor] = {}
+            inventory = EnvironmentInventory()
             reconnect = False
             async with self._http.stream(
                 "GET",
@@ -185,34 +175,8 @@ class Client:
                             break
                         raise RuntimeError(f"Environment watch failed: {envelope['error']}")
                     frame = ParseDict(envelope["result"], environment_service_pb2.WatchEnvironmentsResponse())
-                    match frame.WhichOneof("frame"):
-                        case "snapshot":
-                            if pending is None:
-                                raise RuntimeError("unexpected inventory snapshot chunk")
-                            for environment in frame.snapshot.environments:
-                                pending[key(environment)] = environment
-                        case "snapshot_complete":
-                            if pending is None:
-                                raise RuntimeError("unexpected inventory snapshot completion")
-                            current, pending = pending, None
-                            yield [current[key] for key in sorted(current)]
-                        case "upsert":
-                            if pending is not None:
-                                raise RuntimeError("inventory update before snapshot completion")
-                            environment = frame.upsert
-                            current[key(environment)] = environment
-                            yield [current[key] for key in sorted(current)]
-                        case "removed":
-                            if pending is not None:
-                                raise RuntimeError("inventory removal before snapshot completion")
-                            removed = frame.removed
-                            removed_key = (removed.namespace, removed.name)
-                            previous = current.get(removed_key)
-                            if previous is not None and previous.target.uid == removed.uid:
-                                del current[removed_key]
-                                yield [current[key] for key in sorted(current)]
-                        case _:
-                            raise RuntimeError("Environment watch returned an empty frame")
+                    if (environments := inventory.apply(frame)) is not None:
+                        yield environments
             if not reconnect:
                 raise RuntimeError("the Sandbox inventory stream ended")
             await asyncio.sleep(RECONNECT_PAUSE_SECONDS)
