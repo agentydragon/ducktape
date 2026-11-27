@@ -255,7 +255,7 @@ retained `SequencedCause` plus the endpoints' composed premise effect summaries
 (`graph/build/commuting.rs::premise_verdict`): a cell relation, a shared `var`, a shared
 written cell, or a binding timeline, shared-`var` access or uninitialized
 observation between two observed effects contradicts the premise and fails the
-build; a pair with no inertable edge after preservation is unused and fails the build. Each
+build; a pair with no inertable edge after preservation is unused, a warning that leaves the graph unchanged. Each
 premise summary adds source-known callee heap reads and writes only when the
 invocation path is non-assumed. The interpreter retains all callee heap cells
 for conservative ordering, including opaque callback and fallback paths; each
