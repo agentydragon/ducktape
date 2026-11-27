@@ -307,8 +307,9 @@ contains up to 25 rows and the maximum is 100.
 
 The first page fixes membership for later admissions. Receipt updates read at each page's snapshot
 do not change the order. The continuation token binds the position and deletion frontier to the
-Session and read scope. A physical Dispatch deletion anywhere after that frontier, including one
-whose tombstone was subsequently pruned, can return `OUT_OF_RANGE`. Discard the traversal and
+Session and read scope. A physical deletion of one of this Session's Dispatch rows after that
+frontier returns `OUT_OF_RANGE`. So does pruning any tombstone newer than the frontier, which
+happens only once the traversal is older than tombstone retention. Discard the traversal and
 restart on that status. An empty `next_page_token` completes the retained-row enumeration.
 `coverage=RETAINED_DISPATCH_ROWS` excludes legacy tombstones, which can be read by known ID through
 `BatchGetDispatches` or observed through `WatchDispatches` until expiry. Absence cannot establish that a command was never accepted.
