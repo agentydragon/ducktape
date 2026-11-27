@@ -66,12 +66,11 @@ namespace EsmSplit
 
 private theorem picked_ordered (S : Spec) (B : Bundle) {entry : ModName × List Nat}
     (member : entry ∈ S.picked B) : entry.2.Pairwise (· < ·) := by
-  simp only [Spec.picked, List.mem_map] at member
-  obtain ⟨⟨name, selectors⟩, _, rfl⟩ := member
-  let picked : Std.TreeSet Nat :=
-    ((selectors.flatMap (·.picks B.declIdx B.length)).foldl (·.insert ·) ∅)
-  have ordered := Std.TreeSet.ordered_toList (t := picked)
-  simpa only [Nat.compare_eq_lt] using ordered
+  let pickIds (selectors : List Selector) : Std.TreeSet Nat :=
+    (selectors.flatMap (·.picks B.declIdx B.length)).foldl (·.insert ·) ∅
+  change entry ∈ S.modules.map (fun (name, selectors) => (name, (pickIds selectors).toList)) at member
+  obtain ⟨⟨_, selectors⟩, _, rfl⟩ := List.mem_map.mp member
+  simpa only [Nat.compare_eq_lt] using (Std.TreeSet.ordered_toList (t := pickIds selectors))
 
 private theorem picked_map_ordered (entries : List (ModName × List Nat))
     (ordered : ∀ entry ∈ entries, entry.2.Pairwise (· < ·)) (name : ModName) :
