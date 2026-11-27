@@ -152,7 +152,7 @@ impl MutationOutcome {
 
     /// Warn on stderr when this outcome wrote ownership changes that only
     /// graph-backed claim checks covered.
-    pub fn warn_if_unassessed_write(&self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
+    fn warn_if_unassessed_write(&self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
         if self.needs_full_assessment && self.action == MutationAction::Applied {
             command_diagnostics::write_diagnostic(
                 stderr,
@@ -195,7 +195,7 @@ pub fn report_edit<R: Serialize>(
 }
 
 /// Attach any rejection-report failure to the original typed gate rejection.
-pub fn emit_gate_rejection_json(
+fn emit_gate_rejection_json(
     output: &mut dyn std::io::Write,
     verb: MutationVerb,
     format: Option<OutputFormat>,

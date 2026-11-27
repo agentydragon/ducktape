@@ -249,7 +249,10 @@ fn merge_report(
         .iter()
         .map(|plan| plan.summary.target.display().to_string())
         .collect();
-    let merged_sources = plans[0].summary.merged_sources.len();
+    // A batch may be empty; only a single merge reports its source count.
+    let merged_sources = plans
+        .first()
+        .map_or(0, |plan| plan.summary.merged_sources.len());
     let edit = GraphEdit {
         verb: MutationVerb::Merge,
         modules_root: &modules_root,
