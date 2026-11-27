@@ -6,43 +6,31 @@ use analysis_vocabulary::inputs::{
     NativeOperationSelectorProvenance, NoAccessorInstallRef, SourceDeclaration,
 };
 use anyhow::{Context, Result, ensure};
-use spec_wire::{required, unique_map, unique_set};
+use spec_wire::{decode_map, encode_map, required, try_encode_map, unique_map, unique_set};
 use std::collections::BTreeMap;
 
 fn source_declarations_to_wire(
     value: &BTreeMap<String, Vec<SourceDeclaration>>,
 ) -> Result<BTreeMap<String, pb::ChunkSourceDeclarations>> {
-    value
-        .iter()
-        .map(|(key, declarations)| {
-            Ok((
-                key.clone(),
-                pb::ChunkSourceDeclarations {
-                    declarations: declarations
-                        .iter()
-                        .map(encode_declaration)
-                        .collect::<Result<_>>()?,
-                },
-            ))
+    try_encode_map(value, |declarations| {
+        Ok(pb::ChunkSourceDeclarations {
+            declarations: declarations
+                .iter()
+                .map(encode_declaration)
+                .collect::<Result<_>>()?,
         })
-        .collect()
+    })
 }
 fn source_declarations_from_wire(
     value: BTreeMap<String, pb::ChunkSourceDeclarations>,
 ) -> Result<BTreeMap<String, Vec<SourceDeclaration>>> {
-    value
-        .into_iter()
-        .map(|(key, value)| {
-            Ok((
-                key,
-                value
-                    .declarations
-                    .into_iter()
-                    .map(decode_declaration)
-                    .collect::<Result<_>>()?,
-            ))
-        })
-        .collect()
+    decode_map(value, |entry| {
+        entry
+            .declarations
+            .into_iter()
+            .map(decode_declaration)
+            .collect::<Result<Vec<_>>>()
+    })
 }
 
 fn encode_statement_callbacks(
@@ -98,50 +86,25 @@ pub(super) fn encode_projection(value: &crate::AnalysisSpec) -> Result<pb::Analy
         inputs: Some(spec_wire::encode_load_js_chunks_args(&value.inputs)),
         host_behavior: Some(spec_wire::encode_host_behavior(&value.host_behavior)),
         program_premises: Some(spec_wire::encode_program_premises(&value.program_premises)),
-        vendor: value
-            .vendor
-            .iter()
-            .map(|(key, value)| {
-                (
-                    key.clone(),
-                    spec_wire::vendor_marks::encode_vendor_mark(value),
-                )
-            })
-            .collect(),
-        chunk_export_purity: value
-            .chunk_export_purity
-            .iter()
-            .map(|(key, value)| (key.clone(), spec_wire::encode_chunk_export_purity(value)))
-            .collect(),
-        chunk_analysis_inputs: value
-            .chunk_analysis_inputs
-            .iter()
-            .map(|(key, value)| Ok((key.clone(), encode_chunk_inputs(value)?)))
-            .collect::<Result<_>>()?,
+        vendor: encode_map(&value.vendor, spec_wire::vendor_marks::encode_vendor_mark),
+        chunk_export_purity: encode_map(
+            &value.chunk_export_purity,
+            spec_wire::encode_chunk_export_purity,
+        ),
+        chunk_analysis_inputs: try_encode_map(&value.chunk_analysis_inputs, encode_chunk_inputs)?,
         analysed_chunks: value.analysed_chunks.clone(),
         entry_file: value.entry_file.clone(),
         prune_other_chunks: Some(value.prune_other_chunks),
-        declared_assumptions: value
-            .declared_assumptions
-            .iter()
-            .map(|(key, value)| Ok((key.clone(), encode_assumptions(value)?)))
-            .collect::<Result<_>>()?,
+        declared_assumptions: try_encode_map(&value.declared_assumptions, encode_assumptions)?,
         source_sites: Some(encode_source_sites(&value.source_sites)?),
-        native_operation_inputs: value
-            .native_operation_inputs
-            .iter()
-            .map(|(key, inputs)| {
-                Ok((
-                    key.clone(),
-                    pb::ChunkNativeOperationInputs {
-                        inputs: inputs
-                            .iter()
-                            .map(encode_native_input)
-                            .collect::<Result<_>>()?,
-                    },
-                ))
+        native_operation_inputs: try_encode_map(&value.native_operation_inputs, |inputs| {
+            Ok(pb::ChunkNativeOperationInputs {
+                inputs: inputs
+                    .iter()
+                    .map(encode_native_input)
+                    .collect::<Result<_>>()?,
             })
-            .collect::<Result<_>>()?,
+        })?,
     })
 }
 pub(super) fn decode_projection(v: pb::AnalysisSpec) -> Result<crate::AnalysisSpec> {
@@ -149,44 +112,24 @@ pub(super) fn decode_projection(v: pb::AnalysisSpec) -> Result<crate::AnalysisSp
         inputs: spec_wire::decode_load_js_chunks_args(required(v.inputs)?)?,
         host_behavior: spec_wire::decode_host_behavior(required(v.host_behavior)?)?,
         program_premises: spec_wire::decode_program_premises(required(v.program_premises)?)?,
-        vendor: v
-            .vendor
-            .into_iter()
-            .map(|(key, value)| Ok((key, spec_wire::vendor_marks::decode_vendor_mark(value)?)))
-            .collect::<Result<_>>()?,
-        chunk_export_purity: v
-            .chunk_export_purity
-            .into_iter()
-            .map(|(key, value)| Ok((key, spec_wire::decode_chunk_export_purity(value)?)))
-            .collect::<Result<_>>()?,
-        chunk_analysis_inputs: v
-            .chunk_analysis_inputs
-            .into_iter()
-            .map(|(key, value)| Ok((key, decode_chunk_inputs(value)?)))
-            .collect::<Result<_>>()?,
+        vendor: decode_map(v.vendor, spec_wire::vendor_marks::decode_vendor_mark)?,
+        chunk_export_purity: decode_map(
+            v.chunk_export_purity,
+            spec_wire::decode_chunk_export_purity,
+        )?,
+        chunk_analysis_inputs: decode_map(v.chunk_analysis_inputs, decode_chunk_inputs)?,
         analysed_chunks: v.analysed_chunks,
         entry_file: v.entry_file,
         prune_other_chunks: required(v.prune_other_chunks)?,
-        declared_assumptions: v
-            .declared_assumptions
-            .into_iter()
-            .map(|(key, value)| Ok((key, decode_assumptions(value)?)))
-            .collect::<Result<_>>()?,
+        declared_assumptions: decode_map(v.declared_assumptions, decode_assumptions)?,
         source_sites: decode_source_sites(required(v.source_sites)?)?,
-        native_operation_inputs: v
-            .native_operation_inputs
-            .into_iter()
-            .map(|(key, value)| {
-                Ok((
-                    key,
-                    value
-                        .inputs
-                        .into_iter()
-                        .map(decode_native_input)
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?,
+        native_operation_inputs: decode_map(v.native_operation_inputs, |entry| {
+            entry
+                .inputs
+                .into_iter()
+                .map(decode_native_input)
+                .collect::<Result<Vec<_>>>()
+        })?,
     };
     validate_analysis_paths(&result)?;
     Ok(result)
@@ -364,10 +307,7 @@ fn encode_assumptions(value: &AnalysisAssumptions) -> Result<pb::AnalysisAssumpt
         declared_pure_initializers: declared_pure_initializers.iter().cloned().collect(),
         declared_pure_members: spec_wire::member_names_to_proto(declared_pure_members),
         no_sync_callback_members: spec_wire::member_names_to_proto(no_sync_callback_members),
-        known_effects: known_effects
-            .iter()
-            .map(|(binding, effect)| (binding.clone(), *effect as i32))
-            .collect(),
+        known_effects: encode_map(known_effects, |effect| *effect as i32),
         trusted_dataflow_summaries: Some(*trusted_dataflow_summaries),
         inline_callback_factories: inline_callback_factories.iter().cloned().collect(),
         callback_factory_members: spec_wire::member_names_to_proto(callback_factory_members),
@@ -416,11 +356,7 @@ fn decode_assumptions(v: pb::AnalysisAssumptions) -> Result<AnalysisAssumptions>
         declared_pure_initializers: unique_set(v.declared_pure_initializers.into_iter().map(Ok))?,
         declared_pure_members: spec_wire::member_names_from_proto(v.declared_pure_members)?,
         no_sync_callback_members: spec_wire::member_names_from_proto(v.no_sync_callback_members)?,
-        known_effects: v
-            .known_effects
-            .into_iter()
-            .map(|(binding, effect)| Ok((binding, KnownEffect::try_from(effect)?)))
-            .collect::<Result<_>>()?,
+        known_effects: decode_map(v.known_effects, |effect| Ok(KnownEffect::try_from(effect)?))?,
         trusted_dataflow_summaries: required(v.trusted_dataflow_summaries)?,
         inline_callback_factories: unique_set(v.inline_callback_factories.into_iter().map(Ok))?,
         callback_factory_members: spec_wire::member_names_from_proto(v.callback_factory_members)?,
@@ -548,21 +484,17 @@ fn encode_source_sites(value: &crate::AnalysisSourceSites) -> Result<pb::Analysi
         no_accessor_install_callables: source_declarations_to_wire(
             &value.no_accessor_install_callables,
         )?,
-        imported_primitive_array_spread_inputs: value
-            .imported_primitive_array_spread_inputs
-            .iter()
-            .map(|(key, inputs)| {
-                Ok((
-                    key.clone(),
-                    pb::ChunkImportedPrimitiveArrayInputs {
-                        inputs: inputs
-                            .iter()
-                            .map(encode_array_input)
-                            .collect::<Result<_>>()?,
-                    },
-                ))
-            })
-            .collect::<Result<_>>()?,
+        imported_primitive_array_spread_inputs: try_encode_map(
+            &value.imported_primitive_array_spread_inputs,
+            |inputs| {
+                Ok(pb::ChunkImportedPrimitiveArrayInputs {
+                    inputs: inputs
+                        .iter()
+                        .map(encode_array_input)
+                        .collect::<Result<_>>()?,
+                })
+            },
+        )?,
     })
 }
 fn decode_source_sites(v: pb::AnalysisSourceSites) -> Result<crate::AnalysisSourceSites> {
@@ -577,20 +509,16 @@ fn decode_source_sites(v: pb::AnalysisSourceSites) -> Result<crate::AnalysisSour
         no_accessor_install_callables: source_declarations_from_wire(
             v.no_accessor_install_callables,
         )?,
-        imported_primitive_array_spread_inputs: v
-            .imported_primitive_array_spread_inputs
-            .into_iter()
-            .map(|(key, value)| {
-                Ok((
-                    key,
-                    value
-                        .inputs
-                        .into_iter()
-                        .map(decode_array_input)
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?,
+        imported_primitive_array_spread_inputs: decode_map(
+            v.imported_primitive_array_spread_inputs,
+            |entry| {
+                entry
+                    .inputs
+                    .into_iter()
+                    .map(decode_array_input)
+                    .collect::<Result<Vec<_>>>()
+            },
+        )?,
     })
 }
 fn encode_native_selector(

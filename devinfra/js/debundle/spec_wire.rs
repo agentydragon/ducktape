@@ -90,6 +90,23 @@ where
         .collect()
 }
 
+/// `encode_map` for messages whose entry codec can refuse, which is how
+/// analysis-input codecs report an out-of-domain value.
+pub fn try_encode_map<Key, Value, Wire, Input, Output>(
+    values: &Input,
+    encode: impl Fn(&Value) -> Result<Wire>,
+) -> Result<Output>
+where
+    for<'a> &'a Input: IntoIterator<Item = (&'a Key, &'a Value)>,
+    Key: Clone,
+    Output: FromIterator<(Key, Wire)>,
+{
+    values
+        .into_iter()
+        .map(|(key, value)| Ok((key.clone(), encode(value)?)))
+        .collect()
+}
+
 /// The decode side of `encode_map`: the wire map is consumed, so keys move
 /// instead of cloning, and an entry codec can refuse.
 pub fn decode_map<Key, Value, Wire, Input, Output>(
