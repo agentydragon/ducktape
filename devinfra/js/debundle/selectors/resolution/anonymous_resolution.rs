@@ -6,7 +6,6 @@
 use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -662,11 +661,9 @@ fn read_source_modules(
             )?;
             let source = match context.source_context {
                 Some(verified) => verified.source().to_owned(),
-                None => fs::read_to_string(&resolved)
-                    .with_context(|| format!("reading source file {}", resolved.display()))?,
+                None => js_ast::read_source_file(&resolved)?,
             };
-            let parsed = js_ast::parse_js_module(source_path, source)
-                .with_context(|| format!("parsing source file {}", resolved.display()))?;
+            let parsed = js_ast::parse_js_module_from_file_text(source_path, &resolved, source)?;
             Ok((source_path.to_owned(), parsed))
         })
         .collect()

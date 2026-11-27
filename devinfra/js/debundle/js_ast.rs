@@ -263,14 +263,30 @@ pub fn parse_js_module(
     })
 }
 
-/// Read a source file and parse it under its own path, with the two context
-/// messages callers repeat. Callers that parse under a different source name
-/// (a graph-verified logical path, for example) keep their own read.
+/// Read JavaScript source from one file. Failures to read source say so in
+/// these words wherever they come from; a read of a spec, report or draft
+/// names that object instead.
+pub fn read_source_file(path: &Path) -> Result<String> {
+    fs::read_to_string(path).with_context(|| format!("reading source file {}", path.display()))
+}
+
+/// Parse source that came from `origin` under the parser name `source_name`,
+/// naming `origin` in the failure. This is what a caller wants when it has
+/// already read the file, or parses under a graph-level source path that
+/// differs from the file the source came from.
+pub fn parse_js_module_from_file_text(
+    source_name: &str,
+    origin: &Path,
+    source: impl Into<String>,
+) -> Result<ParsedJsModule> {
+    parse_js_module(source_name, source)
+        .with_context(|| format!("parsing source file {}", origin.display()))
+}
+
+/// Read a source file and parse it under its own path.
 pub fn parse_js_module_file(path: &Path) -> Result<ParsedJsModule> {
-    let source = fs::read_to_string(path)
-        .with_context(|| format!("reading source file {}", path.display()))?;
-    parse_js_module(&path.display().to_string(), source)
-        .with_context(|| format!("parsing source file {}", path.display()))
+    let source = read_source_file(path)?;
+    parse_js_module_from_file_text(&path.display().to_string(), path, source)
 }
 
 /// Parse a module to a bare `Module` with hygiene contexts assigned.

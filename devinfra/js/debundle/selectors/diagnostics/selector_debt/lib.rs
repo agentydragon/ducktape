@@ -351,10 +351,13 @@ fn parse_runtime_module(
 ) -> Result<Option<SwcModule>> {
     source_aware
         .map(|config| {
-            let source = std::fs::read_to_string(config.source_file)
-                .with_context(|| format!("reading {}", config.source_file.display()))?;
-            js_ast::parse_js_module_ast(&config.source_file.display().to_string(), &source)
-                .with_context(|| format!("parsing {}", config.source_file.display()))
+            let source = js_ast::read_source_file(config.source_file)?;
+            Ok(js_ast::parse_js_module_from_file_text(
+                &config.source_file.display().to_string(),
+                config.source_file,
+                &source,
+            )?
+            .module)
         })
         .transpose()
 }
