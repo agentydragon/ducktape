@@ -1,0 +1,9 @@
+{
+  "entry": "isLength.js",
+  "order": ["limits.mjs"],
+  "modules": {
+    "limits.mjs": ["#0"],
+    "isLength.js": ["#1", "#2"]
+  },
+  "sequential": true
+}
