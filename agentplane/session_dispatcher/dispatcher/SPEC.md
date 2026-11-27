@@ -111,9 +111,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   `policy_namespace`) is never privileged. A native `CreateSession` requires an explicit `bind_session`
   grant even on a Sandbox acting as the caller; acting as the Identity alone does not authorize lifecycle control.
   It reads, writes, cancels and watches only Sessions whose recorded execution
-  Identity is that incarnation, never one recorded with only a ServiceAccount; writes and cancellation also
+  Identity is that incarnation; writes and cancellation also
   require the Sandbox to still name it. Its rows record the Identity and its Pod as creator or actor. Its queued work requests an automatic wake as the Identity,
-  which the lifecycle manager authorizes exactly as the Sandbox's own ServiceAccount's: the target Sandbox
+  which the lifecycle manager authorizes as follows: the target Sandbox
   must act as that live Identity incarnation and its `resumePolicy.allowOwnServiceAccount` must permit its
   own principal to resume it. Messaging between Sessions of one Identity, and the wake it causes, is implied;
   a direct resume or wake request by an Identity still has no rule type and is refused.
@@ -420,9 +420,8 @@ by reading the same ID; never blindly replay native, provider or executor effect
 API.
 
 `Session` is a minimal authorized projection: `session_id`, `placement`, creation/update timestamps,
-nested `SessionStatus` and the exact execution ServiceAccount identity once established. It does not
-expose the immutable `SessionSpec` or instructions. A missing identity means no exact owner is
-established; callers must not infer its UID from a current same-name account.
+nested `SessionStatus` and the exact execution Identity incarnation (`identity`). It does not
+expose the immutable `SessionSpec` or instructions.
 `SessionStatus.materialization` is placement-owner progress, not harness state
 ([values](#method-scope)): `SESSION_MATERIALIZATION_ACCEPTED` means the owner durably admitted the
 logical Session, not that a harness is ready, a turn completed or History projected a Thread.
