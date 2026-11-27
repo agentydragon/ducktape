@@ -9,7 +9,7 @@ namespace EsmSplit.LowerSplit.TerminalExportArtifact
 
 open Lean (Json)
 open CoreJS CoreJS.LinkedBehavior
-open EsmSplit.LowerSplit.SparseArtifact (classify sourceBundle)
+open EsmSplit.LowerSplit.SparseArtifact (sourceBundle)
 
 /-- These fields retain the exact authored source positions, including the
 non-executable export-list position, rather than deriving a compact request. -/
@@ -21,17 +21,19 @@ structure Prepared (original : Json) (sourceText : String) (request : EsmSplit.S
   sequential : request.sequential = true
   order : request.order = [provider]
   publicEntry : request.privateEntryBody = false
-  nodes : Array Json
-  nodesMatch : ESTreeUnits.checkedNodes original sourceText = .ok nodes
-  metadataMatch : classify [0] nodes = .ok [1]
-  source : Program
-  sourceMatch : LinkedInput.decodeSingletonSource original request.entry = .ok source
+  input : LinkedInput.IndexedSource
+  inputMatch : LinkedInput.decodeIndexedSource original sourceText request.entry = .ok input
+  row : EsmSplit.LocalExportUnit
+  rowMatch : input.localExports = [row]
+  rowOrdinal : row.ordinal = 1
   binding : String
   number : Float
-  sourceShape : source.modules = [⟨request.entry, [], [(0, .decl .const binding (.num number))], [(binding, binding)]⟩]
+  rowNames : row.names = [(binding, binding)]
+  sourceShape : input.program.modules =
+    [⟨request.entry, [], [(0, .decl .const binding (.num number))], [(binding, binding)]⟩]
   plan : EsmSplit.Plan
-  planMatch : plan = EsmSplit.mkPlan (sourceBundle nodes) request
-  planValid : EsmSplit.Valid (sourceBundle nodes) request plan
+  planMatch : plan = EsmSplit.mkPlan (sourceBundle input.nodes) request
+  planValid : EsmSplit.Valid (sourceBundle input.nodes) request plan
   providerModule : EsmSplit.Module
   providerMatch : plan.find provider = some providerModule
   providerUnits : providerModule.stmts = [0]
@@ -39,7 +41,10 @@ structure Prepared (original : Json) (sourceText : String) (request : EsmSplit.S
   entryMatch : plan.find request.entry = some entryModule
   entryUnits : entryModule.stmts = [1]
   programs : Json
-  generated : ESTreeEmit.programs nodes (sourceBundle nodes) plan sourceText = .ok programs
+  generated : ESTreeEmit.programs input.nodes (sourceBundle input.nodes) plan sourceText = .ok programs
+
+def Prepared.source {original sourceText request} (prepared : Prepared original sourceText request) : Program :=
+  prepared.input.program
 
 private def witness {α : Type} (result : Except String α) :
     Except String (Σ value : α, PLift (result = .ok value)) := do
@@ -77,22 +82,24 @@ def prepare (original : Json) (sourceText : String) (request : EsmSplit.Spec) :
       if order : request.order = [provider] then
         if publicEntry : request.privateEntryBody = false then
           EsmSplit.validateModulePaths [provider, request.entry]
-          let ⟨nodes, ⟨nodesMatch⟩⟩ ← witness (ESTreeUnits.checkedNodes original sourceText)
-          unless nodes.size == 2 do throw "expected two original source units"
-          match metadataMatch : classify [0] nodes with
-          | .ok [1] =>
-            let ⟨source, ⟨sourceMatch⟩⟩ ← witness (LinkedInput.decodeSingletonSource original request.entry)
-            let [m] := source.modules | throw "expected one source module"
+          let ⟨input, ⟨inputMatch⟩⟩ ← witness (LinkedInput.decodeIndexedSource original sourceText request.entry)
+          match rowMatch : input.localExports with
+          | [row] =>
+            let .isTrue rowOrdinal := (inferInstance : Decidable (row.ordinal = 1)) |
+              throw "expected the original local export row at #1"
+            let [m] := input.program.modules | throw "expected one source module"
             let [(0, .decl .const binding (.num number))] := m.body |
               throw "expected one numeric const declaration"
             let expected : CoreJS.Program := ⟨request.entry,
               [⟨request.entry, [], [(0, .decl .const binding (.num number))], [(binding, binding)]⟩]⟩
-            let some ⟨same⟩ := SyntaxMatch.programEq source expected |
+            let some ⟨same⟩ := SyntaxMatch.programEq input.program expected |
               throw "expected one numeric const and its own named export"
-            have sourceShape : source.modules = [⟨request.entry, [],
+            have sourceShape : input.program.modules = [⟨request.entry, [],
                 [(0, .decl .const binding (.num number))], [(binding, binding)]⟩] :=
               congrArg CoreJS.Program.modules same
-            let bundle := sourceBundle nodes
+            let .isTrue rowNames := (inferInstance : Decidable (row.names = [(binding, binding)])) |
+              throw "expected the declared binding in the original export row"
+            let bundle := sourceBundle input.nodes
             let plan := EsmSplit.mkPlan bundle request
             let .isTrue valid := (inferInstance : Decidable (EsmSplit.Valid bundle request plan)) |
               throw "original-node placement failed validation"
@@ -100,9 +107,9 @@ def prepare (original : Json) (sourceText : String) (request : EsmSplit.Spec) :
             | some providerModule, some entryModule =>
               if providerUnits : providerModule.stmts = [0] then
                 if entryUnits : entryModule.stmts = [1] then
-                  let ⟨programs, ⟨generated⟩⟩ ← witness (ESTreeEmit.programs nodes bundle plan sourceText)
-                  return ⟨provider, exactShape, distinct, sequential, order, publicEntry, nodes,
-                    nodesMatch, metadataMatch, source, sourceMatch, binding, number, sourceShape,
+                  let ⟨programs, ⟨generated⟩⟩ ← witness (ESTreeEmit.programs input.nodes bundle plan sourceText)
+                  return ⟨provider, exactShape, distinct, sequential, order, publicEntry,
+                    input, inputMatch, row, rowMatch, rowOrdinal, binding, number, rowNames, sourceShape,
                     plan, rfl, valid, providerModule, providerMatch, providerUnits,
                     entryModule, entryMatch, entryUnits, programs, generated⟩
                 else throw "export unit did not remain in entry"

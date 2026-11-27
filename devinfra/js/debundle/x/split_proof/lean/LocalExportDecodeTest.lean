@@ -16,11 +16,18 @@ private def onlyModule (p : Program) : IO Module := do
 private def decode (j : Json) : IO (Program × List EsmSplit.LocalExportUnit) :=
   IO.ofExcept (LinkedInput.decodeSingletonSourceWithLocalExports j "entry.mjs")
 
+private def decodeIndexed (j : Json) : IO LinkedInput.IndexedSource :=
+  IO.ofExcept do
+    let sourceText ← j.getObjValAs? String "sourceText"
+    LinkedInput.decodeIndexedSource j sourceText "entry.mjs"
+
 private def require (ok : Bool) (why : String) : IO Unit :=
   unless ok do throw (IO.userError why)
 
 private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
-  let (p, rows) ← decode j
+  let decoded ← IO.ofExcept (LinkedInput.decodeIndexedSource j sourceText "entry.mjs")
+  let p := decoded.program
+  let rows := decoded.localExports
   let m ← onlyModule p
   let [row] := rows | throw (IO.userError "expected one standalone export list")
   let pairs := (List.range 16).map fun i => (s!"reader{i}", s!"reader{i}")
@@ -30,8 +37,7 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   let checked ← IO.ofExcept (TerminalConstructorInput.check (p, rows))
   let _ := TerminalConstructorInput.all_const checked
   let _ := TerminalConstructorInput.source_shape checked
-  let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes j sourceText)
-  let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle nodes
+  let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle decoded.nodes
   let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
   let plan := EsmSplit.mkPlan bundle spec
   let statements := checked.terminal.source.body.map Prod.snd
@@ -78,6 +84,9 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   | _ => throw (IO.userError "a non-const original statement was not refused")
 
 private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := do
+  match LinkedInput.decodeIndexedSource j sourceText "entry.mjs" with
+  | .error "unsupported omitted source node 33" => pure ()
+  | _ => throw (IO.userError "the source decoder did not refuse the omitted debugger")
   let input ← decode j
   let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes j sourceText)
   let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
@@ -86,7 +95,9 @@ private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := 
   | _ => throw (IO.userError "a real omitted debugger statement was not refused")
 
 private def checkSparse (j : Json) : IO Unit := do
-  let (p, rows) ← decode j
+  let decoded ← decodeIndexed j
+  let p := decoded.program
+  let rows := decoded.localExports
   let m ← onlyModule p
   let [row] := rows | throw (IO.userError "expected one interior export list")
   require (row.ordinal == 1 && row.names == [("exposed", "seed")]) "interior export or alias changed"
@@ -97,14 +108,18 @@ private def checkSparse (j : Json) : IO Unit := do
   | _ => throw (IO.userError "interior export was not refused by the terminal source guard")
 
 private def checkAliases (j : Json) : IO Unit := do
-  let (p, rows) ← decode j
-  let m ← onlyModule p
-  let [aliases, empty] := rows | throw (IO.userError "expected alias and empty export lists")
+  let decoded ← decodeIndexed j
+  let m ← onlyModule decoded.program
+  let [aliases, empty] := decoded.localExports | throw (IO.userError "expected alias and empty export lists")
   let pairs := [("publicName", "seed"), ("with-dash", "seed")]
   require (aliases.ordinal == 1 && aliases.names == pairs) "ordered public/local aliases changed"
   require (empty.ordinal == 2 && empty.names.isEmpty) "empty export list was omitted"
   require (m.body.map Prod.fst == [0, 3]) "export metadata became executable"
   require (m.exports == pairs) "alias export table changed"
+  -- Removing the empty row leaves the public aliases above unchanged.
+  match LinkedInput.checkSourceUnitCoverage decoded.nodes.size decoded.program [aliases] with
+  | .error "unsupported omitted source node 2" => pure ()
+  | _ => throw (IO.userError "dropping an empty row passed original ordinal coverage")
 
 private def checkInline (j : Json) : IO Unit := do
   let (p, rows) ← decode j

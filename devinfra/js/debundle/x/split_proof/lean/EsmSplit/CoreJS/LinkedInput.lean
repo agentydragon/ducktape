@@ -494,22 +494,54 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : Ho
     Except String (Program × Program) :=
   DecodedDeployment.programs <$> decodeSingleton source providers files P profile
 
-/-- Lower an import-free original in one pass, retaining each actual standalone
-local export list's original ordinal and ordered `(public, local)` names. Inline
-and default exports remain in the module export table and are not invented as
-standalone units. The caller must check the source shape required by its rule. -/
-def decodeSingletonSourceWithLocalExports (source : Json) (entry : String) :
+private def decodeSingletonSourceNodes (nodes : Array Json) (entry : String) :
     Except String (Program × List EsmSplit.LocalExportUnit) := do
-  let nodes ← ESTreeUnits.nodes source
   let original ← (parse .linked .empty "bundle.mjs" nodes 0).mapError StructuralRefusal.reason
   unless original.imports.isEmpty do throw "checked construction requires an import-free original"
   unless original.templates.isEmpty do throw "checked construction does not install template objects"
   return ({ entry, modules := [original.numbered entry 0] }, original.localExports)
 
+/-- Lower an import-free original in one pass, retaining each actual standalone
+local export list's original ordinal and ordered `(public, local)` names. Inline
+and default exports remain in the module export table. -/
+def decodeSingletonSourceWithLocalExports (source : Json) (entry : String) :
+    Except String (Program × List EsmSplit.LocalExportUnit) := do
+  decodeSingletonSourceNodes (← ESTreeUnits.nodes source) entry
+
 /-- Project the program from the same source decoder for rules that do not use
 standalone export-unit identities. -/
 def decodeSingletonSource (source : Json) (entry : String) : Except String Program :=
   Prod.fst <$> decodeSingletonSourceWithLocalExports source entry
+
+/-- Executable units and standalone export rows account for separate source
+ordinals. An empty export row still contributes its ordinal. -/
+def sourceUnitIds (program : Program) (localExports : List EsmSplit.LocalExportUnit) : List Nat :=
+  program.modules.flatMap (fun m => m.body.map Prod.fst) ++ localExports.map (·.ordinal)
+
+def checkSourceUnitCoverage (count : Nat) (program : Program) (localExports : List EsmSplit.LocalExportUnit) :
+    Except String (PLift ((sourceUnitIds program localExports).Perm (List.range count))) := do
+  let ids := sourceUnitIds program localExports
+  let expected := List.range count
+  if covered : ids.Perm expected then return ⟨covered⟩
+  if let some ordinal := expected.find? (!ids.contains ·) then
+    throw s!"unsupported omitted source node {ordinal}"
+  throw "executable units and local export rows do not cover each source ordinal once"
+
+/-- The nodes used for footprints and printing are the same ones the linked
+lowerer used to recover the executable units and ordered local-export rows. -/
+structure IndexedSource where
+  nodes : Array Json
+  program : Program
+  localExports : List EsmSplit.LocalExportUnit
+  coverage : (sourceUnitIds program localExports).Perm (List.range nodes.size)
+
+/-- Retain the full source ordinals for an authored constructor. A node the
+linked model skips, such as a debugger or empty statement, prevents coverage. -/
+def decodeIndexedSource (original : Json) (sourceText entry : String) : Except String IndexedSource := do
+  let nodes ← ESTreeUnits.checkedNodes original sourceText
+  let (program, localExports) ← decodeSingletonSourceNodes nodes entry
+  let ⟨coverage⟩ ← checkSourceUnitCoverage nodes.size program localExports
+  return ⟨nodes, program, localExports, coverage⟩
 
 /-- Lower the independently parsed files using the constructor's file names
 and source ordinals. Bodies, binding names, imports and exports come from the
