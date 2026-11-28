@@ -63,6 +63,14 @@ js_test(
 )
 
 js_test(
+    name = "retained_tail_test",
+    size = "medium",
+    data = _RUNNER_DATA + ["run_cases.mjs"],
+    entry_point = "retained_tail_test.mjs",
+    env = _RUNNER_ENV,
+)
+
+js_test(
     name = "member_rename_boundary_test",
     data = _RUNNER_DATA + ["run_cases.mjs"],
     entry_point = "member_rename_boundary_test.mjs",
