@@ -18,6 +18,7 @@ import EsmSplit.CoreJS.LinkedPrimitiveAwaitProof
 import EsmSplit.CoreJS.LiteralReorderConstruct
 import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.CoreJS.ResolvedPlacement
+import EsmSplit.CoreJS.RetainedClassConstruction
 import EsmSplit.CoreJS.RetainedTailConstruction
 import EsmSplit.CoreJS.StaticProviderConstruction
 import EsmSplit.CoreJS.TerminalExportPlacement
@@ -746,6 +747,29 @@ private def tryRetainedTail (spec : Spec) (src : BundleInput) (out work : System
   catch e =>
     return some (← emitVerdict options.request.label (.error e.toString) scope)
 
+/-- Keep exact class definitions and their original initialization order. -/
+private def tryRetainedClasses (spec : Spec) (src : BundleInput) (out work : System.FilePath)
+    (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  let .ok nodes := ESTreeUnits.checkedNodes src.program src.source | return none
+  let .ok built := CoreJS.RetainedClassConstruction.construct nodes spec | return none
+  let scope := "retained-classes"
+  try
+    let programs ←
+      IO.ofExcept (ESTreeEmit.programs nodes (sourceBundle nodes) built.plan src.source spec.entry)
+    let checked ←
+      stageGenerated programs src out work options timings fun files => do
+        let _ ← (built.checkOutput src.program files).mapError
+          fun reason => ({ reason } : CertificationRefusal)
+        return ()
+    match checked with
+    | .ok _ =>
+      return some (← emitVerdict options.request.label (.ok .allOutcomes) scope
+        [("strategy", toJson "compiled-constructor"),
+          importReceipt options built.before built.after []])
+    | .error refusal => return some (← emitRefusal options.request.label refusal scope)
+  catch e =>
+    return some (← emitVerdict options.request.label (.error e.toString) scope)
+
 /-- Both emission and readback must start from a successful construction. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
@@ -781,6 +805,8 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
             if let some verdict← tryOrderedHelper spec src decoded out work options timings then
               return verdict
     if javascriptSource chunk.source then
+      if let some verdict ← tryRetainedClasses spec src out work options timings then
+        return verdict
       if let some verdict← tryRetainedTail spec src out work options timings then
         return verdict
   noConstructor options.request.label
