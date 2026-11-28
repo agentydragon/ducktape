@@ -6174,7 +6174,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: piraeus-ssd-2-autodiskful
+      storageClassName: piraeus-ssd-local
       volumeMode: Filesystem
     layout:
       type: DirectoryTree
@@ -6251,7 +6251,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: piraeus-ssd-2-autodiskful
+      storageClassName: piraeus-ssd-local
       volumeMode: Block
     layout:
       filesystem: ext4
@@ -6523,7 +6523,7 @@ spec:
       resources:
         requests:
           storage: 100Gi
-      storageClassName: piraeus-ssd-2-autodiskful
+      storageClassName: piraeus-ssd-local
       volumeMode: Filesystem
     layout:
       filesystem: ext4
@@ -6536,7 +6536,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: piraeus-ssd-2-autodiskful
+      storageClassName: piraeus-ssd-local
       volumeMode: Filesystem
     layout:
       filesystem: ext4

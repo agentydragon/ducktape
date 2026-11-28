@@ -11,6 +11,7 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 from agentplane.env.config import CodexReadiness, Configuration, SystemdEnvironment
+from cluster.cdk8s import piraeus_storage
 from cluster.cdk8s.agentplane import environment_guest, environment_vm, launcher_relay, staging
 from cluster.cdk8s.testing.manifests import find_resource
 
@@ -116,7 +117,7 @@ def test_vm_workspace_is_a_controller_attached_block_filesystem(vm_spec: dict[st
     assert "dataVolumeTemplates" not in vm
 
 
-def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_storage(
+def test_staging_puts_both_vm_claims_on_the_single_copy_local_class_and_keeps_pod_storage(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     vm_template = find_resource(staging_manifests, "SandboxTemplate", environment_vm.NAME)
@@ -127,6 +128,7 @@ def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_stor
     assert vm_workspace["claim"]["volumeMode"] == "Block"
     assert vm_workspace["layout"] == {"type": "BlockFilesystem", "filesystem": "ext4"}
     assert vm_state["claim"]["storageClassName"] == vm_workspace["claim"]["storageClassName"]
+    assert vm_state["claim"]["storageClassName"] == piraeus_storage.SSD_LOCAL
     assert vm_state["claim"]["storageClassName"] == staging.ENV.vm_storage_class
 
     environment_template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
