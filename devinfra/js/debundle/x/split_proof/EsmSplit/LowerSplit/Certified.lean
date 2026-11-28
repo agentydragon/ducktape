@@ -72,7 +72,7 @@ private structure CertifiedOptions where
 /-- Report only facts established by the graph and artifact checks on this
 route. A fixed caller or manifest is not a general loader or client proof. -/
 private def importReceipt (options : CertifiedOptions) (before after : CoreJS.Program)
-    (fixedFiles : List String) (ownedCaller : Option String := none) : String × Json :=
+    (fixedFiles : List String) (ownedCaller : Option String := none) (nodeEsmRoot := false) : String × Json :=
   let graph (p : CoreJS.Program) :=
     Json.mkObj
       [("entry", toJson p.entry), ("modules", toJson (p.modules.map (·.name))),
@@ -105,6 +105,7 @@ private def importReceipt (options : CertifiedOptions) (before after : CoreJS.Pr
                   (["exact-artifact-paths", "generated-esm-syntax"] ++
                     (if fixedFiles.isEmpty then [] else ["fixed-file-bytes"]) ++
                     (if ownedCaller.isSome then ["owned-flat-root", "explicit-node-esm-manifest"]
+                    else if nodeEsmRoot then ["explicit-node-esm-manifest", "no-nested-package-scope"]
                     else []))),
               ("fixed_files", toJson fixedFiles),
               ("assumptions",
@@ -742,17 +743,19 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
   noConstructor options.request.label
       s!"no constructor accepts the requested placement of {chunk.path}"
 
-/-- Select only the closed raw .mjs route. Other multi-chunk deployments
-retain the existing refusal, including package and resolved placements. -/
+/-- Select only a declared synchronous static graph with fixed dependencies.
+The .js family requires the explicit Node ESM root opt-in. -/
 private def finiteStaticInput (manifest : DeploymentManifest) :
     Option (Spec × List DeploymentChunk) := do
   guard (manifest.ownedNodePackage.isNone && manifest.chunks.length >= 3)
   let entry ← manifest.chunks.find? (·.path == manifest.entry)
   let .authored spec := entry.placement | none
   let fixed := manifest.chunks.filter (·.path != manifest.entry)
+  let ext := if manifest.nodeEsmRoot.isSome then "js" else "mjs"
+  guard (manifest.nodeEsmRoot.isNone || fixed.length == 2)
   guard
       (manifest.chunks.all
-          (fun chunk => chunk.path.endsWith ".mjs" && chunk.source.extension == some "mjs") &&
+          (fun chunk => chunk.path.endsWith ("." ++ ext) && chunk.source.extension == some ext) &&
         fixed.all
           (fun chunk =>
             match chunk.placement with
@@ -768,7 +771,19 @@ private def runFiniteStaticGraph (manifest : DeploymentManifest) (spec : Spec)
   try
     let root ← deploymentRoot manifest
     let fixedNames := fixed.map (·.path)
-    let files ← readModules root work (manifest.entry :: fixedNames).toArray
+    let routes := manifest.entry :: fixedNames
+    let (files, format) ← match manifest.nodeEsmRoot with
+      | none => pure (← readModules root work routes.toArray, [])
+      | some declared => do
+        unless declared == root && manifest.chunks.all (fun chunk => chunk.source == root / chunk.path) do
+          throw (IO.userError "declared .js inputs must match the exact node_esm_root routes")
+        let requests := work / "node-esm-routes.json"
+        let captured := work / "node-esm-capture.json"
+        IO.FS.writeFile requests (toJson routes).compress
+        javascript #["--read-node-esm-root"] #[root, requests, captured]
+        let input ← readJson captured
+        pure (← IO.ofExcept (input.getObjVal? "files"),
+          [("package.json", ← IO.ofExcept (input.getObjValAs? String "manifest"))])
     let decode ast name := do
       let text ← ast.getObjValAs? String "sourceText"
       CoreJS.AuthenticatedSource.decodeSourceClassification ast text name (importer := name)
@@ -780,8 +795,9 @@ private def runFiniteStaticGraph (manifest : DeploymentManifest) (spec : Spec)
           (fixedNames.mapM fun name => do
             return (name, ← files.getObjVal? name))
     let decoded ← IO.ofExcept (providers.mapM fun (name, ast) => decode ast name)
+    let family := if manifest.nodeEsmRoot.isSome then CoreJS.FiniteStaticGraph.Family.nodePrototype else .primitive
     let built ←
-      match CoreJS.FiniteStaticGraph.construct entry decoded spec with
+      match CoreJS.FiniteStaticGraph.construct entry decoded spec family with
       | .ok built =>
         pure built
       | .error reason =>
@@ -794,25 +810,34 @@ private def runFiniteStaticGraph (manifest : DeploymentManifest) (spec : Spec)
     let input := work / "source.mjs"
     IO.FS.writeFile input source
     let part : OutputPart := { programs, source, input, work }
+    let fixedBytes ← IO.ofExcept (providers.mapM fun (name, ast) => do
+      return (name, ← ast.getObjValAs? String "sourceText"))
+    let confirm :=
+      if manifest.nodeEsmRoot.isSome then
+        javascript #["--check-node-package-destination", if options.checkOnly then "reread" else "fresh"]
+          #[root, out, work]
+      else pure ()
+    let verify : Json → IO (Except CertificationRefusal Unit) := fun files =>
+      pure do
+        let ⟨same⟩ ←
+          (CoreJS.ConstructedOutput.checkConstructedOutput files built.program).mapError
+              fun reason => ({ reason } : CertificationRefusal)
+        let _proof :=
+          fun observed
+            (decoded :
+              CoreJS.ConstructedOutput.decodeConstructedOutput files built.program =
+                .ok observed) =>
+          built.readbackGuarantees (Except.ok.inj (decoded.symm.trans same))
+        return ()
     let result ←
-      certifyOutput (α := Unit) [part] (Json.mkObj providers) out work options.checkOnly timings
-          (parseProviders := true) fun files =>
-          pure do
-            let ⟨same⟩ ←
-              (CoreJS.ConstructedOutput.checkConstructedOutput files built.program).mapError
-                  fun reason => ({ reason } : CertificationRefusal)
-            let _proof :=
-              fun observed
-                (decoded :
-                  CoreJS.ConstructedOutput.decodeConstructedOutput files built.program =
-                    .ok observed) =>
-              built.readbackGuarantees (Except.ok.inj (decoded.symm.trans same))
-            return ()
+      certifyOutputWithFixed [part] (fixedBytes ++ format) out work options.checkOnly timings
+        verify confirm (recheckPublished := manifest.nodeEsmRoot.isSome) (parseProviders := true)
     match result with
     | .ok _ =>
       emitVerdict options.request.label (.ok .allOutcomes) scope
           [("strategy", toJson "compiled-constructor"),
-            importReceipt options built.before built.program fixedNames]
+            importReceipt options built.before built.program (fixedNames ++ format.map Prod.fst)
+              (nodeEsmRoot := manifest.nodeEsmRoot.isSome)]
     | .error why =>
       emitRefusal options.request.label why scope
   catch e =>
@@ -841,10 +866,12 @@ def certified (args : List String) : IO UInt32 := do
     let [manifestPath, dest] := args.filter (· != "--check-output")
       | throw (IO.userError "usage: lowersplit <deployment.json> <outdir> [--require LEVEL] [--check-output]")
     let out ← IO.ofExcept (outputDirectory dest)
-    let manifest ← readDeploymentManifest manifestPath (allowOwnedPackage := true)
+    let manifest ← readDeploymentManifest manifestPath (allowOwnedPackage := true) (allowNodeEsmRoot := true)
     let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
     IO.FS.withTempDir fun work =>
-        if let [chunk] := manifest.chunks then
+        if let [chunk] := manifest.chunks then do
+          if manifest.nodeEsmRoot.isSome then
+            return ← noConstructor label "node_esm_root requires the declared three-file graph"
           match manifest.ownedNodePackage with
           | some pkg => runOwnedNodePackage pkg chunk out work { request, checkOnly } timings
           | none => runSingleton chunk out work { request, checkOnly } timings

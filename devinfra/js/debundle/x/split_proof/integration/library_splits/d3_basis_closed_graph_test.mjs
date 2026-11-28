@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { split } from "../../translation/testing/split.mjs";
@@ -90,7 +90,7 @@ function reread(dir, spec) {
   return model(spec, { files: readModules(dir, [entry, helper]), fixed: readModules(dir, [basis, noop]) });
 }
 
-function observe(dir) {
+function observe(dir, explicitFormat = false) {
   const url = (name) => JSON.stringify(pathToFileURL(path.join(dir, name)).href);
   const script = `
 import assert from "node:assert/strict";
@@ -121,9 +121,13 @@ assert.throws(() => second.point(18, 18), (thrown) => thrown === sentinel);
 console.log(JSON.stringify({ publicNames: Object.keys(api), drawn, partial: [second._point, second._x0, second._x1] }));
 `;
   return JSON.parse(
-    execFileSync(process.execPath, ["--experimental-default-type=module", "--input-type=module", "-e", script], {
-      encoding: "utf8",
-    })
+    execFileSync(
+      process.execPath,
+      [...(explicitFormat ? [] : ["--experimental-default-type=module"]), "--input-type=module", "-e", script],
+      {
+        encoding: "utf8",
+      }
+    )
   );
 }
 
@@ -193,3 +197,76 @@ for (const spec of [alone, together]) {
   assert.equal(verdict.status, "refused", verdict.log);
   assert.match(verdict.reason, /no constructor supports multi-chunk deployments/);
 }
+
+// Opt in to the explicit owned ESM scope. Keep all three shipped .js files
+// byte-for-byte, and exercise the factory without Node's test-only format flag.
+const packageText = JSON.stringify({ type: "module" }) + "\n";
+const packageFile = path.join(original, "package.json");
+writeFileSync(packageFile, packageText);
+assert.deepEqual(observe(original, true), baseline);
+const deployment = JSON.parse(readFileSync(manifest, "utf8"));
+const out = path.join(root, "published");
+const options = { manifest, out, require: "all-outcomes" };
+function request(spec, opts = {}) {
+  const specFile = path.join(root, spec === alone ? "prototype-only.json" : "constructor-and-prototype.json");
+  writeJson(specFile, spec);
+  writeJson(manifest, {
+    ...deployment,
+    node_esm_root: original,
+    chunks: deployment.chunks.map((chunk) => (chunk.path === entry ? { ...chunk, spec: specFile } : chunk)),
+  });
+  return split({ ...options, ...opts });
+}
+function refused(result, re) {
+  assert.equal(result.status, "refused", result.log);
+  assert.match(result.reason, re);
+  assert.equal(result.verdict.receipt, undefined);
+}
+refused(request(alone), /private constructor and prototype must move together/);
+const published = request(together);
+assert.equal(published.status, "certified", published.log);
+assert.equal(published.guarantee, "all-outcomes");
+assert.deepEqual(published.files, [entry, basis, helper, noop, "package.json"].sort());
+const receipt = published.verdict.receipt;
+assert.equal(receipt.operation, "published");
+assert.deepEqual(receipt.graph.source.evaluation_order, [noop, basis, entry]);
+assert.deepEqual(receipt.graph.output.evaluation_order, [noop, basis, helper, entry]);
+assert.deepEqual(receipt.graph.public_entry, { route: entry, exports: ["default"], live_cells: "same-linked-cells" });
+assert.equal(receipt.graph.run_result, "equal-complete-modeled-result-at-equal-fuel-for-every-world");
+assert.equal(receipt.client.coverage, "unchecked");
+assert.equal(receipt.deployment.claim, "none");
+assert(receipt.deployment.checked.includes("explicit-node-esm-manifest"));
+assert(receipt.deployment.checked.includes("no-nested-package-scope"));
+for (const file of [basis, noop, "package.json"])
+  assert.deepEqual(readFileSync(path.join(out, file)), readFileSync(path.join(original, file)));
+assert.deepEqual(observe(out, true), baseline);
+function rereadPublished() {
+  return request(together, { checkOutput: true });
+}
+assert.deepEqual(rereadPublished().verdict.receipt, { ...receipt, operation: "checked-output" });
+for (const file of [basis, noop, "package.json"]) {
+  const target = path.join(out, file);
+  const bytes = readFileSync(target);
+  writeFileSync(target, Buffer.concat([bytes, Buffer.from("\n")]));
+  refused(rereadPublished(), /differs from the source graph/);
+  writeFileSync(target, bytes);
+}
+const helperFile = path.join(out, helper);
+const helperBytes = readFileSync(helperFile);
+const wrongHelper = readFileSync(path.join(wrong, helper));
+assert.notDeepEqual(wrongHelper, helperBytes);
+writeFileSync(helperFile, wrongHelper);
+refused(rereadPublished(), /differs from its generated ESTree/);
+writeFileSync(helperFile, helperBytes);
+assert.equal(rereadPublished().status, "certified");
+refused(request(together, { allowExistingOut: true }), /destination must not exist/);
+
+const blocked = { out: path.join(root, "blocked") };
+writeFileSync(packageFile, '{"type":"commonjs"}\n');
+refused(request(together, blocked), /must explicitly declare "type": "module"/);
+writeFileSync(packageFile, packageText);
+const nested = path.join(original, "curve", "package.json");
+writeFileSync(nested, packageText);
+refused(request(together, blocked), /nested package scope is unsupported/);
+unlinkSync(nested);
+console.log(JSON.stringify({ construction: published.verdict, reread: rereadPublished().verdict }));

@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.DeploymentPlacement
+import EsmSplit.CoreJS.IndexedExportedFunction
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.LinkedPivotCheck
 import EsmSplit.CoreJS.PlanPlacement
@@ -66,8 +67,60 @@ structure Construction where
   sameExports : SameExports before program
   allOutcomes : ∀ w fuel, runProgram w fuel before = runProgram w fuel program
 
+/-- The additional format-checked family moves a hoisted constructor together
+with the single prototype write that uses it. Fixed providers are executable
+CoreJS, not opaque retained files. -/
+private def prototypeWrite (ctor : Name) (imports : List Name) : Stmt → Bool
+  | .expr (.assign (.member (.var receiver) (.str "prototype")) (.obj fields)) =>
+    receiver == ctor && !fields.isEmpty && fields.all (fun
+      | .init (.str name) (.var imported) => name != "__proto__" && imports.contains imported
+      | .init (.str name) (.func method) => name != "__proto__" &&
+        IndexedExportedFunction.concreteRetainedStatement (.funDecl method) (switchBody := true)
+      | _ => false)
+  | _ => false
+
+private def concreteHoist (f : Func) : Bool :=
+  IndexedExportedFunction.concreteRetainedStatement (.funDecl f) (switchBody := true)
+
+private def checkPrototype (source : LinkedInput.DecodedSource) (fixed : List Module)
+    (request : EsmSplit.Spec) (B : EsmSplit.Bundle) (helper : String) : Except String Unit := do
+  let original := source.source
+  let [⟨left, [(exportedLeft, localLeft)]⟩, ⟨right, [(exportedRight, localRight)]⟩] := original.imports |
+    throw "expected two single-binding imports from the fixed providers"
+  unless left != right && (exportedLeft == "default") != (exportedRight == "default") do
+    throw "expected a default and a named import from different fixed providers"
+  let defaultProvider := if exportedLeft == "default" then left else right
+  let namedProvider := if exportedLeft == "default" then right else left
+  let namedExport := if exportedLeft == "default" then exportedRight else exportedLeft
+  let some leaf := fixed.find? (·.name == defaultProvider) | throw "missing default provider"
+  let some provider := fixed.find? (·.name == namedProvider) | throw "missing named provider"
+  unless fixed.length == 2 && fixed.all (fun m => m.imports.isEmpty) do
+    throw "expected exactly two closed fixed providers"
+  let [(_, .funDecl (.mk name .normal _ [] []))] := leaf.body |
+    throw "expected an empty hoisted function in the default provider"
+  unless leaf.exports == [("default", name)] do throw "expected the default provider's own function"
+  let [(_, .funDecl supplied), (_, .funDecl ctor), (_, write), (_, .funDecl factory)] := provider.body |
+    throw "expected two declarations, a prototype write and a default factory in the named provider"
+  unless provider.exports == [(supplied.name, supplied.name), (ctor.name, ctor.name), ("default", factory.name)] &&
+      supplied.name == namedExport && [supplied, ctor, factory].all concreteHoist &&
+      prototypeWrite ctor.name [] write do
+    throw "named provider's function and prototype must lower concretely"
+  let [(ctorId, .funDecl ctor), (writeId, write), (factoryId, .funDecl factory)] := original.body |
+    throw "expected a hoisted constructor, a prototype write and the default factory"
+  unless original.exports == [("default", factory.name)] && [ctor, factory].all concreteHoist &&
+      prototypeWrite ctor.name [localLeft, localRight] write do
+    throw "expected a private constructor with a concrete prototype and a public default factory"
+  unless request.claimants B ctorId == [helper] && request.claimants B writeId == [helper] &&
+      request.claimants B factoryId == [request.entry] do
+    throw "the private constructor and prototype must move together; moving the write alone exposes the constructor"
+
+inductive Family where
+  | primitive
+  | nodePrototype
+  deriving BEq
+
 def construct (source : LinkedInput.DecodedSource) (fixedSources : List LinkedInput.DecodedSource)
-    (request : EsmSplit.Spec) : Except String Construction := do
+    (request : EsmSplit.Spec) (family : Family := .primitive) : Except String Construction := do
   unless fixedSources.length >= 2 do
     throw "expected at least two fixed source modules"
   let [helper] := request.order | throw "expected exactly one authored helper"
@@ -80,13 +133,25 @@ def construct (source : LinkedInput.DecodedSource) (fixedSources : List LinkedIn
   let fixedNames := fixed.map (·.name)
   let paths := request.entry :: helper :: fixedNames
   EsmSplit.validateModulePaths paths
-  unless paths.Nodup && paths.all (·.endsWith ".mjs") do
-    throw "expected distinct .mjs module routes"
-  for decoded in source :: fixedSources do
-    checkSource decoded
+  unless paths.Nodup do
+    throw "expected distinct module routes"
+  match family with
+  | .primitive =>
+    unless paths.all (·.endsWith ".mjs") do
+      throw "expected .mjs module routes"
+    for decoded in source :: fixedSources do
+      checkSource decoded
+  | .nodePrototype =>
+    unless helper.endsWith ".mjs" && (request.entry :: fixedNames).all (·.endsWith ".js") do
+      throw "expected original .js files and one .mjs helper"
+    for decoded in source :: fixedSources do
+      unless !decoded.hasTemplates && completeSource decoded do
+        throw s!"{decoded.source.name}: expected every original row and no template sites"
   let before : Program := { entry := source.source.name, modules := source.source :: fixed }
   checkOrder before
   let B := EsmSplit.LowerSplit.sourceBundle source.nodes
+  if family == .nodePrototype then
+    checkPrototype source fixed request B helper
   unless
     (List.range source.nodes.size).all
       (fun id =>
@@ -114,7 +179,7 @@ def construct (source : LinkedInput.DecodedSource) (fixedSources : List LinkedIn
   unless program.evalOrder == before.evalOrder.dropLast ++ request.order ++ [request.entry] do
     throw
         "output does not keep the fixed dependency order followed by the authored helper and entry"
-  unless ordinaryModuleGraph before && ordinaryModuleGraph program do
+  if family == .primitive && !(ordinaryModuleGraph before && ordinaryModuleGraph program) then
     throw "expected reads only from named imports and earlier const declarations"
   let assignment := moved ++ fixed.flatMap Module.unitPlacements
   let ⟨places⟩ ← checkPlaces assignment before program

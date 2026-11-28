@@ -149,7 +149,7 @@ function checkOutput(manifestPath, dir, checkedPath) {
   for (const [name, sourceText] of Object.entries(providers)) {
     const bytes = fs.readFileSync(actual[name]);
     if (!bytes.equals(Buffer.from(sourceText))) throw new Error(`provider ${name} differs from the source graph`);
-    if (parseProviders) files[name] = linkedProgram(utf8.decode(bytes));
+    if (parseProviders && /\.m?js$/.test(name)) files[name] = linkedProgram(utf8.decode(bytes));
   }
   writeJson(checkedPath, { files, grouped });
 }
@@ -234,6 +234,42 @@ function readNodePackage(dir, result, entry, provider, caller) {
   });
 }
 
+// This root supplies only the format premise for three declared .js files.
+function readNodeEsmRoot(dir, requests, result) {
+  const root = canonicalDirectory(dir);
+  const names = readJson(requests);
+  if (
+    !Array.isArray(names) ||
+    names.length !== 3 ||
+    new Set(names).size !== 3 ||
+    !names.every(
+      (name) =>
+        typeof name === "string" &&
+        name.endsWith(".js") &&
+        name.split("/").every((part) => /^[A-Za-z0-9_.~-]+$/.test(part) && ![".", "..", "node_modules"].includes(part))
+    )
+  )
+    throw new Error("expected three distinct local .js routes");
+  const packageFile = path.join(root, "package.json");
+  if (!fs.lstatSync(packageFile, { throwIfNoEntry: false })?.isFile())
+    throw new Error("expected a regular package.json at node_esm_root");
+  const manifest = utf8.decode(fs.readFileSync(packageFile));
+  if (JSON.parse(manifest)?.type !== "module") throw new Error('package.json must explicitly declare "type": "module"');
+  const files = Object.fromEntries(
+    names.map((name) => {
+      const file = outputPath(root, name);
+      if (!fs.lstatSync(file, { throwIfNoEntry: false })?.isFile() || fs.realpathSync(file) !== file)
+        throw new Error(`expected a canonical regular .js file: ${name}`);
+      for (let at = path.dirname(file); at !== root; at = path.dirname(at)) {
+        if (fs.lstatSync(path.join(at, "package.json"), { throwIfNoEntry: false }))
+          throw new Error(`nested package scope is unsupported: ${name}`);
+      }
+      return [name, readProgram(file, linkedProgram)];
+    })
+  );
+  writeJson(result, { manifest, files });
+}
+
 function checkNodePackageDestination(source, destination, scratch, mode) {
   const root = canonicalDirectory(source);
   const out = path.resolve(destination);
@@ -279,6 +315,8 @@ try {
   } else if (mode === "--read-node-package") {
     const [entry, provider, caller, root, result] = args;
     readNodePackage(root, result, entry, provider, caller);
+  } else if (mode === "--read-node-esm-root") {
+    readNodeEsmRoot(...args);
   } else if (mode === "--check-node-package-destination") {
     const [readback, source, destination, scratch] = args;
     checkNodePackageDestination(source, destination, scratch, readback);
