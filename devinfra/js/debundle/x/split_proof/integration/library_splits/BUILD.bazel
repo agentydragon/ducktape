@@ -48,19 +48,40 @@ js_test(
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
 )
 
+_ZOD_V3_DATA = [
+    "zod_v3_static_graph/consumer.mjs",
+    "zod_v3_static_graph/split.json",
+    ":node_modules/acorn",
+    ":node_modules/zod",
+    "//devinfra/js/debundle/x/split_proof:lowersplit",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+]
+
 js_test(
     name = "zod_v3_static_graph_test",
     size = "small",
-    data = [
-        "zod_v3_static_graph/consumer.mjs",
-        "zod_v3_static_graph/split.json",
-        ":node_modules/acorn",
-        ":node_modules/zod",
-        "//devinfra/js/debundle/x/split_proof:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
-    ],
+    data = _ZOD_V3_DATA,
     entry_point = "zod_v3_static_graph_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
+)
+
+js_test(
+    name = "zod_v3_linked_diagnostic",
+    size = "medium",
+    args = ["--linked-diagnostic"],
+    data = _ZOD_V3_DATA + [
+        "zod_v3_static_graph/diagnostic.mjs",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "zod_v3_static_graph_test.mjs",
+    env = {
+        "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+    },
+    tags = ["manual"],
 )
 
 js_binary(
