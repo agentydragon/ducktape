@@ -2260,6 +2260,7 @@ test_runner(
         ":corejs_checked_split",
         ":corejs_dynamic_imports",
         ":corejs_entry_exports",
+        ":corejs_heritage_certificate",
         ":corejs_indexed_inline_constructor",
         ":corejs_link_world",
         ":corejs_linked_input",

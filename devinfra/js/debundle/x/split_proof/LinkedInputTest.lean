@@ -3,6 +3,7 @@ import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.DynamicImports
 import EsmSplit.CoreJS.EntryExports
+import EsmSplit.CoreJS.HeritageCertificate
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.LinkedInput
@@ -430,6 +431,28 @@ private def moduleDiagnostic (input : Json) : Except String Json := do
                   (if m.imports.isEmpty then [("isolatedExecution", dependencyFreeProbe m)]
                   else []))))]
 
+/-- Exercise the class move theorem with authenticated linked lowering of the
+whole original. Local export lists are metadata and stay in the entry. -/
+private def heritagePlan (input : Json) : Except String Json := do
+  let ast ← input.getObjVal? "source"
+  let text ← ast.getObjValAs? String "sourceText"
+  let request ← EsmSplit.parseSpec (← input.getObjVal? "spec")
+  let decoded ← CoreJS.AuthenticatedSource.decodeIndexedSource ast text request.entry
+  let ss := decoded.sourceItems.map fun
+    | .executable _ s => s
+    | _ => .block []
+  let B := EsmSplit.LowerSplit.sourceBundle decoded.nodes
+  let P := EsmSplit.mkPlan B request
+  let inversions := P.execOrder.flatMap fun i =>
+    ((P.execOrder.dropWhile (· != i)).drop 1).filterMap fun j =>
+      if j < i then some (i, j) else none
+  return Json.mkObj [
+    ("inversions", toJson inversions),
+    ("valid", toJson (decide (EsmSplit.Valid B request P))),
+    ("footprints", toJson (decide (CoreJS.FootprintsOfSyntax ss B))),
+    ("ordinaryMoves", toJson (CoreJS.certifiedMovesOk ss B P.execOrder)),
+    ("heritageMoves", toJson (CoreJS.heritageMovesOk ss B P.execOrder))]
+
 private def starMetadata (input : Json) : Except String Json := do
   let graph ← CoreJS.StaticStarExports.resolve (← input.getObjVal? "files")
   let queries ← input.getObjValAs? (List (String × String)) "queries"
@@ -509,6 +532,8 @@ private def fixtures (input : Json) : Except String Json := do
                 pure (starReadback (← fixture.getObjVal? "input"))
               | "deploymentDiagnostic" =>
                 pure (deploymentDiagnostic (← fixture.getObjVal? "input"))
+              | "heritagePlan" =>
+                pure (heritagePlan (← fixture.getObjVal? "input"))
               | "moduleDiagnostic" =>
                 pure (moduleDiagnostic (← fixture.getObjVal? "input"))
               | "singletonSourceShape" =>
