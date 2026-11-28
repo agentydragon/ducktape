@@ -106,7 +106,7 @@ assert.equal(ordinary.status, 0, ordinary.stdout + ordinary.stderr);
 const full = JSON.parse(readFileSync(report, "utf8"));
 assert.equal(full.id, id);
 assert.equal(full.outcome, "certified");
-assert.deepEqual(full.emission, { guarantee: "normal-completion", scope: "retained-tail" });
+assert.deepEqual(full.emission, { guarantee: "all-outcomes", scope: "retained-tail" });
 assert.deepEqual(full.disk, full.emission);
 // The ordinary adapter still does not observe authored non-entry namespaces
 // or full-tree syntax. Do not call this a complete authored behavior pass.

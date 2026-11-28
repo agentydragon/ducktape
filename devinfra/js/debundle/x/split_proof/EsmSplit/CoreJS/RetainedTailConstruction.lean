@@ -74,7 +74,7 @@ def construct (nodes : Array Json) (request : Spec) : Except String (Constructio
   let assignment := plan.mods.flatMap fun m =>
     (m.stmts.filter fun id => id < pivots.length + 1).map (·, m.name)
   let ⟨places⟩ ← checkPlaces assignment before after
-  let certificate ← (checkStructuralSchedule [] before after (Std.HashSet.ofList pivots)).mapError
+  let certificate ← (checkStructuralSchedule [] before after (Std.HashSet.ofList pivots) (exactProjectedSwap := true)).mapError
     StructuralRefusal.reason
   return ⟨before, after, plan, rfl, pivots, selected, owners, places, certificate⟩
 

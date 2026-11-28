@@ -22,7 +22,7 @@ assert.equal(result.status, 0, result.stdout + result.stderr);
 const row = JSON.parse(readFileSync(report, "utf8"));
 assert.equal(row.id, id);
 assert.equal(row.outcome, "certified");
-assert.deepEqual(row.emission, { scope: "retained-tail", guarantee: "normal-completion" });
+assert.deepEqual(row.emission, { scope: "retained-tail", guarantee: "all-outcomes" });
 assert.deepEqual(row.disk, row.emission);
 assert.equal(row.behavior, "pass");
 assert.deepEqual(
@@ -39,11 +39,45 @@ const manifest = writeDeployment(source, request, published);
 const readback = run(process.env.LOWERSPLIT, [manifest, published, "--check-output"]);
 assert.equal(readback.status, 0, readback.stdout + readback.stderr);
 
-// A stronger guarantee must not silently reuse the normal-completion proof.
-const stronger = path.join(stage, "stronger");
-const refuse = run(process.env.LOWERSPLIT, [manifest, stronger, "--require", "all-outcomes"]);
-assert.equal(refuse.status, 1, refuse.stdout + refuse.stderr);
-assert.equal(existsSync(stronger), false);
+const worldTest = (original, spec, output, firstCapture) => {
+  const result = run(process.env.RETAINED_TAIL_WORLD_TEST, [original, spec, output, firstCapture]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+};
+worldTest(source, request, published, "1");
+
+const fragment = "emission/lowering/split_declarator_fragments/spec";
+const second = run(process.execPath, [runner, "--certify", "--filter", fragment, "--out", report, "--keep", keep]);
+assert.equal(second.status, 0, second.stdout + second.stderr);
+const fragmentRow = JSON.parse(readFileSync(report, "utf8"));
+assert.equal(fragmentRow.id, fragment);
+assert.equal(fragmentRow.outcome, "certified");
+assert.deepEqual(fragmentRow.emission, row.emission);
+assert.deepEqual(fragmentRow.disk, row.emission);
+const fragmentStage = path.join(keep, fragment);
+worldTest(
+  path.join(fragmentStage, "static/app.js"),
+  path.join(fragmentStage, "certificate-spec.json"),
+  path.join(fragmentStage, "certified"),
+  "3"
+);
+
+// Exercise the explicit stronger request on both saved deployments.
+for (const [dir, input, spec] of [
+  [stage, source, request],
+  [fragmentStage, path.join(fragmentStage, "static/app.js"), path.join(fragmentStage, "certificate-spec.json")],
+]) {
+  const strong = path.join(dir, "all-outcomes");
+  const deployment = writeDeployment(input, spec, strong);
+  const requestStrong = run(process.env.LOWERSPLIT, [deployment, strong, "--require", "all-outcomes"]);
+  assert.equal(requestStrong.status, 0, requestStrong.stdout + requestStrong.stderr);
+  const rereadStrong = run(process.env.LOWERSPLIT, [deployment, strong, "--require", "all-outcomes", "--check-output"]);
+  assert.equal(rereadStrong.status, 0, rereadStrong.stdout + rereadStrong.stderr);
+  for (const result of [requestStrong, rereadStrong]) {
+    const verdict = JSON.parse(result.stdout);
+    assert.equal(verdict.guarantee, "all-outcomes");
+    assert.equal(verdict.every_ending_matches, true);
+  }
+}
 
 // Retaining the statement's shape without its original argument is not enough.
 const text = readFileSync(emittedEntry, "utf8");
@@ -56,7 +90,7 @@ writeFileSync(emittedEntry, wrong);
 const mutatedRun = run(process.execPath, [emittedEntry]);
 assert.equal(mutatedRun.status, 0, mutatedRun.stderr);
 assert.equal(mutatedRun.stdout, "42 42 42 x\n");
-const failed = run(process.env.LOWERSPLIT, [manifest, published, "--check-output"]);
+const failed = run(process.env.LOWERSPLIT, [manifest, published, "--require", "all-outcomes", "--check-output"]);
 assert.equal(failed.status, 1, failed.stdout + failed.stderr);
 assert.equal(JSON.parse(failed.stdout).status, "rejected");
 assert.equal(readFileSync(emittedEntry, "utf8"), wrong);
@@ -74,6 +108,6 @@ const wrongSpec = path.join(stage, "wrong-spec.json");
 writeFileSync(wrongSpec, JSON.stringify(chosen));
 const absent = path.join(stage, "wrong-placement");
 const wrongManifest = writeDeployment(source, wrongSpec, absent);
-const wrongOwner = run(process.env.LOWERSPLIT, [wrongManifest, absent]);
+const wrongOwner = run(process.env.LOWERSPLIT, [wrongManifest, absent, "--require", "all-outcomes"]);
 assert.equal(wrongOwner.status, 1, wrongOwner.stdout + wrongOwner.stderr);
 assert.equal(existsSync(absent), false);

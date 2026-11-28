@@ -515,16 +515,15 @@ private def step (p : Facts) (recordPivots : Std.HashSet Nat) : (u : LinkedUnit)
 private def normalize (recordPivots : Std.HashSet Nat) (p : Facts) (units : List LinkedUnit) :
     (result : List LinkedUnit) ×
       PLift
-        (∀ {w} n (s final : State w),
-          Holds p s → (runUnits n units s = .ok () final ↔ runUnits n result s = .ok () final)) :=
+        (∀ {w} n (s : State w), Holds p s → runUnits n units s = runUnits n result s) :=
   match units with
-  | [] => ⟨[], ⟨fun _ _ _ _ => Iff.rfl⟩⟩
+  | [] => ⟨[], ⟨fun _ _ _ => rfl⟩⟩
   | u :: rest =>
     let a := step p recordPivots u
     let ⟨tail, ⟨ih⟩⟩ := normalize recordPivots a.after rest
     ⟨(u.id, a.stmt, u.env) :: tail,
       ⟨by
-        intro w n s final hs
+        intro w n s hs
         obtain ⟨id, st, env⟩ := u
         have eqv : runUnit (W := w) n env id st s = runUnit n env id a.stmt s := by
           simp only [runUnit, inRegion, M.bind_apply, modifyState, a.same n _ (hs.region _)]
@@ -532,19 +531,27 @@ private def normalize (recordPivots : Std.HashSet Nat) (p : Facts) (units : List
         cases h : runUnit n env id st s with
         | ok f t =>
           obtain ⟨mid, exec, rfl⟩ := runUnit_ok h
-          exact ih n _ final ((a.post n _ _ f (hs.region _) exec).region 0)
+          exact ih n _ ((a.post n _ _ f (hs.region _) exec).region 0)
         | _ => rfl⟩⟩
 
 /-- This proof concerns the actual linked units. It starts with no object
-facts. The probe only supplies domains of cells allocated by linking. -/
-def prepare (recordPivots : Std.HashSet Nat) (ready : State World.probe) (units : List LinkedUnit) :
-    (result : List LinkedUnit) ×
-      PLift
-        (∀ w n (final : State w),
-          runUnits n units (LinkedBehavior.linkState w ready) = .ok () final ↔
-            runUnits n result (LinkedBehavior.linkState w ready) = .ok () final) :=
+facts. The probe only supplies domains of cells allocated by linking.
+Projection preserves every bounded result, including abrupt completion. -/
+def prepareExact (recordPivots : Std.HashSet Nat) (ready : State World.probe)
+    (units : List LinkedUnit) :
+    (result : List LinkedUnit) × PLift (∀ w n,
+      runUnits n units (LinkedBehavior.linkState w ready) =
+        runUnits n result (LinkedBehavior.linkState w ready)) :=
   let p : Facts := ⟨fun c => (ready.cellAt c).isSome, []⟩
   let ⟨result, ⟨proof⟩⟩ := normalize recordPivots p units
-  ⟨result, ⟨fun w n final => proof n _ final ⟨fun _ h => h, by simp [p]⟩⟩⟩
+  ⟨result, ⟨fun w n => proof n _ ⟨fun _ h => h, by simp [p]⟩⟩⟩
+
+def prepare (recordPivots : Std.HashSet Nat) (ready : State World.probe)
+    (units : List LinkedUnit) :
+    (result : List LinkedUnit) × PLift (∀ w n (final : State w),
+      runUnits n units (LinkedBehavior.linkState w ready) = .ok () final ↔
+        runUnits n result (LinkedBehavior.linkState w ready) = .ok () final) :=
+  let ⟨result, ⟨proof⟩⟩ := prepareExact recordPivots ready units
+  ⟨result, ⟨fun w n _ => by rw [proof w n]⟩⟩
 
 end CoreJS.PrefixProjection

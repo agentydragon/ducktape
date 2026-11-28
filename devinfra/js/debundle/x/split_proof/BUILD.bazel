@@ -1068,9 +1068,20 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_exact_projected_swap",
+    srcs = ["EsmSplit/CoreJS/ExactProjectedSwap.lean"],
+    deps = [
+        ":corejs_cell_footprint",
+        ":corejs_linked_pivot_check",
+        ":corejs_prefix_projection",
+    ],
+)
+
+lean_library(
     name = "corejs_linked_pivot_certificate",
     srcs = ["EsmSplit/CoreJS/LinkedPivotCertificate.lean"],
     deps = [
+        ":corejs_exact_projected_swap",
         ":corejs_hidden_region",
         ":corejs_link_world",
         ":corejs_linked_pivot_check",
@@ -1758,6 +1769,17 @@ lean_library(
         ":corejs_syntax_match",
         ":lowersplit_input",
         ":ordered_const_syntax",
+    ],
+)
+
+test_runner(
+    name = "retained_tail_world_test_runner",
+    src = "RetainedTailWorldTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_retained_tail_construction",
+        ":lowersplit_input",
     ],
 )
 

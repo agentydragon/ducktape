@@ -43,15 +43,36 @@ bbr test "$p:ordinary_certification_test" "$p:corpus_certificate_test"
 bb run "$p:debundle_cases" -- --certify --out "$out/certificates.jsonl"
 ```
 
-The retained-tail constructor admits the unchanged comma-list placement in
-`realizability/comma_list_split_does_not_invent_cross_module_cycle/spec`. The
-source and priority determine the graph; Lean checks its primitive declaration
-schedule and preserves the original final operation, captures, and public
-live cells without a host profile. Its normal-completion verdict is independently
-rechecked from disk, and it passes all its authored observations. The same
-constructor admits `emission/lowering/split_declarator_fragments/spec`, but the
-ordinary adapter still cannot report a complete observation pass for its two
-non-entry namespace assertions and full-tree syntax check.
+The retained-tail constructor proves all modeled outcomes for the unchanged
+comma-list and declaration-fragments placements. Their respective executable
+orders change from `0,1,2,3,4,5` to `0,2,1,3,4,5` and from `0,1,2,3,4`
+to `0,1,3,2,4`. Each is one adjacent swap of primitive declarations. For
+declaration fragments, the checker proves the numeric operands read their
+already initialized cells; the proof expression retains the original
+arithmetic and its fuel cost.
+
+The regular move checker relates successful final states only. For instance,
+two reversed throws can have no successful states and still throw different
+values ([control](../EsmSplit/CoreJS/LiteralSwapCheck.lean)). The exact route
+checks a narrower move: if either initializer exhausts its bound, both
+schedules return the same state-free CoreJS fuel result. If both finish, their
+writes to distinct cells commute. The unchanged suffix then reaches the same
+world conversation with equal state, receiver, ordinal and capture cells.
+The proof holds for every world in the existing model and requires no console
+profile or assumption that the call returns normally. It does not promise
+the state lost at fuel exhaustion, or assert the host implementation of
+JavaScript console. An unsupported move may still qualify for the existing
+normal-completion rule. An explicit all-outcomes request requires the stronger
+proof before publication.
+
+Both saved placements are emitted and reread under an explicit all-outcomes
+request. The model regression runs each parsed original and reread output
+against worlds that read an actual capture, allocate and mutate an object,
+and then return, throw, or report an unknown operation. It also checks low
+fuel and rejects a changed capture or dependency-breaking order. The comma-list
+placement passes all its authored observations. Declaration fragments'
+two non-entry namespace observations and full-tree syntax check are a separate
+adapter concern.
 
 The separate `corpus_certificate_test` requires a compiled constructor to emit a supported placement. It checks its live export in Node, rechecks the files, and rejects a tampered provider and a wrong owner. The [historical structural report](https://github.com/agentydragon/ducktape/blob/c42cc83cf15aa5bf544ca998624af8932b2370ef/devinfra/js/debundle/x/split_proof/debundle_cases/results/certificates.jsonl) records earlier results under different proof rules.
 
