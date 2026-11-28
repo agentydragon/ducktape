@@ -144,6 +144,59 @@ _LIBRARY_VARIANTS = _LIBRARY_CERT_VARIANTS + [
     for variant in _LIBRARY_VARIANTS
 ]
 
+_CENSUS_EXTRA = [
+    "acorn.min",
+    "lodash.min",
+    "semver.min",
+    "zod.min",
+]
+
+[
+    js_run_binary(
+        name = "prepare_" + variant,
+        outs = ["real_bundles/" + variant + ext for ext in [
+            ".mjs",
+            ".json",
+        ]],
+        args = [
+            "real_bundles",
+            variant,
+        ],
+        chdir = package_name(),
+        tool = ":prepare",
+    )
+    for variant in _CENSUS_EXTRA
+]
+
+_CENSUS_SOURCES = [":real_bundles/" + variant + ".mjs" for variant in _LIBRARY_VARIANTS + _CENSUS_EXTRA]
+
+js_test(
+    name = "full_blocker_census",
+    size = "large",
+    timeout = "long",
+    args = ["$(rootpath " + src + ")" for src in _CENSUS_SOURCES],
+    data = _CENSUS_SOURCES + glob(["results/*.jsonl"]) + [
+        "gen_spec.mjs",
+        "smoke.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof:corejs",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "full_blocker_census.mjs",
+    env = {
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof:corejs)",
+        "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+    },
+    tags = ["manual"],
+)
+
 _LIBRARY_SOURCES = [":real_bundles/" + variant + ".mjs" for variant in _LIBRARY_CERT_VARIANTS]
 
 js_test(
