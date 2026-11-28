@@ -571,22 +571,6 @@ rec {
     };
   };
 
-  # Skills data: $out/share/claude-hooks/skills/<name>/. Each skill ships as its
-  # own `skill-<name>` release artifact (registry: skills/skills_registry.json);
-  # each `.skill` zip is already rooted under `<name>/`.
-  skills =
-    let
-      registry = builtins.fromJSON (builtins.readFile ../../skills/skills_registry.json);
-      skillList = builtins.filter (
-        skill: (skill.nix or true) && builtins.hasAttr "skill-${skill.name}" artifacts
-      ) registry.skills;
-    in
-    pkgs.runCommand "claude-hooks-skills" { nativeBuildInputs = [ pkgs.libarchive ]; } (
-      "mkdir -p $out/share/claude-hooks/skills\n"
-      + lib.concatMapStringsSep "\n" (
-        s: "bsdtar -xf ${artifacts."skill-${s.name}"} -C $out/share/claude-hooks/skills"
-      ) skillList
-    );
 }
 // lib.optionalAttrs (artifacts ? debundle) {
   inherit debundle;

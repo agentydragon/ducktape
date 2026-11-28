@@ -17,9 +17,30 @@
   devToolPackages,
 }:
 
+let
+  # Skills data: $out/share/claude-hooks/skills/<name>/. Each skill ships as its
+  # own `skill-<name>` release artifact (registry: skills/skills_registry.json);
+  # each `.skill` zip is already rooted under `<name>/`. Outside the devshell
+  # flake (it reads skills/), and kept out of the devShell: every skill-* pin
+  # bump would otherwise invalidate it.
+  skills =
+    let
+      registry = builtins.fromJSON (builtins.readFile ../../skills/skills_registry.json);
+      skillList = builtins.filter (
+        skill: (skill.nix or true) && builtins.hasAttr "skill-${skill.name}" artifacts
+      ) registry.skills;
+    in
+    pkgs.runCommand "claude-hooks-skills" { nativeBuildInputs = [ pkgs.libarchive ]; } (
+      "mkdir -p $out/share/claude-hooks/skills\n"
+      + pkgs.lib.concatMapStringsSep "\n" (
+        s: "bsdtar -xf ${artifacts."skill-${s.name}"} -C $out/share/claude-hooks/skills"
+      ) skillList
+    );
+in
 ducktapePkgs
 // gafferPkgs
 // {
+  inherit skills;
   github-actions-ci-image = import ../../devinfra/ci/github_actions_image.nix {
     inherit pkgs;
     inherit (ducktapePkgs) bb bbapi;
@@ -37,7 +58,9 @@ ducktapePkgs
   # Default: Rust claude-hook plus Python statusline.
   devtools = pkgs.symlinkJoin {
     name = "ducktape-devtools";
-    paths = devToolPackages ++ localOnlyPackages;
+    # web_setup.sh (profile mode) and Haku's env_setup.sh symlink skills from
+    # share/claude-hooks/skills.
+    paths = devToolPackages ++ localOnlyPackages ++ [ skills ];
   };
   # BuildBuddy runner VM tools: Bazel via Bazelisk, bazel-diff, and bb for
   # best-effort CI diagnostics. Pre-commit runs in a separate GitHub workflow.

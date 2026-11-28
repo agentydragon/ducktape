@@ -146,6 +146,9 @@ jobs:
                 .#checks.x86_64-linux.codex-execpolicy-evaluation \
                 .#checks.x86_64-linux.gemini-cli-integration
 
+          - name: Check flake.lock follows nix/flake.lock
+            run: nix build --no-link .#checks.x86_64-linux.devshell-lock-sync
+
           - name: Build artifacts from source
             uses: ./.github/actions/bb-remote
             with:

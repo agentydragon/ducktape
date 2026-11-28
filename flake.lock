@@ -32,9 +32,26 @@
         "type": "github"
       }
     },
+    "devshell": {
+      "inputs": {
+        "fenix": "fenix",
+        "nixpkgs": "nixpkgs",
+        "nixpkgs-unstable": "nixpkgs-unstable"
+      },
+      "locked": {
+        "path": "./nix",
+        "type": "path"
+      },
+      "original": {
+        "path": "./nix",
+        "type": "path"
+      },
+      "parent": []
+    },
     "fenix": {
       "inputs": {
         "nixpkgs": [
+          "devshell",
           "nixpkgs"
         ],
         "rust-analyzer-src": "rust-analyzer-src"
@@ -292,7 +309,7 @@
     },
     "nix-openclaw-tools": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs_2"
       },
       "locked": {
         "lastModified": 1790151707,
@@ -332,16 +349,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1792812153,
-        "narHash": "sha256-T2+XBfNbf9pecLUWS4+RtuVNZ3W8K5taG5QdV71mWlk=",
+        "lastModified": 1794756927,
+        "narHash": "sha256-IfuPcOpwC+bYvBdtUhA9hHhY7xV7k9T5LeOTZFiJB4o=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "674a2028661e550a97400c1cc992b9cca9a668a1",
+        "rev": "b349185bb79c7cf7ad8ea8c097931730bf473c71",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixpkgs-unstable",
+        "ref": "nixos-26.05",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -427,16 +444,16 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1794756927,
-        "narHash": "sha256-IfuPcOpwC+bYvBdtUhA9hHhY7xV7k9T5LeOTZFiJB4o=",
+        "lastModified": 1792812153,
+        "narHash": "sha256-T2+XBfNbf9pecLUWS4+RtuVNZ3W8K5taG5QdV71mWlk=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "b349185bb79c7cf7ad8ea8c097931730bf473c71",
+        "rev": "674a2028661e550a97400c1cc992b9cca9a668a1",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixos-26.05",
+        "ref": "nixpkgs-unstable",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -508,16 +525,26 @@
     "root": {
       "inputs": {
         "claude-plugins-official": "claude-plugins-official",
-        "fenix": "fenix",
+        "devshell": "devshell",
+        "fenix": [
+          "devshell",
+          "fenix"
+        ],
         "home-manager": "home-manager",
         "nix-colors": "nix-colors",
         "nix-fast-build": "nix-fast-build",
         "nix-on-droid": "nix-on-droid",
         "nix-openclaw": "nix-openclaw",
         "nixGL": "nixGL",
-        "nixpkgs": "nixpkgs_2",
+        "nixpkgs": [
+          "devshell",
+          "nixpkgs"
+        ],
         "nixpkgs-master": "nixpkgs-master",
-        "nixpkgs-unstable": "nixpkgs-unstable",
+        "nixpkgs-unstable": [
+          "devshell",
+          "nixpkgs-unstable"
+        ],
         "siderolabs-docs": "siderolabs-docs",
         "sops-nix": "sops-nix"
       }

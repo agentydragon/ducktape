@@ -1,6 +1,8 @@
 # Devshell (direnv) activation slowness
 
-Open investigation. Symptom: after `git pull`, direnv stalls on `copying '/home/agentydragon/code/ducktape/' to the store`, often tens of seconds.
+**Status:** options C + E implemented — `.envrc` loads the devshell flake at `nix/` as `path:./nix`. Scratch worktree on wyrm2, 2026-11-27: first activation 5.96 s (was 37.5 s), cache hit 0.28 s, edits outside `nix/` no longer reload. Delete this note once that holds in daily use.
+
+Symptom: after `git pull`, direnv stalls on `copying '/home/agentydragon/code/ducktape/' to the store`, often tens of seconds.
 
 ## Problem
 
@@ -99,6 +101,8 @@ Our flake's inputs are all remote (`github:`), so #837's temp copy covers them. 
 
 ### C. `path:` sub-flake for the devshell
 
+Implemented: `nix/flake.nix` + `nix/flake.lock`; shared `nix/flake/package_sets.nix`; root `nixpkgs`/`nixpkgs-unstable`/`fenix` follow `devshell/…`. Relative `path:` inputs lock by path only, but the root lock keeps its own copy of the followed nodes until `nix flake update devshell` → `checks.devshell-lock-sync` (CI: `nix-wheel-check.yml`) fails on drift.
+
 Feasible file-wise today: see [What the flake reads outside `nix/`](#what-the-flake-reads-outside-nix).
 
 `.envrc`: `use flake path:./nix/flake` (the `path:` prefix is required; bare `./nix/flake` resolves to the git repo). Source = that directory only, including untracked/ignored files there; it cannot read outside it.
@@ -106,7 +110,7 @@ Feasible file-wise today: see [What the flake reads outside `nix/`](#what-the-fl
 - Must move inside: devshell definition (`nix/flake/devtools.nix`), `nix/packages/**`, pins, and `skills/skills_registry.json` (or drop `skills` from the devshell, see E).
 - `skills/skills_registry.json` is cheap to relocate (e.g. under `nix/`); few readers, all repo-internal:
   - CI: `devinfra/ci/release_assets.py` (`load_releases`, one `skill-<name>` release per entry; `--skills-registry` default), `devinfra/ci/plan_releases.py` (`--skills-registry` default; `release.yml`), `devinfra/ci/artifacts.py` (`skills_registry_path()`), `devinfra/ci/BUILD.bazel` data deps, `skills/BUILD.bazel` `exports_files`, `devinfra/ci/test_plan_releases.py`.
-  - Nix: `flake.nix` (`skillsUnpacked` → `skills-tar` → `nix/home/skills.nix`), `nix/packages/default.nix` (`ducktapePkgs.skills` → `devtools` profile).
+  - Nix: `flake.nix` (`skillsUnpacked` → `skills-tar` → `nix/home/skills.nix`), `nix/flake/packages.nix` (`skills` → `devtools` profile).
   - Path trigger: `.github/workflows/buildbuddy-remote-runner-image.yml`.
   - Docs: `skills/{README,TODO}.md`, `skills/ground_skill/SKILL.md`, `release.yml` header comment.
 - `nix/artifact-pins.json` non-Nix readers to repoint: `.github/workflows/{bazel-ci,pr-visuals-publish}.yml`, `devinfra/ci/{artifacts,sync_pins,prune_releases}.py`, image path triggers (`devinfra/ci/nix_images.json`, `.github/workflows/{nix-images,buildbuddy-remote-runner-image}.yml`), docs.
@@ -125,7 +129,7 @@ Feasible file-wise today: see [What the flake reads outside `nix/`](#what-the-fl
 
 ### E. Fewer misses
 
-- Drop `skills` from the devshell; most pin churn is `skill-*`. Cheap, owner OK with it (draft: #20544): only the `devtools` profile reads
+- Drop `skills` from the devshell; most pin churn is `skill-*`. Done with option C: only the `devtools` profile reads
   `share/claude-hooks/skills` (`web_setup.sh` profile mode, Haku `env_setup.sh` via `agent-haku`); local hosts and claude-web HM use
   `nix/home/skills.nix`. Also stops the devshell reading `skills/skills_registry.json`.
 - Narrow `watch_file`s to what the devshell reads.
