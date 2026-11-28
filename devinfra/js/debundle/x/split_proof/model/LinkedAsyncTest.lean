@@ -31,10 +31,33 @@ private def observe (program : Program) : M World.probe Json := do
           ("noOwnKeys", toJson ([one, two, rejection].all (·.props.isEmpty))),
           ("sharedPrototype", toJson ([one, two, rejection].all (·.proto == some promiseProto)))])
 
+private def observeArrows (program : Program) : M World.probe Json := do
+  let linked ← link program
+  let [(_, env)] := linked | unknown "expected one linked module"
+  runUnits 120 (unitsOf linked)
+  let read := readVar env (W := World.probe)
+  let .obj fn ← read "run" | unknown "expected arrow closure"
+  let callee ← getObj fn
+  let values ← ["first", "second"].mapM fun name => do
+    let .obj result ← read name | unknown "expected promise"
+    let promise ← getObj result
+    let some (.fulfilled (.str value)) := promise.promise | unknown "expected fulfilled string"
+    return value
+  return Json.mkObj [("values", toJson values),
+    ("constructor", toJson (← isConstructor (.obj fn))),
+    ("asyncPrototype", toJson (callee.proto == some asyncFunctionProto)),
+    ("ownPrototype", toJson ((callee.props.lookup (.str "prototype")).isSome))]
+
 private def probe (input : Json) : Except String Json := do
   let program ← LinkedInput.decodeSingletonSource (← input.getObjVal? "source") "fixture.mjs"
   let mode ← input.getObjValAs? String "mode"
-  if mode == "normal" then
+  if mode == "arrows" then
+    match observeArrows program (initialState World.probe program.regions) with
+    | .ok result _ => return result
+    | .unknown msg _ => throw msg
+    | .throw _ _ => throw "arrow call threw synchronously"
+    | .fuel => throw "ran out of fuel"
+  else if mode == "normal" then
     match observe program (initialState World.probe program.regions) with
     | .ok result _ =>
       return result

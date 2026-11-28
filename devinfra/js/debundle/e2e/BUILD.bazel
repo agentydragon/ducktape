@@ -1449,3 +1449,8 @@ debundle_e2e_test(
     env = {"DEBUNDLE_TEST_RESOLVER": "$(rlocationpath //devinfra/js/debundle:debundle_resolve_placement)"},
     deps = ["@crates//:serde_json"],
 )
+
+exports_files(
+    ["cases/emission/syntactic_holes/memoized_sequence_tail/static/app.js"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+)

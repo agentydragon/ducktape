@@ -163,10 +163,12 @@ js_test(
     data = [
         "linked_async_fixture.mjs",
         ":linked_async_test_runner",
+        "//devinfra/js/debundle/e2e:cases/emission/syntactic_holes/memoized_sequence_tail/static/app.js",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "linked_async_differential_test.mjs",
     env = {"LINKED_ASYNC_TEST": "$(rootpath :linked_async_test_runner)"},
+    no_copy_to_bin = ["//devinfra/js/debundle/e2e:cases/emission/syntactic_holes/memoized_sequence_tail/static/app.js"],
 )
 
 test_runner(

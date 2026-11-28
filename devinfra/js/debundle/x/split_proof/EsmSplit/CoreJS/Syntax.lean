@@ -136,16 +136,25 @@ inductive Prim where
   | setPrototypeOf
   deriving DecidableEq, Repr
 
-/-- `normal` can be called and constructed, `method`, `asyncFn` and `arrow` only called, `classCtor` only constructed. -/
+/-- `normal` can be called and constructed, `methods and arrows only called, `classCtor` only constructed. -/
 inductive FuncKind where
   | normal
   | arrow
   | method
   | asyncFn
+  | asyncArrow
   | generator
   | asyncGenerator
   | classCtor
   deriving DecidableEq, Repr
+
+def FuncKind.isArrow : FuncKind → Bool
+  | .arrow | .asyncArrow => true
+  | _ => false
+
+def FuncKind.isAsync : FuncKind → Bool
+  | .asyncFn | .asyncArrow => true
+  | _ => false
 
 /-- The object created for a hoisted function declaration. The world interprets an async
 invocation as a whole, including promise creation, rejection and continuation scheduling. -/
@@ -531,10 +540,10 @@ def Func.free : Func → List Name
   | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
   | .mk name kind self params body | .withDefaults name kind self params _ body =>
     freeFunctionNames (if self then name :: params else params) body
-      ((freeStmts body).filter fun x => kind == .arrow || (x != newTargetName && x != "arguments"))
+      ((freeStmts body).filter fun x => kind.isArrow || (x != newTargetName && x != "arguments"))
   | .withRest name kind self fixed rest body =>
     freeFunctionNames ((if self then name :: fixed else fixed) ++ [rest]) body
-      ((freeStmts body).filter fun x => kind == .arrow || (x != newTargetName && x != "arguments"))
+      ((freeStmts body).filter fun x => kind.isArrow || (x != newTargetName && x != "arguments"))
 def BindingPattern.free : BindingPattern → List Name
   | .name x => [x]
   | .object ps => freeObjectBindings ps

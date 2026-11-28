@@ -175,7 +175,7 @@ theorem callFn_reachFrame_of_steps {r R cells A n} (away : Away r R A)
         · cases h : f.opaqueBody with
           | none =>
             have runBody := run f closed this args caps ht ha
-            by_cases isAsync : (f.kind == .asyncFn) = true
+            by_cases isAsync : f.kind.isAsync = true
             · simpa only [ite_eq_left isAsync] using
                 (AsyncPrefix.invokeBody_reachFrame away promiseProto promiseRoot outside runBody)
             · simpa only [ite_eq_right isAsync] using runBody
@@ -184,7 +184,7 @@ theorem callFn_reachFrame_of_steps {r R cells A n} (away : Away r R A)
             cases refusal with
             | some reason => exact reachFrame_unknown r R cells A _ _
             | none =>
-              have safeThis : SafeVal A (if f.kind == .arrow then closed.this else this) := by
+              have safeThis : SafeVal A (if f.kind.isArrow then closed.this else this) := by
                 split
                 · exact Env.nodes_this caps
                 · exact ht
