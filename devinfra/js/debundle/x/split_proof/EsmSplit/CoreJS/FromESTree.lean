@@ -955,10 +955,15 @@ private partial def linkedExprScoped (profile : HostProfile) (imports : List Nam
     let member := body
     unless (← field member "type") == "MemberExpression" do
       throw "unsupported optional chain"
-    unless ← member.getObjValAs? Bool "optional" do
+    if ← member.getObjValAs? Bool "optional" then
+      let (base, key) ← linkedMember lower member (allowOptional := true)
+      return .getOptional base key
+    let guarded ← member.getObjVal? "object"
+    unless (← field guarded "type") == "MemberExpression" &&
+        (guarded.getObjValAs? Bool "optional").toOption == some true do
       throw "unsupported optional chain"
-    let (base, key) ← linkedMember lower member (allowOptional := true)
-    return .getOptional base key
+    let (base, key) ← linkedMember lower guarded (allowOptional := true)
+    return .getOptionalThen base key (← memberKey lower member)
   | "AssignmentExpression" =>
     let op ← field j "operator"
     let lower := linkedExprScoped profile imports scope ""

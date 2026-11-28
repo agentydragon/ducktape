@@ -99,8 +99,8 @@ private def noClassExprDecidable : (expr : Expr) → Decidable (noClassExpr expr
     | isTrue h => isTrue (by simpa [noClassExpr] using h)
     | isFalse h => isFalse (by simpa [noClassExpr] using h)
   | .undef | .null | .bool _ | .num _ | .str _ | .regexp _ | .var _ | .host _ | .this | .func _ |
-    .spreadArg _ | .derived .. | .get .. | .getSuper _ | .getOptional .. | .hasProp .. |
-    .delete .. | .assign .. | .assignOp .. | .assignLogical .. | .update .. | .call .. |
+    .spreadArg _ | .derived .. | .get .. | .getSuper _ | .getOptional .. | .getOptionalThen .. |
+    .hasProp .. | .delete .. | .assign .. | .assignOp .. | .assignLogical .. | .update .. | .call .. |
     .callMethod .. | .callSuper .. | .callOptionalReceiver .. | .callOptionalCallee .. | .new .. |
     .prim .. | .binary .. | .logical .. | .cond .. | .seq .. => isTrue trivial
 private def noClassAllDecidable : (exprs : List Expr) → Decidable (noClassAll exprs)
@@ -215,6 +215,9 @@ private def replayExprBlockers : Expr → List ReplayBlocker
   | .getSuper key => .other "super-property-read" :: replayExprBlockers key
   | .getOptional object key =>
     .other "optional-property-read" :: replayExprBlockers object ++ replayExprBlockers key
+  | .getOptionalThen object key property =>
+    .other "optional-property-continuation" :: replayExprBlockers object ++ replayExprBlockers key ++
+      replayExprBlockers property
   | .hasProp key object =>
     .other "property-test" :: replayExprBlockers key ++ replayExprBlockers object
   | .delete object key =>

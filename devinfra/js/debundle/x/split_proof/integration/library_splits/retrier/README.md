@@ -34,8 +34,9 @@ decoder first refuse unit 7: `unsupported global Math`. It comes from
 `RetryTask.id = Math.random().toString(36).slice(2)`, even though the observed
 non-retry consumer never constructs a `RetryTask`. A separate direct-unit
 diagnostic exposes earlier bodies that cannot be lowered directly, including
-the optional chain in `debug`, `Date` in `isTimeToRetry`, and `Promise` in
-`createPromise`. Those function declarations can be deferred in the linked
+the ambient `globalThis` root in `debug`, `Date` in `isTimeToRetry`, and
+`Promise` in `createPromise`. The optional member tail now lowers when its
+root is a modeled lexical value. Those function declarations can be deferred in the linked
 classifier; the direct-unit verdicts are not the ordinary CLI verdict or
 proofs of the deferred bodies. The Node observations supply no host or
 checkpoint premises to the splitter.

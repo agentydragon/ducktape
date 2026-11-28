@@ -4748,3 +4748,14 @@ test_runner(
         ":split_files",
     ],
 )
+
+lean_proof_test(
+    name = "corejs_optional_member_continuation_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.Eval"],
+    required_theorems = [
+        "CoreJS.evalExpr_getOptionalThen_skip",
+        "CoreJS.evalExpr_getOptionalThen_throw",
+    ],
+    deps = [":corejs_eval"],
+)

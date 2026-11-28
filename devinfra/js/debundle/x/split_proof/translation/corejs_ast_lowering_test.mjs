@@ -357,23 +357,99 @@ for (const [i, source] of optionalComputedSources.entries()) {
     source
   );
 }
-// A non-optional continuation inside the same chain needs a skipped-value
-// marker; it must remain refused instead of treating an actual undefined as skipped.
+// Keep a chain's short circuit separate from an actual undefined read.
 const continuationSources = [
   'const base = null; base?.["value"].next;',
   'const base = { value: undefined }; base?.["value"].next;',
+  'const base = { value: null }; base?.["value"].next;',
+  'const base = null; (base?.["value"]).next;',
 ];
 const continuations = run(
   continuationSources.map((source) => dumpSource(source)),
   true
 );
 for (const [i, source] of continuationSources.entries()) {
-  assert.equal(continuations[i].end, "malformed");
-  assert.match(continuations[i].detail, /unsupported optional chain/);
+  const [end, detail] = await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#continuation-${i}`);
+  assert.equal(continuations[i].end, end, source);
+  if (end === "throw") {
+    assert.equal(detail, "TypeError");
+    assert.equal(continuations[i].detail, detail, source);
+  }
+}
+
+const optionalTailSources = [
+  `function debug(root) { return root?.process?.env.DEBUG; }
+   console.log(debug(null), debug({ process: null }), debug({ process: { env: { DEBUG: 7 } } }));
+   try { debug({ process: {} }); } catch { console.log("missing env throws"); }`,
+  `let trace = "";
+   function receiver() { trace += "r"; return null; }
+   function key() { trace += "k"; throw 4; }
+   console.log(receiver()?.[key()]?.[key()][key()], trace);`,
+  `let trace = "";
+   function receiver() { trace += "r"; return base; }
+   function key(k) { trace += k; return k; }
+   const env = { get DEBUG() { trace += this === env ? "d" : "x"; return 7; } };
+   const process = { get env() { trace += this === process ? "e" : "x"; return env; } };
+   const base = { get process() { trace += this === base ? "p" : "x"; return process; } };
+   console.log(receiver()?.[key("process")]?.[key("env")][key("DEBUG")], trace);`,
+  `let trace = "";
+   const base = { get process() { trace += this === base ? "p" : "x"; return null; } };
+   function key() { trace += "k"; throw 9; }
+   console.log(base?.process?.[key()][key()], trace);`,
+  `let trace = "";
+   const base = { get env() { trace += this === base ? "e" : "x"; throw 9; } };
+   function key() { trace += "k"; throw 8; }
+   try { base?.env[key()]; } catch (error) { trace += error === 9 ? "t" : "x"; }
+   console.log(trace);`,
+  `let trace = "";
+   const base = { get env() { trace += this === base ? "e" : "x"; return undefined; } };
+   function key() { trace += "k"; return "DEBUG"; }
+   try { base?.env[key()]; } catch { trace += "t"; }
+   console.log(trace);`,
+  `let trace = "";
+   function key() { trace += "k"; return "missing"; }
+   try { false?.[key()].value; } catch { trace += "f"; }
+   try { 0?.[key()].value; } catch { trace += "z"; }
+   try { ""?.[key()].value; } catch { trace += "s"; }
+   console.log(trace);`,
+  `let trace = "";
+   function receiver() { trace += "r"; return base; }
+   function argument() { trace += "a"; return 1; }
+   const base = { get method() { trace += this === base ? "g" : "x";
+     return function () { trace += this === base ? "m" : "x"; throw 9; }; } };
+   try { receiver()?.method(argument()); } catch (error) { trace += error === 9 ? "t" : "x"; }
+   console.log(trace);`,
+];
+const optionalTail = run(
+  optionalTailSources.map((source) => dumpSource(source)),
+  true
+);
+for (const [i, source] of optionalTailSources.entries()) {
+  const node = spawnSync(process.execPath, ["--input-type=module", "-e", source], { encoding: "utf8" });
+  assert.equal(node.status, 0, node.stderr);
   assert.deepEqual(
-    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#continuation-${i}`),
-    i === 0 ? ["normal", ""] : ["throw", "TypeError"]
+    [optionalTail[i].end, optionalTail[i].detail, optionalTail[i].out],
+    ["normal", "", node.stdout.split("\n").slice(0, -1)],
+    source
   );
+}
+
+// The empty-profile classifier still refuses the untouched ambient root.
+const ambientTailPath = file(
+  "optional-tail-ambient.json",
+  JSON.stringify(dumpSource("globalThis?.process?.env.DEBUG;"))
+);
+const ambientTail = JSON.parse(
+  execFileSync(process.env.COREJS, ["--lowering-census", ambientTailPath], { encoding: "utf8" })
+);
+assert.equal(ambientTail.lowering_refusals.length, 1);
+assert.match(JSON.stringify(ambientTail.lowering_refusals[0]), /unsupported global globalThis/);
+
+// The rule does not lower longer ordinary tails or a call whose target is a chain.
+for (const unsupported of ["null?.x.y.z;", "(null?.x.y)();"]) {
+  const [result] = run([dumpSource(unsupported)], true);
+  assert.equal(result.end, "malformed", unsupported);
+  assert.match(result.detail, /unsupported optional chain/, unsupported);
 }
 
 // Object rest excludes selected string keys and copies only enumerable own

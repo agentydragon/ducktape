@@ -675,6 +675,14 @@ def evalExpr : Nat → Env → Expr → M W Val
         do
           let key ← evalExpr n env k
           getProp (callFn n) base key
+    | .getOptionalThen o k property => do
+      let base ← evalExpr n env o
+      if !(← lift (shortCircuits .nullish base)) then
+        pure .undef
+      else
+        do
+          let value ← getProp (callFn n) base (← evalExpr n env k)
+          getProp (callFn n) value (← evalExpr n env property)
     | .hasProp k o => do
       let key ← evalExpr n env k
       let base ← evalExpr n env o
@@ -1153,6 +1161,25 @@ theorem evalExpr_cond (n : Nat) (env : Env) (test yes no : Expr) (s : State W) :
     | ok b => cases b <;> simp [bind, h, ht, lift, pure]
     | error err => cases err <;> simp [bind, h, ht, lift, throwErr, throwVal, unknown]
   | _ => simp [bind, h]
+
+/-- A guarded access stops before either key, retaining the state left by the
+receiver. An abrupt receiver is already propagated by the evaluator's bind. -/
+theorem evalExpr_getOptionalThen_skip (n : Nat) (env : Env) (o k property : Expr)
+    {s post : State W} {base : Val} (receiver : evalExpr n env o s = .ok base post)
+    (skips : shortCircuits .nullish base = .ok false) :
+    evalExpr (n + 1) env (.getOptionalThen o k property) s = .ok .undef post := by
+  simp [evalExpr, bind, pure, receiver, skips, lift]
+
+/-- Once the guard succeeds, the first property read may throw. In that case
+the continuation does not run, and the getter's actual state is retained. -/
+theorem evalExpr_getOptionalThen_throw (n : Nat) (env : Env) (o k property : Expr)
+    {s ready keyed stopped : State W} {base key why : Val}
+    (receiver : evalExpr n env o s = .ok base ready)
+    (continues : shortCircuits .nullish base = .ok true)
+    (evalKey : evalExpr n env k ready = .ok key keyed)
+    (getter : getProp (callFn n) base key keyed = .throw why stopped) :
+    evalExpr (n + 1) env (.getOptionalThen o k property) s = .throw why stopped := by
+  simp [evalExpr, bind, pure, receiver, continues, lift, evalKey, getter]
 
 def construct (n : Nat) (callee : Val) (args : List Val) : M W Val :=
   constructTarget n callee callee args
