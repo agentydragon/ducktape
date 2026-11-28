@@ -66,7 +66,17 @@ snapshots the imported entry default. This route requires an explicit
 verdict's `proof_scope` is the linked entry and provider, not general
 package behavior.
 
-Host-dependent, structural and multi-chunk checks cannot publish output.
+A finite static graph can declare three or more original `.mjs` files in one
+tree. Only the public entry has an authored placement, with one new helper;
+the other declared modules are fixed. Every file must be reachable through
+named relative imports. The constructor rejects cycles and any change to the
+order of original executable units. It currently accepts only primitive
+synchronous `const` initializers. Publication and `--check-output` parse the
+complete graph on disk, including the fixed files. The receipt covers the
+public entry's live cells and complete modeled outcomes. Its client coverage
+is unchecked and it makes no deployment claim.
+
+Host-dependent and structural checks, and other multi-chunk deployments, cannot publish output.
 The [construction roadmap](CONSTRUCTION_ROADMAP.md) tracks coverage. For the
 scope of earlier artifact certificates, see the
 [historical checker guide](https://github.com/agentydragon/ducktape/blob/b88098ac2a1cbaa970a7019f50ec78df94054629/devinfra/js/debundle/x/split_proof/README.md).

@@ -137,11 +137,12 @@ structure OutputPart where
 observed scope annotations for the certificate. Copied providers must have
 the exact source text that supplied the original graph. -/
 private def compareDirectory (parts : List OutputPart) (providers : List (String × String))
-    (dir work : System.FilePath) : IO Json := do
+    (dir work : System.FilePath) (parseProviders : Bool) : IO Json := do
   let manifest := work / "deployment-programs.json"
   let descriptors := parts.map fun part => Json.mkObj [("programs", part.programs), ("source", toJson part.source)]
   let copied := Json.mkObj (providers.map fun (name, source) => (name, .str source))
-  IO.FS.writeFile manifest (Json.mkObj [("parts", toJson descriptors), ("providers", copied)]).compress
+  IO.FS.writeFile manifest (Json.mkObj [("parts", toJson descriptors), ("providers", copied),
+    ("parseProviders", toJson parseProviders)]).compress
   let checked := work / "checked-output.json"
   javascript #["--check-output"] #[manifest, dir, checked]
   let observed ← readJson checked
@@ -155,12 +156,12 @@ private def compareDirectory (parts : List OutputPart) (providers : List (String
     return (name, ← IO.ofExcept (unitProgram ast)))
 
 /-- Finish comparison and proof before publishing by rename. Fixed files
-are checked by path and bytes without decoding them as JavaScript. The
-destination guard runs before staging and immediately before promotion. -/
+are checked by path and bytes, and parsed if they participate in the linked
+certificate. The destination guard runs before staging and before promotion. -/
 def certifyOutputWithFixed {α : Type} (parts : List OutputPart) (sources : List (String × String))
     (out work : System.FilePath) (checkOnly timings : Bool)
     (check : Json → IO (Except CertificationRefusal α))
-    (confirmDestination : IO Unit := pure ()) (recheckPublished : Bool := false) :
+    (confirmDestination : IO Unit := pure ()) (recheckPublished : Bool := false) (parseProviders : Bool := false) :
     IO (Except CertificationRefusal α) := do
   let groups ← IO.ofExcept <| parts.mapM fun part => do
     return (← part.programs.getObj?).toList.map Prod.fst
@@ -175,7 +176,7 @@ def certifyOutputWithFixed {α : Type} (parts : List OutputPart) (sources : List
       if routes.contains ancestor then throw (IO.userError s!"output module {name} crosses output file {ancestor}")
   confirmDestination
   let verify dir := do
-    let observed ← timePhase timings "output_comparison" fun _ => compareDirectory parts sources dir work
+    let observed ← timePhase timings "output_comparison" fun _ => compareDirectory parts sources dir work parseProviders
     check observed
   if checkOnly then return ← verify out
   let parent := out.parent.getD "."
@@ -196,17 +197,18 @@ def certifyOutputWithFixed {α : Type} (parts : List OutputPart) (sources : List
       confirmDestination
       timePhase timings "output_publication" fun _ => IO.FS.rename stage out
       if recheckPublished then
-        let _ ← compareDirectory parts sources out work
+        let _ ← compareDirectory parts sources out work parseProviders
     return result
   finally
     if ← stage.pathExists then IO.FS.removeDirAll stage
 
 def certifyOutput {α : Type} (parts : List OutputPart) (providers : Json)
     (out work : System.FilePath) (checkOnly timings : Bool)
-    (check : Json → IO (Except CertificationRefusal α)) : IO (Except CertificationRefusal α) := do
+    (check : Json → IO (Except CertificationRefusal α)) (parseProviders : Bool := false) :
+    IO (Except CertificationRefusal α) := do
   let dependencies ← IO.ofExcept (providers.getObj?)
   let sources ← dependencies.toList.mapM fun (name, ast) => do
     return (name, ← IO.ofExcept (ast.getObjValAs? String "sourceText"))
-  certifyOutputWithFixed parts sources out work checkOnly timings check
+  certifyOutputWithFixed parts sources out work checkOnly timings check (parseProviders := parseProviders)
 
 end EsmSplit.SplitFiles

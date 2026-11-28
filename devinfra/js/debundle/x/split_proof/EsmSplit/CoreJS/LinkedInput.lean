@@ -659,9 +659,9 @@ structure DecodedSource where
 
 /-- Classify already extracted nodes. Callers requiring authenticated source
 must obtain them from `ESTreeUnits.checkedNodes`. -/
-def decodeSingletonSourceNodes (nodes : Array Json) (entry : String) :
+def decodeSingletonSourceNodes (nodes : Array Json) (entry : String) (importer := "bundle.mjs") :
     Except String DecodedSource := do
-  let original ← (parse .linked .empty "bundle.mjs" nodes 0).mapError StructuralRefusal.reason
+  let original ← (parse .linked .empty importer nodes 0).mapError StructuralRefusal.reason
   let source := original.numbered entry 0
   have sourceOrdinals : original.coreSourceItems.map SourceItem.ordinal = List.range nodes.size :=
     original.coreSourceItems_ordinals
