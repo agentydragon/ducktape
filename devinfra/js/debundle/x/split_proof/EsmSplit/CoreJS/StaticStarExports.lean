@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.ModuleInput
 import EsmSplit.ESTreeUnits
@@ -165,11 +166,35 @@ def resolve (files : Json) : Except String Graph := do
     todo := todo.filter (·.path != row.path)
   return ⟨records, done⟩
 
-/-- Project remote re-export headers away from statement lowering. Each real request
-occupies the same slot in the CoreJS import list even if it forwards no names.
+/-- Keep each header in request order, even when it forwards no names. -/
+private def moduleRecord (graph : Graph) (row : Record) (body : List (Nat × Stmt)) : Module := Id.run do
+  let table := (graph.tables.lookup row.path).getD []
+  let mut imports := #[]
+  let mut exports := row.explicit.toArray
+  for (slot, req) in row.requests do
+    match req with
+    | .named edge => imports := imports.push edge
+    | .namespaceImport source _ => imports := imports.push ⟨source, []⟩
+    | .indirect source names =>
+      imports := imports.push ⟨source, names.map fun (publicName, requested) =>
+        (requested, forwardingLocal "indirect" slot publicName)⟩
+    | .star source =>
+      let mut names := #[]
+      for (name, binding) in table do
+        if let .found _ (some selected) := binding then
+          if selected == slot then
+            let localName := forwardingLocal "star" slot name
+            names := names.push (name, localName)
+            exports := exports.push (name, localName)
+      imports := imports.push ⟨source, names.toList⟩
+  return ⟨row.path, imports.toList, body, exports.toList⟩
+
+/-- Project out remote re-export headers and preserve executable ordinals.
 Every forwarded name imports from that immediate provider, so the existing
 linker follows the chain and allocates no new binding cell. -/
 private def lowerRecord (graph : Graph) (row : Record) (base : Nat) : Except String Module := do
+  if row.requests.any (fun (_, req) => match req with | .namespaceImport .. => true | _ => false) then
+    throw "namespace object evaluation is unsupported"
   let mut nodes := #[]
   let mut ids := #[]
   for (node, id) in row.nodes.zipIdx do
@@ -186,26 +211,7 @@ private def lowerRecord (graph : Graph) (row : Record) (base : Nat) : Except Str
   let localExports := row.explicit.filter fun (_, localName) => !localName.startsWith ":indirect:"
   unless ordinary.imports == expected && ordinary.exports == localExports do
     throw "ordinary decoder disagrees with module records"
-  let table := (graph.tables.lookup row.path).getD []
-  let mut imports := #[]
-  let mut exports := row.explicit.toArray
-  for (slot, req) in row.requests do
-    match req with
-    | .named edge => imports := imports.push edge
-    | .namespaceImport .. => throw "namespace imports are metadata only"
-    | .indirect source names =>
-      imports := imports.push ⟨source, names.map fun (publicName, requested) =>
-        (requested, forwardingLocal "indirect" slot publicName)⟩
-    | .star source =>
-      let mut names := #[]
-      for (name, binding) in table do
-        if let .found _ (some selected) := binding then
-          if selected == slot then
-            let localName := forwardingLocal "star" slot name
-            names := names.push (name, localName)
-            exports := exports.push (name, localName)
-      imports := imports.push ⟨source, names.toList⟩
-  return { ordinary with imports := imports.toList, exports := exports.toList }
+  return moduleRecord graph row ordinary.body
 
 /-- Build an empty-profile program for linked readback. In particular, successful
 metadata resolution does not make namespace values or provider bodies executable. -/
@@ -220,5 +226,79 @@ def Graph.lower (graph : Graph) (entry : String) : Except String Program := do
   unless decide (program.evalOrder.Perm (modules.toList.map (·.name))) do
     throw "static graph has missing or unreachable modules"
   return program
+
+/-- A view of a linked module's named exports. Its members retain addresses,
+not the contents of the cells. JS namespace exotic object operations are
+outside this view. -/
+structure NamespaceView where
+  private mk ::
+  target : String
+  members : EntryExports.Bindings
+
+def NamespaceView.ofLinked (target : String) (linked : List (Module × Env)) :
+    Except String NamespaceView := do
+  return ⟨target, ← EntryExports.resolve target linked⟩
+
+/-- Observe an export at the time of lookup; an uninitialized cell still throws. -/
+def NamespaceView.read (view : NamespaceView) (name : Name) : M W Val :=
+  match view.members.lookup name with
+  | some cell => readCell cell
+  | none => pure .undef
+
+/-- A link-only view of namespace import bindings. Each import binding has
+its own address and maps to its source module's shared view. This packet holds
+addresses but does not make the namespace itself a CoreJS object. -/
+structure NamespaceLinks where
+  private mk ::
+  private linked : List (Module × Env)
+  private views : List (String × NamespaceView)
+  private imports : List (Addr × String)
+
+def NamespaceLinks.localCell (links : NamespaceLinks) (path name : String) :
+    Except String Addr := do
+  let some (_, scope) := links.linked.find? (fun (m, _) => m.name == path)
+    | throw s!"missing module {path}"
+  let some cell := scope.vars.lookup name | throw s!"{path}: missing binding {name}"
+  return cell
+
+def NamespaceLinks.exports (links : NamespaceLinks) (path : String) :
+    Except String EntryExports.Bindings :=
+  EntryExports.resolve path links.linked
+
+def NamespaceLinks.viewAt (links : NamespaceLinks) (cell : Addr) : Except String NamespaceView := do
+  let some target := links.imports.lookup cell | throw "binding is not a namespace import"
+  let some view := links.views.lookup target | throw s!"missing namespace view for {target}"
+  return view
+
+/-- Allocate addresses from the parsed declaration and request records, and
+run the ordinary scope/import resolver. This does not lower or run any
+provider body, initialize hoists, or evaluate snapshots. Declaration shells
+are internal and expose no executable program or store. -/
+def Graph.linkNamespaceCells (graph : Graph) (entry : String) : Except String NamespaceLinks := do
+  let modules := graph.records.zipIdx.map fun (row, id) =>
+    let namespaceNames := row.requests.filterMap fun (_, req) =>
+      if let .namespaceImport _ localName := req then some localName else none
+    let names := (row.locals ++ namespaceNames).eraseDups
+    let body := if names.isEmpty then [] else
+      [(id, Stmt.opaque id (names.map fun name => (name, .const)) [] [] (.closures []))]
+    moduleRecord graph row body
+  let program : Program := ⟨entry, modules⟩
+  unless decide (program.evalOrder.Perm (modules.map (·.name))) do
+    throw "static graph has missing or unreachable modules"
+  -- Only allocation and scopes run here. No hoist or body can make a value.
+  let .ok frames _ := (declareTops program.tops : M World.probe _) (initialState World.probe program.regions)
+    | throw "could not allocate namespace link cells"
+  let linked ← (program.scopes frames program.loaded).mapError fun
+    | .error _ reason | .unknown reason => reason
+  let mut imports := #[]
+  let mut views := #[]
+  for row in graph.records do
+    for (_, req) in row.requests do
+      if let .namespaceImport target name := req then
+        let cell ← (NamespaceLinks.mk linked [] []).localCell row.path name
+        imports := imports.push (cell, target)
+        unless views.any (·.1 == target) do
+          views := views.push (target, ← NamespaceView.ofLinked target linked)
+  return ⟨linked, views.toList, imports.toList⟩
 
 end CoreJS.StaticStarExports

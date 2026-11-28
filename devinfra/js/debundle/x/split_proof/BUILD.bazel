@@ -726,6 +726,7 @@ lean_library(
     name = "corejs_static_star_exports",
     srcs = ["EsmSplit/CoreJS/StaticStarExports.lean"],
     deps = [
+        ":corejs_entry_exports",
         ":corejs_linked_input",
         ":corejs_module_input",
         ":estree_units",

@@ -74,7 +74,12 @@ const metadataQueries = [
 ];
 const probe = (tree, kind = "starReadback", names = queries) => ({
   kind,
-  input: { files: tree.asts(), entry, queries: names },
+  input: {
+    files: tree.asts(),
+    entry,
+    queries: names,
+    ...(kind === "starReadback" ? { namespaceRead: ["barrel.mjs", "value"] } : {}),
+  },
 });
 const [before, after, miswired, metadata, ambiguous, missing, cyclic] = JSON.parse(
   execFileSync(process.env.LINKED_INPUT_CHECKER, [], {
@@ -108,11 +113,13 @@ const [live, direct, only, distinct, diamond] = before.output.exports;
 assert.deepEqual(live, direct);
 assert.deepEqual(live, diamond);
 assert.equal(live.value, true);
+assert.equal(before.output.liveRead, true);
 assert.equal(only.value, true);
 assert.equal(distinct.value, false);
 assert.notDeepEqual(live.cell, distinct.cell);
 assert.ok(miswired.output, JSON.stringify(miswired));
 assert.deepEqual(miswired.output.exports[0], distinct);
+assert.equal(miswired.output.liveRead, false);
 assert.deepEqual(metadata.output, [
   { error: "diamond.mjs: missing export default" },
   { error: "conflict.mjs: ambiguous export value" },

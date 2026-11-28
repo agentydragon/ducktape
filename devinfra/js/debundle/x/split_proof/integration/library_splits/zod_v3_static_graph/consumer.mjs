@@ -12,6 +12,8 @@ const namespace = {
   nullPrototype: Object.getPrototypeOf(publicZod) === null,
   extensible: Object.isExtensible(publicZod),
   aliased: publicZod.default === publicZod.z && publicZod.z.string === publicZod.string,
+  forwardedKeys: Object.keys(publicZod.z),
+  forwardedErrorMap: publicZod.z.defaultErrorMap === publicZod.defaultErrorMap,
 };
 
 const schema = publicZod.object({ label: publicZod.string().min(3) });

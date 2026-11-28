@@ -144,6 +144,7 @@ const baseline = await original.consume();
 const candidate = await staged.consume();
 assert(baseline.namespace.keys.includes("defaultErrorMap"));
 assert(baseline.namespace.aliased);
+assert(baseline.namespace.forwardedErrorMap);
 assert.deepEqual(candidate.namespace, baseline.namespace);
 assert.deepEqual(candidate.behavior, baseline.behavior);
 const invalidType = (message) => [{ code: "invalid_type", path: ["label"], message }];
@@ -203,5 +204,6 @@ if (process.argv.includes("--linked-diagnostic")) {
     candidate: staged.root,
     manifest,
     worker,
+    observedNamespaceKeys: candidate.namespace.forwardedKeys,
   });
 }
