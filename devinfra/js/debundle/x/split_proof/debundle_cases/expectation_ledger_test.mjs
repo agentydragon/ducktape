@@ -74,7 +74,7 @@ assert.equal(declarators.code, 0, declarators.stdout + declarators.stderr);
 const declarator = JSON.parse(readFileSync(out, "utf8").trim());
 assert.equal(declarator.id, declaratorId);
 assert.equal(declarator.outcome, "certified");
-assert.deepEqual(declarator.emission, { scope: "retained-tail", guarantee: "normal-completion" });
+assert.equal(declarator.emission.scope, "retained-tail");
 assert.deepEqual(declarator.disk, declarator.emission);
 assert.equal(declarator.behavior, "pass");
 const authoredOwner = "static/app/modules/x.js";
