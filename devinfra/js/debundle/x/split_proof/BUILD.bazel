@@ -4655,3 +4655,20 @@ lean_proof_test(
     ],
     deps = [":corejs_two_job_await"],
 )
+
+test_runner(
+    name = "retrier_baseline_runner",
+    src = "RetrierBaselineTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":cli",
+        ":corejs_authenticated_source",
+        ":corejs_from_estree",
+        ":corejs_linked_input",
+        ":estree_emit",
+        ":estree_units",
+        ":lowersplit_input",
+        ":split",
+        ":split_files",
+    ],
+)
