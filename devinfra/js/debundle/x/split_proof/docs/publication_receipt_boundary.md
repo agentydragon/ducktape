@@ -15,6 +15,13 @@ The receipt has no separate field for the deployment realization or for a
 caller observation contract. It also does not say whether it was issued for
 a fresh publication or a verification of an existing tree.
 
+Since this audit, [#20669](https://github.com/agentydragon/ducktape/pull/20669)
+added `receipt.graph`, `receipt.client`, `receipt.deployment`, and
+`receipt.operation` for the covered static-import routes. The
+[import guarantees specification](import_guarantees.md#deployment-realization)
+explains their checked-versus-assumed distinction. The route table below is
+the original audit, not a complete description of the newer receipt fields.
+
 | Route                                   | Authenticated source and modeled public observations                                                                                                                                                                                              | Deployment evidence and limits                                                                                                                                                                                                       |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `named-declarations`                    | Import-free authenticated source, exact original declaration selections, checked ordered initialization and live entry exports.                                                                                                                   | Generated `.mjs` only. No provider, caller, or enclosing deployment is included.                                                                                                                                                     |
@@ -49,10 +56,11 @@ same success. Node imports and calls the default successfully under
 `isLength.js` with a syntax error. The original callable returns `true` for
 the input `3`.
 
-[Uncached replay](https://app.buildbuddy.io/invocation/c181210b-e07e-4fd6-9dde-71c3d27cca76).
+[Original uncached replay](https://app.buildbuddy.io/invocation/c181210b-e07e-4fd6-9dde-71c3d27cca76).
 The [manual reproduction](../integration/library_splits/default_snapshot_format_audit.mjs)
-records the current mismatch; change the CommonJS assertion when a reviewed
-receipt or admission change addresses it.
+now also checks the newer receipt fields and operation distinction; the Node
+loadability difference remains. Change the CommonJS assertion when a reviewed
+admission or deployment change addresses that difference.
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof

@@ -96,10 +96,24 @@ The owned-package route checks selected package and provider bytes and a narrow
 default-import snapshot caller; those checks do not cover an arbitrary caller
 or every runtime resolution fact.
 
+For the static-import routes that report an import receipt, the current
+[receipt construction](../EsmSplit/LowerSplit/Certified.lean) separates
+`graph`, `client`, and `deployment`. For example, the default-snapshot
+[format control](../integration/library_splits/default_snapshot_format_audit.mjs)
+reports `client.coverage: unchecked` and `deployment.claim: none`; its
+`deployment.checked` records the checked artifact paths and generated ESM
+syntax, while `deployment.assumptions` includes runtime realization of the
+checked graphs and freshness of new implementation routes. The `operation`
+distinguishes publication from `checked-output`. These fields describe the
+reported route and its premises; they do not prove a general client theorem
+or check Node's enclosing package format.
+
 The [measured format control](publication_receipt_boundary.md#reproduced-format-gap)
 illustrates the separation. The default-snapshot route produces identical graph
 receipts for byte-identical `isLength.js` split files under ESM and CommonJS
-parent packages. Node imports the ESM tree and rejects the CommonJS tree; the
+parent packages, comparing publications with each other and rereads with each
+other. Current receipts distinguish the publication and reread operations and
+state that there is no deployment claim. Node imports the ESM tree and rejects the CommonJS tree; the
 parent package scope was outside the checked artifact set. Even a client using
 only the public entry therefore cannot infer Node loadability from that graph
 receipt.
