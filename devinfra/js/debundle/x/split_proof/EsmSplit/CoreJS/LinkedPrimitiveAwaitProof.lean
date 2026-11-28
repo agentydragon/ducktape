@@ -79,6 +79,24 @@ theorem StagedImmediate.drains {source files plan} (h : StagedImmediate source f
   exact ⟨placed, decoded, exported, fun w fuel jobFuel quota =>
     congrArg (TurnResult.checkpoint jobFuel quota) (immediate w fuel)⟩
 
+/-- Readback and schedule checking prove the bridge at every fuel. They do
+not claim that evaluation reaches a language completion in any world. -/
+def checkProductionBridges (source files : Json) (plan : EsmSplit.Plan) :
+    Except String ((placed : Placed) × PLift (decodePlacedChecked source files plan = .ok placed ∧
+      (∀ w fuel, runProgramTurn w fuel placed.before = (runImmediate w fuel placed.before).observed) ∧
+      (∀ w fuel, runProgramTurn w fuel placed.after = (runImmediate w fuel placed.after).observed))) := do
+  match decoded : decodePlacedChecked source files plan with
+  | .error reason => throw reason
+  | .ok placed =>
+    let pair ← checkProbePair placed.before.program placed.after.program
+    if aEntry : (entryEnv placed.before.program.entry pair.before.linked).isSome = true then
+      if bEntry : (entryEnv placed.after.program.entry pair.after.linked).isSome = true then
+        return ⟨placed, ⟨decoded,
+          fun w fuel => (runImmediate_eq_programTurn (link_from_probe pair.before w) aEntry fuel).symm,
+          fun w fuel => (runImmediate_eq_programTurn (link_from_probe pair.after w) bEntry fuel).symm⟩⟩
+      else throw "missing placed entry"
+    else throw "missing original entry"
+
 /-- The staged theorem can feed the publisher only after the fixed evaluator
 agrees on the complete turn of each exact reread program and there is a
 positive completion and drain in every world. A pair of refusals supplies
@@ -86,14 +104,14 @@ neither premise. -/
 theorem StagedImmediate.publicationOfBridge {source files plan placed}
     (h : StagedImmediate source files plan)
     (decoded : decodePlacedChecked source files plan = .ok placed)
-    (before : ∀ w fuel, runProgramTurn w fuel placed.before.program =
+    (before : ∀ w fuel, runProgramTurn w fuel placed.before =
       (runImmediate w fuel placed.before).observed)
-    (after : ∀ w fuel, runProgramTurn w fuel placed.after.program =
+    (after : ∀ w fuel, runProgramTurn w fuel placed.after =
       (runImmediate w fuel placed.after).observed)
     (supported : ∀ w, ∃ (fuel jobFuel quota : Nat) (turn finished : Turn w),
       (runImmediate w fuel placed.before).observed.completedTurn = some turn ∧
         PrimitiveAwait.drain jobFuel quota turn = .ok .empty finished) :
-    TurnPublication placed.before.program placed.after.program := by
+    TurnPublication placed.before placed.after := by
   obtain ⟨checked, equation, exports, same⟩ := h
   have eq : checked = placed := Except.ok.inj (equation.symm.trans decoded)
   subst checked
@@ -104,5 +122,23 @@ theorem StagedImmediate.publicationOfBridge {source files plan placed}
     obtain ⟨fuel, jobFuel, quota, turn, finished, completed, drained⟩ := supported w
     exact ⟨fuel, jobFuel, quota, turn, finished, (congrArg TurnResult.completedTurn (before w fuel)).trans completed,
       drained⟩
+
+/-- Positive support uses a shared fuel and a successful explicit drain. -/
+def Supported (input : TurnProgram) : Prop :=
+  ∀ w, ∃ (fuel jobFuel quota : Nat) (turn finished : Turn w),
+    (runImmediate w fuel input).observed.completedTurn = some turn ∧
+      PrimitiveAwait.drain jobFuel quota turn = .ok .empty finished
+
+/-- Assemble the publication obligation for the exact disk-reread inputs.
+The support checker can only supply a proof about its input. It does not
+choose how to execute the program. -/
+def checkStagedPublication (source files : Json) (plan : EsmSplit.Plan)
+    (checkSupport : (input : TurnProgram) → Except String (PLift (Supported input))) :
+    Except String (PLift (∃ placed, decodePlacedChecked source files plan = .ok placed ∧
+      TurnPublication placed.before placed.after)) := do
+  let ⟨immediate⟩ ← checkStagedImmediate source files plan
+  let ⟨placed, ⟨decoded, before, after⟩⟩ ← checkProductionBridges source files plan
+  let ⟨supported⟩ ← checkSupport placed.before
+  return ⟨⟨placed, decoded, immediate.publicationOfBridge decoded before after supported⟩⟩
 
 end CoreJS.LinkedPrimitiveAwait

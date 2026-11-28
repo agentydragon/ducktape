@@ -18,14 +18,14 @@ def TurnResult.completedTurn : TurnResult W Unit → Option (Turn W)
 immediate turn. In addition, in every world there is a supported language
 completion with a successfully drained queue. The witness is not a policy
 for selecting host checkpoints or a substitute for the all-bounds proof. -/
-structure TurnPublication (source actual : Program) : Prop where
-  exports : LinkedBehavior.SameExports source actual
+structure TurnPublication (source actual : TurnProgram) : Prop where
+  exports : LinkedBehavior.SameExports source.program actual.program
   immediate : ∀ w fuel, runProgramTurn w fuel source = runProgramTurn w fuel actual
   supported : ∀ w, ∃ (fuel jobFuel quota : Nat) (turn finished : Turn w),
     (runProgramTurn w fuel source).completedTurn = some turn ∧
       PrimitiveAwait.drain jobFuel quota turn = .ok .empty finished
 
-theorem TurnPublication.ordinary (h : TurnPublication source actual) :
+theorem TurnPublication.ordinary {source actual : Program} (h : TurnPublication source actual) :
     LinkedBehavior.ScheduleEquivalent .allOutcomes (fun _ => True) source actual := by
   intro w _ fuel
   simpa only [runProgram_eq_erase] using congrArg TurnResult.erase (h.immediate w fuel)

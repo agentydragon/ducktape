@@ -10,6 +10,8 @@ import EsmSplit.CoreJS.IndexedHoistedSwap
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.LinkedPrimitiveAwait
+import EsmSplit.CoreJS.LinkedPrimitiveAwaitProof
 import EsmSplit.CoreJS.LiteralReorderConstruct
 import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.ResolvedPlacement
@@ -17,7 +19,9 @@ import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.CoreJS.StaticProviderConstruction
 import EsmSplit.CoreJS.TerminalExportPlacement
 import EsmSplit.CoreJS.TerminalSource
+import EsmSplit.CoreJS.TwoJobAwait
 import EsmSplit.ESTreeEmit
+import EsmSplit.ESTreeUnits
 import EsmSplit.LowerSplit.Input
 import EsmSplit.OwnedNodePackage
 
@@ -424,11 +428,54 @@ private def runOwnedNodePackage (pkg : OwnedNodePackage.Spec) (chunk : Deploymen
           built.program ["package.json", pkg.provider, pkg.caller] (some pkg.caller)]
   catch e => refuse e.toString
 
+/-- The proved layout keeps the three declarations and their live cells in
+the worker. Preserve authored order so the checked schedule can reject a
+swap even when all the same units appear in the output. -/
+private def twoJobPlan (spec : Spec) : Except String Plan := do
+  unless spec.entry == "entry.mjs" && spec.sequential && !spec.privateEntryBody &&
+      spec.order == ["worker.mjs"] && spec.modules.length == 2 do
+    throw "expected the two-job entry and worker layout"
+  let ids := fun name => do
+    let some rows := spec.modules.lookup name | throw s!"missing {name}"
+    rows.mapM fun
+      | .stmt i => .ok i
+      | .name _ => .error "expected original statement selectors"
+  let worker ← ids "worker.mjs"
+  let entry ← ids "entry.mjs"
+  unless worker == [0, 1, 2, 3, 4] && entry.mergeSort (· ≤ ·) == [5, 6, 7, 8, 9] do
+    throw "the two-job plan moved or omitted a source unit"
+  let imported := ["trace", "left", "right", "setValue"]
+  return ⟨spec.entry, [⟨spec.entry, entry, [("worker.mjs", imported)], []⟩,
+    ⟨"worker.mjs", worker, [], imported.map fun name => (name, name)⟩]⟩
+
+private def tryTwoJobAwait (spec : Spec) (src : BundleInput)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  let scope := "two-job-primitive-await"
+  let .ok before := CoreJS.LinkedPrimitiveAwait.decode src.program spec.entry | return none
+  let .ok _ := CoreJS.TwoJobAwait.checkSupport before | return none
+  let .ok plan := twoJobPlan spec |
+    return some (← emitRefusal options.request.label
+      { reason := "expected the supported two-job placement", reasonCode := some "linked_placement" } scope)
+  try
+    let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes src.program src.source)
+    let programs ← IO.ofExcept (ESTreeEmit.programs nodes (sourceBundle nodes) plan src.source)
+    let checked ← stageGenerated programs src out work options timings fun files => do
+      let _ ← (CoreJS.LinkedPrimitiveAwait.checkStagedPublication src.program files plan
+        CoreJS.TwoJobAwait.checkSupport).mapError fun reason => ({ reason } : CertificationRefusal)
+      return ()
+    match checked with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) scope
+        [("strategy", toJson "compiled-constructor")])
+    | .error refusal => return some (← emitRefusal options.request.label refusal scope)
+  catch e => return some (← emitVerdict options.request.label (.error e.toString) scope)
+
 /-- Both emission and readback must start from a successful construction. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
   if let .authored spec := chunk.placement then
+    if chunk.source.extension == some "mjs" then
+      if let some verdict ← tryTwoJobAwait spec src out work options timings then return verdict
     if spec.sequential || spec.privateEntryBody then
       if let .ok classified := CoreJS.AuthenticatedSource.decodeSourceClassification src.program src.source spec.entry then
         if !classified.source.imports.isEmpty then
