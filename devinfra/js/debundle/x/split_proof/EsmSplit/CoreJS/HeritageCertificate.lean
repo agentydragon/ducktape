@@ -4,9 +4,9 @@ import EsmSplit.CoreJS.HeritageMove
 
 /-! # Moving a subclass after its superclass declaration
 
-The checker finds a bridge order certified by the existing move rules. It then checks
-that a subclass can move across the remaining block under the resolved superclass
-binding established by the prefix.
+The checker composes ordinary move proofs with up to two subclass slides. Each
+slide checks that its prefix establishes the superclass and that the crossed
+block preserves it.
 -/
 
 namespace CoreJS
@@ -59,9 +59,9 @@ private def keepsBase (base : Name) (st : Stmt) : Bool :=
 private def crossesSubclass (x : Name) (st : Stmt) : Bool :=
   st.inert || st.allocs.any (fun (_, reads) => !reads.contains x)
 
-/-- Check the schedule against the actual CoreJS syntax and check all other inversions using the
-existing move checker. Distinct unit IDs follow from the plan's validated permutation. -/
-def HeritageSchedule.check (w : HeritageSchedule) (ss : List Stmt) (B : EsmSplit.Bundle) : Bool :=
+/-- Check one slide against the actual CoreJS syntax. Distinct unit IDs follow
+from the plan's validated permutation, which each slide preserves. -/
+def HeritageSchedule.check (w : HeritageSchedule) (ss : List Stmt) : Bool :=
   Id.run do
     let ast := ss.toArray
     let some pivot := ast[w.pivot]? | return false
@@ -69,8 +69,7 @@ def HeritageSchedule.check (w : HeritageSchedule) (ss : List Stmt) (B : EsmSplit
     let some parent := ast[w.owner]? | return false
     return baseClass base parent &&
         w.between.all (fun i => i != w.owner && ast[i]?.any (keepsBase base)) &&
-        w.crossed.all (fun i => i != w.owner && i != w.pivot && ast[i]?.any (crossesSubclass x)) &&
-        certifiedMovesOk ss B w.bridge
+        w.crossed.all (fun i => i != w.owner && i != w.pivot && ast[i]?.any (crossesSubclass x))
 
 /-- Try moving a single subclass immediately before its first unproved inversion. The candidate
 only chooses a schedule. Its order and every semantic premise are checked separately. -/
@@ -95,8 +94,19 @@ def heritageCandidate (ss : List Stmt) (B : EsmSplit.Bundle) (order : List Nat) 
       pivot := pivot
       suffix := (order.dropWhile (· != pivot)).drop 1 }
 
+private def heritageMovesWithin (ss : List Stmt) (B : EsmSplit.Bundle) (order : List Nat) :
+    Nat → Bool
+  | 0 => certifiedMovesOk ss B order
+  | fuel + 1 =>
+    if certifiedMovesOk ss B order then true
+    else
+      (heritageCandidate ss B order).any fun w =>
+        w.order == order && w.check ss && heritageMovesWithin ss B w.bridge fuel
+
+/-- Bound the search independently of chunk size. The second slide can use a
+sibling subclass in its prefix, but each slide checks the parent again. -/
 def heritageMovesOk (ss : List Stmt) (B : EsmSplit.Bundle) (order : List Nat) : Bool :=
-  (heritageCandidate ss B order).any fun w => w.order == order && w.check ss B
+  heritageMovesWithin ss B order 2
 
 section Linked
 
@@ -276,11 +286,10 @@ private theorem any_some {o : Option α} {f : α → Bool} (h : o.any f = true) 
 private theorem schedule_of_check (w : HeritageSchedule) {ss : List Stmt} {B : EsmSplit.Bundle}
     (fp : FootprintsOfSyntax ss B) (ud : EsmSplit.UniqueDefs B)
     (fr : FramesOf ((List.range ss.length).zip ss) frames)
-    (reg : ∀ q ∈ frames, ∀ p ∈ q.2, p.2.region = q.1 + 1) (hc : w.check ss B = true) (n : Nat)
+    (reg : ∀ q ∈ frames, ∀ p ∈ q.2, p.2.region = q.1 + 1) (hc : w.check ss = true) (n : Nat)
     (s t : State W) :
-    certifiedMovesOk ss B w.bridge = true ∧
-      (runUnits n (w.bridge.map (bundleUnit ss frames)) s = .ok () t ↔
-        runUnits n (w.order.map (bundleUnit ss frames)) s = .ok () t) := by
+    runUnits n (w.bridge.map (bundleUnit ss frames)) s = .ok () t ↔
+      runUnits n (w.order.map (bundleUnit ss frames)) s = .ok () t := by
   unfold HeritageSchedule.check at hc
   cases hpi : ss[w.pivot]? with
   | none => simp [hpi] at hc
@@ -293,8 +302,7 @@ private theorem schedule_of_check (w : HeritageSchedule) {ss : List Stmt} {B : E
       | none => simp [hpi, hshape, hpar] at hc
       | some parent =>
         simp [hpi, hshape, hpar, Bool.and_eq_true, List.all_eq_true] at hc
-        obtain ⟨⟨⟨good, between⟩, crossed⟩, bridge⟩ := hc
-        refine ⟨bridge, ?_⟩
+        obtain ⟨⟨good, between⟩, crossed⟩ := hc
         unfold subclass? at hshape
         split at hshape
         · split at hshape
@@ -317,27 +325,49 @@ private theorem HeritageSchedule.perm (w : HeritageSchedule) : w.bridge.Perm w.o
   apply List.Perm.append_left
   exact List.perm_middle.symm
 
+private theorem heritageMovesWithin_run {ss : List Stmt} {B : EsmSplit.Bundle} {order : List Nat}
+    (fp : FootprintsOfSyntax ss B) (ud : EsmSplit.UniqueDefs B)
+    (fr : FramesOf ((List.range ss.length).zip ss) frames)
+    (reg : ∀ q ∈ frames, ∀ p ∈ q.2, p.2.region = q.1 + 1)
+    (n : Nat) (s t : State W)
+    (commute : ∀ i j, i ≠ j → certifiedMayMove ss B i j = true →
+      Commute (unitStep n (bundleUnit ss frames i) : M W Flow) (unitStep n (bundleUnit ss frames j)) ∧
+        Commute (unitStep n (bundleUnit ss frames j) : M W Flow) (unitStep n (bundleUnit ss frames i)))
+    (perm : order.Perm (List.range ss.length)) (steps : Nat)
+    (ok : heritageMovesWithin ss B order steps = true) :
+    runUnits n (order.map (bundleUnit ss frames)) s = .ok () t ↔
+      runUnits n ((List.range ss.length).map (bundleUnit ss frames)) s = .ok () t := by
+  have ordinary : ∀ order, order.Perm (List.range ss.length) →
+      certifiedMovesOk ss B order = true →
+      (runUnits n (order.map (bundleUnit ss frames)) s = .ok () t ↔
+        runUnits n ((List.range ss.length).map (bundleUnit ss frames)) s = .ok () t) := by
+    intro order perm ok
+    exact reorder_units_of_commute n (bundleUnit ss frames) (certifiedMayMove ss B) commute
+      perm ((certifiedMovesOk_iff _ _ _).1 ok) s t
+  induction steps generalizing order with
+  | zero => exact ordinary order perm ok
+  | succ k ih =>
+    unfold heritageMovesWithin at ok
+    split at ok
+    · exact ordinary order perm (by assumption)
+    · obtain ⟨w, _, hw⟩ := any_some ok
+      simp only [Bool.and_eq_true] at hw
+      obtain ⟨⟨orderEq, check⟩, rest⟩ := hw
+      have horder : w.order = order := by simpa using orderEq
+      subst order
+      exact (schedule_of_check w fp ud fr reg check n s t).symm.trans
+        (ih (w.perm.trans perm) rest)
+
 theorem heritageMoves_run {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (fp : FootprintsOfSyntax ss B)
     (ok : heritageMovesOk ss B P.execOrder = true) (n : Nat) (s : State W) :
     runProgram W n (Program.single ss) = .ok () s ↔
       runProgram W n (splitProgram ss B P) = .ok () s := by
-  obtain ⟨w, _, hw⟩ := any_some ok
-  simp only [Bool.and_eq_true] at hw
-  obtain ⟨order, hc⟩ := hw
-  have heq : w.order = P.execOrder := by simpa using order
   apply moves_preserve_run_of_order valid fp n _ s
   intro frames t t1 t2 linked _ t'
-  obtain ⟨bridge, slide⟩ :=
-    schedule_of_check w fp valid.1 (declareTops_names _ linked) (declareTops_regions _ linked) hc n
-      t2 t'
-  rw [← heq]
-  exact
-    (reorder_units_of_commute n (bundleUnit ss frames) (certifiedMayMove ss B)
-          (certifiedMayMove_sound fp valid.1 frames t t1 linked n)
-          (w.perm.trans (heq ▸ valid_perm valid fp.1)) ((certifiedMovesOk_iff _ _ _).1 bridge) t2
-          t').symm.trans
-      slide
+  exact (heritageMovesWithin_run fp valid.1 (declareTops_names _ linked)
+    (declareTops_regions _ linked) n t2 t'
+    (certifiedMayMove_sound fp valid.1 frames t t1 linked n) (valid_perm valid fp.1) 2 ok).symm
 
 theorem moves_preserve_of_heritageMovesOk {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (fp : FootprintsOfSyntax ss B)

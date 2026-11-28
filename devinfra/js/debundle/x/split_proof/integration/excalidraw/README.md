@@ -359,6 +359,28 @@ For every CoreJS world, the split ends normally in a given state exactly when
 the bundle does. The other eleven probe verdicts match the default-derived
 census. [Census and inheritance differential suite](https://app.buildbuddy.io/invocation/6d319638-a866-4e58-a82c-144fbcff326f)
 
+## Two subclass moves on the pinned roughjs chunk
+
+The [roughjs heritage test](roughjs_heritage_test.mjs) uses all 73 units of
+`chunk-X4ON7R5K.js`. Its placement runs the independent class allocation #10
+before both #8 and #9. The [original checker](https://app.buildbuddy.io/invocation/57916dc0-55c6-4e49-b5eb-f907b73ac57f)
+rejects the two inversions (`(10,8)` and `(10,9)`); one subclass slide leaves
+the other inversion unproved. The [updated checker](https://app.buildbuddy.io/invocation/8a4dca69-f439-4051-b20e-2635cc074640)
+accepts both slides with matching source footprints and a valid plan. Each
+slide establishes the same lexical parent `T` from unit #6 and checks that
+intervening units preserve its constructor and own data prototype. The
+intermediate orders are checked as permutations. The guarantee remains
+CoreJS normal completion for this plan; the test does not publish a split.
+
+An execution probe uses the unchanged `T`, `H` and `N` declarations. Both
+subclasses forward the supplied helper to `T` and inherit its methods.
+Node also runs the reordered class allocations with throwing ambient
+`Object` and `Math` getters: the methods that mention them are deferred.
+For the negative control, replacing `T` with `0` causes class creation to
+throw before construction in Node and CoreJS. Moving the subclass declarations
+ahead of the replacement makes the Node control succeed and the move checker
+refuses that placement.
+
 ## How much can be split without modeling module URLs?
 
 The pinned bundle contains 76 chunks (1,890 numbered source units) for which the

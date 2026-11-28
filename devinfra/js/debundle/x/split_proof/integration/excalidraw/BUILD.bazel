@@ -83,6 +83,23 @@ js_test(
     tags = ["manual"],
 )
 
+js_test(
+    name = "roughjs_heritage_test",
+    size = "medium",
+    data = [
+        "//devinfra/js/debundle/excalidraw:bundle",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "roughjs_heritage_test.mjs",
+    env = dict(
+        EXCALIDRAW_OUTPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
+        LINKED_INPUT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
+    ),
+)
+
 _EXCALIDRAW_GRAPHS = "//devinfra/js/debundle/excalidraw:spec_graphs"
 
 _EXCALIDRAW_SPEC_DIR = "excalidraw_lean_specs"
