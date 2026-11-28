@@ -275,7 +275,7 @@ def chart(app: App) -> Chart:
     grafana_instance.dashboard(
         chart,
         "github-exporter",
-        datasources={"DS_MIMIR": "mimir"},
+        datasources={"DS_MIMIR": grafana_instance.MIMIR_DATASOURCE_UID},
         folder="GitHub",
         json=(
             Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/github_exporter/github-api-quotas.json"

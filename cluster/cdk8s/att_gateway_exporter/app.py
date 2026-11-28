@@ -191,7 +191,10 @@ def chart(app: App) -> Chart:
     grafana_instance.dashboard(
         chart,
         NAME,
-        datasources={"DS_LOKI": grafana_instance.LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
+        datasources={
+            "DS_LOKI": grafana_instance.LOKI_DATASOURCE_UID,
+            "DS_MIMIR": grafana_instance.MIMIR_DATASOURCE_UID,
+        },
         folder="Network",
         json=(
             Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/att_gateway_exporter/home-gateway.json"
