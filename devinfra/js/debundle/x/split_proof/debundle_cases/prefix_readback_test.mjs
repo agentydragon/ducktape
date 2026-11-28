@@ -108,10 +108,5 @@ assert.equal(full.id, id);
 assert.equal(full.outcome, "certified");
 assert.deepEqual(full.emission, { guarantee: "all-outcomes", scope: "retained-tail" });
 assert.deepEqual(full.disk, full.emission);
-// The ordinary adapter still does not observe authored non-entry namespaces
-// or full-tree syntax. Do not call this a complete authored behavior pass.
-assert.equal(full.behavior, "unchecked");
-assert.deepEqual(
-  full.expectations.filter(({ status }) => status === "unchecked").map(({ assertion }) => assertion),
-  ["exports:static/app/modules/x.js", "exports:static/app/modules/residual/unhandled.js", "check_all_js"]
-);
+assert.equal(full.behavior, "pass");
+assert(full.expectations.every(({ status }) => status === "pass" || status === "inapplicable"));

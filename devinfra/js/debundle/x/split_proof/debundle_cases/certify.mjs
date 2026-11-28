@@ -24,6 +24,7 @@ export function certify({
   chunkFile,
   plan,
   resolvedUnits,
+  moduleRoutes = new Map(),
   want,
   originalWant = want,
   providers,
@@ -55,9 +56,10 @@ export function certify({
   // Retain the directory of a nested entry and its fixed source modules.
   // Synthetic filenames live beside that entry in the same deployment.
   const deployment = providers.length > 0 && path.dirname(chunkFile) !== ".";
+  if (deployment) entry = chunkFile;
+  const route = (name) =>
+    name === plan.entry ? entry : deployment ? path.posix.join(path.dirname(entry), name) : name;
   if (deployment) {
-    entry = chunkFile;
-    const route = (name) => (name === plan.entry ? entry : path.posix.join(path.dirname(entry), name));
     const modules = Object.fromEntries(Object.entries(plan.modules).map(([name, units]) => [route(name), units]));
     writeFileSync(spec, JSON.stringify({ entry, modules, order: plan.order.map(route), privateEntryBody: true }));
     const fixed = [...new Set(providers)].map((file) => {
@@ -86,5 +88,14 @@ export function certify({
   const matches = (r, expected) => !r.failure && r.code === 0 && r.stdout === expected;
   const original = matches(nodeRun("original", chunkFile, stage), originalWant);
   const emitted = matches(nodeRun("emitted", path.join(output, entry), stage), want);
-  return { outcome: original && emitted ? "certified" : "error:runtime", emission, disk, original, emitted, entry };
+  const moduleOutputs = new Map([...moduleRoutes].map(([authored, synthetic]) => [authored, route(synthetic)]));
+  return {
+    outcome: original && emitted ? "certified" : "error:runtime",
+    emission,
+    disk,
+    original,
+    emitted,
+    entry,
+    moduleOutputs,
+  };
 }

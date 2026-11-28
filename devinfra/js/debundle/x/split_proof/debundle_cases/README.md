@@ -35,7 +35,7 @@ DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mj
 
 The ordinary splitter runs once for every saved `agree-accept` diagnostic case, including nested entries with fixed providers. A refusal records the CLI’s reason in `emission.blocker` and its reason code when available; the output directory must remain absent. After an acceptance the runner checks the published files from disk and runs the original and emitted entries in Node. Both must exit successfully and match the fixture’s expected stdout. Missing cases, adapter errors, and failed disk or runtime checks fail the test.
 
-The certificate result and corpus observations are separate. Each row records `expectations` as `pass`, `fail`, `unchecked`, `inapplicable`, or `refused`, and `behavior` is `pass` only if every applicable authored observation passed. Entry export expectations are observed when the authored entry route maps to the emitted entry; saved probes run on both the original and the published entry. Other module paths, source assertions, emitted-only probes, `check_all_js`, runtime file setup and unknown expectation fields remain unchecked until the adapter can represent and verify them. A refused request marks applicable observations refused; an absent assertion is inapplicable. The unchanged cohort remains the saved 122 diagnostic placements, including renames that the adapter must refuse. `--print-ledger` prints the rows as well as status totals. Disk readback separately verifies the certified export cells; runtime equality of primitive values alone does not.
+The certificate result and corpus observations are separate. Each row records `expectations` as `pass`, `fail`, `unchecked`, `inapplicable`, or `refused`, and `behavior` is `pass` only if every applicable authored observation passed. Export expectations use the authored entry and named owner routes to import the actual emitted modules. The probe also records the original unsplit namespace for comparison. Saved probes run on both the original and the published entry. When requested, `check_all_js` runs `node --check` on every emitted JavaScript file, including files the entry does not load. Unmapped module paths, source assertions, emitted-only probes, runtime file setup and unknown expectation fields remain unchecked until the adapter can represent and verify them. A refused request marks applicable observations refused; an absent assertion is inapplicable. The unchanged cohort remains the saved 122 diagnostic placements, including renames that the adapter must refuse. `--print-ledger` prints the rows as well as status totals. Disk readback separately verifies the certified export cells; runtime equality of primitive values alone does not. In `split_declarator_fragments`, the original namespace is `{c, z}`. The emitted `x.mjs` provides `c`, the residual namespace excludes it, and all three emitted files pass syntax checks. These are observations of the saved artifacts. The emission and readback verdicts record the proof guarantee separately.
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof/debundle_cases
@@ -69,10 +69,8 @@ Both saved placements are emitted and reread under an explicit all-outcomes
 request. The model regression runs each parsed original and reread output
 against worlds that read an actual capture, allocate and mutate an object,
 and then return, throw, or report an unknown operation. It also checks low
-fuel and rejects a changed capture or dependency-breaking order. The comma-list
-placement passes all its authored observations. Declaration fragments'
-two non-entry namespace observations and full-tree syntax check are a separate
-adapter concern.
+fuel and rejects a changed capture or dependency-breaking order. Both placements pass all their authored observations, including declaration
+fragments' two non-entry namespace checks and full-tree syntax check.
 
 The separate `corpus_certificate_test` requires a compiled constructor to emit a supported placement. It checks its live export in Node, rechecks the files, and rejects a tampered provider and a wrong owner. The [historical structural report](https://github.com/agentydragon/ducktape/blob/c42cc83cf15aa5bf544ca998624af8932b2370ef/devinfra/js/debundle/x/split_proof/debundle_cases/results/certificates.jsonl) records earlier results under different proof rules.
 
