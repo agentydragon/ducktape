@@ -15,7 +15,11 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecDatabaseReclaimPolicy
+from cnpg_database_crds.io.cnpg.postgresql import (
+    DatabaseSpecDatabaseReclaimPolicy,
+    DatabaseSpecExtensions,
+    DatabaseSpecExtensionsEnsure,
+)
 from constructs import Construct
 
 from cluster.cdk8s.agentplane.environment import Environment
@@ -115,6 +119,11 @@ class Db(Construct):
                     "log_lock_waits": "on",
                     "log_parameter_max_length": "0",
                     "log_parameter_max_length_on_error": "0",
+                    # Setting a pg_stat_statements.* parameter makes CNPG preload the library
+                    # (a restart); each Database below creates the extension. Per-statement WAL
+                    # and row counts attribute write load to the query that causes it.
+                    "pg_stat_statements.max": "5000",
+                    "pg_stat_statements.track": "top",
                 }
             ),
             initdb=cnpg.same_owner_initdb("app"),
@@ -155,4 +164,7 @@ class Db(Construct):
                     if role == Database.CENTRAL_SAMPLER
                     else DatabaseSpecDatabaseReclaimPolicy.DELETE
                 ),
+                extensions=[
+                    DatabaseSpecExtensions(name="pg_stat_statements", ensure=DatabaseSpecExtensionsEnsure.PRESENT)
+                ],
             )
