@@ -2082,6 +2082,18 @@ test_runner(
 )
 
 test_runner(
+    name = "basis_placement_test_runner",
+    src = "BasisPlacementTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":cli",
+        ":corejs_authenticated_source",
+        ":corejs_link_world",
+        ":lowersplit_input",
+    ],
+)
+
+test_runner(
     name = "linked_input_test_runner",
     src = "LinkedInputTest.lean",
     visibility = [
