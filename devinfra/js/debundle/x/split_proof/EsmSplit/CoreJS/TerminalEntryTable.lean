@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.TerminalEntryNames
 import EsmSplit.CoreJS.ExportRows
+import EsmSplit.CoreJS.TerminalEntryNames
 
 /-! Ordered entry export tables for a terminal metadata row. Cell
 existence and equality must be proved from the source and actual split scopes;
@@ -11,9 +11,8 @@ namespace CoreJS.TerminalEntryTable
 public names and aliases. Generated glue is independently required to be empty. -/
 theorem exact_exports {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     {md : EsmSplit.Module} {row : EsmSplit.LocalExportUnit} {prior : List Nat}
-    (units : md.stmts = prior ++ [row.ordinal])
-    (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : md.exports = [])
-    (footprint : row.FootprintMatches (B.stmt row.ordinal)) :
+    (units : md.stmts = prior ++ [row.ordinal]) (unpublished : ∀ i ∈ prior, (B.stmt i).exports = [])
+    (glue : md.exports = []) (footprint : row.FootprintMatches (B.stmt row.ordinal)) :
     (moduleOf ss B P md).exports = row.names := by
   by_cases absent : row.ordinal ∉ prior
   · have onlyRow : ∀ id ∈ md.stmts, id ≠ row.ordinal → (B.stmt id).exports = [] := by
@@ -44,10 +43,8 @@ theorem exact_exports {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     have matched : ∀ id ∈ md.stmts, ExportRows.UnitMatches B [] id := by
       intro id member
       simpa [ExportRows.UnitMatches, ExportRows.rowAt] using unitEmpty id member
-    have selected : md.stmts.filterMap (ExportRows.rowAt []) = [] := by
-      simp [ExportRows.rowAt]
+    have selected : md.stmts.filterMap (ExportRows.rowAt []) = [] := by simp [ExportRows.rowAt]
     change md.namedExports B = row.names
     simpa [emptyNames] using ExportRows.exact_entry_exports matched selected glue
-
 
 end CoreJS.TerminalEntryTable

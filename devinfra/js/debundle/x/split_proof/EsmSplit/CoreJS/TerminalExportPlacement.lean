@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.ResolvedPlacement
+import EsmSplit.CoreJS.Split
 
 /-! A terminal export list has a source ordinal and an owner even though it
 does not become an executable CoreJS statement. The source bundle retains that
@@ -25,11 +25,13 @@ def select (source : TerminalSource) (selector : EsmSplit.Selector) : Except Str
   | .name _ => (ResolvedPlacement.select source.module selector).map Prod.snd
 
 /-- Resolve every authored selector without renumbering the selected unit. -/
-def selectRequests (source : TerminalSource) (request : EsmSplit.Spec) : Except String (List UnitPlacement) := do
-  let rows ← request.modules.mapM fun (owner, selectors) => do
-    selectors.mapM fun selector => do
-      let ordinal ← select source selector
-      return (ordinal, owner)
+def selectRequests (source : TerminalSource) (request : EsmSplit.Spec) :
+    Except String (List UnitPlacement) := do
+  let rows ←
+    request.modules.mapM fun (owner, selectors) => do
+        selectors.mapM fun selector => do
+            let ordinal ← select source selector
+            return (ordinal, owner)
   return rows.flatten
 
 /-- Checked original labels for executable and terminal export units together. -/
@@ -45,22 +47,38 @@ structure Selection (source : TerminalSource) (request : EsmSplit.Spec) where
 /-- Resolve all units from the source and request. Missing or repeated units,
 ambiguous executable selectors, and a terminal export owned outside the entry
 are refused. No candidate output is inspected. -/
-def resolve (source : TerminalSource) (request : EsmSplit.Spec) : Except String (Selection source request) := do
-  let .isTrue sourceUnique := (inferInstance : Decidable ((source.module.body.map Prod.fst).Nodup)) |
-    throw "source unit identities are duplicated"
-  let .isTrue terminalAfter := (inferInstance : Decidable
-      (∀ id ∈ source.module.body.map Prod.fst, id < source.exportOrdinal)) |
-    throw "export list is not after every executable source unit"
+def resolve (source : TerminalSource) (request : EsmSplit.Spec) :
+    Except String (Selection source request) := do
+  let .isTrue sourceUnique :=
+    (inferInstance :
+      Decidable
+        ((source.module.body.map Prod.fst).Nodup)) | throw "source unit identities are duplicated"
+  let .isTrue terminalAfter :=
+    (inferInstance :
+      Decidable
+        (∀ id ∈ source.module.body.map Prod.fst,
+          id <
+            source.exportOrdinal)) | throw "export list is not after every executable source unit"
   match resolved : selectRequests source request with
-  | .error why => throw why
+  | .error why =>
+    throw why
   | .ok selected =>
-    let .isTrue unique := (inferInstance : Decidable ((selected.map Prod.fst).Nodup)) |
-      throw "an original unit is selected more than once"
-    let .isTrue coverage := (inferInstance : Decidable
-        ((selected.map Prod.fst).Perm (source.exportOrdinal :: source.module.body.map Prod.fst))) |
-      throw "selectors do not cover every original unit"
-    let .isTrue exportOwner := (inferInstance : Decidable ((source.exportOrdinal, request.entry) ∈ selected)) |
-      throw "terminal export unit must be owned by the entry"
+    let .isTrue unique :=
+      (inferInstance :
+        Decidable
+          ((selected.map Prod.fst).Nodup)) | throw "an original unit is selected more than once"
+    let .isTrue coverage :=
+      (inferInstance :
+        Decidable
+          ((selected.map Prod.fst).Perm
+            (source.exportOrdinal ::
+              source.module.body.map
+                Prod.fst))) | throw "selectors do not cover every original unit"
+    let .isTrue exportOwner :=
+      (inferInstance :
+        Decidable
+          ((source.exportOrdinal, request.entry) ∈
+            selected)) | throw "terminal export unit must be owned by the entry"
     return ⟨selected, resolved, sourceUnique, terminalAfter, unique, coverage, exportOwner⟩
 
 /-- The accepted assignment includes every original unit exactly once and
@@ -69,7 +87,8 @@ theorem resolve_sound {source request} (result : Selection source request)
     (_accepted : resolve source request = .ok result) :
     selectRequests source request = .ok result.selected ∧
       (result.selected.map Prod.fst).Nodup ∧
-      (result.selected.map Prod.fst).Perm (source.exportOrdinal :: source.module.body.map Prod.fst) ∧
+      (result.selected.map Prod.fst).Perm
+        (source.exportOrdinal :: source.module.body.map Prod.fst) ∧
       (source.exportOrdinal, request.entry) ∈ result.selected :=
   ⟨result.resolved, result.selectedUnique, result.coverage, result.exportOwner⟩
 
@@ -83,14 +102,16 @@ theorem terminal_export_in_owner {ss : List Stmt} {B : EsmSplit.Bundle} {S : Esm
     (inBundle : ordinal < B.length) (notExecutable : ss.length ≤ ordinal)
     (authored : S.claimants B ordinal = [S.entry])
     (exported : (pubName, some localName) ∈ (B.stmt ordinal).exports) :
-    ordinal ∈ owner.stmts ∧ (pubName, localName) ∈ (moduleOf ss B P owner).exports ∧
+    ordinal ∈ owner.stmts ∧
+      (pubName, localName) ∈ (moduleOf ss B P owner).exports ∧
       ∀ stmt, (ordinal, stmt) ∉ (moduleOf ss B P owner).body := by
   have ownerIn : owner ∈ P.mods := List.mem_of_find?_eq_some findOwner
   have ownerName : owner.name = S.entry := by
     have h := List.find?_some findOwner
     simpa [EsmSplit.Plan.find] using h
   have placed : ordinal ∈ owner.stmts :=
-    (faithful.2.2.2.2.1 owner ownerIn ordinal (List.mem_range.2 inBundle)).2 (by simpa [ownerName] using authored)
+    (faithful.2.2.2.2.1 owner ownerIn ordinal (List.mem_range.2 inBundle)).2
+      (by simpa [ownerName] using authored)
   refine ⟨placed, ?_, ?_⟩
   · change (pubName, localName) ∈ owner.namedExports B
     unfold EsmSplit.Module.namedExports EsmSplit.Module.namedExportsFrom
@@ -115,13 +136,12 @@ theorem terminal_export_in_owner {ss : List Stmt} {B : EsmSplit.Bundle} {S : Esm
 from its unique authored claimant. -/
 theorem wrong_owner_not_placed {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
     {owner : EsmSplit.Module} {ordinal : Nat} {claimed : String}
-    (faithful : EsmSplit.Faithful B S P) (ownerIn : owner ∈ P.mods)
-    (inBundle : ordinal < B.length) (authored : S.claimants B ordinal = [claimed])
-    (different : owner.name ≠ claimed) : ordinal ∉ owner.stmts := by
+    (faithful : EsmSplit.Faithful B S P) (ownerIn : owner ∈ P.mods) (inBundle : ordinal < B.length)
+    (authored : S.claimants B ordinal = [claimed]) (different : owner.name ≠ claimed) :
+    ordinal ∉ owner.stmts := by
   intro placed
   have h := (faithful.2.2.2.2.1 owner ownerIn ordinal (List.mem_range.2 inBundle)).1 placed
   rw [authored] at h
   exact different (by simpa using h.symm)
-
 
 end CoreJS.TerminalExportPlacement

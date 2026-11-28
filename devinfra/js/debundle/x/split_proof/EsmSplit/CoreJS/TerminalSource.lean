@@ -28,9 +28,12 @@ def check (input : Program × List EsmSplit.LocalExportUnit) : Except String (Ch
       if table : source.exports = row.names then
         let terminal ← ProjectedOrder.checkTerminalOnly source row.ordinal
         return ⟨source, row, modules, entry, rows, table, terminal.down⟩
-      else throw "local export row does not cover the module public surface"
-    else throw "singleton source is not the entry module"
-  | _, _ => throw "expected one source module and exactly one local export row"
+      else
+        throw "local export row does not cover the module public surface"
+    else
+      throw "singleton source is not the entry module"
+  | _, _ =>
+    throw "expected one source module and exactly one local export row"
 
 /-- N's schedule interface applies directly to the checked source and the
 original row ordinal. The order premise concerns the full planned graph. -/
@@ -40,6 +43,5 @@ theorem loaded_ids {input : Program × List EsmSplit.LocalExportUnit} (checked :
     ((splitProgram (checked.source.body.map Prod.snd) B P).loaded.flatMap (·.body)).map Prod.fst =
       checked.source.body.map Prod.fst :=
   ProjectedOrder.terminal_loaded_ids checked.source checked.row.ordinal B P checked.terminal kept
-
 
 end CoreJS.TerminalSource

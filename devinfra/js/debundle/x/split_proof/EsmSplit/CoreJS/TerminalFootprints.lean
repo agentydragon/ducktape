@@ -8,13 +8,14 @@ namespace CoreJS.MetadataCells
 
 /-- A finite form suitable for checking the exact source statements and every
 trailing source ordinal of the actual planner bundle. -/
-theorem footprints_iff (ss : List Stmt) (B : EsmSplit.Bundle) : Footprints ss B ↔
-    ss.length ≤ B.length ∧
-    (∀ i (h : i < ss.length),
-      (∀ x ∈ (B.stmt i).defs, x ∈ ss[i].bindings.map (·.1)) ∧
-      (∀ x ∈ ss[i].bindings.map (·.1), x ∈ (B.stmt i).defs) ∧
-      ∀ x ∈ ss[i].free, x ∈ (B.stmt i).defs ∨ x ∈ (B.stmt i).eager ++ (B.stmt i).lazy) ∧
-    ∀ i (_h : i < B.length), ss.length ≤ i → (B.stmt i).defs = [] := by
+theorem footprints_iff (ss : List Stmt) (B : EsmSplit.Bundle) :
+    Footprints ss B ↔
+      ss.length ≤ B.length ∧
+        (∀ i (h : i < ss.length),
+          (∀ x ∈ (B.stmt i).defs, x ∈ ss[i].bindings.map (·.1)) ∧
+            (∀ x ∈ ss[i].bindings.map (·.1), x ∈ (B.stmt i).defs) ∧
+            ∀ x ∈ ss[i].free, x ∈ (B.stmt i).defs ∨ x ∈ (B.stmt i).eager ++ (B.stmt i).lazy) ∧
+        ∀ i (_h : i < B.length), ss.length ≤ i → (B.stmt i).defs = [] := by
   constructor
   · intro f
     refine ⟨f.withinBundle, ?_, ?_⟩
@@ -41,8 +42,9 @@ instance (ss : List Stmt) (B : EsmSplit.Bundle) : Decidable (Footprints ss B) :=
 original metadata unit. A footprint may have deduplicated or extra uses. -/
 theorem row_footprint_iff (row : EsmSplit.LocalExportUnit) (statement : EsmSplit.Stmt) :
     row.FootprintMatches statement ↔
-      statement.exports = row.names.map (fun (publicName, localName) => (publicName, some localName)) ∧
-      ∀ pair ∈ row.names, pair.2 ∈ statement.eager ++ statement.lazy := by
+      statement.exports =
+          row.names.map (fun (publicName, localName) => (publicName, some localName)) ∧
+        ∀ pair ∈ row.names, pair.2 ∈ statement.eager ++ statement.lazy := by
   constructor
   · intro h
     exact ⟨h.exports, h.locals⟩
@@ -55,13 +57,13 @@ instance (row : EsmSplit.LocalExportUnit) (statement : EsmSplit.Stmt) :
 
 /-- Each exported local must be declared by an executable original unit.
 This is checked on the same full bundle and does not search the output. -/
-def RowLocalsDefined (ss : List Stmt) (B : EsmSplit.Bundle) (row : EsmSplit.LocalExportUnit) : Prop :=
+def RowLocalsDefined (ss : List Stmt) (B : EsmSplit.Bundle) (row : EsmSplit.LocalExportUnit) :
+    Prop :=
   ∀ pair ∈ row.names, ∃ j, j < ss.length ∧ pair.2 ∈ (B.stmt j).defs
 
 instance (ss : List Stmt) (B : EsmSplit.Bundle) (row : EsmSplit.LocalExportUnit) :
     Decidable (RowLocalsDefined ss B row) := by
   unfold RowLocalsDefined
   infer_instance
-
 
 end CoreJS.MetadataCells

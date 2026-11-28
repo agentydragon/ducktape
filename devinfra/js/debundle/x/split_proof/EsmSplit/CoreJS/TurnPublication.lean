@@ -21,16 +21,19 @@ for selecting host checkpoints or a substitute for the all-bounds proof. -/
 structure TurnPublication (source actual : TurnProgram) : Prop where
   exports : LinkedBehavior.SameExports source.program actual.program
   immediate : ∀ w fuel, runProgramTurn w fuel source = runProgramTurn w fuel actual
-  supported : ∀ w, ∃ (fuel jobFuel quota : Nat) (turn finished : Turn w),
-    (runProgramTurn w fuel source).completedTurn = some turn ∧
-      PrimitiveAwait.drain jobFuel quota turn = .ok .empty finished
+  supported :
+    ∀ w,
+      ∃ (fuel jobFuel quota : Nat) (turn finished : Turn w),
+        (runProgramTurn w fuel source).completedTurn = some turn ∧
+          PrimitiveAwait.drain jobFuel quota turn = .ok .empty finished
 
 theorem TurnPublication.ordinary {source actual : Program} (h : TurnPublication source actual) :
     LinkedBehavior.ScheduleEquivalent .allOutcomes (fun _ => True) source actual := by
   intro w _ fuel
   simpa only [runProgram_eq_erase] using congrArg TurnResult.erase (h.immediate w fuel)
 
-theorem TurnPublication.drains (h : TurnPublication source actual) (w : World) (fuel jobFuel quota : Nat) :
+theorem TurnPublication.drains (h : TurnPublication source actual) (w : World)
+    (fuel jobFuel quota : Nat) :
     (runProgramTurn w fuel source).checkpoint jobFuel quota =
       (runProgramTurn w fuel actual).checkpoint jobFuel quota :=
   congrArg (TurnResult.checkpoint jobFuel quota) (h.immediate w fuel)
@@ -38,8 +41,7 @@ theorem TurnPublication.drains (h : TurnPublication source actual) (w : World) (
 /-- The old observation can identify two turns whose checkpoints disagree. -/
 theorem erase_does_not_determine_checkpoint (s : State W) (job : Job) :
     (TurnResult.ok () ⟨s, []⟩).erase = (TurnResult.ok () ⟨s, [job]⟩).erase ∧
-      (TurnResult.ok () ⟨s, []⟩).checkpoint 0 0 ≠
-        (TurnResult.ok () ⟨s, [job]⟩).checkpoint 0 0 := by
+      (TurnResult.ok () ⟨s, []⟩).checkpoint 0 0 ≠ (TurnResult.ok () ⟨s, [job]⟩).checkpoint 0 0 := by
   refine ⟨rfl, ?_⟩
   simp [TurnResult.checkpoint, PrimitiveAwait.drain]
 
@@ -47,8 +49,12 @@ theorem erase_does_not_determine_checkpoint (s : State W) (job : Job) :
 the existing file identity check and carrying its equation into the verdict. -/
 def checkTurnPublication (files : Lean.Json) (source constructed : Program)
     (h : TurnPublication source constructed) :
-    Except String (PLift (∃ actual, ConstructedOutput.decodeConstructedOutput files constructed = .ok actual ∧
-      TurnPublication source actual)) := do
+    Except String
+      (PLift
+        (∃ actual,
+          ConstructedOutput.decodeConstructedOutput files constructed = .ok actual ∧
+            TurnPublication source actual)) :=
+  do
   let ⟨reread⟩ ← ConstructedOutput.checkConstructedOutput files constructed
   return ⟨⟨constructed, reread, h⟩⟩
 

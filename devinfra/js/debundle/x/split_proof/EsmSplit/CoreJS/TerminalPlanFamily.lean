@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.TerminalPlanScope
 import EsmSplit.CoreJS.TerminalLinkedExports
+import EsmSplit.CoreJS.TerminalPlanScope
 
 /-! Compose the source/actual-plan link with the complete original entry
 export table. The footprint and entry-shape premises are input checks, not
@@ -21,22 +21,24 @@ theorem world_result {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S)) (footprints : MetadataCells.Footprints ss B)
     (ordered : ProjectedOrder.Kept ss (EsmSplit.mkPlan B S)) (name : Name)
     (row : EsmSplit.LocalExportUnit) (entry : EsmSplit.Module)
-    (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
-    {prior : List Nat} (units : entry.stmts = prior ++ [row.ordinal])
+    (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry) {prior : List Nat}
+    (units : entry.stmts = prior ++ [row.ordinal])
     (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : entry.exports = [])
     (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
-    (sourceDefs : ∀ pair ∈ row.names, ∃ j, j < ss.length ∧ pair.2 ∈ (B.stmt j).defs)
-    (w : World) :
+    (sourceDefs : ∀ pair ∈ row.names, ∃ j, j < ss.length ∧ pair.2 ∈ (B.stmt j).defs) (w : World) :
     ∃ table,
       LinkedBehavior.exports w (TerminalPlanLink.source name row.names ss) = some table ∧
-      LinkedBehavior.exports w (splitProgram ss B (EsmSplit.mkPlan B S)) = some table ∧
-      ∀ fuel, runProgram w fuel (TerminalPlanLink.source name row.names ss) =
-        runProgram w fuel (splitProgram ss B (EsmSplit.mkPlan B S)) := by
+        LinkedBehavior.exports w (splitProgram ss B (EsmSplit.mkPlan B S)) = some table ∧
+        ∀ fuel,
+          runProgram w fuel (TerminalPlanLink.source name row.names ss) =
+            runProgram w fuel (splitProgram ss B (EsmSplit.mkPlan B S)) := by
   obtain ⟨frames, before, after, _, names, sourceLinked, scopes, _, _, _, outcomes⟩ :=
     TerminalPlanScope.const_planned_links consts valid footprints ordered name row.names w
   have declared := TerminalEntryCells.declared_rows_of_source valid footprints sourceDefs
-  obtain ⟨table, sourceTable, candidateTable⟩ := TerminalLinkedExports.linked_table
-    valid footprints names found (entry_in_order (EsmSplit.mkPlan B S)) units unpublished glue rowFootprint declared scopes name
+  obtain ⟨table, sourceTable, candidateTable⟩ :=
+    TerminalLinkedExports.linked_table valid footprints names found
+      (entry_in_order (EsmSplit.mkPlan B S)) units unpublished glue rowFootprint declared scopes
+      name
   refine ⟨table, ?_, ?_, outcomes⟩
   · unfold LinkedBehavior.exports
     rw [before.equation]
@@ -56,21 +58,26 @@ theorem family {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S)) (footprints : MetadataCells.Footprints ss B)
     (ordered : ProjectedOrder.Kept ss (EsmSplit.mkPlan B S)) (name : Name)
     (row : EsmSplit.LocalExportUnit) (entry : EsmSplit.Module)
-    (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
-    {prior : List Nat} (units : entry.stmts = prior ++ [row.ordinal])
+    (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry) {prior : List Nat}
+    (units : entry.stmts = prior ++ [row.ordinal])
     (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : entry.exports = [])
     (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
     (sourceDefs : ∀ pair ∈ row.names, ∃ j, j < ss.length ∧ pair.2 ∈ (B.stmt j).defs) :
-    LinkedBehavior.SameExports (TerminalPlanLink.source name row.names ss) (splitProgram ss B (EsmSplit.mkPlan B S)) ∧
-      ∀ w fuel, runProgram w fuel (TerminalPlanLink.source name row.names ss) =
-        runProgram w fuel (splitProgram ss B (EsmSplit.mkPlan B S)) := by
+    LinkedBehavior.SameExports (TerminalPlanLink.source name row.names ss)
+        (splitProgram ss B (EsmSplit.mkPlan B S)) ∧
+      ∀ w fuel,
+        runProgram w fuel (TerminalPlanLink.source name row.names ss) =
+          runProgram w fuel (splitProgram ss B (EsmSplit.mkPlan B S)) := by
   constructor
   · intro w
-    obtain ⟨table, before, after, _⟩ := world_result consts valid footprints ordered name row entry found units unpublished glue
-      rowFootprint sourceDefs w
+    obtain ⟨table, before, after, _⟩ :=
+      world_result consts valid footprints ordered name row entry found units unpublished glue
+        rowFootprint sourceDefs w
     exact ⟨table, table, before, after, List.Perm.refl _⟩
   · intro w fuel
-    exact (world_result consts valid footprints ordered name row entry found units unpublished glue rowFootprint sourceDefs w).choose_spec.2.2 fuel
-
+    exact
+      (world_result consts valid footprints ordered name row entry found units unpublished glue
+            rowFootprint sourceDefs w).choose_spec.2.2
+        fuel
 
 end CoreJS.TerminalPlanFamily

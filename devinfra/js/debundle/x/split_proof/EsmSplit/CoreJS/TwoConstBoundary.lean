@@ -11,32 +11,41 @@ set_option maxRecDepth 16000
 set_option maxHeartbeats 4000000
 
 def source (first second : Expr) : Program :=
-  ⟨"main", [⟨"main", [], [(0, .decl .const "x" first), (1, .decl .const "y" second)],
-    [("x", "x"), ("y", "y")]⟩]⟩
+  ⟨"main",
+    [⟨"main", [], [(0, .decl .const "x" first), (1, .decl .const "y" second)],
+        [("x", "x"), ("y", "y")]⟩]⟩
 
 /-- The first declaration moves to a provider; the entry imports its live cell. -/
 def introduce (first second : Expr) : Program :=
-  ⟨"main", [⟨"part", [], [(0, .decl .const "x" first)], [("x", "x")]⟩,
-    ⟨"main", [⟨"part", [("x", "x")]⟩], [(1, .decl .const "y" second)],
-      [("x", "x"), ("y", "y")]⟩]⟩
+  ⟨"main",
+    [⟨"part", [], [(0, .decl .const "x" first)], [("x", "x")]⟩,
+      ⟨"main", [⟨"part", [("x", "x")]⟩], [(1, .decl .const "y" second)], [("x", "x"), ("y", "y")]⟩]⟩
 
-private def sourceEnv : Env := ⟨[("x", ⟨1, 0⟩), ("y", ⟨2, 0⟩)], .undef, none⟩
-private def partEnv : Env := ⟨[("x", ⟨1, 0⟩)], .undef, none⟩
-private def entryEnv : Env := ⟨[("y", ⟨2, 0⟩), ("x", ⟨1, 0⟩)], .undef, none⟩
+private def sourceEnv : Env :=
+  ⟨[("x", ⟨1, 0⟩), ("y", ⟨2, 0⟩)], .undef, none⟩
+
+private def partEnv : Env :=
+  ⟨[("x", ⟨1, 0⟩)], .undef, none⟩
+
+private def entryEnv : Env :=
+  ⟨[("y", ⟨2, 0⟩), ("x", ⟨1, 0⟩)], .undef, none⟩
+
 private def ready (w : World) : State w :=
   let frame : Array Binding := #[⟨none, false⟩]
   { initialState w 2 with cells := #[#[], frame, frame] }
 
 private def sourceLinked (a b : Expr) : List (Module × Env) :=
-  [(⟨"main", [], [(0, .decl .const "x" a), (1, .decl .const "y" b)],
-    [("x", "x"), ("y", "y")]⟩, sourceEnv)]
+  [(⟨"main", [], [(0, .decl .const "x" a), (1, .decl .const "y" b)], [("x", "x"), ("y", "y")]⟩,
+      sourceEnv)]
+
 private def splitLinked (a b : Expr) : List (Module × Env) :=
   [(⟨"part", [], [(0, .decl .const "x" a)], [("x", "x")]⟩, partEnv),
-   (⟨"main", [⟨"part", [("x", "x")]⟩], [(1, .decl .const "y" b)],
-    [("x", "x"), ("y", "y")]⟩, entryEnv)]
+    (⟨"main", [⟨"part", [("x", "x")]⟩], [(1, .decl .const "y" b)], [("x", "x"), ("y", "y")]⟩,
+      entryEnv)]
 
 private def sourceLink (w : World) (a b : Expr) : LinkedBehavior.CheckedLink (source a b) w :=
   ⟨sourceLinked a b, ready w, by cbv⟩
+
 private def splitLink (w : World) (a b : Expr) : LinkedBehavior.CheckedLink (introduce a b) w :=
   ⟨splitLinked a b, ready w, by cbv⟩
 
@@ -70,13 +79,12 @@ theorem allOutcomes (a b : Expr) (noLater : "y" ∉ a.free) (w : World) (fuel : 
   rw [LinkedBehavior.run_after_link fuel (sourceLink w a b),
     LinkedBehavior.run_after_link fuel (splitLink w a b)]
   apply congrFun (runUnits_same fuel ?_) (ready w)
-  exact .cons ⟨rfl, rfl, firstAgree a noLater⟩
-    (.cons ⟨rfl, rfl, entryAgree _⟩ .nil)
+  exact .cons ⟨rfl, rfl, firstAgree a noLater⟩ (.cons ⟨rfl, rfl, entryAgree _⟩ .nil)
 
 /-- The real linked schedules execute both declarations in their source order. -/
 theorem linkedOrder (a b : Expr) (w : World) :
     ((unitsOf (sourceLink w a b).linked).map LinkedUnit.id) = [0, 1] ∧
-    ((unitsOf (splitLink w a b).linked).map LinkedUnit.id) = [0, 1] := by
+      ((unitsOf (splitLink w a b).linked).map LinkedUnit.id) = [0, 1] := by
   exact ⟨rfl, rfl⟩
 
 /-- The actual linker assigns the same addresses to the public exports. -/
@@ -101,8 +109,10 @@ private def initialized (r : Res World.probe Unit) : Option (Val × Val) :=
 
 /-- The entry initializer reads the already-initialized provider cell. -/
 theorem initializedRead :
-    initialized (runProgram World.probe 32 (source (.bool true) (.var "x"))) = some (.bool true, .bool true) ∧
-    initialized (runProgram World.probe 32 (introduce (.bool true) (.var "x"))) = some (.bool true, .bool true) := by
+    initialized (runProgram World.probe 32 (source (.bool true) (.var "x"))) =
+        some (.bool true, .bool true) ∧
+      initialized (runProgram World.probe 32 (introduce (.bool true) (.var "x"))) =
+        some (.bool true, .bool true) := by
   constructor <;> cbv
 
 /-- Extract a thrown error and its already-produced output for concrete controls. -/
@@ -115,18 +125,21 @@ private def thrown (r : Res World.probe Unit) : Option (Val × Array String) :=
 sees the later TDZ binding, while the provider has no such local binding. -/
 theorem forwardReference_changes_throw :
     thrown (runProgram World.probe 32 (source (.var "y") (.bool true))) =
-      some (.error .reference "cannot access 'y' before initialization", #[]) ∧
-    thrown (runProgram World.probe 32 (introduce (.var "y") (.bool true))) =
-      some (.error .reference "y is not defined", #[]) := by
+        some (.error .reference "cannot access 'y' before initialization", #[]) ∧
+      thrown (runProgram World.probe 32 (introduce (.var "y") (.bool true))) =
+        some (.error .reference "y is not defined", #[]) := by
   constructor <;> cbv
 
 /-- A throw following an effect keeps both the thrown value and output. -/
 theorem effectThenThrow :
-    thrown (runProgram World.probe 32 (source (.seq (.prim .log [.str "before"]) (.var "x")) (.bool true))) =
-      some (.error .reference "cannot access 'x' before initialization", #["before"]) ∧
-    thrown (runProgram World.probe 32 (introduce (.seq (.prim .log [.str "before"]) (.var "x")) (.bool true))) =
-      some (.error .reference "cannot access 'x' before initialization", #["before"]) := by
+    thrown
+          (runProgram World.probe 32
+            (source (.seq (.prim .log [.str "before"]) (.var "x")) (.bool true))) =
+        some (.error .reference "cannot access 'x' before initialization", #["before"]) ∧
+      thrown
+          (runProgram World.probe 32
+            (introduce (.seq (.prim .log [.str "before"]) (.var "x")) (.bool true))) =
+        some (.error .reference "cannot access 'x' before initialization", #["before"]) := by
   constructor <;> cbv
-
 
 end CoreJS.TwoConstBoundary

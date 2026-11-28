@@ -44,11 +44,11 @@ def withJobs (jobs : List Job) : Res W α → TurnResult W α
   | .unknown reason state => .unknown reason ⟨state, jobs⟩
   | .fuel => .fuel
 
-@[simp] theorem erase_withJobs (jobs : List Job) (r : Res W α) :
-    (withJobs jobs r).erase = r := by cases r <;> rfl
+@[simp]
+theorem erase_withJobs (jobs : List Job) (r : Res W α) : (withJobs jobs r).erase = r := by
+  cases r <;> rfl
 
-def andThen (step : M W α) (turn : Turn W)
-    (next : α → Turn W → TurnResult W β) : TurnResult W β :=
+def andThen (step : M W α) (turn : Turn W) (next : α → Turn W → TurnResult W β) : TurnResult W β :=
   match step turn.state with
   | .ok a s => next a { turn with state := s }
   | .throw reason s => .throw reason { turn with state := s }
@@ -70,7 +70,8 @@ end TurnResult
 
 /-- The turn effect threads the sidecar through successful sequencing and
 keeps it on an abrupt outcome. Exhaustion still has no resumable turn. -/
-def TurnM (W : World) (α : Type) : Type := Turn W → TurnResult W α
+def TurnM (W : World) (α : Type) : Type :=
+  Turn W → TurnResult W α
 
 namespace TurnM
 
@@ -86,27 +87,32 @@ instance : Monad (TurnM W) where
     | .fuel => .fuel
 
 theorem bind_apply (m : TurnM W α) (f : α → TurnM W β) (turn : Turn W) :
-    (m >>= f) turn = (match m turn with
+    (m >>= f) turn =
+      (match m turn with
       | .ok a next => f a next
       | .throw reason stopped => .throw reason stopped
       | .unknown why stopped => .unknown why stopped
-      | .fuel => .fuel) := rfl
+      | .fuel => .fuel) :=
+  rfl
 
 /-- Lift an effect proved not to enqueue. This retains the *result's* state
 on every stateful outcome, alongside the input queue. -/
-def lift (m : M W α) : TurnM W α := fun turn =>
-  TurnResult.withJobs turn.jobs (m turn.state)
+def lift (m : M W α) : TurnM W α := fun turn => TurnResult.withJobs turn.jobs (m turn.state)
 
-@[simp] theorem lift_bind (m : M W α) (f : α → M W β) :
+@[simp]
+theorem lift_bind (m : M W α) (f : α → M W β) :
     lift (m >>= f) = (lift m >>= fun a => lift (f a)) := by
   funext turn
   obtain ⟨state, jobs⟩ := turn
   rw [bind_apply]
-  change TurnResult.withJobs jobs (match m state with
-    | .ok a s => f a s
-    | .throw v s => .throw v s
-    | .unknown why s => .unknown why s
-    | .fuel => .fuel) = _
+  change
+    TurnResult.withJobs jobs
+        (match m state with
+        | .ok a s => f a s
+        | .throw v s => .throw v s
+        | .unknown why s => .unknown why s
+        | .fuel => .fuel) =
+      _
   simp only [lift]
   cases m state <;> rfl
 
@@ -119,12 +125,13 @@ def attempt (m : TurnM W α) : TurnM W (Except Val α) := fun turn =>
   | .unknown why stopped => .unknown why stopped
   | .fuel => .fuel
 
-@[simp] theorem lift_attempt (m : M W α) :
-    lift (CoreJS.attempt m) = attempt (lift m) := by
+@[simp]
+theorem lift_attempt (m : M W α) : lift (CoreJS.attempt m) = attempt (lift m) := by
   funext turn
   obtain ⟨state, jobs⟩ := turn
   simp only [lift, CoreJS.attempt, attempt]
   cases m state <;> rfl
 
 end TurnM
+
 end CoreJS

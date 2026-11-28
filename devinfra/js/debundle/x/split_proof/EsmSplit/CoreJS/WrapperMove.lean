@@ -9,20 +9,25 @@ def wrapperFactory (name : Name) (params : List Name) (returned : Func) : Func :
   .mk name .arrow false params [.ret (.func returned)]
 
 /-- The linked binding still denotes the factory closure at the start of this swap. -/
-structure WrapperAt (s : State W) (env : Env) (alias : Name) (cell factory : Addr)
-    (closed : Env) (name : Name) (params : List Name) (returned : Func) : Prop where
+structure WrapperAt (s : State W) (env : Env) (alias : Name) (cell factory : Addr) (closed : Env)
+    (name : Name) (params : List Name) (returned : Func) : Prop where
   lookup : env.vars.lookup alias = some cell
   binding : ∃ mutable, s.cellAt cell = some ⟨some (.obj factory), mutable⟩
-  object : ∃ o, s.objAt factory = some o ∧
-    o.code = some (.closure (wrapperFactory name params returned) closed [])
+  object :
+    ∃ o,
+      s.objAt factory = some o ∧
+        o.code = some (.closure (wrapperFactory name params returned) closed [])
 
-theorem WrapperAt.in_region {s : State W} (h : WrapperAt s env alias cell factory closed name params returned)
-    (r : Nat) : WrapperAt { s with region := r } env alias cell factory closed name params returned :=
+theorem WrapperAt.in_region {s : State W}
+    (h : WrapperAt s env alias cell factory closed name params returned) (r : Nat) :
+    WrapperAt { s with region := r } env alias cell factory closed name params returned :=
   ⟨h.lookup, h.binding, h.object⟩
 
-theorem WrapperAt.after_local {s t : State W} (h : WrapperAt s env alias cell factory closed name params returned)
-    {m : M W α} (hl : Local (i + 1) R m) (hc : cell.region ≠ i + 1) (ho : factory.region ≠ i + 1)
-    (run : inRegion i m s = .ok a t) : WrapperAt t env alias cell factory closed name params returned := by
+theorem WrapperAt.after_local {s t : State W}
+    (h : WrapperAt s env alias cell factory closed name params returned) {m : M W α}
+    (hl : Local (i + 1) R m) (hc : cell.region ≠ i + 1) (ho : factory.region ≠ i + 1)
+    (run : inRegion i m s = .ok a t) :
+    WrapperAt t env alias cell factory closed name params returned := by
   obtain ⟨u, hu, rfl⟩ := inRegion_ok_state run
   obtain ⟨H, C, rfl, _⟩ := hl _ _ _ _ (Sees.refl rfl) hu
   obtain ⟨mutable, hb⟩ := h.binding
@@ -34,15 +39,21 @@ theorem WrapperAt.after_local {s t : State W} (h : WrapperAt s env alias cell fa
     simpa [State.objAt_put, ho] using hob
 
 /-- An import alias that resolves to the exported cell denotes the same factory. -/
-theorem WrapperAt.alias {s : State W} {consumer : Env} {alias : Name} (h : WrapperAt s env x cell factory closed name params returned)
+theorem WrapperAt.alias {s : State W} {consumer : Env} {alias : Name}
+    (h : WrapperAt s env x cell factory closed name params returned)
     (hl : consumer.vars.lookup alias = some cell) :
-    WrapperAt s consumer alias cell factory closed name params returned := ⟨hl, h.binding, h.object⟩
+    WrapperAt s consumer alias cell factory closed name params returned :=
+  ⟨hl, h.binding, h.object⟩
 
 /-- Evaluating the provider's declaration installs this factory and its captured environment. -/
 theorem wrapperVar_origin {fuel id : Nat} {s t : State W} {flow : Flow}
-    (run : runUnit fuel env id (.decl .var x (.func (wrapperFactory name params returned))) s = .ok flow t) :
-    ∃ cell factory, factory.region = id + 1 ∧
-      WrapperAt t env x cell factory (env.capture (wrapperFactory name params returned).closes) name params returned := by
+    (run :
+      runUnit fuel env id (.decl .var x (.func (wrapperFactory name params returned))) s =
+        .ok flow t) :
+    ∃ cell factory,
+      factory.region = id + 1 ∧
+        WrapperAt t env x cell factory (env.capture (wrapperFactory name params returned).closes)
+          name params returned := by
   obtain ⟨u, hexec, rfl⟩ := runUnit_ok run
   cases fuel with
   | zero => cases hexec
@@ -65,21 +76,25 @@ theorem wrapperVar_origin {fuel id : Nat} {s t : State W} {flow : Flow}
       cases hv
       obtain ⟨cell, hl, hb, hh⟩ := writeVar_origin hwrite
       have ho := alloc_objAt ha
-      exact ⟨cell, a, alloc_region ha, hl, ⟨true, hb⟩, ⟨_, by simpa [State.objAt, hh] using ho, rfl⟩⟩
+      exact
+        ⟨cell, a, alloc_region ha, hl, ⟨true, hb⟩, ⟨_, by simpa [State.objAt, hh] using ho, rfl⟩⟩
 
-private def resolvedCall (n : Nat) (closed : Env) (name : Name) (params : List Name) (returned : Func)
-    (args : List Val) : M W Val := do
+private def resolvedCall (n : Nat) (closed : Env) (name : Name) (params : List Name)
+    (returned : Func) (args : List Val) : M W Val := do
   let env ← enterFunction (wrapperFactory name params returned) closed .undef args
   match ← execStmts n env [.ret (.func returned)] with
-  | .ret v => pure v
-  | _ => pure .undef
+  | .ret v =>
+    pure v
+  | _ =>
+    pure .undef
 
 private theorem resolvedCall_local (n : Nat) (closed : Env) (name : Name) (params : List Name)
     (returned : Func) (args : List Val) :
     Local r R (resolvedCall n closed name params returned args : M W Val) := by
   unfold resolvedCall
   apply Local.bind'
-  · simp only [enterFunction, strictArgumentsBindings, parameterBindings, wrapperFactory, Func.kind, M.pure_bind]
+  · simp only [enterFunction, strictArgumentsBindings, parameterBindings, wrapperFactory, Func.kind,
+      M.pure_bind]
     refine (local_declare _ _).bind' fun env => ?_
     unfold enterBlock
     refine (local_declare _ _).bind' fun env => ?_
@@ -93,8 +108,10 @@ private theorem resolvedCall_local (n : Nat) (closed : Env) (name : Name) (param
         apply Local.bind'
         · cases n with
           | zero => exact local_outOfFuel
-          | succ n =>
-            change Local r R (evalExpr n env (.func returned) >>= fun v => pure (Flow.ret v) : M W Flow)
+          | succ
+            n =>
+            change
+              Local r R (evalExpr n env (.func returned) >>= fun v => pure (Flow.ret v) : M W Flow)
             apply Local.bind'
             · cases n with
               | zero => exact local_outOfFuel
@@ -114,7 +131,8 @@ private def withWrapper (fuel : Nat) (env closed : Env) (name : Name) (params : 
   | n + 2 => evalArgs (n + 1) env [.func callback] >>= resolvedCall n closed name params returned
 
 private theorem withWrapper_local (fuel : Nat) (env closed : Env) (name : Name) (params : List Name)
-    (returned callback : Func) : Local r R (withWrapper fuel env closed name params returned callback : M W Val) := by
+    (returned callback : Func) :
+    Local r R (withWrapper fuel env closed name params returned callback : M W Val) := by
   cases fuel with
   | zero => exact local_outOfFuel
   | succ fuel =>
@@ -122,11 +140,15 @@ private theorem withWrapper_local (fuel : Nat) (env closed : Env) (name : Name) 
     | zero => exact local_outOfFuel
     | succ n =>
       apply Local.bind'
-      · exact (allocOnly_local r R (n + 1)).2.1 env [.func callback] rfl (by intro z hz; cases hz)
+      · exact
+          (allocOnly_local r R (n + 1)).2.1 env [.func callback] rfl
+            (by
+              intro z hz; cases hz)
       · exact resolvedCall_local n closed name params returned
 
-private theorem eval_withWrapper (h : WrapperAt s env alias cell factory closed name params returned)
-    (fuel : Nat) (callback : Func) :
+private theorem eval_withWrapper
+    (h : WrapperAt s env alias cell factory closed name params returned) (fuel : Nat)
+    (callback : Func) :
     evalExpr fuel env (.call (.var alias) [.func callback]) s =
       withWrapper fuel env closed name params returned callback s := by
   cases fuel with
@@ -139,17 +161,22 @@ private theorem eval_withWrapper (h : WrapperAt s env alias cell factory closed 
       obtain ⟨o, ho, hcode⟩ := h.object
       have hr : evalExpr (n + 1) env (.var alias) s = .ok (.obj factory) s := by
         simp only [evalExpr, readVar, h.lookup, M.bind_apply, getState, hb]; rfl
-      change ((evalExpr (n + 1) env (.var alias)) >>= fun v =>
-        evalArgs (n + 1) env [.func callback] >>= callFn (n + 1) v .undef) s = _
+      change
+        ((evalExpr (n + 1) env (.var alias)) >>= fun v =>
+              evalArgs (n + 1) env [.func callback] >>= callFn (n + 1) v .undef)
+            s =
+          _
       rw [bind_of_ok hr]
       unfold withWrapper
       simp only [M.bind_apply]
       cases ha : evalArgs (n + 1) env [.func callback] s with
-      | ok args t =>
+      | ok args
+        t =>
         have he := (allocOnly_keeps (n + 1)).2.1 env [.func callback] s s rfl (Extends.refl s)
         rw [ha] at he
         have hg : getObj factory t = .ok o t := by simp [getObj, he.objs _ _ ho]
-        simp only [callFn, dispatchCall, dispatchCallWithDeferred, runLocalCall, M.bind_apply, hg, hcode]
+        simp only [callFn, dispatchCall, dispatchCallWithDeferred, runLocalCall, M.bind_apply, hg,
+          hcode]
         rfl
       | _ => rfl
 
@@ -177,22 +204,23 @@ private theorem wrapperDecl_local (fuel : Nat) (closed : Env) (name : Name) (par
   cases fuel with
   | zero => exact local_outOfFuel
   | succ n =>
-    exact (withWrapper_local n env closed name params returned callback).bind' fun v =>
-      (local_writeVar hx v).bind' fun _ => local_pure _
+    exact
+      (withWrapper_local n env closed name params returned callback).bind' fun v =>
+        (local_writeVar hx v).bind' fun _ => local_pure _
 
 /-- Calling the linked wrapper creator with a function argument commutes on successful runs with a
 separate local unit. The callback and returned function bodies are preserved in the heap. -/
 theorem wrapper_var_commutes_at {s : State W} {m : M W α}
     (h : WrapperAt s env alias cell factory closed name params returned)
-    (hx : ∀ c, env.vars.lookup x = some c → c.region = i + 1)
-    (hij : i ≠ j) (hl : Local (j + 1) R m) (hr : ∀ c, R c → c.region ≠ i + 1)
-    (hc : cell.region ≠ j + 1) (ho : factory.region ≠ j + 1) (n : Nat) (callback : Func) :
+    (hx : ∀ c, env.vars.lookup x = some c → c.region = i + 1) (hij : i ≠ j) (hl : Local (j + 1) R m)
+    (hr : ∀ c, R c → c.region ≠ i + 1) (hc : cell.region ≠ j + 1) (ho : factory.region ≠ j + 1)
+    (n : Nat) (callback : Func) :
     let a := runUnit n env i (.decl .var x (.call (.var alias) [.func callback]))
     let b := inRegion j m
-    ∀ f v t, (∃ u, a s = .ok f u ∧ b u = .ok v t) ↔
-             (∃ u, b s = .ok v u ∧ a u = .ok f t) := by
+    ∀ f v t, (∃ u, a s = .ok f u ∧ b u = .ok v t) ↔ (∃ u, b s = .ok v u ∧ a u = .ok f t) := by
   intro a b f v t
-  have hs := wrapperDecl_local (W := W) (R := fun _ => False) n closed name params returned callback hx
+  have hs :=
+    wrapperDecl_local (W := W) (R := fun _ => False) n closed name params returned callback hx
   have hnone : ∀ c : Addr, False → c.region ≠ j + 1 := fun _ h => h.elim
   constructor
   · rintro ⟨u, ha, hb⟩
