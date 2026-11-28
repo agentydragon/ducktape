@@ -45,3 +45,16 @@ in unit #0. The checked projection models a supplied receiver; the direct
 native `Array.prototype.map` call remains unknown in CoreJS. The Node
 array comparison is a runtime observation. No iterator binding is involved
 in the default-separator rule.
+
+## Shipped ESM graph
+
+The published `v4/core/util.js` is a distinct original input: 34,840 bytes
+at SHA-256 `bb08133b11b478c8e715038fff26ebea204d7fd5443fba31fe138b142d202efb`.
+Here the two declarations have ordinals #8 and #45 of 92. Node sees the
+same utility namespace through `zod`, `zod/v4/core`, and the original
+`util.js` file. A [separate replay](https://app.buildbuddy.io/invocation/883f4975-3540-45aa-be44-a14b6c9110dd)
+on `a7016ea3` requested the two moves on the unchanged file. The ordinary
+CLI refused the singleton, the actual two-file `util.js` / `core.js`
+cycle, and the 82- and 95-file static closures of the two public entries.
+The three graph requests declared the package's `node_esm_root` and still
+refused at graph admission. None produced output for readback or deployment.
