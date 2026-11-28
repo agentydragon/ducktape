@@ -1,6 +1,7 @@
 import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.DeploymentPlacement
 import EsmSplit.CoreJS.ExportRowsOrder
+import EsmSplit.CoreJS.Fragment
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.IndexedInputChecks
@@ -180,6 +181,33 @@ private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSp
     unless entryStmt false 128 stmt do
       throw s!"entry unit {id}: expected concrete retained code"
 
+/-- Admit an initial run of hoisted functions and plain class allocations. The
+tail remains in the entry. Both allocation and any later calls are still
+checked against their original order and linked environments. -/
+private def checkClassPrefix (source : Module) (B : EsmSplit.Bundle) (request : EsmSplit.Spec)
+    (owner : String) (ordinal : Nat) : Except String Unit := do
+  let owns module (row : Nat × Stmt) := request.claimants B row.1 == [module]
+  let (front, tail) := source.body.span (owns owner)
+  unless !front.isEmpty && !tail.isEmpty && tail.all (owns request.entry) &&
+      source.body.all (fun row => row.1 < ordinal) do
+    throw "expected an ordered class prefix, retained entry tail, and terminal publication"
+  let mut parents : List Name := []
+  let mut hasDerived := false
+  for (_, stmt) in front do
+    match stmt with
+    | .funDecl _ => pure ()
+    | .decl .var name (.cls _ false _ members) =>
+      unless plainClassMembers members do
+        throw "prefix class has eager members"
+      parents := name :: parents
+    | .decl .var _ (.derived _ false (.var parent) members none) =>
+      unless parents.contains parent && plainClassMembers members do
+        throw "prefix subclass must extend an earlier plain class without eager members"
+      hasDerived := true
+    | _ => throw "expected hoisted functions and plain class allocations in the prefix"
+  unless hasDerived do
+    throw "expected a derived class in the prefix"
+
 /-- Call a public cell after a fresh module evaluation. Failure, fuel and
 the final call state are retained. The receiver of the imported call is undefined. -/
 def runExportCall (w : World) (initFuel callFuel : Nat) (program : Program) (publicName : Name)
@@ -219,7 +247,8 @@ structure Construction (decoded : IndexedSource) (B : EsmSplit.Bundle)
           before.ready = after.ready ∧
             captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked)
 
-def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec) :
+private def constructOrdered (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec)
+    (classPrefix : Bool) :
     Except String (Construction decoded B request) := do
   let (helper, readerOwner, prototypeOwner) ←
     match request.order with
@@ -231,13 +260,15 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
       pure (owner, some reader, some prototype)
     | _ =>
       throw "expected a predicate module, with optional reader and prototype modules"
-  let [_] := decoded.localExports | throw "expected one original standalone export row"
+  let [row] := decoded.localExports | throw "expected one original standalone export row"
   let source := decoded.source
   let original := decoded.program
   unless
     request.sequential && !request.privateEntryBody &&
       decide (request.entry :: request.order).Nodup &&
-      request.modules.all (fun module => module.1.endsWith ".mjs") &&
+      request.modules.all (fun module =>
+        module.1.endsWith ".mjs" ||
+          (classPrefix && module.1 == request.entry && module.1.endsWith ".js")) &&
       !decoded.hasTemplates do
     throw "expected distinct sequential .mjs modules with a public entry and no templates"
   let .isTrue metadataOnce :=
@@ -251,7 +282,12 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
         (∀ row ∈ decoded.localExports,
           request.claimants B row.ordinal =
             [request.entry])) | throw "standalone export row must be authored in the entry"
-  checkFamily source B request helper readerOwner prototypeOwner
+  if classPrefix then
+    unless readerOwner.isNone && prototypeOwner.isNone do
+      throw "expected one generated class prefix module"
+    checkClassPrefix source B request helper row.ordinal
+  else
+    checkFamily source B request helper readerOwner prototypeOwner
   unless decide (IndexedInlineConstructor.SelectorsOnce source.body B request) do
     throw "each original executable unit must be selected exactly once"
   let schedule ← IndexedSourceSchedule.check decoded B request
@@ -395,6 +431,14 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
     exact ⟨before.forWorld w, after, ready, OrderedRegion.sameUnits_capture same⟩
   return ⟨schedule, program, rfl, places, metadataOnce, metadataOwner, exactExports, outcomes,
       captures⟩
+
+def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec) :
+    Except String (Construction decoded B request) :=
+  constructOrdered decoded B request false
+
+def constructClassPrefix (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec) :
+    Except String (Construction decoded B request) :=
+  constructOrdered decoded B request true
 
 /-- Transfer the authored placement and full outcome contract to independently
 decoded files, including calls on the identical live export cell. -/

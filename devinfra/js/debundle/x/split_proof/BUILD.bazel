@@ -4262,6 +4262,7 @@ lean_library(
         ":corejs_authenticated_source",
         ":corejs_deployment_placement",
         ":corejs_export_rows_order",
+        ":corejs_fragment",
         ":corejs_indexed_checked_split",
         ":corejs_indexed_inline_constructor",
         ":corejs_indexed_input_checks",
@@ -4276,6 +4277,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.IndexedExportedFunction"],
     required_theorems = [
         "CoreJS.IndexedExportedFunction.construct",
+        "CoreJS.IndexedExportedFunction.constructClassPrefix",
         "CoreJS.IndexedExportedFunction.Construction.linkedCaptures",
         "CoreJS.IndexedExportedFunction.Construction.readbackGuarantees",
     ],

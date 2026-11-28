@@ -427,19 +427,26 @@ private def tryExportedFunction (spec : Spec) (src : BundleInput)
           | .funDecl _ => true
           | _ => false) do
     return none
-  let scope := "indexed-exported-function"
   let bundle := sourceBundle decoded.nodes
-  let built ←
+  let (built, scope, level) ←
     match CoreJS.IndexedExportedFunction.construct decoded bundle spec with
     | .ok built =>
-      pure built
+      pure (built, "indexed-exported-function", Guarantee.allOutcomes)
     | .error reason =>
       if CoreJS.IndexedHoistedSwap.recognises decoded bundle spec then
         return some (← runHoistedSwap spec src decoded bundle out work options timings)
-      return some
-          (←
-            emitRefusal options.request.label { reason, reasonCode := some "no_constructed_rule" }
-                scope)
+      else if options.request == .normalCompletion then
+        match CoreJS.IndexedExportedFunction.constructClassPrefix decoded bundle spec with
+        | .ok built =>
+          pure (built, "indexed-class-prefix", Guarantee.normalCompletion)
+        | .error _ =>
+          return some
+            (← emitRefusal options.request.label { reason, reasonCode := some "no_constructed_rule" }
+                "indexed-exported-function")
+      else
+        return some
+          (← emitRefusal options.request.label { reason, reasonCode := some "no_constructed_rule" }
+              "indexed-exported-function")
   try
     let programs ←
       IO.ofExcept
@@ -460,7 +467,7 @@ private def tryExportedFunction (spec : Spec) (src : BundleInput)
     | .ok _ =>
       return some
           (←
-            emitVerdict options.request.label (.ok .allOutcomes) scope
+            emitVerdict options.request.label (.ok level) scope
                 [("strategy", toJson "compiled-constructor")])
     | .error refusal =>
       return some (← emitRefusal options.request.label refusal scope)

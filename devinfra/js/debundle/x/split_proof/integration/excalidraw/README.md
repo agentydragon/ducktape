@@ -381,6 +381,30 @@ throw before construction in Node and CoreJS. Moving the subclass declarations
 ahead of the replacement makes the Node control succeed and the move checker
 refuses that placement.
 
+## Order-preserving roughjs split with the original public names
+
+The [pinned terminal-export test](roughjs_terminal_exports_test.mjs) starts from
+all 73 source units of `chunk-X4ON7R5K.js` (27,188 bytes). The ordinary CLI
+moves units #0–10 to `prefix.mjs` without changing execution order. The original
+entry retains 61 executable units and the terminal `export { Z as a, L as b, is as c }`
+row. The [old CLI refused the same request](https://app.buildbuddy.io/invocation/1a1fa19a-c3c6-46c9-a273-1b35f7877c01).
+
+| Layer                        | Measured result                                                                                                                                                                                                                                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Original source              | 72 executable units, one original export row, three public names. No projection.                                                                                                                                                                                                                                            |
+| Ordinary CLI and disk reread | Two files: the original entry route (24,185 bytes) and private `prefix.mjs` (3,299 bytes). Both pass the normal-completion route. The all-outcomes request and the two-inversion request are refused.                                                                                                                       |
+| Public cells                 | The linked-graph proof checks that `a`, `b` and `c` resolve to the same original cells. Rebinding `a` on disk while keeping the three namespace keys makes the reread fail.                                                                                                                                                 |
+| Reached public calls in Node | Construct the exported random class and use its `next`; call the exported generator, generate a seeded filled rectangle, draw a line through the exported canvas factory, and call `newSeed`. The result, callable names and source text, constructor and prototype relationships, and ten ordered host observations agree. |
+| Wrapper replay               | Node follows the real `vendor/roughjs.js` and its two original static dependencies. The wrapper's default is the same object as the chunk's live `c` export. The new private route is the only additional module. This is a Node replay of the route graph, not a certified multi-chunk deployment or a browser test.       |
+
+The constructor checks positional order, lexical captures, exact source items
+and the original terminal aliases. Emission takes callable syntax from the
+original source and checks it against the parsed output. A method body can
+contain builtins that CoreJS does not execute: these calls remain in the
+original bodies, and the Node comparison checks the particular calls above.
+The [production regression](https://app.buildbuddy.io/invocation/f0012e65-f9d9-4679-8815-b8d1f53226c8)
+records the separate layer outcomes.
+
 ## How much can be split without modeling module URLs?
 
 The pinned bundle contains 76 chunks (1,890 numbered source units) for which the
