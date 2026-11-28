@@ -15,19 +15,22 @@ structure LocalExportUnit where
 local names needed for linking; no CoreJS execution of the export list is
 implied. The caller supplies the existing source text unchanged. -/
 def LocalExportUnit.footprint (unit : LocalExportUnit) (src : String) : Stmt :=
-  { src, eager := unit.names.map Prod.snd, exports := unit.names.map fun (publicName, localName) =>
-      (publicName, some localName) }
+  { src, eager := unit.names.map Prod.snd,
+    exports := unit.names.map fun (publicName, localName) => (publicName, some localName) }
 
 /-- A supplied source footprint retains this unit's exact ordered public/local
 pairs and mentions every local. Name uses may be deduplicated or include
 additional conservative uses. Extra uses can induce additional imports, so
 this relation alone does not establish the actual graph or module order. -/
 structure LocalExportUnit.FootprintMatches (unit : LocalExportUnit) (statement : Stmt) : Prop where
-  exports : statement.exports = unit.names.map (fun (publicName, localName) => (publicName, some localName))
+  exports :
+    statement.exports = unit.names.map (fun (publicName, localName) => (publicName, some localName))
   locals : ∀ pair ∈ unit.names, pair.2 ∈ statement.eager ++ statement.lazy
 
-instance (unit : LocalExportUnit) (statement : Stmt) : Decidable (unit.FootprintMatches statement) := by
-  by_cases exports : statement.exports = unit.names.map (fun (publicName, localName) => (publicName, some localName))
+instance (unit : LocalExportUnit) (statement : Stmt) :
+    Decidable (unit.FootprintMatches statement) := by
+  by_cases exports :
+    statement.exports = unit.names.map (fun (publicName, localName) => (publicName, some localName))
   · by_cases locals : ∀ pair ∈ unit.names, pair.2 ∈ statement.eager ++ statement.lazy
     · exact isTrue ⟨exports, locals⟩
     · exact isFalse (fun h => locals h.locals)
@@ -57,8 +60,9 @@ the source text supplied for this particular ordinal. -/
 theorem LocalExportUnit.exact_footprint {unit : LocalExportUnit} {B : Bundle} {src : String}
     (sourceUnit : B.stmt unit.ordinal = unit.footprint src) :
     (B.stmt unit.ordinal).src = src ∧
-    (B.stmt unit.ordinal).eager = unit.names.map Prod.snd ∧
-    (B.stmt unit.ordinal).exports = unit.names.map (fun (publicName, localName) => (publicName, some localName)) := by
+      (B.stmt unit.ordinal).eager = unit.names.map Prod.snd ∧
+      (B.stmt unit.ordinal).exports =
+        unit.names.map (fun (publicName, localName) => (publicName, some localName)) := by
   rw [sourceUnit]
   exact ⟨rfl, rfl, rfl⟩
 
@@ -70,8 +74,8 @@ theorem LocalExportUnit.local_use_and_public {unit : LocalExportUnit} {B : Bundl
     localName ∈ (B.stmt unit.ordinal).eager ∧
       (publicName, some localName) ∈ (B.stmt unit.ordinal).exports := by
   rw [sourceUnit]
-  exact ⟨List.mem_map.mpr ⟨(publicName, localName), pair, rfl⟩,
-    List.mem_map.mpr ⟨(publicName, localName), pair, rfl⟩⟩
-
+  exact
+    ⟨List.mem_map.mpr ⟨(publicName, localName), pair, rfl⟩,
+      List.mem_map.mpr ⟨(publicName, localName), pair, rfl⟩⟩
 
 end EsmSplit

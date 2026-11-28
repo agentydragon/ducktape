@@ -16,6 +16,7 @@ open Std (compare_eq_iff_eq compare_self)
 /-! ## Duplicates, found with a set -/
 
 section generic
+
 variable {α : Type} [Ord α]
 
 def nodupFrom (seen : Std.TreeSet α) : List α → Bool
@@ -34,18 +35,19 @@ theorem contains_false_iff {s : Std.TreeSet α} {x : α} : s.contains x = false 
 
 variable [Std.TransOrd α] [Std.LawfulEqOrd α]
 
-theorem nodupFrom_iff : ∀ (l : List α) (seen : Std.TreeSet α),
-    nodupFrom seen l = true ↔ l.Nodup ∧ ∀ x ∈ l, x ∉ seen
+theorem nodupFrom_iff :
+    ∀ (l : List α) (seen : Std.TreeSet α), nodupFrom seen l = true ↔ l.Nodup ∧ ∀ x ∈ l, x ∉ seen
   | [], seen => by simp [nodupFrom]
   | x :: l, seen => by
     rw [nodupFrom, Bool.and_eq_true, nodupFrom_iff l (seen.insert x), List.nodup_cons]
     simp only [Bool.not_eq_true', contains_false_iff, mem_insert_iff, List.mem_cons]
     constructor
     · rintro ⟨hx, ⟨hnd, h2⟩⟩
-      exact ⟨⟨fun hm => (h2 x hm (Or.inl rfl)), hnd⟩, fun y hy => by
-        rcases hy with rfl | hy
-        · exact hx
-        · exact fun hs => h2 y hy (Or.inr hs)⟩
+      exact
+        ⟨⟨fun hm => (h2 x hm (Or.inl rfl)), hnd⟩, fun y hy => by
+          rcases hy with rfl | hy
+          · exact hx
+          · exact fun hs => h2 y hy (Or.inr hs)⟩
     · rintro ⟨⟨hxl, hnd⟩, h2⟩
       refine ⟨h2 x (Or.inl rfl), hnd, fun y hy hs => ?_⟩
       rcases hs with rfl | hs
@@ -54,11 +56,11 @@ theorem nodupFrom_iff : ∀ (l : List α) (seen : Std.TreeSet α),
 
 end generic
 
-def nodupB (l : List Name) : Bool := nodupFrom ∅ l
+def nodupB (l : List Name) : Bool :=
+  nodupFrom ∅ l
 
 theorem nodupB_iff (l : List Name) : nodupB l = true ↔ l.Nodup := by
   rw [nodupB, nodupFrom_iff]; simp
-
 
 /-! ## Permutes, with a set -/
 
@@ -70,8 +72,7 @@ theorem permutesB_iff (n : Nat) (ord : List Nat) :
     permutesB n ord = true ↔ ord.Nodup ∧ (∀ x ∈ ord, x < n) ∧ ∀ x ∈ List.range n, x ∈ ord := by
   rw [permutesB, Bool.and_eq_true, Bool.and_eq_true, nodupFrom_iff]
   simp only [List.all_eq_true, decide_eq_true_eq, ← Std.TreeSet.mem_iff_contains, mem_foldl_insert,
-    Std.TreeSet.not_mem_emptyc, false_or, not_false_eq_true, implies_true, and_true,
-    and_assoc]
+    Std.TreeSet.not_mem_emptyc, false_or, not_false_eq_true, implies_true, and_true, and_assoc]
 
 /-! ## Module tables
 
@@ -90,9 +91,10 @@ def Module.tab (arr : Array Stmt) (m : Module) : ModTab where
   exported := ((m.namedExportsFrom arr).map (·.2)).foldl (·.insert ·) ∅
   importedFrom := m.imports.foldr (fun e acc => e.2.foldr (fun u acc => acc.insert u e.1) acc) ∅
 
-private theorem mem_foldl_decl (arr : Array Stmt) : ∀ (l : List Nat) (acc : NameSet) (u : Name),
-    u ∈ l.foldl (fun acc i => (arr.getD i default).defs.foldl (·.insert ·) acc) acc ↔
-      u ∈ acc ∨ ∃ i ∈ l, u ∈ (arr.getD i default).defs
+private theorem mem_foldl_decl (arr : Array Stmt) :
+    ∀ (l : List Nat) (acc : NameSet) (u : Name),
+      u ∈ l.foldl (fun acc i => (arr.getD i default).defs.foldl (·.insert ·) acc) acc ↔
+        u ∈ acc ∨ ∃ i ∈ l, u ∈ (arr.getD i default).defs
   | [], acc, u => by simp
   | i :: l, acc, u => by
     rw [List.foldl_cons, mem_foldl_decl arr l, mem_foldl_insert]
@@ -118,11 +120,13 @@ theorem Module.tab_declared (B : Bundle) (m : Module) (u : Name) :
 theorem Module.tab_exported (B : Bundle) (m : Module) (u : Name) :
     (m.tab B.toArray).exported.contains u = m.exportsLocal B u := by
   rw [Bool.eq_iff_iff, ← Std.TreeSet.mem_iff_contains]
-  simp only [Module.tab, mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or, Module.exportsLocal,
-    Module.namedExports, List.any_eq_true, List.mem_map, beq_iff_eq]
+  simp only [Module.tab, mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or,
+    Module.exportsLocal, Module.namedExports, List.any_eq_true, List.mem_map, beq_iff_eq]
 
-private theorem foldr_insert_get (src : ModName) : ∀ (names : List Name) (acc : Std.TreeMap Name ModName) (u : Name),
-    (names.foldr (fun u acc => acc.insert u src) acc)[u]? = if u ∈ names then some src else acc[u]?
+private theorem foldr_insert_get (src : ModName) :
+    ∀ (names : List Name) (acc : Std.TreeMap Name ModName) (u : Name),
+      (names.foldr (fun u acc => acc.insert u src) acc)[u]? =
+        if u ∈ names then some src else acc[u]?
   | [], acc, u => by simp
   | d :: ds, acc, u => by
     rw [List.foldr_cons, Std.TreeMap.getElem?_insert, foldr_insert_get src ds]
@@ -143,17 +147,18 @@ theorem Module.tab_importedFrom (arr : Array Stmt) (m : Module) (u : Name) :
     · have h' : u ∉ e.2 := fun hm => h (List.contains_iff_mem.2 hm)
       simp [h']
 
-
 /-! ## Hygienic and Linkable, with tables -/
 
-def Plan.tabs (arr : Array Stmt) (P : Plan) : List (Module × ModTab) := P.mods.map fun m => (m, m.tab arr)
+def Plan.tabs (arr : Array Stmt) (P : Plan) : List (Module × ModTab) :=
+  P.mods.map fun m => (m, m.tab arr)
 
 /-- The table of the first module with each name (`Plan.find`). -/
 def tabsByName (ts : List (Module × ModTab)) : Std.TreeMap ModName ModTab :=
   ts.foldr (fun e acc => acc.insert e.1.name e.2) ∅
 
-theorem tabsByName_get : ∀ (ts : List (Module × ModTab)) (src : ModName),
-    (tabsByName ts)[src]? = (ts.find? (·.1.name == src)).map (·.2)
+theorem tabsByName_get :
+    ∀ (ts : List (Module × ModTab)) (src : ModName),
+      (tabsByName ts)[src]? = (ts.find? (·.1.name == src)).map (·.2)
   | [], src => by simp [tabsByName]
   | e :: rest, src => by
     rw [tabsByName, List.foldr_cons, Std.TreeMap.getElem?_insert]
@@ -171,11 +176,13 @@ theorem Plan.tabsByName_get (B : Bundle) (P : Plan) (src : ModName) :
 
 /-- `Plan.resolve`, with the tables. -/
 def resolveT (byName : Std.TreeMap ModName ModTab) (m : Module) (t : ModTab) (u : Name) : Binding :=
-  if t.declared.contains u then .declared m.name else
+  if t.declared.contains u then .declared m.name
+  else
     match t.importedFrom[u]? with
     | none => .global
     | some src =>
-      if (byName[src]?).any (fun s => s.declared.contains u && s.exported.contains u) then .declared src
+      if (byName[src]?).any (fun s => s.declared.contains u && s.exported.contains u) then
+        .declared src
       else .unbound
 
 /-- `Plan.declaredIn`, with the tables. -/
@@ -203,7 +210,8 @@ theorem resolveT_eq (B : Bundle) (P : Plan) (m : Module) (u : Name) :
   · simp only [hd, Bool.false_eq_true, ↓reduceIte]
     cases hf : m.imports.find? (·.2.contains u) with
     | none => simp
-    | some e =>
+    | some
+      e =>
       simp only [Option.map_some, Plan.tabsByName_get, Plan.declaresIn, Plan.exportsName, any_tab]
       rfl
 
@@ -211,11 +219,13 @@ theorem resolveT_eq (B : Bundle) (P : Plan) (m : Module) (u : Name) :
 def Plan.hygienicB (arr : Array Stmt) (P : Plan) : Bool :=
   let ts := P.tabs arr
   let byName := tabsByName ts
-  ts.all fun e => e.1.stmts.all fun i =>
-    let s := arr.getD i default
-    (s.eager ++ s.lazy).all fun u => resolveT byName e.1 e.2 u == declaredInT ts u
+  ts.all fun e =>
+    e.1.stmts.all fun i =>
+      let s := arr.getD i default
+      (s.eager ++ s.lazy).all fun u => resolveT byName e.1 e.2 u == declaredInT ts u
 
-theorem Plan.hygienicB_iff (B : Bundle) (P : Plan) : P.hygienicB B.toArray = true ↔ Hygienic B P := by
+theorem Plan.hygienicB_iff (B : Bundle) (P : Plan) :
+    P.hygienicB B.toArray = true ↔ Hygienic B P := by
   simp only [Plan.hygienicB, Hygienic, List.all_eq_true, beq_iff_eq, Bundle.toArray_getD,
     declaredInT_eq]
   constructor
@@ -228,23 +238,28 @@ theorem Plan.hygienicB_iff (B : Bundle) (P : Plan) : P.hygienicB B.toArray = tru
     show resolveT _ m' (m'.tab B.toArray) u = _
     rw [resolveT_eq]; exact h m' hm' i hi u hu
 
-
 /-- `Linkable` for one module, with the tables. -/
 def linkModB (byName : Std.TreeMap ModName ModTab) (m : Module) (t : ModTab) : Bool :=
-  m.imports.all (fun i => i.1 != m.name && (byName[i.1]?).isSome &&
-      i.2.all fun u => (byName[i.1]?).any fun s => s.declared.contains u && s.exported.contains u)
-    && nodupB (m.imports.map (·.1))
-    && nodupB (m.imports.flatMap (·.2))
-    && m.imports.all (fun i => i.2.all fun u => !t.declared.contains u)
-    && m.exports.all fun e => t.declared.contains e.2
+  m.imports.all
+      (fun i =>
+        i.1 != m.name && (byName[i.1]?).isSome &&
+          i.2.all fun u =>
+            (byName[i.1]?).any fun s => s.declared.contains u && s.exported.contains u) &&
+    nodupB (m.imports.map (·.1)) &&
+    nodupB (m.imports.flatMap (·.2)) &&
+    m.imports.all (fun i => i.2.all fun u => !t.declared.contains u) &&
+    m.exports.all fun e => t.declared.contains e.2
 
 theorem linkModB_iff (B : Bundle) (P : Plan) (m : Module) :
     linkModB (tabsByName (P.tabs B.toArray)) m (m.tab B.toArray) = true ↔
-      ((∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧
-          ∀ u ∈ e.2, P.declaresIn B e.1 u = true ∧ P.exportsName B e.1 u = true)
-        ∧ (m.imports.map (·.1)).Nodup ∧ (m.imports.flatMap (·.2)).Nodup
-        ∧ (∀ e ∈ m.imports, ∀ u ∈ e.2, m.declares B u = false)
-        ∧ (∀ e ∈ m.exports, m.declares B e.2 = true)) := by
+      ((∀ e ∈ m.imports,
+          e.1 ≠ m.name ∧
+            (P.find e.1).isSome = true ∧
+            ∀ u ∈ e.2, P.declaresIn B e.1 u = true ∧ P.exportsName B e.1 u = true) ∧
+        (m.imports.map (·.1)).Nodup ∧
+        (m.imports.flatMap (·.2)).Nodup ∧
+        (∀ e ∈ m.imports, ∀ u ∈ e.2, m.declares B u = false) ∧
+        (∀ e ∈ m.exports, m.declares B e.2 = true)) := by
   simp only [linkModB, Bool.and_eq_true, List.all_eq_true, bne_iff_ne, ne_eq, nodupB_iff,
     Plan.tabsByName_get, Option.isSome_map, Module.tab_declared, Plan.declaresIn, Plan.exportsName,
     Bool.not_eq_true', any_tab, and_assoc]
@@ -254,7 +269,8 @@ def Plan.linkableB (arr : Array Stmt) (P : Plan) : Bool :=
   let byName := tabsByName ts
   ts.all fun e => linkModB byName e.1 e.2
 
-theorem Plan.linkableB_iff (B : Bundle) (P : Plan) : P.linkableB B.toArray = true ↔ Linkable B P := by
+theorem Plan.linkableB_iff (B : Bundle) (P : Plan) :
+    P.linkableB B.toArray = true ↔ Linkable B P := by
   simp only [Plan.linkableB, Linkable, List.all_eq_true]
   constructor
   · intro h m hm
@@ -285,9 +301,15 @@ theorem Spec.claimantsT_eq (S : Spec) (B : Bundle) (i : Nat) :
 
 /-- Index a module's statement selectors once; retain name selectors independently. -/
 private def selectorIndex (sels : List Selector) : Std.TreeSet Nat × List Name :=
-  ((sels.filterMap fun s => match s with | .stmt i => some i | _ => none).foldl
-    (·.insert ·) ∅,
-   sels.filterMap fun s => match s with | .name u => some u | _ => none)
+  ((sels.filterMap fun s =>
+          match s with
+          | .stmt i => some i
+          | _ => none).foldl
+      (·.insert ·) ∅,
+    sels.filterMap fun s =>
+      match s with
+      | .name u => some u
+      | _ => none)
 
 private def indexedClaims (arr : Array Stmt) (i : Nat) (idx : Std.TreeSet Nat × List Name) : Bool :=
   idx.1.contains i || idx.2.any fun u => (arr.getD i default).defs.contains u
@@ -296,8 +318,7 @@ private theorem indexedClaims_eq (arr : Array Stmt) (i : Nat) (sels : List Selec
     indexedClaims arr i (selectorIndex sels) = sels.any (·.claimsT arr i) := by
   apply Bool.eq_iff_iff.mpr
   simp only [indexedClaims, selectorIndex, Bool.or_eq_true, ← Std.TreeSet.mem_iff_contains,
-    mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or, List.any_eq_true,
-    List.mem_filterMap]
+    mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or, List.any_eq_true, List.mem_filterMap]
   constructor
   · rintro (⟨s, hs, h⟩ | ⟨u, ⟨s, hs, h⟩, hu⟩)
     · cases s with
@@ -314,8 +335,10 @@ private theorem indexedClaims_eq (arr : Array Stmt) (i : Nat) (sels : List Selec
         exact ⟨.name u, hs, by simpa [Selector.claimsT] using hu⟩
   · rintro ⟨s, hs, h⟩
     cases s with
-    | stmt k => left; exact ⟨.stmt k, hs, by simpa [Selector.claimsT, beq_iff_eq] using h⟩
-    | name u => right; exact ⟨u, ⟨.name u, hs, rfl⟩, h⟩
+    | stmt k =>
+      left; exact ⟨.stmt k, hs, by simpa [Selector.claimsT, beq_iff_eq] using h⟩
+    | name u =>
+      right; exact ⟨u, ⟨.name u, hs, rfl⟩, h⟩
 
 private def indexedClaimants (mods : List (ModName × (Std.TreeSet Nat × List Name)))
     (arr : Array Stmt) (i : Nat) : List ModName :=
@@ -337,8 +360,9 @@ private theorem indexedClaimants_eq (S : Spec) (arr : Array Stmt) (i : Nat) :
 def Bundle.allDefs (B : Bundle) : NameSet :=
   B.foldl (fun acc s => s.defs.foldl (·.insert ·) acc) ∅
 
-private theorem mem_foldl_allDefs : ∀ (L : List Stmt) (acc : NameSet) (u : Name),
-    u ∈ L.foldl (fun acc s => s.defs.foldl (·.insert ·) acc) acc ↔ u ∈ acc ∨ ∃ s ∈ L, u ∈ s.defs
+private theorem mem_foldl_allDefs :
+    ∀ (L : List Stmt) (acc : NameSet) (u : Name),
+      u ∈ L.foldl (fun acc s => s.defs.foldl (·.insert ·) acc) acc ↔ u ∈ acc ∨ ∃ s ∈ L, u ∈ s.defs
   | [], acc, u => by simp
   | s :: L, acc, u => by
     rw [List.foldl_cons, mem_foldl_allDefs L, mem_foldl_insert]
@@ -362,9 +386,11 @@ def Selector.picksSomeT (n : Nat) (defs : NameSet) : Selector → Bool
   | .stmt k => decide (k < n)
 
 theorem Selector.picksSomeT_iff (B : Bundle) (sel : Selector) :
-    sel.picksSomeT B.length B.allDefs = true ↔ ∃ i ∈ List.range B.length, sel.claims B i = true := by
+    sel.picksSomeT B.length B.allDefs = true ↔
+      ∃ i ∈ List.range B.length, sel.claims B i = true := by
   cases sel with
-  | name u =>
+  | name
+    u =>
     simp only [Selector.picksSomeT, ← Std.TreeSet.mem_iff_contains, Bundle.mem_allDefs,
       Selector.claims, List.contains_iff_mem, List.mem_range, Bundle.stmt]
     constructor
@@ -379,16 +405,18 @@ theorem Selector.picksSomeT_iff (B : Bundle) (sel : Selector) :
 def faithfulB (B : Bundle) (arr : Array Stmt) (S : Spec) (P : Plan) : Bool :=
   let n := B.length
   let indexed := S.modules.map fun (m, sels) => (m, selectorIndex sels)
-  let cl : List (Nat × List ModName) := (List.range n).map fun i => (i, indexedClaimants indexed arr i)
+  let cl : List (Nat × List ModName) :=
+    (List.range n).map fun i => (i, indexedClaimants indexed arr i)
   let allDefs := B.allDefs
-  decide (P.entry = S.entry) && decide (P.mods.map (·.name) = S.modules.map (·.1))
-    && nodupB (P.mods.map (·.name))
-    && cl.all (fun e => e.2.length == 1)
-    && P.mods.all (fun m =>
-      let ms := m.stmts.foldl (·.insert ·) (∅ : Std.TreeSet Nat)
-      cl.all fun e => ms.contains e.1 == decide (e.2 = [m.name]))
-    && P.mods.all (fun m => m.stmts.all (· < n))
-    && S.modules.all (fun e => e.2.all (·.picksSomeT n allDefs))
+  decide (P.entry = S.entry) && decide (P.mods.map (·.name) = S.modules.map (·.1)) &&
+        nodupB (P.mods.map (·.name)) &&
+        cl.all (fun e => e.2.length == 1) &&
+        P.mods.all
+          (fun m =>
+            let ms := m.stmts.foldl (·.insert ·) (∅ : Std.TreeSet Nat)
+            cl.all fun e => ms.contains e.1 == decide (e.2 = [m.name])) &&
+      P.mods.all (fun m => m.stmts.all (· < n)) &&
+    S.modules.all (fun e => e.2.all (·.picksSomeT n allDefs))
 
 private theorem contains_foldl_insert (l : List Nat) (a : Nat) :
     (l.foldl (·.insert ·) (∅ : Std.TreeSet Nat)).contains a = decide (a ∈ l) := by
@@ -399,17 +427,18 @@ theorem faithfulB_iff (B : Bundle) (S : Spec) (P : Plan) :
     faithfulB B B.toArray S P = true ↔ Faithful B S P := by
   simp only [faithfulB, Faithful, Bool.and_eq_true, decide_eq_true_eq, nodupB_iff, List.all_eq_true,
     List.mem_map, beq_iff_eq, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂,
-    indexedClaimants_eq, Spec.claimantsT_eq, Selector.picksSomeT_iff, and_assoc, contains_foldl_insert, decide_eq_decide]
+    indexedClaimants_eq, Spec.claimantsT_eq, Selector.picksSomeT_iff, and_assoc,
+    contains_foldl_insert, decide_eq_decide]
+
 /-! ## ExportsUnique, with a set -/
 
 def Plan.exportsUniqueB (arr : Array Stmt) (P : Plan) : Bool :=
-  P.mods.all fun m =>
-    nodupB ((m.publishedFrom arr).map (·.1) ++ m.exports.map (·.1))
+  P.mods.all fun m => nodupB ((m.publishedFrom arr).map (·.1) ++ m.exports.map (·.1))
 
-theorem Plan.exportsUniqueB_iff (B : Bundle) (P : Plan) : P.exportsUniqueB B.toArray = true ↔ ExportsUnique B P := by
+theorem Plan.exportsUniqueB_iff (B : Bundle) (P : Plan) :
+    P.exportsUniqueB B.toArray = true ↔ ExportsUnique B P := by
   simp only [Plan.exportsUniqueB, ExportsUnique, List.all_eq_true, nodupB_iff, Module.publicNames,
     Module.published]
-
 
 /-! ## OrderOk, with tables built once -/
 
@@ -434,8 +463,8 @@ instance (B : Bundle) (P : Plan) : Decidable (Permutes B P) :=
   decidable_of_iff (permutesB B.length P.execOrder = true) (permutesB_iff B.length P.execOrder)
 
 instance (B : Bundle) (P : Plan) : Decidable (OrderOk B P) :=
-  decidable_of_iff (orderOkB B.toArray B.readsTab P.execOrder = true) (by
-    simp only [orderOkB, decide_eq_true_eq, OrderOk, Bundle.conflictT_eq])
+  decidable_of_iff (orderOkB B.toArray B.readsTab P.execOrder = true)
+    (by simp only [orderOkB, decide_eq_true_eq, OrderOk, Bundle.conflictT_eq])
 
 instance (B : Bundle) (S : Spec) (P : Plan) : Decidable (Valid B S P) := by
   unfold Valid; infer_instance

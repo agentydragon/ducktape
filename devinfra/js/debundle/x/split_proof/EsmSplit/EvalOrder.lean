@@ -1,5 +1,5 @@
-import Lean.Data.Json
 import EsmSplit.Plan
+import Lean.Data.Json
 
 /-!
 # The model's ES module evaluation order, on a bare import graph
@@ -15,9 +15,12 @@ open EsmSplit
 private def graphOrder (j : Lean.Json) : IO (List String) := do
   let entry ← IO.ofExcept (j.getObjVal? "entry" >>= Lean.Json.getStr?)
   let mods ← IO.ofExcept (j.getObjVal? "modules" >>= Lean.Json.getObj?)
-  let modules ← mods.toList.mapM fun (name, v) => do
-    let imports ← (← IO.ofExcept v.getArr?).toList.mapM fun x => do pure ((← IO.ofExcept x.getStr?), ([] : List Name))
-    pure ({ name, stmts := [], imports, exports := [] } : Module)
+  let modules ←
+    mods.toList.mapM fun (name, v) => do
+        let imports ←
+          (← IO.ofExcept v.getArr?).toList.mapM fun x => do
+              pure ((← IO.ofExcept x.getStr?), ([] : List Name))
+        pure ({ name, stmts := [], imports, exports := [] } : Module)
   return ({ entry, mods := modules } : Plan).evalOrder
 
 def main (args : List String) : IO Unit := do
@@ -26,5 +29,7 @@ def main (args : List String) : IO Unit := do
     let graphs ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile file) >>= Lean.Json.getArr?)
     IO.println (Lean.toJson (← graphs.mapM graphOrder)).compress
   | [file] =>
-    for name in ← graphOrder (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile file))) do IO.println name
-  | _ => throw (IO.userError "usage: evalorder [--batch] <graph.json>")
+    for name in ← graphOrder (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile file))) do
+      IO.println name
+  | _ =>
+    throw (IO.userError "usage: evalorder [--batch] <graph.json>")

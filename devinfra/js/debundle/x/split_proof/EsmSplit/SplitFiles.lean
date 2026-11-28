@@ -1,5 +1,5 @@
-import EsmSplit.ESTreeUnits
 import EsmSplit.CoreJS.ModuleInput
+import EsmSplit.ESTreeUnits
 import EsmSplit.ModulePath
 
 namespace EsmSplit.SplitFiles
@@ -15,7 +15,8 @@ structure CertificationRefusal where
 
 /-- Optional stderr timing keeps stdout available for the certification verdict. -/
 def timePhase (enabled : Bool) (phase : String) (action : Unit → IO α) : IO α := do
-  unless enabled do return ← action ()
+  unless enabled do
+    return ← action ()
   let start ← IO.monoMsNow
   try
     action ()
@@ -29,25 +30,33 @@ def javascript (flags : Array String) (paths : Array System.FilePath) : IO Unit 
   let cwd ← IO.currentDir
   let args := flags ++ paths.map fun p => (if p.isAbsolute then p else cwd / p).toString
   let frontend ← IO.getEnv "SPLIT_PROOF_MODULE_IO"
-  let proc ← match frontend with
-    | some exe => IO.Process.output { cmd := exe, args }
-    | none => do
-      -- Lake builds the executable at <project>/.lake/build/bin/<name>.
-      let mut root ← IO.appPath
-      for _ in [:4] do root := root.parent.getD "."
-      IO.Process.output { cmd := "node", args := #[toString (root / "translation" / "module_io.mjs")] ++ args }
-  unless proc.exitCode == 0 do throw (IO.userError s!"JavaScript frontend failed: {proc.stderr.trimAscii}")
+  let proc ←
+    match frontend with
+    | some exe =>
+      IO.Process.output { cmd := exe, args }
+    | none =>
+      do
+        -- Lake builds the executable at <project>/.lake/build/bin/<name>.
+        let mut root ← IO.appPath
+        for _ in [:4] do
+          root := root.parent.getD "."
+        IO.Process.output
+            { cmd := "node", args := #[toString (root / "translation" / "module_io.mjs")] ++ args }
+  unless proc.exitCode == 0 do
+    throw (IO.userError s!"JavaScript frontend failed: {proc.stderr.trimAscii}")
 
 def readJson (path : System.FilePath) : IO Json := do
   IO.ofExcept (Json.parse (← IO.FS.readFile path))
 
-def loadProgram (path work : System.FilePath) (validateSnapshot : Bool) (sourceHash : Option String := none) : IO Json := do
+def loadProgram (path work : System.FilePath) (validateSnapshot : Bool)
+    (sourceHash : Option String := none) : IO Json := do
   if path.extension == some "js" || path.extension == some "mjs" then
     let parsed := work / "source.json"
     let flags := sourceHash.elim #["--parse"] fun digest => #["--parse-sha256", digest]
     javascript flags #[path, parsed]
     return ← readJson parsed
-  if sourceHash.isSome then throw (IO.userError "resolved placements require JavaScript source bytes")
+  if sourceHash.isSome then
+    throw (IO.userError "resolved placements require JavaScript source bytes")
   if validateSnapshot then
     let parsed := work / "source.json"
     javascript #["--load-input"] #[path, parsed]
@@ -55,7 +64,8 @@ def loadProgram (path work : System.FilePath) (validateSnapshot : Bool) (sourceH
   let program ← readJson path
   match program.getObjVal? "annotationVersion" with
   | .ok v =>
-    unless v == toJson 2 do throw (IO.userError s!"unsupported annotationVersion: {v}")
+    unless v == toJson 2 do
+      throw (IO.userError s!"unsupported annotationVersion: {v}")
     return program
   | .error _ =>
     let upgraded := work / "upgraded.json"
@@ -76,7 +86,8 @@ def readModules (root work : System.FilePath) (requests : Array String) : IO Jso
 
 /-- Walk the root's static imports, reusing the programs already parsed for supplied chunks. -/
 def loadProviders (entry : String) (originals : Std.HashMap String Json)
-    (root : Option System.FilePath) (work : System.FilePath) (allowEntryImport : Bool := true) : IO (List (String × Json)) := do
+    (root : Option System.FilePath) (work : System.FilePath) (allowEntryImport : Bool := true) :
+    IO (List (String × Json)) := do
   let some ast := originals[entry]? | throw (IO.userError s!"missing entry program: {entry}")
   let mut providers := #[]
   let mut seen := Std.HashSet.ofList [entry]
@@ -94,16 +105,26 @@ def loadProviders (entry : String) (originals : Std.HashMap String Json)
           unless seen.contains source do
             seen := seen.insert source
             requests := requests.push source
-    if requests.isEmpty then break
+    if requests.isEmpty then
+      break
     let missing := requests.filter (!originals.contains ·)
-    let parsed ← if missing.isEmpty then pure (Json.mkObj []) else do
-      let some root := root | throw (IO.userError "supply the original JavaScript file to resolve its relative imports")
-      readModules root work missing
-    frontier ← requests.mapM fun name => do
-      let ast ← match originals[name]? with
-        | some ast => pure ast
-        | none => IO.ofExcept (parsed.getObjVal? name)
-      pure (name, ast)
+    let parsed ←
+      if missing.isEmpty then
+        pure (Json.mkObj [])
+      else
+        do
+          let some root :=
+            root | throw (IO.userError "supply the original JavaScript file to resolve its relative imports")
+          readModules root work missing
+    frontier ←
+      requests.mapM fun name => do
+          let ast ←
+            match originals[name]? with
+            | some ast =>
+              pure ast
+            | none =>
+              IO.ofExcept (parsed.getObjVal? name)
+          pure (name, ast)
     providers := providers ++ frontier
   return providers.toList
 
@@ -124,7 +145,8 @@ segments name the same directory. A path without a final directory name has no p
 def outputDirectory (out : System.FilePath) : Except String System.FilePath := do
   let parts := ((out.toString.splitOn "/").reverse.dropWhile fun p => p.isEmpty || p == ".").reverse
   let dir : System.FilePath := ⟨"/".intercalate parts⟩
-  unless dir.fileName.isSome do throw s!"output path {out} must end in a directory name"
+  unless dir.fileName.isSome do
+    throw s!"output path {out} must end in a directory name"
   return dir
 
 structure OutputPart where
@@ -139,10 +161,13 @@ the exact source text that supplied the original graph. -/
 private def compareDirectory (parts : List OutputPart) (providers : List (String × String))
     (dir work : System.FilePath) (parseProviders : Bool) : IO Json := do
   let manifest := work / "deployment-programs.json"
-  let descriptors := parts.map fun part => Json.mkObj [("programs", part.programs), ("source", toJson part.source)]
+  let descriptors :=
+    parts.map fun part => Json.mkObj [("programs", part.programs), ("source", toJson part.source)]
   let copied := Json.mkObj (providers.map fun (name, source) => (name, .str source))
-  IO.FS.writeFile manifest (Json.mkObj [("parts", toJson descriptors), ("providers", copied),
-    ("parseProviders", toJson parseProviders)]).compress
+  IO.FS.writeFile manifest
+      (Json.mkObj
+          [("parts", toJson descriptors), ("providers", copied),
+            ("parseProviders", toJson parseProviders)]).compress
   let checked := work / "checked-output.json"
   javascript #["--check-output"] #[manifest, dir, checked]
   let observed ← readJson checked
@@ -150,48 +175,58 @@ private def compareDirectory (parts : List OutputPart) (providers : List (String
     let name ← IO.ofExcept (pair.getObjValAs? String "name")
     let planned ← IO.ofExcept (pair.getObjVal? "planned" >>= unitProgram)
     let actual ← IO.ofExcept (pair.getObjVal? "observed" >>= unitProgram)
-    unless planned == actual do throw (IO.userError s!"output module {name} differs from its generated ESTree")
+    unless planned == actual do
+      throw (IO.userError s!"output module {name} differs from its generated ESTree")
   let files ← IO.ofExcept (observed.getObjVal? "files" >>= Json.getObj?)
-  return Json.mkObj (← files.toList.mapM fun (name, ast) => do
-    return (name, ← IO.ofExcept (unitProgram ast)))
+  return Json.mkObj
+      (←
+        files.toList.mapM fun (name, ast) => do
+            return (name, ← IO.ofExcept (unitProgram ast)))
 
 /-- Finish comparison and proof before publishing by rename. Fixed files
 are checked by path and bytes, and parsed if they participate in the linked
 certificate. The destination guard runs before staging and before promotion. -/
 def certifyOutputWithFixed {α : Type} (parts : List OutputPart) (sources : List (String × String))
     (out work : System.FilePath) (checkOnly timings : Bool)
-    (check : Json → IO (Except CertificationRefusal α))
-    (confirmDestination : IO Unit := pure ()) (recheckPublished : Bool := false) (parseProviders : Bool := false) :
+    (check : Json → IO (Except CertificationRefusal α)) (confirmDestination : IO Unit := pure ())
+    (recheckPublished : Bool := false) (parseProviders : Bool := false) :
     IO (Except CertificationRefusal α) := do
-  let groups ← IO.ofExcept <| parts.mapM fun part => do
-    return (← part.programs.getObj?).toList.map Prod.fst
+  let groups ←
+    IO.ofExcept <|
+        parts.mapM fun part => do
+          return (← part.programs.getObj?).toList.map Prod.fst
   let names := groups.flatten ++ sources.map Prod.fst
   IO.ofExcept (EsmSplit.validateModulePaths names)
-  unless names.Nodup do throw (IO.userError "output module path collision")
+  unless names.Nodup do
+    throw (IO.userError "output module path collision")
   let routes := Std.HashSet.ofList names
   for name in names do
     let mut ancestor := ""
     for segment in (name.splitOn "/").dropLast do
       ancestor := if ancestor.isEmpty then segment else ancestor ++ "/" ++ segment
-      if routes.contains ancestor then throw (IO.userError s!"output module {name} crosses output file {ancestor}")
+      if routes.contains ancestor then
+        throw (IO.userError s!"output module {name} crosses output file {ancestor}")
   confirmDestination
   let verify dir := do
-    let observed ← timePhase timings "output_comparison" fun _ => compareDirectory parts sources dir work parseProviders
+    let observed ←
+      timePhase timings "output_comparison" fun _ =>
+          compareDirectory parts sources dir work parseProviders
     check observed
-  if checkOnly then return ← verify out
+  if checkOnly then
+    return ← verify out
   let parent := out.parent.getD "."
   IO.FS.createDirAll parent
   let stage := parent / (".split-proof-" ++ work.fileName.get!)
   IO.FS.createDir stage
   try
     timePhase timings "output_staging" fun _ => do
-      for part in parts do
-        let manifest ← writeProgramManifest part.programs part.work
-        javascript #["--print"] #[manifest, stage, part.input]
-      for (name, source) in sources do
-        let dest := stage / name
-        IO.FS.createDirAll (dest.parent.getD stage)
-        IO.FS.writeFile dest source
+        for part in parts do
+          let manifest ← writeProgramManifest part.programs part.work
+          javascript #["--print"] #[manifest, stage, part.input]
+        for (name, source) in sources do
+          let dest := stage / name
+          IO.FS.createDirAll (dest.parent.getD stage)
+          IO.FS.writeFile dest source
     let result ← verify stage
     if result.isOk then
       confirmDestination
@@ -200,15 +235,18 @@ def certifyOutputWithFixed {α : Type} (parts : List OutputPart) (sources : List
         let _ ← compareDirectory parts sources out work parseProviders
     return result
   finally
-    if ← stage.pathExists then IO.FS.removeDirAll stage
+    if ← stage.pathExists then
+      IO.FS.removeDirAll stage
 
 def certifyOutput {α : Type} (parts : List OutputPart) (providers : Json)
     (out work : System.FilePath) (checkOnly timings : Bool)
     (check : Json → IO (Except CertificationRefusal α)) (parseProviders : Bool := false) :
     IO (Except CertificationRefusal α) := do
   let dependencies ← IO.ofExcept (providers.getObj?)
-  let sources ← dependencies.toList.mapM fun (name, ast) => do
-    return (name, ← IO.ofExcept (ast.getObjValAs? String "sourceText"))
-  certifyOutputWithFixed parts sources out work checkOnly timings check (parseProviders := parseProviders)
+  let sources ←
+    dependencies.toList.mapM fun (name, ast) => do
+        return (name, ← IO.ofExcept (ast.getObjValAs? String "sourceText"))
+  certifyOutputWithFixed parts sources out work checkOnly timings check (parseProviders :=
+      parseProviders)
 
 end EsmSplit.SplitFiles

@@ -27,12 +27,12 @@ inductive Selector
   deriving Repr
 
 structure Spec where
-  entry   : ModName
+  entry : ModName
   modules : List (ModName × List Selector)
   /-- Import priority. When given, the entry imports every other module in this order and
   every module orders its imports by it. When empty, imports follow where each module's code
   first appeared in the bundle. -/
-  order   : List ModName := []
+  order : List ModName := []
   /-- The modules run in exactly this order, the entry last: in `order` when it is given, else in the order of their
   first statements. `mkPlan` then adds the imports that make ES evaluation follow it (`Split.nest`). -/
   sequential : Bool := false
@@ -51,9 +51,9 @@ def Spec.claimants (S : Spec) (B : Bundle) (i : Nat) : List ModName :=
 /-! ## Plan: the split program -/
 
 structure Module where
-  name    : ModName
+  name : ModName
   /-- statement ids, in the order they appear in the module body -/
-  stmts   : List Nat
+  stmts : List Nat
   /-- one `import { names } from "./src"` per entry, in source order; no names = `import "./src"`.
   A name is a top-level binding of `src`, under the name it has there and in the bundle. -/
   imports : List (ModName × List Name)
@@ -63,12 +63,14 @@ structure Module where
 
 structure Plan where
   entry : ModName
-  mods  : List Module
+  mods : List Module
   deriving Repr
 
-def Plan.find (P : Plan) (m : ModName) : Option Module := P.mods.find? (·.name == m)
+def Plan.find (P : Plan) (m : ModName) : Option Module :=
+  P.mods.find? (·.name == m)
 
-def Plan.visit (P : Plan) : Nat → ModName → List ModName × List ModName → List ModName × List ModName :=
+def Plan.visit (P : Plan) :
+    Nat → ModName → List ModName × List ModName → List ModName × List ModName :=
   visitImports fun m => ((P.find m).map fun md => md.imports.map (·.1)).getD []
 
 def Plan.evalOrder (P : Plan) : List ModName :=
@@ -139,22 +141,24 @@ def Plan.declaredIn (B : Bundle) (P : Plan) (u : Name) : Binding :=
 /-- What `u` means inside module `m`: its own declaration; else the `import` that names it,
 provided that module exports a declaration of it; else a global. -/
 def Plan.resolve (B : Bundle) (P : Plan) (m : Module) (u : Name) : Binding :=
-  if m.declares B u then .declared m.name else
+  if m.declares B u then .declared m.name
+  else
     match m.imports.find? (·.2.contains u) with
     | none => .global
-    | some (src, _) => if P.declaresIn B src u && P.exportsName B src u then .declared src else .unbound
+    | some (src, _) =>
+      if P.declaresIn B src u && P.exportsName B src u then .declared src else .unbound
 
 /-! ## The checks -/
 
 /-- The plan puts every statement where the spec says, in the modules the spec names. -/
 def Faithful (B : Bundle) (S : Spec) (P : Plan) : Prop :=
-  P.entry = S.entry
-  ∧ P.mods.map (·.name) = S.modules.map (·.1)
-  ∧ (P.mods.map (·.name)).Nodup
-  ∧ (∀ i ∈ List.range B.length, (S.claimants B i).length = 1)
-  ∧ (∀ m ∈ P.mods, ∀ i ∈ List.range B.length, i ∈ m.stmts ↔ S.claimants B i = [m.name])
-  ∧ (∀ m ∈ P.mods, ∀ i ∈ m.stmts, i < B.length)
-  ∧ (∀ ms ∈ S.modules, ∀ sel ∈ ms.2, ∃ i ∈ List.range B.length, sel.claims B i = true)
+  P.entry = S.entry ∧
+    P.mods.map (·.name) = S.modules.map (·.1) ∧
+    (P.mods.map (·.name)).Nodup ∧
+    (∀ i ∈ List.range B.length, (S.claimants B i).length = 1) ∧
+    (∀ m ∈ P.mods, ∀ i ∈ List.range B.length, i ∈ m.stmts ↔ S.claimants B i = [m.name]) ∧
+    (∀ m ∈ P.mods, ∀ i ∈ m.stmts, i < B.length) ∧
+    (∀ ms ∈ S.modules, ∀ sel ∈ ms.2, ∃ i ∈ List.range B.length, sel.claims B i = true)
 
 /-- Every `import` names real exports of a real other module, each a binding that module declares; no name is bound
 twice in a module; every glue `export` names a local declaration. With `ExportsUnique`, an ES engine would link these
@@ -162,12 +166,14 @@ files without error. (An `export` statement may publish a name its module import
 allowed, so that every import leads to the statement that declares the name in one step.) -/
 def Linkable (B : Bundle) (P : Plan) : Prop :=
   ∀ m ∈ P.mods,
-    (∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧
-      ∀ u ∈ e.2, P.declaresIn B e.1 u = true ∧ P.exportsName B e.1 u = true)
-    ∧ (m.imports.map (·.1)).Nodup
-    ∧ (m.imports.flatMap (·.2)).Nodup
-    ∧ (∀ e ∈ m.imports, ∀ u ∈ e.2, m.declares B u = false)
-    ∧ (∀ e ∈ m.exports, m.declares B e.2 = true)
+    (∀ e ∈ m.imports,
+        e.1 ≠ m.name ∧
+          (P.find e.1).isSome = true ∧
+          ∀ u ∈ e.2, P.declaresIn B e.1 u = true ∧ P.exportsName B e.1 u = true) ∧
+      (m.imports.map (·.1)).Nodup ∧
+      (m.imports.flatMap (·.2)).Nodup ∧
+      (∀ e ∈ m.imports, ∀ u ∈ e.2, m.declares B u = false) ∧
+      (∀ e ∈ m.exports, m.declares B e.2 = true)
 
 /-- No module exports a name twice: its own `export` statements and its glue publish different names.
 (`export { X as u }` next to a glue export of a local `u` would be a duplicate export, or one name for two bindings.) -/
@@ -176,19 +182,21 @@ def ExportsUnique (B : Bundle) (P : Plan) : Prop :=
 
 /-- Every name a statement mentions means, in its new module, the same declaration as in the bundle. -/
 def Hygienic (B : Bundle) (P : Plan) : Prop :=
-  ∀ m ∈ P.mods, ∀ i ∈ m.stmts, ∀ u ∈ (B.stmt i).eager ++ (B.stmt i).lazy,
-    P.resolve B m u = P.declaredIn B u
+  ∀ m ∈ P.mods,
+    ∀ i ∈ m.stmts, ∀ u ∈ (B.stmt i).eager ++ (B.stmt i).lazy, P.resolve B m u = P.declaredIn B u
 
 /-- Code that assigns a name sits in the module that declares it. ES imports are read-only:
 assigning one throws a `TypeError`. (What a call to such code changes is `writes`, and is ordered by `conflict`.) -/
 def AssignsHome (B : Bundle) (P : Plan) : Prop :=
   ∀ m ∈ P.mods, ∀ i ∈ m.stmts, ∀ u ∈ (B.stmt i).assigns, m.declares B u = true
 
-instance (B : Bundle) (P : Plan) : Decidable (AssignsHome B P) := by unfold AssignsHome; infer_instance
+instance (B : Bundle) (P : Plan) : Decidable (AssignsHome B P) := by
+  unfold AssignsHome; infer_instance
 
 /-- The split program runs each bundle statement exactly once. -/
 def Permutes (B : Bundle) (P : Plan) : Prop :=
-  P.execOrder.Nodup ∧ (∀ x ∈ P.execOrder, x < B.length) ∧ (∀ x ∈ List.range B.length, x ∈ P.execOrder)
+  P.execOrder.Nodup ∧
+    (∀ x ∈ P.execOrder, x < B.length) ∧ (∀ x ∈ List.range B.length, x ∈ P.execOrder)
 
 /-- In the order the split program runs them, conflicting statements keep their bundle order. -/
 def OrderOk (B : Bundle) (P : Plan) : Prop :=
@@ -198,7 +206,7 @@ def OrderOk (B : Bundle) (P : Plan) : Prop :=
 This does not say that the conflicting JavaScript statements actually fail to commute. -/
 theorem inverted_conflict_rejected (B : Bundle) (P : Plan) (earlier later : Nat)
     (horder : earlier < later) (hpositions : [later, earlier].Sublist P.execOrder)
-    (hconflict : Bundle.conflictT B.toArray B.readsTab earlier later = true) : ¬ OrderOk B P := by
+    (hconflict : Bundle.conflictT B.toArray B.readsTab earlier later = true) : ¬OrderOk B P := by
   intro hok
   have hrel : later < earlier ∨ B.conflict later earlier = false := by
     exact (List.pairwise_cons.mp (hok.sublist hpositions)).1 earlier (by simp)
@@ -211,7 +219,9 @@ theorem inverted_conflict_rejected (B : Bundle) (P : Plan) (earlier later : Nat)
     contradiction
 
 def Valid (B : Bundle) (S : Spec) (P : Plan) : Prop :=
-  UniqueDefs B ∧ ReadsClosed B ∧ Faithful B S P ∧ Linkable B P ∧ ExportsUnique B P ∧ Hygienic B P
-    ∧ AssignsHome B P ∧ Permutes B P ∧ OrderOk B P
+  UniqueDefs B ∧
+    ReadsClosed B ∧
+    Faithful B S P ∧
+    Linkable B P ∧ ExportsUnique B P ∧ Hygienic B P ∧ AssignsHome B P ∧ Permutes B P ∧ OrderOk B P
 
 end EsmSplit
