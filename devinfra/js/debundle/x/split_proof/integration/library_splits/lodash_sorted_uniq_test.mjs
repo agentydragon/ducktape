@@ -219,13 +219,22 @@ symlinkSync(manifest, unverifiedManifest);
 ownedPackage(unverified, failed, "publish", /expected a regular package file: package\.json/);
 assert.equal(existsSync(failed), false);
 
-// Run the original authored plan through the ordinary CLI with an explicit
-// package deployment. The files in the destination are the files Node loads.
-const declaration = {
+// Keep the pinned entry and provider unchanged. Only the positive control
+// uses a different caller, whose whole body is a checked default snapshot.
+const caller = "sortedUniq.js";
+const aliasRoot = path.join(process.env.TEST_TMPDIR, "alias-source");
+cpSync(owned, aliasRoot, { recursive: true });
+copyFileSync(target.source, path.join(aliasRoot, entry));
+copyFileSync(resolve("lodash-es/identity.js"), path.join(aliasRoot, "identity.js"));
+const aliasText = `import uniq from "./${entry}";\nexport default uniq;\n`;
+writeFileSync(path.join(aliasRoot, caller), aliasText);
+
+const packageDeclaration = (root) => ({
   entry,
-  chunks: [{ path: entry, source: path.join(packageRoot, entry), spec }],
-  owned_node_package: { root: packageRoot, provider: "eq.js", caller: "sortedUniq.js" },
-};
+  chunks: [{ path: entry, source: path.join(root, entry), spec }],
+  owned_node_package: { root, provider: "eq.js", caller },
+});
+const declaration = packageDeclaration(aliasRoot);
 function deployment(manifest, caseName = "package") {
   const file = path.join(process.env.TEST_TMPDIR, caseName + ".deployment.json");
   writeFileSync(file, JSON.stringify(manifest));
@@ -241,9 +250,11 @@ assert.equal(certified.status, "certified", certified.log);
 assert.equal(certified.scope, "owned-node-callable-provider");
 assert.equal(certified.guarantee, "all-outcomes");
 assert.equal(certified.verdict.every_ending_matches, true);
+assert.equal(certified.verdict.proof_scope, "linked-entry-provider");
+assert.equal(certified.verdict.caller_context, "default-import-snapshot");
 assert.deepEqual(certified.files, [entry, "eq.js", "package.json", "sorted-uniq.mjs", "sortedUniq.js"]);
 assert.deepEqual(split({ ...cli, checkOutput: true }).verdict, certified.verdict);
-for (const [file, text] of Object.entries(withPackage)) {
+for (const [file, text] of Object.entries({ ...withPackage, [caller]: aliasText })) {
   assert.deepEqual(readFileSync(path.join(cli.out, file)), Buffer.from(text));
 }
 
@@ -258,6 +269,7 @@ execFileSync(
       import callee from "./_baseSortedUniq.js";
       import { baseSortedUniq } from "./sorted-uniq.mjs";
       assert.equal(callee, baseSortedUniq);
+      assert.equal(sortedUniq, callee);
       const a = { value: 1 }, b = { value: 1 };
       const input = [-0, 0, NaN, NaN, a, a, b, b];
       const output = sortedUniq(input);
@@ -278,6 +290,47 @@ function expectRefusal(options, reason) {
   assert.equal(result.status, "refused", result.log);
   assert.match(result.reason, reason);
 }
+const callerRefusal = /expected the fixed caller to contain only a default import and a snapshot of that binding/;
+const originalCallerManifest = deployment(packageDeclaration(packageRoot), "original-caller");
+expectRefusal({ manifest: originalCallerManifest, out: failed }, callerRefusal);
+expectRefusal({ manifest: originalCallerManifest, out: owned, checkOutput: true }, callerRefusal);
+
+// Reproduce the reviewed context difference using the same caller bytes in
+// both trees. The split reproduced here is the accepted entry/provider
+// output; only its copied caller is exchanged for the discriminator.
+const observerRoot = path.join(process.env.TEST_TMPDIR, "observer-source");
+const observerOut = path.join(process.env.TEST_TMPDIR, "observer-output");
+cpSync(aliasRoot, observerRoot, { recursive: true });
+cpSync(cli.out, observerOut, { recursive: true });
+const observerText =
+  aliasText + 'export const seesHelper = await import("./sorted-uniq.mjs").then(() => true, () => false);\n';
+for (const dir of [observerRoot, observerOut]) writeFileSync(path.join(dir, caller), observerText);
+function seesHelper(cwd) {
+  return execFileSync(
+    process.execPath,
+    ["--input-type=module", "--eval", `import { seesHelper } from "./${caller}"; console.log(seesHelper);`],
+    { cwd, encoding: "utf8" }
+  ).trim();
+}
+assert.equal(seesHelper(observerRoot), "false");
+assert.equal(seesHelper(observerOut), "true");
+const observerManifest = deployment(packageDeclaration(observerRoot), "observer");
+expectRefusal({ manifest: observerManifest, out: failed }, callerRefusal);
+expectRefusal({ manifest: observerManifest, out: observerOut, checkOutput: true }, callerRefusal);
+expectRefusal({ manifest: observerManifest, out: observerOut, allowExistingOut: true }, callerRefusal);
+
+// A caller can run unverified code without any dynamic import. Neither
+// property reads nor top-level calls belong to the admitted context.
+for (const [name, extra] of [
+  ["property", "export const read = globalThis.value;"],
+  ["call", "export const run = uniq([]);"],
+]) {
+  const root = path.join(process.env.TEST_TMPDIR, name + "-source");
+  cpSync(aliasRoot, root, { recursive: true });
+  writeFileSync(path.join(root, caller), aliasText + extra);
+  expectRefusal({ manifest: deployment(packageDeclaration(root), name), out: failed }, callerRefusal);
+}
+
 expectRefusal({ allowExistingOut: true }, /owned package destination must not exist/);
 expectRefusal({ require: "normal-completion", out: failed }, /owned_node_package requires --require all-outcomes/);
 expectRefusal(

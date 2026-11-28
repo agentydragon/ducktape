@@ -370,6 +370,8 @@ private def runOwnedNodePackage (pkg : OwnedNodePackage.Spec) (chunk : Deploymen
     return ← refuse "chunk source must be the declared package entry route"
   try
     let captured ← OwnedNodePackage.check pkg work
+    unless captured.callerIsDefaultSnapshot do
+      return ← refuse "expected the fixed caller to contain only a default import and a snapshot of that binding"
     let classified ← IO.ofExcept
       (CoreJS.AuthenticatedSource.decodeSourceClassification captured.entryAst captured.entryText pkg.entry)
     let providerText ← IO.ofExcept (captured.providerAst.getObjValAs? String "sourceText")
@@ -383,7 +385,9 @@ private def runOwnedNodePackage (pkg : OwnedNodePackage.Spec) (chunk : Deploymen
         return ()
     if let .error failure := result then
       return ← emitRefusal options.request.label failure scope
-    emitVerdict options.request.label (.ok .allOutcomes) scope [("strategy", toJson "compiled-constructor")]
+    emitVerdict options.request.label (.ok .allOutcomes) scope
+      [("strategy", toJson "compiled-constructor"), ("proof_scope", toJson "linked-entry-provider"),
+        ("caller_context", toJson "default-import-snapshot")]
   catch e => refuse e.toString
 
 /-- Both emission and readback must start from a successful construction. -/
