@@ -231,8 +231,8 @@ private def linkedObjectRestParameter (j : Json) : Except String (List (Name × 
     return (key, name)
   return (fields, rest)
 
-/-- Flat rest-array bindings still use the array iterator, including for elisions. -/
-private def linkedRestArrayPattern (j : Json) : Except String BindingPattern := do
+/-- Flat array parameters use the array binding evaluator, including for elisions. -/
+private def flatArrayParameterPattern (j : Json) : Except String BindingPattern := do
   unless (← field j "type") == "ArrayPattern" do throw "expected an array rest pattern"
   let elements ← j.getObjValAs? (List Json) "elements"
   let items ← elements.mapM fun elem => do
@@ -1063,14 +1063,24 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
         rest := some x
         bound := bound.push x
       | "ArrayPattern" =>
-        let pattern ← match linkedRestArrayPattern target with
+        let pattern ← match flatArrayParameterPattern target with
           | .ok pattern => pure pattern
           | .error reason => return .complete (← deferPattern reason)
         rest := some slot
         bound := bound ++ pattern.names.toArray
         initializers := initializers.push (.bind .var pattern (.var slot))
       | _ => return .complete (← deferPattern "unsupported rest parameter binding")
-    | "ArrayPattern" => return .complete (← deferPattern "unsupported function parameter ArrayPattern")
+    | "ArrayPattern" =>
+      unless !hasDefaults && tags.all (fun tag => tag == "Identifier" || tag == "ArrayPattern") do
+        return .complete (← deferPattern "unsupported array parameter combined with defaults or other patterns")
+      let pattern ← match flatArrayParameterPattern target with
+        | .ok result => pure result
+        | .error reason => return .complete (← deferPattern reason)
+      slots := slots.push slot
+      bound := bound ++ pattern.names.toArray
+      -- No parameter expressions can observe the preallocated mutable cells.
+      -- These cells are also used by body var redeclarations of the parameter.
+      initializers := initializers.push (.bind .var pattern (.var slot))
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"

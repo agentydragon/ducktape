@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { dump } from "./parser.mjs";
@@ -89,3 +89,112 @@ for (const require of ["all-outcomes", "normal-completion"]) {
   const checked = split({ ...request, require, out: candidate, checkOutput: true });
   assert.equal(checked.reasonCode, "no_constructed_rule", checked.log);
 }
+
+// A fixed array parameter runs before the body. It reads the selected
+// values, skips the elided value getter, and closes the custom iterator.
+const pick = `function pick([first, , third], suffix) {
+  var first;
+  return first + ":" + third + ":" + suffix + ":" + arguments.length;
+}
+`;
+const consumers = `function runParameter(mode) {
+  let trace = "";
+  let step = 0;
+  const iterable = {
+    [Symbol.iterator]() {
+      trace += "acquire;";
+      return {
+        next() {
+          trace += "next;";
+          if (mode === "next throws") throw "next error";
+          step += 1;
+          if (mode === "exhaust" && step === 2) return { done: true };
+          const value = step;
+          return {
+            done: false,
+            get value() { trace += "value;"; return value; },
+          };
+        },
+        return() {
+          trace += "close;";
+          if (mode === "close throws") throw "close error";
+          return {};
+        },
+      };
+    },
+  };
+  try {
+    const result = pick(iterable, "tag");
+    return trace + result;
+  } catch (error) {
+    return trace + error;
+  }
+}
+export const parameterClosed = runParameter("close");
+export const parameterCloseError = runParameter("close throws");
+export const parameterNextError = runParameter("next throws");
+export const parameterExhausted = runParameter("exhaust");
+export const parameterArity = pick.length;
+`;
+const parameterSource = pick + consumers;
+const parameterExpected = {
+  parameterClosed: "acquire;next;value;next;next;value;close;1:3:tag:2",
+  parameterCloseError: "acquire;next;value;next;next;value;close;close error",
+  parameterNextError: "acquire;next;next error",
+  parameterExhausted: "acquire;next;value;next;1:undefined:tag:2",
+  parameterArity: 2,
+};
+const parameterFile = path.join(root, "parameter.mjs");
+writeFileSync(parameterFile, parameterSource);
+assert.deepEqual({ ...(await import(pathToFileURL(parameterFile))) }, parameterExpected);
+
+const parameterOutput = path.join(root, "parameter-split");
+mkdirSync(parameterOutput);
+writeFileSync(path.join(parameterOutput, "iterator.mjs"), "export " + pick);
+const parameterEntry = path.join(parameterOutput, "entry.mjs");
+writeFileSync(parameterEntry, 'import { pick } from "./iterator.mjs";\n' + consumers);
+assert.deepEqual({ ...(await import(pathToFileURL(parameterEntry))) }, parameterExpected);
+
+const observeParameters = Object.keys(parameterExpected)
+  .map((name) => `console.log(${name});`)
+  .join("\n");
+for (const [entrySource, modules] of [
+  [parameterSource, {}],
+  [
+    readFileSync(parameterEntry, "utf8"),
+    {
+      entry: "entry.mjs",
+      providers: { "iterator.mjs": dump(readFileSync(path.join(parameterOutput, "iterator.mjs"), "utf8")) },
+    },
+  ],
+]) {
+  writeFileSync(
+    input,
+    JSON.stringify({
+      ...dump(entrySource + observeParameters),
+      ...modules,
+      symbolConstructor: true,
+      iteratorSymbol: true,
+    }) + "\n"
+  );
+  const parameterModeled = JSON.parse(execFileSync(process.env.COREJS, ["--ast", input], { encoding: "utf8" }));
+  assert.deepEqual(
+    [parameterModeled.end, parameterModeled.out],
+    ["normal", Object.values(parameterExpected).map(String)],
+    JSON.stringify(parameterModeled)
+  );
+}
+
+const parameterSpec = path.join(root, "parameter-placement.json");
+writeFileSync(
+  parameterSpec,
+  JSON.stringify({
+    ...spec,
+    modules: { "iterator.mjs": ["#0"], "entry.mjs": ["#1", "#2", "#3", "#4", "#5", "#6"] },
+  })
+);
+const parameterRequest = { source: parameterFile, spec: parameterSpec, require: "all-outcomes" };
+const parameterEmission = split({ ...parameterRequest, out: path.join(root, "parameter-certified") });
+assert.equal(parameterEmission.reasonCode, "no_constructed_rule", parameterEmission.log);
+const parameterReadback = split({ ...parameterRequest, out: parameterOutput, checkOutput: true });
+assert.equal(parameterReadback.reasonCode, "no_constructed_rule", parameterReadback.log);
