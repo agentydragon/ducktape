@@ -1,13 +1,4 @@
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
-
-tf_providers_versions(
-    name = "providers",
-    providers = {
-        "forgejo": "svalabs/forgejo:~>1.5",
-        "kubernetes": "hashicorp/kubernetes:~>3.0",
-    },
-    tf_version = "1.12.6",
-)
+load("//devinfra/tf:defs.bzl", "tf_module")
 
 tf_module(
     name = "forgejo-agentydragon",
@@ -17,11 +8,10 @@ tf_module(
         "//ssh_keys:rugged-forgejo.pub",
         "//ssh_keys:wyrm2-forgejo.pub",
     ],
-    providers = [
-        "forgejo",
-        "kubernetes",
-    ],
-    providers_versions = ":providers",
+    providers = {
+        "forgejo": "svalabs/forgejo:~>1.5",
+        "kubernetes": "hashicorp/kubernetes:~>3.0",
+    },
 )
 
 # Native HCL read by cdk8s when rendering the Inline Workspace.

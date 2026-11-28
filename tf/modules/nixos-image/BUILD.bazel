@@ -1,19 +1,9 @@
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+load("//devinfra/tf:defs.bzl", "tf_module")
 
-tf_providers_versions(
-    name = "providers",
+tf_module(
+    name = "nixos-image",
     providers = {
         "external": "hashicorp/external:~>2.3.0",
         "null": "hashicorp/null:~>3.2.0",
     },
-    tf_version = "1.12.6",
-)
-
-tf_module(
-    name = "nixos-image",
-    providers = [
-        "external",
-        "null",
-    ],
-    providers_versions = ":providers",
 )

@@ -1,12 +1,4 @@
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
-
-tf_providers_versions(
-    name = "providers",
-    providers = {
-        "github": "integrations/github:~>6.6.0",
-    },
-    tf_version = "1.12.6",
-)
+load("//devinfra/tf:defs.bzl", "tf_module")
 
 tf_module(
     name = "github",
@@ -16,8 +8,7 @@ tf_module(
         "//ssh_keys:iguana-github.pub",
         "//ssh_keys:rugged-github.pub",
     ],
-    providers = [
-        "github",
-    ],
-    providers_versions = ":providers",
+    providers = {
+        "github": "integrations/github:~>6.6.0",
+    },
 )

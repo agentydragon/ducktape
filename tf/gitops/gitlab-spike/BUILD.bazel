@@ -1,12 +1,12 @@
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+load("//devinfra/tf:defs.bzl", "tf_module")
 
 exports_files(
     ["variables.tf"],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
-tf_providers_versions(
-    name = "providers",
+tf_module(
+    name = "gitlab-spike",
     providers = {
         "forgejo": "svalabs/forgejo:~>1.5",
         "gitlab": "gitlabhq/gitlab:~>19.4.0",
@@ -14,17 +14,6 @@ tf_providers_versions(
         "random": "hashicorp/random:~>3.9.0",
     },
     tf_version = ">= 1.0",
-)
-
-tf_module(
-    name = "gitlab-spike",
-    providers = [
-        "forgejo",
-        "gitlab",
-        "kubernetes",
-        "random",
-    ],
-    providers_versions = ":providers",
 )
 
 # Native HCL assembled by cdk8s into the Inline Workspace.
