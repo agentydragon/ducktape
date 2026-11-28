@@ -2,6 +2,8 @@
 
 See the [ordinary CLI workload cohort](WORKLOAD_COHORT.md) for the four pinned
 libraries, Acorn consumer projections, and corpus checkpoints.
+The [Zod v3 locale split](ZOD_V3_STATIC_GRAPH.md) records the separate
+boundary for an unbundled static graph exercised through its public entry.
 
 These are complete source files and authored placements, not isolated-unit
 acceptance counts. The corpus rung uses the placement in
