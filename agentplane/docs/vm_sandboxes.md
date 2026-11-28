@@ -62,10 +62,10 @@ lost.
   a read-only erofs on a second `containerDisk` (`//agentplane/env/images:disk_image`, [`env/images/BUILD.bazel`](../env/images/BUILD.bazel)),
   mounted at `/run/agentplane/environment`, and the harness `PATH` lists its `bin` after the system
   profile. The guest system profile also installs the same `preCommitPackages` as the
-  `environment-tools` Pod image, so the repository hooks and build clients are available on either
+  `environment-tools` container image, so the repository hooks and build clients are available on either
   runner type. A runner or CLI release republishes only that small disk. The harnesses and tools are
   still in the guest image.
-- The deployed `environment-vm` template declares a Sandbox-owned `BlockFilesystem` workspace with ext4
+- The deployed `vm` template declares a Sandbox-owned `BlockFilesystem` workspace with ext4
   directly on a block PVC. `RawDiskImage` remains supported for custom VM workspace claims backed
   by a filesystem PVC. The workspace claim survives stop/start and replacement of the VM object.
   The VM's separate state PVC remains a `DirectoryTree` on a `Filesystem` claim, attached through

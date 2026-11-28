@@ -236,10 +236,12 @@ _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
 _ANTHROPIC_API_KEY_SECRET = "agentplane-staging-anthropic-api-key"
 _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 _CONNECTION_SERVICE = mcp_edge.tls_service(STAGING_NAMESPACE)
-# Keep the existing template and its claim spec for retained workspaces. New Sandboxes can
-# select the SSD template in the launch form.
-POD_TEMPLATE = "environment-tools"
-SSD_POD_TEMPLATE = "environment-tools-ssd"
+# A Sandbox stores the template it launched from, so renaming one means repointing every live and
+# suspended Sandbox before the old name is pruned; until it is named again, its next start reports
+# TemplateNotFound. The Pod templates keep their claim specs for retained workspaces, and new
+# Sandboxes can select the SSD template in the launch form.
+POD_TEMPLATE = "pod-hdd"
+SSD_POD_TEMPLATE = "pod-ssd"
 _RUNTIME_CATALOG = runtime_catalog(
     STAGING_APP_MODELS,
     templates=(POD_TEMPLATE, SSD_POD_TEMPLATE, environment_vm.NAME, environment_firecracker.NAME),
@@ -428,7 +430,7 @@ _ACTION_GROUPS = {
 LAYOUT = ManifestLayout(
     flux_description=(
         "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
-        "Actions, app, environment-tools template, and operator RBAC."
+        "Actions, app, pod-hdd template, and operator RBAC."
     ),
     output_dir=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/{STAGING_NAMESPACE}/image-pins",
@@ -805,7 +807,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     haku_ui = haku_ui_egress.add_workload_credentials(chart, policy_namespace=env.namespace)
     haku_ci = egress_gateway.add_gateway(chart, env, clients=runner.RUNNER_PODS)
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC. The
-    # environment-tools template projects `_BUILDBUDDY_KEY` into its workload containers only.
+    # pod-hdd template projects `_BUILDBUDDY_KEY` into its workload containers only.
     credential_external_secret(
         chart,
         namespace=STAGING_NAMESPACE,

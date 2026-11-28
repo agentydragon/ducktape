@@ -31,7 +31,7 @@ async def test_fresh_workspace_storage_survives_replacement(cluster: Cluster, ex
 
 @pytest.fixture
 def executor() -> Executor:
-    return Executor(template="environment-vm", cwd="/state/workspaces/accept")
+    return Executor(template="vm", cwd="/state/workspaces/accept")
 
 
 @pytest.mark.scripted_model

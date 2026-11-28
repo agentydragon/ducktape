@@ -178,7 +178,7 @@ def environment_chart(
         storage_class = env.vm_storage_class or runner_template.storage_class
         vm_config = ConfigMap(
             runner_scope,
-            "environment-vm-config",
+            "vm-config",
             metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
             data=environment_guest.guest_config_data(
                 env, gateway=launcher_relay.GUEST_GATEWAY, block_devices=("/dev/disk/by-id/virtio-workspace",)
@@ -186,7 +186,7 @@ def environment_chart(
         )
         environment_vm.EnvironmentVmTemplate(
             runner_scope,
-            "environment-vm-template",
+            "vm-template",
             env,
             template_name=environment_vm.NAME,
             root_image=environment_vm.ROOT_IMAGE,

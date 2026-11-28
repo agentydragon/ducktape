@@ -119,7 +119,9 @@ def test_controller_and_runtime_policies_admit_the_runtime_listener(staging_mani
         for endpoint in rule.get("toEndpoints", [])
     )
 
-    runtime_listener = find_resource(staging_manifests, "CiliumNetworkPolicy", "environment-tools-listener")["spec"]
+    runtime_listener = find_resource(
+        staging_manifests, "CiliumNetworkPolicy", "agentplane-environment-runtime-listener"
+    )["spec"]
     environments = environment_service.environments_service(staging.ENV.namespace).pods
     assert runtime_listener["ingress"] == [
         {

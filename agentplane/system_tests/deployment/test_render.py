@@ -217,7 +217,7 @@ def test_native_vm_fixture_runs_both_guest_templates_without_app(runfiles: Runfi
     deployments = {doc["metadata"]["name"] for doc in fixture.objects if doc["kind"] == "Deployment"}
     assert "app" not in deployments
     assert fixture_chart.NATIVE_TEST_CLIENT in deployments
-    for template in ("environment-vm", SUPERVISION_TEMPLATE):
+    for template in ("vm", SUPERVISION_TEMPLATE):
         assert "vm" in _resource(fixture.objects, "SandboxTemplate", template)["spec"]
 
 
@@ -611,7 +611,7 @@ def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling(
 ) -> None:
     control = vm_fixture.model_copy(deep=True)
     selected = _resource(vm_fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
-    other = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")
+    other = _resource(vm_fixture.objects, "SandboxTemplate", "vm")
     original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     original_other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     vm_sandboxes.select_native_profile(vm_fixture.objects, enabled=True, profile_root=True)
@@ -649,7 +649,7 @@ def test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode(monkeypa
 
 def test_vm_boot_evidence_selects_only_oom_guest_at_runtime(vm_fixture: rendered_fixture.RenderedFixture) -> None:
     selected = _resource(vm_fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
-    other = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")
+    other = _resource(vm_fixture.objects, "SandboxTemplate", "vm")
     original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     original_other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     vm_sandboxes.select_boot_evidence(vm_fixture.objects, enabled=True)
@@ -681,7 +681,7 @@ def test_libvirt_monitor_debug_is_opt_in_and_confined_to_test_vms(vm_fixture: re
 
 
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: rendered_fixture.RenderedFixture) -> None:
-    template = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
+    template = _resource(vm_fixture.objects, "SandboxTemplate", "vm")["spec"]
     state = template["stateVolume"]
     workspace = template["workspaceVolume"]
 
@@ -691,7 +691,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     assert workspace["claim"]["storageClassName"] == STORAGE_CLASS
     assert workspace["claim"]["volumeMode"] == "Block"
 
-    vm_template = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
+    vm_template = _resource(vm_fixture.objects, "SandboxTemplate", "vm")["spec"]
     vm_spec = vm_template["vm"]["template"]["spec"]
     runner_disk = next(disk for disk in vm_spec["domain"]["devices"]["disks"] if disk["name"] == "runner")
     assert runner_disk["serial"] == "agentplane-runner"  # vm.nix mounts virtio-agentplane-runner from fstab.
@@ -701,7 +701,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     oom_template = _resource(vm_fixture.objects, "SandboxTemplate", OOM_TEMPLATE)["spec"]["vm"]["template"]["spec"]
     assert supervision["volumes"] == vm_spec["volumes"]
     ordinary_config_volume = next(
-        volume for volume in vm_spec["volumes"] if volume.get("configMap", {}).get("name") == "environment-vm-config"
+        volume for volume in vm_spec["volumes"] if volume.get("configMap", {}).get("name") == "vm-config"
     )
     oom_config_volume = next(
         volume for volume in oom_template["volumes"] if volume["name"] == ordinary_config_volume["name"]
@@ -714,7 +714,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
         "kernelArgs": ordinary_boot["kernelArgs"] + " " + SUPERVISION_KERNEL_ARG,
     }
     interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
-    config_map = _resource(vm_fixture.objects, "ConfigMap", "environment-vm-config")
+    config_map = _resource(vm_fixture.objects, "ConfigMap", "vm-config")
     config = json.loads(config_map["data"]["environment-runtime.json"])
     relay = yaml.safe_load(
         _resource(vm_fixture.objects, "ConfigMap", "launcher-relay-egress-sidecar")["data"]["settings.yaml"]
@@ -983,11 +983,9 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
     assert firecracker["runnerImage"] == environment_vm.RUNNER_DISK_IMAGE
     assert firecracker["vcpuCount"] > 0
     config = json.loads(
-        _resource(fixture.objects, "ConfigMap", "environment-firecracker-config")["data"]["environment-runtime.json"]
+        _resource(fixture.objects, "ConfigMap", "firecracker-config")["data"]["environment-runtime.json"]
     )
-    relay = yaml.safe_load(
-        _resource(fixture.objects, "ConfigMap", "environment-firecracker-relay")["data"]["settings.yaml"]
-    )
+    relay = yaml.safe_load(_resource(fixture.objects, "ConfigMap", "firecracker-relay")["data"]["settings.yaml"])
     listener = _host_port(relay["platform_routes"]["listen_address"])
     guest_listener = (environment_firecracker.GATEWAY, listener[1])
     assert _host_port(config["harness_environment"]["values"]["AGENTPLANE_EGRESS_GRPC_URL"]) == guest_listener

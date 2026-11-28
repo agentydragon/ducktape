@@ -344,7 +344,7 @@ def test_every_egress_sidecar_verifies_server_svids_against_the_workload_ca_alon
             mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in sidecar.get("volumeMounts", [])}
             sidecars[name] = _bundle(mounts[PurePosixPath(ca_file).parent], PurePosixPath(ca_file).name)
     # The Pod and Firecracker runners, through the controller's projection, and the command boxes.
-    assert {"environment-tools", "sandbox"} <= sidecars.keys()
+    assert {"pod-hdd", "sandbox"} <= sidecars.keys()
     assert {
         name: trust
         for name, trust in sidecars.items()
