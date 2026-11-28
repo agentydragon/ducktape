@@ -1,5 +1,9 @@
 # Ordinary CLI workload checkpoints
 
+For the versioned cross-ladder ledger, including current ordinary requests,
+original ownership status, emissions, disk checks and consumers, see the
+[public scoreboard](../PUBLIC_SCOREBOARD.md).
+
 The baseline measurements use ordinary `//devinfra/js/debundle/x/split_proof:lowersplit`
 at `d10843cd8d0fd27e7c84dd4a89204663bbbdf31c`. See the
 [public placement ladder](COMPLEXITY_LADDER.md) for the earlier checkpoint,
