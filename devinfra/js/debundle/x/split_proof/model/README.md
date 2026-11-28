@@ -122,3 +122,25 @@ lexical blocks, intervening allocations and mutations on the original inputs.
 
 For a timeout, inspect `progress.log` in Bazel's undeclared outputs. It records
 Node case labels, CoreJS batches, and module-order subprocess boundaries.
+
+### Async instance methods
+
+The linked method driver runs a public, noncomputed instance method with one
+discarded await or final `return await`. It resolves the actual method object,
+passes the property-call receiver to the existing async turn, and keeps the
+activation's lexical cells and receiver when it queues the continuation. A
+const initializer or standalone module statement can call the method directly.
+The continuation sees the state at resume time. A returned primitive was
+evaluated before suspension. An awaited object still requires thenable
+semantics. This driver is an evaluator test route; it does not grant split
+certificates.
+
+The saved `await_in_instance_class_field_is_allowed` class already lowers
+as a class with a deferred async method. The exact `c.run().then(...)` reaches
+that body and the empty-profile operand lowerer refuses the ambient
+`Promise` lookup in `return await Promise.resolve("ok")`. The Node control
+changes the output of the original through a replacement of
+`Promise.resolve`, so recognizing the spelling cannot justify substituting
+the intrinsic. A larger rule needs the actual ambient binding, ordinary
+property lookup and callable replacement, and then the Promise/thenable and
+queue operations that execution reaches. The original remains uncertified.

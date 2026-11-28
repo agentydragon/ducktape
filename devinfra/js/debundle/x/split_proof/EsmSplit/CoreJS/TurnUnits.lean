@@ -36,7 +36,7 @@ variable {W : World}
 
 /-- The deferred constructor has no recursive fields. Compare every field
 without invoking the general syntax comparison. -/
-private def sameDeferred : Func → Func → Bool
+def sameDeferred : Func → Func → Bool
   | .opaque n k self len unit part free reason,
     .opaque n' k' self' len' unit' part' free' reason' =>
     k == k' && n == n' && self == self' && len == len' && unit == unit' && part == part' &&
@@ -86,19 +86,31 @@ private def operandTurn (env : Env) : Nat → Expr → TurnM W Val
       (TurnM.lift (evalExpr n env key))
   | fuel, expr => TurnM.lift (evalExpr fuel env expr)
 
-private def prefixOf (cut : Cut) (args : List Val) (fuel : Nat) : TurnM W Prefix := do
-  let env ← TurnM.lift (enterFunction cut.lowered.parts.scope cut.closed .undef args)
-  match ← TurnM.lift (execStmts fuel env cut.lowered.parts.before) with
+private def prefixOf (parts : AwaitBody) (closed : Env) (receiver : Val) (args : List Val)
+    (resultBinding : Option Name) (fuel : Nat) : TurnM W Prefix := do
+  let env ← TurnM.lift (enterFunction parts.scope closed receiver args)
+  match ← TurnM.lift (execStmts fuel env parts.before) with
   | .normal =>
     -- Each preceding item uses one layer of execStmts. At the cut
-    -- the list and the expression statement each consume one more.
-    let operand ←
-      operandTurn env (fuel - cut.lowered.parts.before.length - 2) cut.lowered.parts.operand
-    pure (.suspended operand env cut.lowered.parts.after)
+    -- the list and the statement each consume one more.
+    let operand ← operandTurn env (fuel - parts.before.length - 2) parts.operand
+    if PrimitiveAwait.isPrimitive operand then
+      if let some binding := resultBinding then
+        TurnM.lift (initVar env binding operand)
+    pure (.suspended operand env parts.after)
   | .ret value =>
     pure (.completed value)
   | _ =>
     TurnM.lift (unknown "model: invalid control flow before await")
+
+/-- Start a checked async body on the existing turn, preserving the receiver
+and handing the awaited value to an optional activation-local result cell. -/
+def invokeAwait (parts : AwaitBody) (closed : Env) (receiver : Val) (args : List Val)
+    (resultBinding : Option Name) (fuel : Nat) : TurnM W Val := fun turn =>
+  match launchTurn promiseProto (prefixOf parts closed receiver args resultBinding) fuel turn with
+  | .ok promise next => .ok promise next
+  | .unknown why stopped => .unknown why stopped
+  | .fuel => .fuel
 
 /-- At the staged boundary the verified ordinal and address choose a cut.
 Ordinary call dispatch still reads the actual closure; only that deferred
@@ -107,13 +119,10 @@ private def invokeCut (fuel : Nat) (cut : Cut) (args : List Val) : TurnM W Val :
   dispatchCallWithDeferred TurnM.lift
     (fun f closed receiver argv =>
       TurnM.lift (runLocalCall (execStmts (fuel - 1)) f closed receiver argv))
-    (fun f closed _ argv reason => fun turn =>
+    (fun f closed receiver argv reason =>
       if sameDeferred f cut.lowered.deferred && decide (closed = cut.closed) then
-        match launchTurn promiseProto (prefixOf cut argv) fuel turn with
-        | .ok promise next => .ok promise next
-        | .unknown why stopped => .unknown why stopped
-        | .fuel => .fuel
-      else .unknown s!"deferred function {f.name}: {reason}" turn)
+        invokeAwait cut.lowered.parts closed receiver argv none fuel
+      else TurnM.lift (unknown s!"deferred function {f.name}: {reason}"))
     (fun code cells told => TurnM.lift (converse (fuel - 1) code cells told)) (.obj cut.callee)
     .undef args
 
