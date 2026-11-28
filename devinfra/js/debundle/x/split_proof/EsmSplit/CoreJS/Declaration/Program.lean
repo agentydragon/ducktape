@@ -31,8 +31,8 @@ def statements (groups : List DeclarationGroup) : List Stmt :=
 private def declaratorCount (groups : List DeclarationGroup) : Nat :=
   (groups.map DeclarationGroup.size).sum
 
-private def scope (groups : List DeclarationGroup)
-    (frames : List (Nat × List (Name × Addr))) : Env :=
+private def scope (groups : List DeclarationGroup) (frames : List (Nat × List (Name × Addr))) :
+    Env :=
   { vars := (List.range (declaratorCount groups)).flatMap fun id => (frames.lookup id).getD []
     this := .undef }
 
@@ -40,16 +40,19 @@ private def scope (groups : List DeclarationGroup)
 evaluation steps through the groups in source order. -/
 def run (W : World) (fuel : Nat) (groups : List DeclarationGroup) : Res W Unit :=
   (do
-    let frames ← declareGroups 0 groups
-    runGroups fuel (scope groups frames) 0 groups) (initialState W (declaratorCount groups))
+      let frames ← declareGroups 0 groups
+      runGroups fuel (scope groups frames) 0 groups)
+    (initialState W (declaratorCount groups))
 
 private theorem statements_length (groups : List DeclarationGroup) :
     (statements groups).length = declaratorCount groups := by
-  simp only [statements, extract, List.length_map, declaratorCount, DeclarationGroup.compileGroups_length]
+  simp only [statements, extract, List.length_map, declaratorCount,
+    DeclarationGroup.compileGroups_length]
 
 private theorem body_eq (groups : List DeclarationGroup) :
     compileGroups 0 groups = (List.range (statements groups).length).zip (statements groups) := by
-  have ids : (compileGroups 0 groups).map Prod.fst = List.range (compileGroups 0 groups).length := by
+  have ids :
+    (compileGroups 0 groups).map Prod.fst = List.range (compileGroups 0 groups).length := by
     simpa only [List.range_eq_range'] using DeclarationGroup.compileGroups_ids 0 groups
   symm
   unfold statements extract
@@ -64,9 +67,14 @@ private theorem scope_eq (groups : List DeclarationGroup)
     (frames : List (Nat × List (Name × Addr))) :
     scope groups frames = bundleEnv (statements groups) frames := by
   let bindings (id : Nat) := (frames.lookup id).getD []
-  change ({ vars := (List.range (declaratorCount groups)).flatMap bindings, this := .undef } : Env) =
-    { vars := ((List.range (statements groups).length).zip (statements groups)).flatMap
-        (fun u => bindings u.1) ++ [], this := .undef }
+  change
+    ({ vars := (List.range (declaratorCount groups)).flatMap bindings, this := .undef } : Env) =
+      {
+        vars :=
+          ((List.range (statements groups).length).zip (statements groups)).flatMap
+              (fun u => bindings u.1) ++
+            [],
+        this := .undef }
   rw [List.append_nil, ← List.flatMap_map Prod.fst bindings, body_ids, statements_length]
 
 /-- The unsplit declaration module and its extracted single-module program have the same
@@ -84,14 +92,16 @@ theorem run_eq_single (W : World) (fuel : Nat) (groups : List DeclarationGroup) 
   apply M.bind_congr rfl
   intro frames
   let env := scope groups frames
-  have linked : (Program.single (statements groups)).scopes frames (Program.single (statements groups)).loaded =
+  have linked :
+    (Program.single (statements groups)).scopes frames (Program.single (statements groups)).loaded =
       .ok [(bundleModule (statements groups), env)] := by
     dsimp only [env]
     rw [scope_eq, single_loaded]
     rfl
   rw [linked, lift, M.pure_bind]
   let attach : Nat × Stmt → LinkedUnit := fun (id, s) => (id, s, env)
-  have sameUnits : unitsOf [(bundleModule (statements groups), env)] = (compileGroups 0 groups).map attach := by
+  have sameUnits :
+    unitsOf [(bundleModule (statements groups), env)] = (compileGroups 0 groups).map attach := by
     rw [body_eq]
     simp [unitsOf, bundleModule, attach]
   rw [sameUnits]
@@ -101,6 +111,5 @@ theorem run_eq_single (W : World) (fuel : Nat) (groups : List DeclarationGroup) 
   rw [sorted_units sorted]
   dsimp only [attach]
   rw [DeclarationGroup.initFunctions_compileGroups, M.pure_bind, DeclarationGroup.runGroups_eq]
-
 
 end CoreJS.DeclarationProgram

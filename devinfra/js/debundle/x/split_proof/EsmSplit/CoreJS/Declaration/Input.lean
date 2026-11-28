@@ -5,16 +5,22 @@ import EsmSplit.CoreJS.FromESTree
 The executable comparison checks that compiling those groups gives the statements of the checker. -/
 
 namespace CoreJS.DeclarationInput
+
 open Lean (Json)
 
-private def field (j : Json) (key : String) := j.getObjValAs? String key
+private def field (j : Json) (key : String) :=
+  j.getObjValAs? String key
 
 private def declKind (j : Json) : Except String DeclKind := do
   match ← field j "kind" with
-  | "var" => return .var
-  | "let" => return .let_
-  | "const" => return .const
-  | kind => throw s!"unsupported declaration {kind}"
+  | "var" =>
+    return .var
+  | "let" =>
+    return .let_
+  | "const" =>
+    return .const
+  | kind =>
+    throw s!"unsupported declaration {kind}"
 
 private def optionalInit (j : Json) : Except String (Option Expr) :=
   if j == .null then pure none else some <$> FromESTree.expr j
@@ -26,20 +32,27 @@ private def decodeInit : (kind : DeclKind) → Json → Except String kind.Initi
   | .const, j => FromESTree.expr j
 
 private def declarator (kind : DeclKind) (j : Json) : Except String (Declarator kind) := do
-  unless (← field j "type") == "VariableDeclarator" do throw "expected a variable declarator"
+  unless (← field j "type") == "VariableDeclarator" do
+    throw "expected a variable declarator"
   let name ← j.getObjVal? "id" >>= FromESTree.moduleBinding
   let init ← j.getObjVal? "init" >>= decodeInit kind
   return { name, init }
 
 private def group (j : Json) : Except String DeclarationGroup := do
   let exported := (← field j "type") == "ExportNamedDeclaration"
-  let declaration ← if exported then do
-    unless (← j.getObjVal? "source") == .null do throw "re-export from another module"
-    unless (← j.getObjValAs? (Array Json) "specifiers").isEmpty do throw "expected an inline declaration export"
-    j.getObjVal? "declaration"
-  else pure j
+  let declaration ←
+    if exported then
+      do
+        unless (← j.getObjVal? "source") == .null do
+          throw "re-export from another module"
+        unless (← j.getObjValAs? (Array Json) "specifiers").isEmpty do
+          throw "expected an inline declaration export"
+        j.getObjVal? "declaration"
+    else
+      pure j
   let nodeType ← field declaration "type"
-  unless nodeType == "VariableDeclaration" do throw s!"expected a variable declaration, got {nodeType}"
+  unless nodeType == "VariableDeclaration" do
+    throw s!"expected a variable declaration, got {nodeType}"
   let kind ← declKind declaration
   let ds ← declaration.getObjValAs? (Array Json) "declarations"
   let first :: rest := ds.toList | throw "expected at least one declarator"
@@ -49,14 +62,23 @@ private def group (j : Json) : Except String DeclarationGroup := do
 
 /-- Accept modules made of ordinary declaration statements, including inline named exports. -/
 def decode (program : Json) : Except String (List DeclarationGroup) := do
-  unless (← field program "type") == "Program" do throw "expected an ESTree Program"
-  unless (← field program "sourceType") == "module" do throw "expected an ESTree module Program"
+  unless (← field program "type") == "Program" do
+    throw "expected an ESTree Program"
+  unless (← field program "sourceType") == "module" do
+    throw "expected an ESTree module Program"
   let body ← program.getObjValAs? (Array Json) "body"
-  body.toList.zipIdx.mapM fun (statement, i) => (group statement).mapError fun why => s!"statement {i}: {why}"
+  body.toList.zipIdx.mapM fun (statement, i) =>
+      (group statement).mapError fun why => s!"statement {i}: {why}"
 
 private inductive InitializerExpr where
-  | undef | null | bool (b : Bool) | num (n : Float) | str (s : String) | var (x : Name)
-  | not (arg : InitializerExpr) | negNum (n : Float)
+  | undef
+  | null
+  | bool (b : Bool)
+  | num (n : Float)
+  | str (s : String)
+  | var (x : Name)
+  | not (arg : InitializerExpr)
+  | negNum (n : Float)
   deriving DecidableEq
 
 private def InitializerExpr.toExpr : InitializerExpr → Expr
@@ -76,8 +98,8 @@ private def initializerExpr : (e : Expr) → Option { p : InitializerExpr // p.t
   | .num n => some ⟨.num n, rfl⟩
   | .str s => some ⟨.str s, rfl⟩
   | .var x => some ⟨.var x, rfl⟩
-  | .unary .not arg => (initializerExpr arg).map fun ⟨p, h⟩ =>
-    ⟨.not p, congrArg (Expr.unary .not) h⟩
+  | .unary .not arg =>
+    (initializerExpr arg).map fun ⟨p, h⟩ => ⟨.not p, congrArg (Expr.unary .not) h⟩
   | .unary .neg (.num n) => some ⟨.negNum n, rfl⟩
   | _ => none
 
@@ -92,8 +114,8 @@ private def Declaration.toStmt : Declaration → Stmt
 
 private def declaration : (s : Stmt) → Option { d : Declaration // d.toStmt = s }
   | .varDecl x => some ⟨.varDecl x, rfl⟩
-  | .decl kind x init => (initializerExpr init).map fun ⟨v, h⟩ =>
-    ⟨.decl kind x v, congrArg (Stmt.decl kind x) h⟩
+  | .decl kind x init =>
+    (initializerExpr init).map fun ⟨v, h⟩ => ⟨.decl kind x v, congrArg (Stmt.decl kind x) h⟩
   | _ => none
 
 def stmtMatches (expected actual : Stmt) : Bool :=
@@ -105,7 +127,9 @@ theorem stmtMatches_sound {expected actual : Stmt} (h : stmtMatches expected act
     expected = actual := by
   unfold stmtMatches at h
   split at h
-  next e a _ _ => exact e.property.symm.trans ((congrArg Declaration.toStmt (of_decide_eq_true h)).trans a.property)
+  next e a _ _ =>
+    exact
+      e.property.symm.trans ((congrArg Declaration.toStmt (of_decide_eq_true h)).trans a.property)
   next => contradiction
 
 private def stmtsMatch : List Stmt → List Stmt → Bool
@@ -113,13 +137,15 @@ private def stmtsMatch : List Stmt → List Stmt → Bool
   | e :: es, a :: as => stmtMatches e a && stmtsMatch es as
   | _, _ => false
 
-private theorem stmtsMatch_sound {expected actual : List Stmt} (h : stmtsMatch expected actual = true) :
-    expected = actual := by
+private theorem stmtsMatch_sound {expected actual : List Stmt}
+    (h : stmtsMatch expected actual = true) : expected = actual := by
   induction expected generalizing actual with
-  | nil => cases actual with
+  | nil =>
+    cases actual with
     | nil => rfl
     | cons => simp [stmtsMatch] at h
-  | cons e es ih => cases actual with
+  | cons e es ih =>
+    cases actual with
     | nil => simp [stmtsMatch] at h
     | cons a rest =>
       simp only [stmtsMatch, Bool.and_eq_true] at h

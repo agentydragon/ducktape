@@ -31,7 +31,8 @@ private def binding (kind : DeclKind) : Binding :=
 private theorem statement_bindings {kind : DeclKind} (d : Declarator kind) :
     d.statement.bindings = [(d.name, binding kind)] := by
   cases kind with
-  | var => obtain ⟨x, e⟩ := d; cases e <;> rfl
+  | var =>
+    obtain ⟨x, e⟩ := d; cases e <;> rfl
   | let_ => rfl
   | const => rfl
 
@@ -48,22 +49,28 @@ private def eval {W : World} : Nat → Env → {kind : DeclKind} → Declarator 
     initVar env x (← evalExpr n env e)
     pure .normal
 
-private theorem eval_eq {W : World} (fuel : Nat) (env : Env) {kind : DeclKind} (d : Declarator kind) :
-    (eval fuel env d : M W Flow) = execStmt fuel env d.statement := by
+private theorem eval_eq {W : World} (fuel : Nat) (env : Env) {kind : DeclKind}
+    (d : Declarator kind) : (eval fuel env d : M W Flow) = execStmt fuel env d.statement := by
   cases fuel with
   | zero => rfl
   | succ fuel =>
     cases kind with
-    | var => obtain ⟨x, e⟩ := d; cases e <;> rfl
-    | let_ => cases d; rfl
-    | const => cases d; rfl
+    | var =>
+      obtain ⟨x, e⟩ := d; cases e <;> rfl
+    | let_ =>
+      cases d; rfl
+    | const =>
+      cases d; rfl
 
-private theorem initFunction_statement {W : World} (env : Env) (id : Nat) {kind : DeclKind} (d : Declarator kind) :
-    (initFunction (id, d.statement, env) : M W Unit) = pure () := by
+private theorem initFunction_statement {W : World} (env : Env) (id : Nat) {kind : DeclKind}
+    (d : Declarator kind) : (initFunction (id, d.statement, env) : M W Unit) = pure () := by
   cases kind with
-  | var => obtain ⟨x, e⟩ := d; cases e <;> rfl
-  | let_ => cases d; rfl
-  | const => cases d; rfl
+  | var =>
+    obtain ⟨x, e⟩ := d; cases e <;> rfl
+  | let_ =>
+    cases d; rfl
+  | const =>
+    cases d; rfl
 
 end Declarator
 
@@ -71,28 +78,33 @@ namespace DeclarationGroup
 
 variable {W : World}
 
-private def declarators (g : DeclarationGroup) : List (Declarator g.kind) := g.first :: g.rest
+private def declarators (g : DeclarationGroup) : List (Declarator g.kind) :=
+  g.first :: g.rest
 
 def exports (g : DeclarationGroup) : List (Name × Name) :=
   if g.exported then g.declarators.map fun d => (d.name, d.name) else []
 
-def size (g : DeclarationGroup) : Nat := g.declarators.length
+def size (g : DeclarationGroup) : Nat :=
+  g.declarators.length
 
 private def compileList {kind : DeclKind} : Nat → List (Declarator kind) → List (Nat × Stmt)
   | _, [] => []
   | id, d :: ds => (id, d.statement) :: compileList (id + 1) ds
 
-def compile (g : DeclarationGroup) (start : Nat) : List (Nat × Stmt) := compileList start g.declarators
+def compile (g : DeclarationGroup) (start : Nat) : List (Nat × Stmt) :=
+  compileList start g.declarators
 
 def compileGroups : Nat → List DeclarationGroup → List (Nat × Stmt)
   | _, [] => []
   | start, g :: gs => g.compile start ++ compileGroups (start + g.size) gs
 
-private abbrev Frames := List (Nat × List (Name × Addr))
+private abbrev Frames :=
+  List (Nat × List (Name × Addr))
 
 /-- Instantiate one cell in each declarator's region, even for a repeated `var` name.
 The containing module's scope resolves repeated names to the first cell. -/
-private def declareList {kind : DeclKind} (tail : M W Frames) : Nat → List (Declarator kind) → M W Frames
+private def declareList {kind : DeclKind} (tail : M W Frames) :
+    Nat → List (Declarator kind) → M W Frames
   | _, [] => tail
   | id, d :: ds => do
     let frame ← inRegion id (newCells [(d.name, Declarator.binding kind)])
@@ -135,13 +147,15 @@ private theorem compileList_ids {kind : DeclKind} (start : Nat) (ds : List (Decl
   | cons d ds ih => simp [compileList, ih, List.range'_succ]
 
 theorem compile_ids (g : DeclarationGroup) (start : Nat) :
-    (g.compile start).map Prod.fst = List.range' start g.size := compileList_ids start g.declarators
+    (g.compile start).map Prod.fst = List.range' start g.size :=
+  compileList_ids start g.declarators
 
 theorem compileGroups_ids (start : Nat) (gs : List DeclarationGroup) :
     (compileGroups start gs).map Prod.fst = List.range' start (compileGroups start gs).length := by
   induction gs generalizing start with
   | nil => rfl
-  | cons g gs ih =>
+  | cons g gs
+    ih =>
     have hlen : (g.compile start).length = g.size := compileList_length start g.declarators
     rw [compileGroups, List.map_append, List.length_append, compile_ids, ih, hlen]
     simpa only [Nat.one_mul] using
@@ -149,10 +163,13 @@ theorem compileGroups_ids (start : Nat) (gs : List DeclarationGroup) :
 
 private theorem declareList_append {kind : DeclKind} (start : Nat) (ds : List (Declarator kind))
     (tops : List (Nat × Stmt)) :
-    (declareList (declareTops tops) start ds : M W Frames) = declareTops (compileList start ds ++ tops) := by
+    (declareList (declareTops tops) start ds : M W Frames) =
+      declareTops (compileList start ds ++ tops) := by
   induction ds generalizing start with
   | nil => rfl
-  | cons d ds ih => simp only [declareList, compileList, List.cons_append, declareTops, Declarator.statement_bindings, ih]
+  | cons d ds ih =>
+    simp only [declareList, compileList, List.cons_append, declareTops,
+      Declarator.statement_bindings, ih]
 
 /-- This is equality of computations, so it includes their states and failures during allocation. -/
 theorem declareGroups_eq (start : Nat) (gs : List DeclarationGroup) :
@@ -161,13 +178,15 @@ theorem declareGroups_eq (start : Nat) (gs : List DeclarationGroup) :
   | nil => rfl
   | cons g gs ih => simp only [declareGroups, compileGroups, compile, ih, declareList_append]
 
-private theorem runList_append {kind : DeclKind} (fuel : Nat) (env : Env) (start : Nat) (ds : List (Declarator kind))
-    (units : List LinkedUnit) :
+private theorem runList_append {kind : DeclKind} (fuel : Nat) (env : Env) (start : Nat)
+    (ds : List (Declarator kind)) (units : List LinkedUnit) :
     (runList fuel env (runUnits fuel units) start ds : M W Unit) =
       runUnits fuel (((compileList start ds).map fun (id, s) => (id, s, env)) ++ units) := by
   induction ds generalizing start with
   | nil => rfl
-  | cons d ds ih => simp only [runList, compileList, List.map_cons, List.cons_append, runUnits, runUnit, Declarator.eval_eq, ih]
+  | cons d ds ih =>
+    simp only [runList, compileList, List.map_cons, List.cons_append, runUnits, runUnit,
+      Declarator.eval_eq, ih]
 
 /-- Equality for every world, fuel, and state, including abrupt completion and its state. -/
 theorem runGroups_eq (fuel : Nat) (env : Env) (start : Nat) (gs : List DeclarationGroup) :
@@ -175,22 +194,29 @@ theorem runGroups_eq (fuel : Nat) (env : Env) (start : Nat) (gs : List Declarati
       runUnits fuel ((compileGroups start gs).map fun (id, s) => (id, s, env)) := by
   induction gs generalizing start with
   | nil => rfl
-  | cons g gs ih => simp only [runGroups, compileGroups, compile, ih, List.map_append, runList_append]
+  | cons g gs ih =>
+    simp only [runGroups, compileGroups, compile, ih, List.map_append, runList_append]
 
-private theorem initFunctions_compileList {kind : DeclKind} (env : Env) (start : Nat) (ds : List (Declarator kind))
-    (units : List LinkedUnit) :
-    (initFunctions (((compileList start ds).map fun (id, s) => (id, s, env)) ++ units) : M W Unit) = initFunctions units := by
+private theorem initFunctions_compileList {kind : DeclKind} (env : Env) (start : Nat)
+    (ds : List (Declarator kind)) (units : List LinkedUnit) :
+    (initFunctions (((compileList start ds).map fun (id, s) => (id, s, env)) ++ units) : M W Unit) =
+      initFunctions units := by
   induction ds generalizing start with
   | nil => rfl
-  | cons d ds ih =>
-    simp only [compileList, List.map_cons, List.cons_append, initFunctions, Declarator.initFunction_statement, ih]
+  | cons d ds
+    ih =>
+    simp only [compileList, List.map_cons, List.cons_append, initFunctions,
+      Declarator.initFunction_statement, ih]
     rfl
 
 theorem initFunctions_compileGroups (env : Env) (start : Nat) (gs : List DeclarationGroup) :
-    (initFunctions ((compileGroups start gs).map fun (id, s) => (id, s, env)) : M W Unit) = pure () := by
+    (initFunctions ((compileGroups start gs).map fun (id, s) => (id, s, env)) : M W Unit) =
+      pure () := by
   induction gs generalizing start with
   | nil => rfl
-  | cons g gs ih => simp only [compileGroups, compile, List.map_append, initFunctions_compileList, ih]
+  | cons g gs ih =>
+    simp only [compileGroups, compile, List.map_append, initFunctions_compileList, ih]
 
 end DeclarationGroup
+
 end CoreJS
