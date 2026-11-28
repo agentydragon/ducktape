@@ -239,3 +239,41 @@ descriptors, enumeration order, or object identity. Moving the original locale
 imports, executing provider bodies, and evaluating the index snapshot in
 CoreJS remain separate obligations. Ordinary emit and readback still refuse
 the complete Zod input.
+
+## Moving the two named requests
+
+The bounded `StaticImportMotion` checker reads the unchanged placement and
+both parsed directory trees. It checks that the full ordered block of named
+requests and the private declaration moved to an adjacent worker, that only
+the exact glue was added, and that the original default expression stays
+in the facade. Fixed modules are compared byte for byte. In both trees the
+linker checks the named import cells and the distinct facade snapshot cell;
+the only added module in the evaluation order is the worker immediately
+before the facade. Cycles, asynchronous evaluation at module scope, and
+location-dependent input are outside the check.
+
+For the original Zod input the new check passes both static requests and the
+disk artifact. The original joint decoder still refuses the moved import
+row, and the ordinary CLI still refuses this deployment. The subsequent
+concrete check of the complete graph stops at
+`v3/ZodError.js: unsupported global Object`. No provider execution or
+namespace object implementation is assumed. Changing the moved
+`ZodParsedType` import to the existing `util` binding is rejected by the
+new checker.
+
+The smaller `static_import_motion_test` runs both reread layouts through
+ordinary CoreJS linking and uses a checked equality of their ready states
+and ordered statements with captured cells. The resulting proof covers
+every modeled world and fuel for that graph. Node sees the same function
+through the public named and default exports, observes the shared mutable
+provider cell after a write, and records `LR` from the two providers'
+initializers. Reversing the requests yields `RL`; the scope check rejects
+the swapped request order. The test also rejects a different provider
+edge, a different export of the same provider, a new cycle, modified
+provider bytes, a rewritten initializer, and replacing the default
+snapshot with a live re-export.
+
+```sh
+p=//devinfra/js/debundle/x/split_proof/integration/library_splits
+bbr test "$p:static_import_motion_test" "$p:zod_v3_linked_diagnostic" --test_output=all
+```

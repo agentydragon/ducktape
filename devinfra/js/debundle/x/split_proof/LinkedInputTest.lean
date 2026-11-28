@@ -10,6 +10,7 @@ import EsmSplit.CoreJS.LinkedInputCensus
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.CoreJS.StateMatch
+import EsmSplit.CoreJS.StaticImportMotion
 import EsmSplit.CoreJS.StaticStarExports
 import EsmSplit.CoreJS.SyntaxMatch
 import EsmSplit.CoreJS.WrapperLoader
@@ -482,6 +483,19 @@ private def namespaceLinks (input : Json) : Except String Json := do
         ("exports", toJson publicExports), ("locals", toJson locals),
         ("namespaceBinding", addr localCell)]
 
+private def importMotion (input : Json) : Except String Json := do
+  let entry ← input.getObjValAs? String "entry"
+  let spec ← EsmSplit.parseSpec (← input.getObjVal? "spec")
+  let checked ← CoreJS.StaticImportMotion.check entry spec
+    (← input.getObjVal? "before") (← input.getObjVal? "reread")
+  let concrete : Except String Json := do
+    let programs ← checked.checkPrograms
+    let .ok () _ := CoreJS.runProgram CoreJS.World.probe 256 programs.before |
+      throw "program proved equal but did not complete in the probe"
+    return toJson "all modeled runs agree"
+  return Json.mkObj [("requests", toJson checked.requestCount), ("before", toJson checked.order),
+    ("after", toJson checked.orderAfter), ("concrete", report concrete)]
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr
@@ -501,6 +515,8 @@ private def fixtures (input : Json) : Except String Json := do
                 pure (structural (← fixture.getObjVal? "input"))
               | "structuralSparseHole" =>
                 pure (structuralSparseHole (← fixture.getObjVal? "input"))
+              | "importMotion" =>
+                pure (importMotion (← fixture.getObjVal? "input"))
               | "namespaceLinks" =>
                 pure (namespaceLinks (← fixture.getObjVal? "input"))
               | "starMetadata" =>
