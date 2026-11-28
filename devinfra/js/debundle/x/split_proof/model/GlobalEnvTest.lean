@@ -2,10 +2,14 @@ import EsmSplit.CoreJS.Eval
 
 open CoreJS
 
-private def global : GlobalEnv := ⟨[("lexical", ⟨1, 0⟩), ("tdz", ⟨1, 1⟩),
-  ("constant", ⟨1, 2⟩)], globalObject, .obj globalObject⟩
-private def env : Env := ⟨[], .undef, none⟩
-private def call : Call World.probe := callFn 30
+private def global : GlobalEnv :=
+  ⟨[("lexical", ⟨1, 0⟩), ("tdz", ⟨1, 1⟩), ("constant", ⟨1, 2⟩)], globalObject, .obj globalObject⟩
+
+private def env : Env :=
+  ⟨[], .undef, none⟩
+
+private def call : Call World.probe :=
+  callFn 30
 
 private def showVal : Val → String
   | .str s => s
@@ -19,8 +23,10 @@ private def showVal : Val → String
 
 private def outcome (m : M World.probe Val) : M World.probe String := do
   match ← attempt m with
-  | .ok v => pure (showVal v)
-  | .error e => pure (showVal e)
+  | .ok v =>
+    pure (showVal v)
+  | .error e =>
+    pure (showVal e)
 
 private def read (name : Name) : M World.probe Val := do
   readGlobal call name (← resolveGlobal env global name)
@@ -37,7 +43,10 @@ private def scenario : M World.probe (List String) := do
   createData globalObject (.str "lexical") (.str "property")
   createData globalObject (.str "mutable") (.str "before")
   createData globalObject (.str "presentUndefined") .undef
-  let getterObj : Obj := { proto := some functionProto, props := [], code := some (.closure (.mk "get" .method false [] [.ret (.str "getter")]) ⟨[], .undef, none⟩ []) }
+  let getterObj : Obj :=
+    { proto := some functionProto, props := [],
+      code :=
+        some (.closure (.mk "get" .method false [] [.ret (.str "getter")]) ⟨[], .undef, none⟩ []) }
   let getter ← alloc getterObj
   defineOwn globalObject (.str "accessor") { get := some (.obj getter), configurable := some true }
   let a ← outcome (read "lexical")
@@ -49,18 +58,23 @@ private def scenario : M World.probe (List String) := do
   let g ← outcome (typeofGlobal call "tdz" (← resolveGlobal env global "tdz"))
   let h ← outcome (write "constant" (.str "new"))
   let i ← outcome (read "missing")
-  let j ← outcome (typeofGlobal call "presentUndefined" (← resolveGlobal env global "presentUndefined"))
+  let j ←
+    outcome (typeofGlobal call "presentUndefined" (← resolveGlobal env global "presentUndefined"))
   let del ← deleteGlobal "mutable" (← resolveGlobal env global "mutable")
   let k ← outcome (read "mutable")
   let stale ← resolveGlobal env global "accessor"
   let _ ← deleteGlobal "accessor" stale
   let l ← outcome (writeGlobal call "accessor" stale (.str "late") *> pure .undef)
-  pure [a,b,c,d,e,f,g,h,i,j, toString del,k,l]
+  pure [a, b, c, d, e, f, g, h, i, j, toString del, k, l]
 
 def main : IO Unit := do
   let s := { initialState World.probe 1 with region := 1 }
   match scenario s with
-  | .ok values _ => IO.println (String.intercalate "\n" values)
-  | .throw _ _ => throw (IO.userError "scenario unexpectedly threw")
-  | .unknown why _ => throw (IO.userError why)
-  | .fuel => throw (IO.userError "scenario exhausted fuel")
+  | .ok values _ =>
+    IO.println (String.intercalate "\n" values)
+  | .throw _ _ =>
+    throw (IO.userError "scenario unexpectedly threw")
+  | .unknown why _ =>
+    throw (IO.userError why)
+  | .fuel =>
+    throw (IO.userError "scenario exhausted fuel")
