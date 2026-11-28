@@ -6,6 +6,18 @@ The goal is to turn the production bundle in `gaffer-private` into runnable, rea
 
 The near-term milestone is a reusable split theorem for a useful class of non-inspecting CoreJS programs, exercised by the ordinary CLI on authored placements. The [build order](CONSTRUCTION_ROADMAP.md#first-milestone-useful-corejs-without-inspection) puts basic bindings, initialization, live exports and justified reordering first. Legacy JavaScript acceptance is not the coverage target for this constructor.
 
+## Admission pivot: compose the evidence for a split
+
+A refused workload gives us a regression test. It does not justify a new production branch for that workload's filenames, statement numbers, or builtin names. Grow the compiled checker by teaching it to establish a missing fact that other placements can use. Keep fixture-specific recognizers as experiments; retire an existing special case when the shared rule covers it and still rejects its counterexamples.
+
+Start with a split that preserves execution order. Check where each unit goes, how its names resolve, which live cells the public exports and closures refer to, and whether both graphs reach the same operations in the same order. An unchanged call such as `obj[key](arg)` can then use one theorem for any runtime key: both sides look up the same method, evaluate the same arguments and pass the same receiver in corresponding states. The operation may call back, write, or throw. Moving it across another operation needs a separate proof that the exchange preserves the promised observations; otherwise refuse that placement.
+
+Lean checks soundness for **every input the procedure accepts** when the splitter is built. At split time the compiled procedure checks facts about this input and the emitted files. It need not know the future key or run a client to decide acceptance. Matching test traces or two evaluator refusals cannot establish that theorem.
+
+Judge a proposed rule by what composes. For example, use the same rule on the shipped Lodash `join` function and on a function whose caller chooses the method key. Change a private helper filename, add an independent declaration, then combine those variations. Check the ordinary CLI and disk reread. Redirect a capture to a different cell with the same initial value, or move a getter past an argument with a side effect: the checker must refuse the changed behavior. Keep the requested guarantee explicit.
+
+**Open decision:** what should the splitter take as input? The examples above describe obligations on an accepted transformation. Settle the input contract before choosing a new representation or assigning more implementation work; the current manifest and selector format describe today's CLI.
+
 ## Acceptance contract
 
 Build the splitter with a proof about its **constructor**: for every original program and authored spec that meet a supported rule's preconditions, applying the rule produces the requested placement and preserves the requested observations. Check the proof when building the splitter. A split run checks the preconditions on its particular input and applies the rule. Checking two finished programs for equivalence can validate that one split; it does not discharge this construction obligation.
