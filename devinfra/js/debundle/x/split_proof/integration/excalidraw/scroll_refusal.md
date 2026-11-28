@@ -127,3 +127,32 @@ continuation. `WrapperLinked.normal_iff` supplies the successful-run
 commutation for the modeled shape, but does not establish this provider
 prefix, all outcomes, or correspondence to the actual staged files. The
 provider cannot be dropped or assumed to evaluate under pristine globals.
+
+### Loader invocation after a shared prefix
+
+[WrapperLoader](../../EsmSplit/CoreJS/WrapperLoader.lean) proves how the
+original loader runs from a state that already contains the checked closure.
+The pinned source test uses the existing linked lowerer and compares the
+entire lowered provider unit at `#7`, including the loader body, to the
+statement used by the proof. This comparison of a single unit does not
+execute the omitted provider prefix.
+
+On a cache miss the evaluator allocates the module and exports objects in
+their original order. The proof identifies two distinct fresh addresses
+and shows the cache holds the module address before callback dispatch.
+The first exports read is from an own data property and does not assume
+anything about inherited properties. A call after that write skips the
+callback and reads the current exports property. The proof keeps the actual
+callback dispatch and the final property read at their original fuel
+budgets, so a callback can reenter, replace exports, or throw. A callback
+throw or model refusal propagates with its state; the final read only runs
+after a normal callback result.
+
+The suffix proof compares the full result at equal fuel when both schedules
+arrive at the same checked state with the loader binding resolving to the
+same cell. It does not show that the editor placements reach that state.
+The nearest crossing is still editor `[#5, #1337]`, where the wrapper stays
+in the editor and the arrow moves to the scroll owner. It is also crossed
+by the full three-member scroll placement (`#1336`–`#1338`). That placement
+needs additional ordering proofs, including the unchanged provider prefix
+and its ambient reads. No split is certified by the invocation theorem.

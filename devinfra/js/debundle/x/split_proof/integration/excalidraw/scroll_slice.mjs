@@ -256,10 +256,9 @@ const callbackCaptures = [
   ...new Set(callbackScope.through.filter((r) => r.resolved).map((r) => r.resolved.name)),
 ].sort();
 assert.deepEqual(callbackCaptures, []);
-const providerDecoded = runProbe("sourceClassification", {
-  entry: providerName,
-  source: JSON.parse(annotated(providerPath, path.join(tmp, "wrapper-provider.json"))),
-});
+const providerAst = JSON.parse(annotated(providerPath, path.join(tmp, "wrapper-provider.json")));
+assert.deepEqual(runProbe("wrapperFactoryShape", { source: providerAst, ordinal: factoryOrdinal }), { output: true });
+const providerDecoded = runProbe("sourceClassification", { entry: providerName, source: providerAst });
 assert.equal(providerDecoded.error, "statement 0: unsupported global Object");
 
 // Exercise the resolved export with synthetic observable callbacks. A later

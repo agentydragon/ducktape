@@ -8,6 +8,8 @@ import EsmSplit.CoreJS.LinkedInputCensus
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.CoreJS.StateMatch
+import EsmSplit.CoreJS.SyntaxMatch
+import EsmSplit.CoreJS.WrapperLoader
 import EsmSplit.LowerSplit.Input
 import EsmSplit.LowerSplit.SliceCertificate
 
@@ -253,6 +255,17 @@ private def sourceClassification (input : Json) : Except String Json := do
                       | .funDecl _ => true
                       | _ => false))]))]
 
+/-- Check the factory and loader syntax in isolation; this does not admit the full provider. -/
+private def wrapperFactoryShape (input : Json) : Except String Json := do
+  let ast ← input.getObjVal? "source"
+  let ordinal ← input.getObjValAs? Nat "ordinal"
+  let nodes ← ESTreeUnits.checkedNodes ast (← ast.getObjValAs? String "sourceText")
+  let some node := nodes[ordinal]? | throw "no such factory unit"
+  let lowered ← CoreJS.LinkedInput.lowerLinkedStatement .empty [] ordinal node false false
+  let expected := CoreJS.WrapperLoader.factory "n" "a" "b"
+  let some _ := CoreJS.SyntaxMatch.stmtEq lowered expected | throw "factory syntax differs from the loader proof"
+  return toJson true
+
 /-- Check the actual indexed decoder, source-derived planner bundle and
 authored order-kept request for a top-level lexical inline export. -/
 private def indexedInlinePlan (input : Json) : Except String Json := do
@@ -437,6 +450,8 @@ private def fixtures (input : Json) : Except String Json := do
                 pure (moduleDiagnostic (← fixture.getObjVal? "input"))
               | "singletonSourceShape" =>
                 pure (singletonSourceShape (← fixture.getObjVal? "input"))
+              | "wrapperFactoryShape" =>
+                pure (wrapperFactoryShape (← fixture.getObjVal? "input"))
               | "sourceClassification" =>
                 pure (sourceClassification (← fixture.getObjVal? "input"))
               | "inlineConstructor" =>
