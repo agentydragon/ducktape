@@ -29,15 +29,16 @@ structure Meaning (V W : Type) where
   /-- a statement without effects: a function of the values it reads -/
   pure : Nat → List V → V
   /-- a statement with effects: also reads and changes the world; its value may depend on the world -/
-  run  : Nat → List V → W → V × W
+  run : Nat → List V → W → V × W
 
 structure St (V W : Type) where
-  env   : Name → V
+  env : Name → V
   world : W
 
 /-- Run statement `j`. -/
 def Bundle.step (B : Bundle) (M : Meaning V W) (j : Nat) (s : St V W) : St V W :=
-  if (B.stmt j).hoisted then s else
+  if (B.stmt j).hoisted then s
+  else
     let args := (B.reads j).map s.env
     if (B.stmt j).effect then
       let r := M.run j args s.world
@@ -50,14 +51,12 @@ def Bundle.step (B : Bundle) (M : Meaning V W) (j : Nat) (s : St V W) : St V W :
 def Bundle.exec (B : Bundle) (M : Meaning V W) (s : St V W) (ord : List Nat) : St V W :=
   ord.foldl (fun s j => B.step M j s) s
 
-theorem Bundle.step_hoisted (B : Bundle) (M : Meaning V W) {j : Nat}
-    (h : (B.stmt j).hoisted = true) (s : St V W) : B.step M j s = s := by
-  simp [Bundle.step, h]
+theorem Bundle.step_hoisted (B : Bundle) (M : Meaning V W) {j : Nat} (h : (B.stmt j).hoisted = true)
+    (s : St V W) : B.step M j s = s := by simp [Bundle.step, h]
 
 /-- Two statements that do not conflict can run in either order. -/
-theorem Bundle.step_comm (B : Bundle) (M : Meaning V W) {i j : Nat}
-    (h : B.conflict i j = false) (s : St V W) :
-    B.step M j (B.step M i s) = B.step M i (B.step M j s) := by
+theorem Bundle.step_comm (B : Bundle) (M : Meaning V W) {i j : Nat} (h : B.conflict i j = false)
+    (s : St V W) : B.step M j (B.step M i s) = B.step M i (B.step M j s) := by
   by_cases ha : (B.stmt i).hoisted = true
   · rw [B.step_hoisted M ha, B.step_hoisted M ha]
   by_cases hb : (B.stmt j).hoisted = true
@@ -65,28 +64,37 @@ theorem Bundle.step_comm (B : Bundle) (M : Meaning V W) {i j : Nat}
   simp only [Bool.not_eq_true] at ha hb
   simp [Bundle.conflict, ha, hb, List.any_eq_false] at h
   obtain ⟨⟨⟨hE, hR1⟩, hR2⟩, hW⟩ := h
-  have ej : ∀ (f : Name → V) (x : V), (B.reads j).map (fun u => if (B.stmt i).binds.contains u = true
-        then x else f u) = (B.reads j).map f := fun f x =>
+  have ej :
+    ∀ (f : Name → V) (x : V),
+      (B.reads j).map (fun u => if (B.stmt i).binds.contains u = true then x else f u) =
+        (B.reads j).map f :=
+    fun f x =>
     List.map_congr_left fun u hu => by
       have : u ∉ (B.stmt i).binds := fun hd => hR2 u hd ((B.mem_reads j u).1 hu)
       simp [this]
-  have ei : ∀ (f : Name → V) (x : V), (B.reads i).map (fun u => if (B.stmt j).binds.contains u = true
-        then x else f u) = (B.reads i).map f := fun f x =>
+  have ei :
+    ∀ (f : Name → V) (x : V),
+      (B.reads i).map (fun u => if (B.stmt j).binds.contains u = true then x else f u) =
+        (B.reads i).map f :=
+    fun f x =>
     List.map_congr_left fun u hu => by
       have : u ∉ (B.stmt j).binds := fun hd => hR1 u hd ((B.mem_reads i u).1 hu)
       simp [this]
-  have env_comm : ∀ (x y : V) (f : Name → V),
-      (fun u => if (B.stmt j).binds.contains u = true then y else
-        if (B.stmt i).binds.contains u = true then x else f u)
-      = (fun u => if (B.stmt i).binds.contains u = true then x else
-        if (B.stmt j).binds.contains u = true then y else f u) := by
+  have env_comm :
+    ∀ (x y : V) (f : Name → V),
+      (fun u =>
+          if (B.stmt j).binds.contains u = true then y
+          else if (B.stmt i).binds.contains u = true then x else f u) =
+        (fun u =>
+          if (B.stmt i).binds.contains u = true then x
+          else if (B.stmt j).binds.contains u = true then y else f u) := by
     intro x y f
     funext u
     by_cases hu : u ∈ (B.stmt i).binds
     · simp [hu, hW u hu]
     · simp [hu]
-  have hnot : ¬((B.stmt i).effect = true ∧ (B.stmt j).effect = true) :=
-    fun ⟨a, b⟩ => by simp [hE a] at b
+  have hnot : ¬((B.stmt i).effect = true ∧ (B.stmt j).effect = true) := fun ⟨a, b⟩ => by
+    simp [hE a] at b
   by_cases hei : (B.stmt i).effect = true <;> by_cases hej : (B.stmt j).effect = true
   · exact absurd ⟨hei, hej⟩ hnot
   all_goals
@@ -95,20 +103,23 @@ theorem Bundle.step_comm (B : Bundle) (M : Meaning V W) {i j : Nat}
     exact env_comm _ _ _
 
 theorem Bundle.exec_cons (B : Bundle) (M : Meaning V W) (s : St V W) (j : Nat) (ord : List Nat) :
-    B.exec M s (j :: ord) = B.exec M (B.step M j s) ord := rfl
+    B.exec M s (j :: ord) = B.exec M (B.step M j s) ord :=
+  rfl
 
 theorem Bundle.exec_append (B : Bundle) (M : Meaning V W) (s : St V W) (l l' : List Nat) :
-    B.exec M s (l ++ l') = B.exec M (B.exec M s l) l' := List.foldl_append
+    B.exec M s (l ++ l') = B.exec M (B.exec M s l) l' :=
+  List.foldl_append
 
 /-- A step that conflicts with nothing in `q` can be taken after `q` instead of before it. Here a step is any
 function `f j` of a state, and the states are folded through the steps in order. -/
 theorem foldl_move_past {α : Type} (f : Nat → α → α) (conflict : Nat → Nat → Bool)
-    (comm : ∀ i j, conflict i j = false → ∀ s, f j (f i s) = f i (f j s))
-    {x : Nat} {q : List Nat} (hq : ∀ y ∈ q, conflict x y = false) (s : α) :
+    (comm : ∀ i j, conflict i j = false → ∀ s, f j (f i s) = f i (f j s)) {x : Nat} {q : List Nat}
+    (hq : ∀ y ∈ q, conflict x y = false) (s : α) :
     q.foldl (fun s j => f j s) (f x s) = f x (q.foldl (fun s j => f j s) s) := by
   induction q generalizing s with
   | nil => rfl
-  | cons y q ih =>
+  | cons y q
+    ih =>
     rw [List.foldl_cons, List.foldl_cons, comm x y (hq y (List.mem_cons_self ..))]
     exact ih (fun z hz => hq z (List.mem_cons_of_mem _ hz)) _
 
@@ -117,9 +128,11 @@ every conflicting pair in its original order: the end is the same as in the orde
 conflict commute. -/
 theorem foldl_reorder {α : Type} (f : Nat → α → α) (conflict : Nat → Nat → Bool)
     (comm : ∀ i j, conflict i j = false → ∀ s, f j (f i s) = f i (f j s)) (s0 : α) :
-    ∀ (n : Nat) (ord : List Nat), ord.Nodup → (∀ x, x ∈ ord ↔ x < n) →
-      ord.Pairwise (fun a b => a < b ∨ conflict a b = false) →
-      ord.foldl (fun s j => f j s) s0 = (List.range n).foldl (fun s j => f j s) s0 := by
+    ∀ (n : Nat) (ord : List Nat),
+      ord.Nodup →
+        (∀ x, x ∈ ord ↔ x < n) →
+        ord.Pairwise (fun a b => a < b ∨ conflict a b = false) →
+        ord.foldl (fun s j => f j s) s0 = (List.range n).foldl (fun s j => f j s) s0 := by
   intro n
   induction n with
   | zero =>
@@ -155,11 +168,15 @@ theorem foldl_reorder {α : Type} (f : Nat → α → α) (conflict : Nat → Na
       rcases (List.pairwise_cons.1 hok'.2.1).1 y hy with h | h
       · exact absurd ((hpq y).1 (List.mem_append_right _ hy)) (Nat.not_lt.2 (Nat.le_of_lt h))
       · exact h
-    have hperm : (p ++ n :: q).foldl (fun s j => f j s) s0 = f n ((p ++ q).foldl (fun s j => f j s) s0) := by
-      rw [List.foldl_append, List.foldl_cons, foldl_move_past f conflict comm hq, ← List.foldl_append]
+    have hperm :
+      (p ++ n :: q).foldl (fun s j => f j s) s0 = f n ((p ++ q).foldl (fun s j => f j s) s0) := by
+      rw [List.foldl_append, List.foldl_cons, foldl_move_past f conflict comm hq, ←
+        List.foldl_append]
     rw [hperm, ih (p ++ q) ?_ hpq ?_, List.range_succ, List.foldl_append]
     · rfl
-    · exact List.nodup_append.2 ⟨hnd'.1, hnq.2, fun a ha b hb => hnd'.2.2 a ha b (List.mem_cons_of_mem _ hb)⟩
+    · exact
+        List.nodup_append.2
+          ⟨hnd'.1, hnq.2, fun a ha b hb => hnd'.2.2 a ha b (List.mem_cons_of_mem _ hb)⟩
     · refine List.pairwise_append.2 ⟨hok'.1, (List.pairwise_cons.1 hok'.2.1).2, fun a ha b hb => ?_⟩
       exact hok'.2.2 a ha b (List.mem_cons_of_mem _ hb)
 
@@ -168,9 +185,11 @@ once and keeps every conflicting pair in its original order. The final state (th
 name, and the world) is the same as when running them in bundle order, whatever the statements
 mean. -/
 theorem Bundle.exec_reorder (B : Bundle) (M : Meaning V W) (s0 : St V W) :
-    ∀ (n : Nat) (ord : List Nat), ord.Nodup → (∀ x, x ∈ ord ↔ x < n) →
-      ord.Pairwise (fun a b => a < b ∨ B.conflict a b = false) →
-      B.exec M s0 ord = B.exec M s0 (List.range n) :=
+    ∀ (n : Nat) (ord : List Nat),
+      ord.Nodup →
+        (∀ x, x ∈ ord ↔ x < n) →
+        ord.Pairwise (fun a b => a < b ∨ B.conflict a b = false) →
+        B.exec M s0 ord = B.exec M s0 (List.range n) :=
   foldl_reorder (B.step M) B.conflict (fun _ _ h s => B.step_comm M h s) s0
 
 end EsmSplit
