@@ -970,6 +970,25 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_array_parameter",
+    srcs = ["EsmSplit/CoreJS/ArrayParameter.lean"],
+    deps = [
+        ":corejs_eval",
+        ":corejs_scope",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_array_parameter_axioms_test",
+    modules = ["EsmSplit.CoreJS.ArrayParameter"],
+    required_theorems = [
+        "CoreJS.flatArrayParameter_exec",
+        "CoreJS.flatArrayParameter_throwing_close",
+    ],
+    deps = [":corejs_array_parameter"],
+)
+
+lean_library(
     name = "corejs_iterator_frame",
     srcs = ["EsmSplit/CoreJS/IteratorFrame.lean"],
     deps = [
