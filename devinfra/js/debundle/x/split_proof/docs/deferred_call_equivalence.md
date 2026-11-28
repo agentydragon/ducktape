@@ -211,4 +211,38 @@ assert.deepEqual(await run("resume-first"), [["reenter:1", "catch:2", "resume:2"
 | Excalidraw [retained main reader](../integration/excalidraw/main.md): unchanged render code at `#1379` starts a bare dynamic import, and the pinned control changes its outcome with unchanged bytes under a different map. [Editor cache](static_field_locality.md): class, field call and alias are `#1247–1249`. A call through `publicField` installs a new `WeakMap` on an **earlier** allocation.                                                                                                           | For the main reader, relate the module record, actual loader resolution and the returned distinct promises, cache and rejection event. For the editor, check the real helper, saved definition function, constructor identity, and native WeakMap brand/freshness, plus the field write on the original class and its descriptors. Add controls for an inherited accessor, a replaced helper that reenters, and an alias observing the field before the write. The existing `Local` result rules out treating this as a write confined to the field initializer's region.                         |
 | [semver 7.8.6](global_member_reads.md): the full esbuild bundle starts with `#0 var __create = Object.create` and `#1 var __defProp = Object.defineProperty`. The eager binding lookup and property read fail before a later call or unchanged closure is reached. The [full workload ladder](../integration/library_splits/COMPLEXITY_LADDER.md) records refusals.                                                                                                                                               | Preserve the lookup and save the returned reference in its original live cell; move on to consumers only after connecting this read to the mounted environment. Compare getter receiver and order, binding shadowing, throwing lookup, replacement **after** capture, and a later helper invoking the saved definer or copying an accessor. Reusing an unchanged `__commonJS` closure cannot justify moving its first invocation or resetting cached/exported identities.                                                                                                                         |
 
-For a first prototype, keep the existing constructors untouched. Reuse `makeFunc_agree` and the linked schedule lemmas for an authenticated construction-only fixture; distinguish it in the test matrix from a reached deferred-call refusal. Then exercise existing world calls with an explicit state transition and a nested callback, requiring positive completion or the expected language throw and full state in a concrete control. Only after that is it useful to try a proof for a single live operation from a real workload. Record decode, model completion, and ordinary native observations separately at each step.
+## Construction-only Retrier slice
+
+The [scratch replay](https://app.buildbuddy.io/invocation/930e14fc-1065-4c4e-932d-fdbe68216d79) extracts only the exact expression `Math.random().toString(36).slice(2)` from hash-checked `@humanwhocodes/retry@0.4.3`. In the original it is an instance field initializer. The wrapper and lexical capture below are the experiment; it does not move the original class or prove its field initialization.
+
+```text
+const suffix = ":";
+const decoy = ":";
+function retryId() {
+  return Math.random().toString(36).slice(2) + suffix;
+}
+export const retained = retryId;
+```
+
+The authored request assigns original ordinals 0–2 to `retained.mjs` and leaves ordinal 3 at `entry.mjs`, with the helper first. The original function at ordinal 2 therefore has a different owner. The test uses the parser, planner and ESTree printer, reparses the staged files, resolves import and export cells, and checks the original ordinals, linked order, statements and captures. The initial linked state check is full equality. With those concrete checks, the proof in the scratch runner is:
+
+```lean
+private theorem sameConstruction (before after : Program) (pair : CheckedProbePair before after)
+    (ready : pair.before.ready = pair.after.ready)
+    (units : SameUnits (unitsOf pair.before.linked) (unitsOf pair.after.linked)) :
+    ∀ w fuel, runProgram w fuel before = runProgram w fuel after := by
+  intro w fuel
+  rw [run_after_link fuel (pair.before.forWorld w), run_after_link fuel (pair.after.forWorld w)]
+  change runUnits fuel (unitsOf pair.before.linked) (linkState w pair.before.ready) =
+    runUnits fuel (unitsOf pair.after.linked) (linkState w pair.after.ready)
+  rw [ready, runUnits_same fuel units]
+```
+
+The proof uses the existing link and schedule lemmas. A separate `exportsMatchFrom` check gives `SameExports` via `CheckedProbePair.sameExports`. In the construction run, both layouts complete at fuel 128 in `World.probe`, export the closure from the same modeled address, and capture the original `suffix` cell. Node observes a function and zero random draws in both layouts.
+
+- **Changed capture:** keep the same statement, code and ordinal in the checker input, but redirect its resolved `suffix` slot to the distinct `decoy` cell. Both cells hold `":"` after initialization. `sameUnits?` rejects this hypothetical rebinding by address.
+- **Reached call:** append `export const value = retryId();` in the entry. Both model runs now stop at `deferred function retryId: unsupported global Math`. Both Node runs with a controlled draw of `0.5` observe one draw and return `"i:"` for that export. The modeled equality theorem still holds, but this time it equates refusals; it says nothing about producing the ID.
+
+The full Retrier fixture still refuses before publication. The experiment changes neither the model nor any admission rule.
+
+For the next prototype, keep the existing constructors untouched. Reuse `makeFunc_agree` and the linked schedule lemmas for an authenticated construction-only fixture; distinguish it in the test matrix from a reached deferred-call refusal. Then exercise existing world calls with an explicit state transition and a nested callback, requiring positive completion or the expected language throw and full state in a concrete control. Only after that is it useful to try a proof for a single live operation from a real workload. Record decode, model completion, and ordinary native observations separately at each step.
