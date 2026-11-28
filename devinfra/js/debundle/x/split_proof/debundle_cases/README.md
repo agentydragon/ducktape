@@ -35,6 +35,8 @@ DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mj
 
 The ordinary splitter runs once for every saved `agree-accept` diagnostic case, including nested entries with fixed providers. A refusal records the CLI’s reason in `emission.blocker` and its reason code when available; the output directory must remain absent. After an acceptance the runner checks the published files from disk and runs the original and emitted entries in Node. Both must exit successfully and match the fixture’s expected stdout. Missing cases, adapter errors, and failed disk or runtime checks fail the test.
 
+The certificate result and corpus observations are separate. Each row records `expectations` as `pass`, `fail`, `unchecked`, `inapplicable`, or `refused`, and `behavior` is `pass` only if every applicable authored observation passed. Entry export expectations are observed when the authored entry route maps to the emitted entry; saved probes run on both the original and the published entry. Other module paths, source assertions, emitted-only probes, `check_all_js`, runtime file setup and unknown expectation fields remain unchecked until the adapter can represent and verify them. A refused request marks applicable observations refused; an absent assertion is inapplicable. The unchanged cohort remains the saved 122 diagnostic placements, including renames that the adapter must refuse. `--print-ledger` prints the rows as well as status totals. Disk readback separately verifies the certified export cells; runtime equality of primitive values alone does not.
+
 ```sh
 p=//devinfra/js/debundle/x/split_proof/debundle_cases
 bbr test "$p:ordinary_certification_test" "$p:corpus_certificate_test"
@@ -106,7 +108,7 @@ The corpus found two accepted splits that do not run. Both were front-end gaps. 
 2. **Export names.** `export { X as av }` publishes `X` as `av`. A module that needs the local `av` imports it from the entry, and the generated glue exported `av` again: `SyntaxError: Duplicate export of 'av'` (`emission/residual_export_alias_collision`).
    The model had no export names. It has them now (`Stmt.exports`): `mkPlan` exports the local as `av$1`, the importer renames it back, and `ExportsUnique` in `Valid` checks that a module's export names differ. The entry is accepted and prints the expected output.
 
-## Not compared
+## Not compared by the diagnostic run
 
 - **Stderr text** of the 36 refusal entries.
 - **`exports`, `source`, `probes`, `check_all_js`, `runtime_files`** assertions of accepted entries.

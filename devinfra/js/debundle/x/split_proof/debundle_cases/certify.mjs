@@ -19,7 +19,18 @@ function verdict(result, phase) {
   throw new Error("inconsistent lowersplit status or verdict: " + result.stdout);
 }
 
-export function certify({ stage, chunkFile, plan, resolvedUnits, want, providers, run, lowersplit, nodeRun }) {
+export function certify({
+  stage,
+  chunkFile,
+  plan,
+  resolvedUnits,
+  want,
+  originalWant = want,
+  providers,
+  run,
+  lowersplit,
+  nodeRun,
+}) {
   // The authored Lean request only carries ownership and priority. A
   // nonidentity member mapping would be lost before planning or readback.
   const renames = resolvedUnits.flatMap(({ ordinal, owner, members }) =>
@@ -72,8 +83,8 @@ export function certify({ stage, chunkFile, plan, resolvedUnits, want, providers
 
   const disk = verdict(run(lowersplit, [...args, "--check-output"], { timeout: certificateTimeoutMs }), "disk check");
   if (disk.blocker !== undefined) return { outcome: "error:disk", emission, disk };
-  const matches = (r) => !r.failure && r.code === 0 && r.stdout === want;
-  const original = matches(nodeRun("original", chunkFile, stage));
-  const emitted = matches(nodeRun("emitted", path.join(output, entry), stage));
-  return { outcome: original && emitted ? "certified" : "error:runtime", emission, disk, original, emitted };
+  const matches = (r, expected) => !r.failure && r.code === 0 && r.stdout === expected;
+  const original = matches(nodeRun("original", chunkFile, stage), originalWant);
+  const emitted = matches(nodeRun("emitted", path.join(output, entry), stage), want);
+  return { outcome: original && emitted ? "certified" : "error:runtime", emission, disk, original, emitted, entry };
 }

@@ -12,6 +12,7 @@
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
 import { certify } from "./certify.mjs";
+import { expectationLedger, observeExpectations } from "./expectations.mjs";
 import { classify, coverageLosses, rejectKind, wanted } from "./verdict.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -206,6 +207,7 @@ function nodeRun(phase, file, cwd) {
   const error = (r.stderr.match(/^\w*Error: .*/m) ?? [""])[0];
   return {
     stdout: r.stdout,
+    stderr: r.stderr,
     code: r.code,
     failure: r.failure,
     error,
@@ -306,20 +308,32 @@ function runCase(dir, specName, expected, id) {
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
     if (certification) {
-      return {
-        id,
-        ...certify({
+      const result = certify({
+        stage,
+        chunkFile,
+        plan,
+        resolvedUnits,
+        want: expected.accept.stdout,
+        originalWant: wanted(expected),
+        providers: Object.values(expected.accept.runtime_files ?? {}),
+        run,
+        lowersplit,
+        nodeRun,
+      });
+      if (result.entry) {
+        result.expectations = observeExpectations({
+          accept: expected.accept,
           stage,
           chunkFile,
-          plan,
-          resolvedUnits,
-          want: wanted(expected),
-          providers: Object.values(expected.accept.runtime_files ?? {}),
+          output: path.join(stage, "certified"),
+          entry: result.entry,
           run,
-          lowersplit,
           nodeRun,
-        }),
-      };
+        });
+        if (result.expectations.some((item) => item.status === "fail")) result.outcome = "error:expectation";
+        if (keepDir) cpSync(stage, path.join(keepDir, id), { recursive: true });
+      }
+      return { id, ...result };
     }
     const checkerArgs = [
       "--diagnostic",
@@ -439,10 +453,32 @@ for (const dir of discover()) {
     const key = caseId(dir, specName);
     if (certification && !cohort.delete(key)) continue;
     try {
-      lines.push(runCase(dir, specName, expected, key));
+      const row = runCase(dir, specName, expected, key);
+      if (certification && !row.expectations)
+        row.expectations = expectationLedger(
+          expected.accept,
+          row.outcome === "rejected" || row.outcome.startsWith("unsupported:") ? "refused" : "unchecked"
+        );
+      if (certification) {
+        const statuses = row.expectations.map((item) => item.status);
+        row.behavior = statuses.includes("fail")
+          ? "fail"
+          : statuses.includes("refused")
+            ? "refused"
+            : row.outcome !== "certified" || statuses.includes("unchecked")
+              ? "unchecked"
+              : "pass";
+      }
+      lines.push(row);
     } catch (error) {
       if (!certification) throw error;
-      lines.push({ id: key, outcome: "error:runner", detail: error.message });
+      lines.push({
+        id: key,
+        outcome: "error:runner",
+        behavior: "unchecked",
+        detail: error.message,
+        expectations: expectationLedger(expected.accept),
+      });
     }
   }
 }
@@ -450,8 +486,29 @@ writeFileSync(outFile, `${lines.map((row) => JSON.stringify(row)).join("\n")}\n`
 console.log(`${lines.length} cases -> ${outFile}`);
 if (certification) {
   if (!filter && cohort.size) throw new Error("missing cohort cases: " + [...cohort].join(", "));
+  if (args.includes("--print-ledger")) for (const row of lines) console.log(JSON.stringify(row));
   console.log(
     `certified: ${lines.filter((r) => r.outcome === "certified").length}; refused: ${lines.filter((r) => r.outcome === "rejected").length}`
+  );
+  const statuses = ["pass", "fail", "unchecked", "inapplicable", "refused"];
+  console.log(
+    "expectation assertions: " +
+      JSON.stringify(
+        Object.fromEntries(
+          statuses.map((status) => [
+            status,
+            lines.flatMap((row) => row.expectations).filter((item) => item.status === status).length,
+          ])
+        )
+      )
+  );
+  console.log(
+    "complete observations: " +
+      lines.filter(
+        (row) =>
+          row.outcome === "certified" &&
+          row.expectations.every((item) => ["pass", "inapplicable"].includes(item.status))
+      ).length
   );
   const failures = lines.filter((r) => r.outcome !== "certified" && r.outcome !== "rejected");
   for (const row of failures) console.error(JSON.stringify(row));
