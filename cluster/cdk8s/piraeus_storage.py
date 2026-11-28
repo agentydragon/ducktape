@@ -1,4 +1,9 @@
-"""StorageClass names shared by the Piraeus Helm release and its PVC consumers."""
+"""The Piraeus facts shared by its Helm release and its storage consumers: StorageClass
+names and the node label marking a prepared satellite node."""
+
+# Terraform machine-config nodeLabels and nix/nixos set this on every node whose LINSTOR
+# satellite and raw-device pool exist; scheduling DRBD-backed Pods selects it.
+PIRAEUS_READY_LABEL = "storage.allegedly.works/piraeus-ready"
 
 SSD_LOCAL = "piraeus-ssd-local"
 HDD_LOCAL = "piraeus-hdd-local"

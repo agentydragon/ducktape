@@ -15,7 +15,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.dcgm_exporter import counters
 from cluster.cdk8s.flux import ConfigMapArgs
@@ -57,7 +57,7 @@ def chart(app: App) -> Chart:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     # Only wyrm2 has GPUs. Generalize to a GPU label if more GPU nodes appear.
-                    node_selector={"kubernetes.io/hostname": "wyrm2"},
+                    node_selector={node_scheduling.HOSTNAME_LABEL: "wyrm2"},
                     # nvidia-container-runtime.cdi injects /dev/nvidia*, driver libs, and NVML.
                     runtime_class_name="nvidia",
                     containers=[

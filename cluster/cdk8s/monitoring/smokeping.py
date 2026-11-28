@@ -27,7 +27,7 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
-from cluster.cdk8s.node_scheduling import Placement
+from cluster.cdk8s.node_scheduling import HOSTNAME_LABEL, Placement
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.service_ref import Port
 from cluster.scripts.nebula_mesh import Mesh
@@ -127,7 +127,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
         addresses = [address for target, address in targets.items() if target != source]
         deployment = _deployment(chart, source, addresses)
         pod_policy.harden(deployment)
-        pod_policy.place(deployment, Placement(node_selector={"kubernetes.io/hostname": source}))
+        pod_policy.place(deployment, Placement(node_selector={HOSTNAME_LABEL: source}))
     PodMonitor(
         chart,
         "pod-monitor",

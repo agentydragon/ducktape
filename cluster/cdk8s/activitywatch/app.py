@@ -13,7 +13,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from cluster.cdk8s import cilium, namespaces, piraeus_storage
+from cluster.cdk8s import cilium, namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
@@ -147,7 +147,7 @@ def _deployment(scope: Construct) -> None:
                     security_context=k8s.PodSecurityContext(
                         fs_group=999, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
                     ),
-                    node_selector={"topology.kubernetes.io/region": "proxmox"},
+                    node_selector=node_scheduling.PROXMOX_REGION_NODE_SELECTOR,
                     containers=[_aw_server_container(), _readonly_proxy_container(), _bearer_proxy_container()],
                     volumes=[
                         k8s.Volume(

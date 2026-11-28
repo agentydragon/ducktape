@@ -60,7 +60,11 @@ def _helmrelease_chart(app: App) -> Chart:
                     "nodeSelector": [
                         {
                             "matchExpressions": [
-                                {"key": "topology.kubernetes.io/region", "operator": "In", "values": ["hil"]}
+                                {
+                                    "key": node_scheduling.REGION_LABEL,
+                                    "operator": "In",
+                                    "values": [node_scheduling.OVH_REGION],
+                                }
                             ]
                         }
                     ],

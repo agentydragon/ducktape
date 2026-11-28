@@ -25,7 +25,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import external_creds
+from cluster.cdk8s import external_creds, pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -90,7 +90,7 @@ def _deployment(
     image_pull_secrets: list[k8s.LocalObjectReference] | None = None,
 ) -> None:
     labels = service.pods.selector
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         service.name,
         metadata=k8s.ObjectMeta(
@@ -112,7 +112,6 @@ def _deployment(
                         run_as_group=65532,
                         fs_group=65532,
                         fs_group_change_policy="OnRootMismatch",
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                     ),
                     containers=[container],
                     volumes=[
@@ -129,6 +128,7 @@ def _deployment(
             ),
         ),
     )
+    pod_policy.harden(deployment)
 
 
 def _rest_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
@@ -142,11 +142,7 @@ def _rest_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
             name="exporter",
             image="githubexporter/github-exporter:v2.3.1",
             image_pull_policy="IfNotPresent",
-            security_context=k8s.SecurityContext(
-                allow_privilege_escalation=False,
-                read_only_root_filesystem=True,
-                capabilities=k8s.Capabilities(drop=["ALL"]),
-            ),
+            security_context=k8s.SecurityContext(allow_privilege_escalation=False, read_only_root_filesystem=True),
             env=[
                 k8s.EnvVar(name="GITHUB_TOKEN_FILE", value=f"{_TOKEN_DIR}/token"),
                 k8s.EnvVar(name="GITHUB_RATE_LIMIT_ENABLED", value="true"),
@@ -178,14 +174,10 @@ def _graphql_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
             name="exporter",
             image=_GRAPHQL_IMAGE,
             image_pull_policy="IfNotPresent",
-            security_context=k8s.SecurityContext(
-                allow_privilege_escalation=False,
-                # No readOnlyRootFilesystem, unlike the exporter beside this one: the
-                # aspect_rules_py launcher materialises its venv at startup inside the
-                # image's own runfiles directory, so the root filesystem has to be
-                # writable or the container exits before serving anything.
-                capabilities=k8s.Capabilities(drop=["ALL"]),
-            ),
+            # No readOnlyRootFilesystem, unlike the exporter beside this one: the
+            # aspect_rules_py launcher materialises its venv at startup inside the
+            # image's own runfiles directory, so the root filesystem has to be
+            # writable or the container exits before serving anything.
             env=[
                 k8s.EnvVar(name="GITHUB_ACCOUNT", value=account),
                 k8s.EnvVar(name="GITHUB_TOKEN_FILE", value=f"{_TOKEN_DIR}/token"),

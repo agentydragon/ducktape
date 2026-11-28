@@ -87,8 +87,8 @@ _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
-_HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
-_SSD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "ssd"}
+_HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, node_scheduling.STORAGE_TIER_LABEL: "hdd"}
+_SSD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, node_scheduling.STORAGE_TIER_LABEL: "ssd"}
 _RUNTIME_DEFAULT_SECCOMP = {"type": "RuntimeDefault"}
 _CONTAINER_SECURITY_CONTEXT = {
     "allowPrivilegeEscalation": False,
@@ -409,7 +409,7 @@ def clickhouse_chart(app: App) -> Chart:
                 pod_templates=[_clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR)]
                 + [
                     _clickhouse_pod_template(
-                        replica.pod_template, {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": replica.node}
+                        replica.pod_template, {**_HDD_NODE_SELECTOR, node_scheduling.HOSTNAME_LABEL: replica.node}
                     )
                     for replica in _REPLICAS
                 ],

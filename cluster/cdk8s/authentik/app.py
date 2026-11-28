@@ -23,7 +23,7 @@ from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRulesFilters
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium, opentofu
+from cluster.cdk8s import cilium, node_scheduling, opentofu
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.authentik.db import NAMESPACE
 from cluster.cdk8s.flux import write_kustomization
@@ -101,7 +101,7 @@ def _spread(component: str) -> dict[str, object]:
                                     "app.kubernetes.io/instance": NAME,
                                 }
                             },
-                            "topologyKey": "kubernetes.io/hostname",
+                            "topologyKey": node_scheduling.HOSTNAME_LABEL,
                         },
                     }
                 ]
@@ -159,7 +159,7 @@ def _values() -> dict[str, object]:
             "name": "worker",
             "replicas": 1,
             # As DB-bound as the server.
-            "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "nodeSelector": node_scheduling.OVH_REGION_NODE_SELECTOR,
             **_spread("worker"),
             **_pod_env(),
             "resources": _WORKER_RESOURCES,

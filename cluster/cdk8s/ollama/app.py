@@ -17,7 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from jinja2 import Environment, StrictUndefined
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import namespaces, piraeus_storage
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -285,7 +285,7 @@ def _setup_job(scope: Construct, scripts: ConfigMap) -> None:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     restart_policy="OnFailure",
-                    node_selector={"kubernetes.io/hostname": "wyrm2"},
+                    node_selector={node_scheduling.HOSTNAME_LABEL: "wyrm2"},
                     volumes=[
                         k8s.Volume(
                             name="scripts", config_map=k8s.ConfigMapVolumeSource(name=scripts.name, default_mode=0o755)

@@ -123,8 +123,6 @@ spec:
                 - ALL
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            seccompProfile:
-              type: RuntimeDefault
           volumeMounts:
             - mountPath: /etc/nginx/nginx.conf
               name: config
@@ -137,6 +135,9 @@ spec:
               name: tmp
             - mountPath: /var/cache/nginx
               name: cache
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       topologySpreadConstraints:
         - labelSelector:
             matchLabels:

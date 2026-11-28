@@ -530,7 +530,7 @@ def _backup(scope: Construct) -> None:
                             ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
                                 match_expressions=[
                                     ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                        key="kubernetes.io/hostname", operator="In", values=["optiplex"]
+                                        key=node_scheduling.HOSTNAME_LABEL, operator="In", values=["optiplex"]
                                     )
                                 ]
                             )

@@ -22,7 +22,15 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
-from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling, piraeus_storage, public_web_pki
+from cluster.cdk8s import (
+    api_resource,
+    external_creds,
+    namespaces,
+    node_scheduling,
+    piraeus_storage,
+    pod_policy,
+    public_web_pki,
+)
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
@@ -260,7 +268,7 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     # Auto-diskful needs the consumer to have the HDD pool locally.
-                    node_selector={**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"},
+                    node_selector={**node_scheduling.HIL_OVH_NODE_SELECTOR, node_scheduling.STORAGE_TIER_LABEL: "hdd"},
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     security_context=k8s.PodSecurityContext(fs_group=1000, fs_group_change_policy="OnRootMismatch"),
                     containers=[
@@ -328,7 +336,7 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
         metadata=k8s.ObjectMeta(name=_NEXT, namespace=NAMESPACE),
         spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.k8s_service_port()], selector=_NEXT_LABELS),
     )
-    k8s.KubeJob(
+    bootstrap = k8s.KubeJob(
         scope,
         "candidate-bootstrap",
         metadata=k8s.ObjectMeta(
@@ -344,11 +352,7 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
                     automount_service_account_token=True,
                     image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     restart_policy="OnFailure",
-                    security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=65534,
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                    ),
+                    security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=65534),
                     containers=[
                         k8s.Container(
                             name="bootstrap",
@@ -362,9 +366,6 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
                                 "--public-cache=public",
                                 "--keypair-dir=/secrets/cache-keys",
                             ],
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                            ),
                             resources=container_resources(cpu="100m", memory="128Mi", memory_limit="256Mi"),
                             env=[public_web_pki.SSL_CERT_FILE],
                             volume_mounts=[
@@ -387,6 +388,7 @@ def _local_server(scope: Construct, postgres: Cluster) -> None:
             ),
         ),
     )
+    pod_policy.harden(bootstrap)
 
 
 def _rotation(scope: Construct) -> None:
@@ -477,7 +479,7 @@ def _rotation(scope: Construct) -> None:
         role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_ROTATOR),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_ROTATOR, namespace=NAMESPACE)],
     )
-    k8s.KubeCronJob(
+    rotation = k8s.KubeCronJob(
         scope,
         "rotation",
         metadata=k8s.ObjectMeta(
@@ -518,20 +520,13 @@ def _rotation(scope: Construct) -> None:
                                     config_map=k8s.ConfigMapVolumeSource(name=_ROTATORS_CONFIG_MAP),
                                 ),
                             ],
-                            security_context=k8s.PodSecurityContext(
-                                run_as_non_root=True,
-                                run_as_user=65534,
-                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                            ),
+                            security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=65534),
                             containers=[
                                 k8s.Container(
                                     name="rotate",
                                     image=_ROTATOR_IMAGE,
                                     args=["rotate", "--config", "/config/rotators.yaml"],
                                     env=[_GITHUB_PAT.key("token").env_var("GIT_TOKEN"), public_web_pki.SSL_CERT_FILE],
-                                    security_context=k8s.SecurityContext(
-                                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                                    ),
                                     volume_mounts=[
                                         k8s.VolumeMount(name="rotators-config", mount_path="/config", read_only=True),
                                         public_web_pki.VOLUME_MOUNT,
@@ -545,6 +540,7 @@ def _rotation(scope: Construct) -> None:
             ),
         ),
     )
+    pod_policy.harden(rotation)
 
 
 def chart(app: App) -> Chart:

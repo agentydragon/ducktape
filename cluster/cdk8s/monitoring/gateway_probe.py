@@ -97,7 +97,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> k8s.KubeDaemonSet:
                                     k8s.NodeSelectorTerm(
                                         match_expressions=[
                                             k8s.NodeSelectorRequirement(
-                                                key="kubernetes.io/hostname", operator="In", values=nodes
+                                                key=node_scheduling.HOSTNAME_LABEL, operator="In", values=nodes
                                             )
                                         ]
                                     )

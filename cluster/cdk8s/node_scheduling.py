@@ -1,6 +1,7 @@
-"""Node-scheduling facts shared across cluster/cdk8s: the OVH zone and its node selector,
-the control-plane taint, and the affinity that keeps a Pod tolerating that taint on
-workers. `pod_policy.place` applies a `Placement` to a generated workload.
+"""Node-scheduling facts shared across cluster/cdk8s: the node labels their machine config
+sets (region, zone, hostname, disk tier) with the selectors that use them, the control-plane
+taint, and the affinity that keeps a Pod tolerating that taint on workers. `pod_policy.place` applies
+a `Placement` to a generated workload.
 
 Helm values and other `any`-typed fields take the typed structs as they are: jsii passes
 a struct there as a plain object keyed by its property names, which for these structs
@@ -26,6 +27,20 @@ HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
 HOME_LAN_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HOME_LAN_ZONE}
 # NFD reconciles the host's OS release independently of kubelet registration.
 NIXOS_NODE_SELECTOR: Mapping[str, str] = {"feature.node.kubernetes.io/system-os_release.ID": "nixos"}
+# Machine config sets the topology labels on each node: cluster/terraform/main for the OVH
+# (region hil, per-node disk tier) and Proxmox nodes, nix/nixos for the laptops. Region names the
+# site; zone names the failure domain inside it (cluster/README.md Nodes).
+REGION_LABEL = "topology.kubernetes.io/region"
+OVH_REGION = "hil"
+HOME_REGION = "home"
+PROXMOX_REGION = "proxmox"
+OVH_REGION_NODE_SELECTOR: Mapping[str, str] = {REGION_LABEL: OVH_REGION}
+PROXMOX_REGION_NODE_SELECTOR: Mapping[str, str] = {REGION_LABEL: PROXMOX_REGION}
+# The registered hostname: the topology key for one-Pod-per-host rules.
+HOSTNAME_LABEL = "kubernetes.io/hostname"
+# Per-node disk class, pinned by media-specific workloads and exported to Prometheus by
+# kube-state-metrics (monitoring/stack.py allowlist).
+STORAGE_TIER_LABEL = "storage.allegedly.works/tier"
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.
 CONTROL_PLANE_TAINT_KEY = "node-role.kubernetes.io/control-plane"
 CONTROL_PLANE_TOLERATION = k8s.Toleration(key=CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule")
@@ -58,7 +73,7 @@ class Placement:
 
 
 HIL_OVH = Placement(node_selector=HIL_OVH_NODE_SELECTOR)
-OPTIPLEX = Placement(node_selector={"kubernetes.io/hostname": "optiplex"})
+OPTIPLEX = Placement(node_selector={HOSTNAME_LABEL: "optiplex"})
 
 
 def zone_affinity(zones: Sequence[str]) -> k8s.NodeAffinity:
@@ -93,7 +108,7 @@ def one_per_host(labels: Mapping[str, str], *, node_affinity: k8s.NodeAffinity |
         pod_anti_affinity=k8s.PodAntiAffinity(
             required_during_scheduling_ignored_during_execution=[
                 k8s.PodAffinityTerm(
-                    label_selector=k8s.LabelSelector(match_labels=dict(labels)), topology_key="kubernetes.io/hostname"
+                    label_selector=k8s.LabelSelector(match_labels=dict(labels)), topology_key=HOSTNAME_LABEL
                 )
             ]
         ),
@@ -103,7 +118,7 @@ def one_per_host(labels: Mapping[str, str], *, node_affinity: k8s.NodeAffinity |
 def hostname_spread(labels: Mapping[str, str], *, min_domains: int | None = 2) -> k8s.TopologySpreadConstraint:
     """Spread each revision across eligible hosts. With the default, only one Pod can schedule on a sole eligible host."""
     return k8s.TopologySpreadConstraint(
-        topology_key="kubernetes.io/hostname",
+        topology_key=HOSTNAME_LABEL,
         max_skew=1,
         min_domains=min_domains,
         when_unsatisfiable="DoNotSchedule",

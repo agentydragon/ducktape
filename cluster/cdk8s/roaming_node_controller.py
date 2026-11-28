@@ -103,21 +103,12 @@ def _deployment(chart: Chart) -> None:
                     service_account_name=NAME,
                     automount_service_account_token=True,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True,
-                        run_as_user=1000,
-                        run_as_group=1000,
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                    ),
+                    security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=1000, run_as_group=1000),
                     containers=[
                         k8s.Container(
                             name="controller",
                             image=_IMAGE,
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                read_only_root_filesystem=True,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
-                            ),
+                            security_context=k8s.SecurityContext(read_only_root_filesystem=True),
                             resources=container_resources(cpu="10m", memory="32Mi", memory_limit="128Mi"),
                             readiness_probe=_health_probe(initial_delay_seconds=3),
                             liveness_probe=_health_probe(initial_delay_seconds=10),
@@ -128,6 +119,7 @@ def _deployment(chart: Chart) -> None:
         ),
     )
     # Runs where the laptops never are; must not itself depend on a roaming node.
+    pod_policy.harden(deployment)
     pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
 
 

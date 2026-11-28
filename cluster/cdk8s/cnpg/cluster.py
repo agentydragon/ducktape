@@ -51,7 +51,7 @@ _CONTROL_PLANE_TOLERATION = ClusterSpecAffinityTolerations(
 _OVH_CONTROL_PLANE_AFFINITY = ClusterSpecAffinity(
     node_selector=node_scheduling.HIL_OVH.node_selector,
     tolerations=[_CONTROL_PLANE_TOLERATION],
-    topology_key="kubernetes.io/hostname",
+    topology_key=node_scheduling.HOSTNAME_LABEL,
     pod_anti_affinity_type="required",
 )
 

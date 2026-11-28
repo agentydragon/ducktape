@@ -150,7 +150,7 @@ def chart(app: App) -> Chart:
             # Keep the watch list limited: Helm binds the operator's ClusterRole through
             # namespaced RoleBindings in each watched namespace and the KEDA namespace.
             "watchNamespace": f"{runner.NAMESPACE},buildbuddy-executor",
-            "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "nodeSelector": node_scheduling.OVH_REGION_NODE_SELECTOR,
             "webhooks": {
                 "replicaCount": 2,
                 "affinity": node_scheduling.one_per_host({"app": "keda-admission-webhooks"}),

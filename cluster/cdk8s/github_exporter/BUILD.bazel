@@ -14,6 +14,7 @@ py_library(
         "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/monitoring:grafana_instance",

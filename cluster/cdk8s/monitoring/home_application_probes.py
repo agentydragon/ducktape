@@ -19,7 +19,7 @@ from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import blackbox_exporter
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
-from cluster.cdk8s.node_scheduling import Placement
+from cluster.cdk8s.node_scheduling import HOSTNAME_LABEL, Placement
 
 NAME = "home-application-probes"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
@@ -141,7 +141,7 @@ def chart(app: App) -> Chart:
     for source in _SOURCES:
         deployment = _deployment(chart, source)
         pod_policy.harden(deployment)
-        pod_policy.place(deployment, Placement(node_selector={"kubernetes.io/hostname": source}))
+        pod_policy.place(deployment, Placement(node_selector={HOSTNAME_LABEL: source}))
     PodMonitor(
         chart,
         "pod-monitor",

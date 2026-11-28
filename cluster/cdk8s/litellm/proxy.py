@@ -218,7 +218,7 @@ class LiteLLMProxy(Construct):
             deployment,
             k8s.TopologySpreadConstraint(
                 max_skew=1,
-                topology_key="kubernetes.io/hostname",
+                topology_key=node_scheduling.HOSTNAME_LABEL,
                 when_unsatisfiable="ScheduleAnyway",
                 label_selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
             ),
