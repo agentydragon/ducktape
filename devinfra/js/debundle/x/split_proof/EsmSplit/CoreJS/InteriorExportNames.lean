@@ -16,8 +16,8 @@ structure SourceRow (source : Module) (row : EsmSplit.LocalExportUnit) : Prop wh
 
 /-- An authored owner in a faithful full plan retains the original metadata
 unit. The row must not occur as a source executable unit. -/
-theorem row_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    {source : Module} {row : EsmSplit.LocalExportUnit} (shape : SourceRow source row)
+theorem row_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan} {source : Module}
+    {row : EsmSplit.LocalExportUnit} (shape : SourceRow source row)
     (faithful : EsmSplit.Faithful B S P) {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods)
     (within : row.ordinal < B.length) (authored : S.claimants B row.ordinal = [owner.name]) :
     row.ordinal ∈ owner.stmts ∧ ∀ stmt, (row.ordinal, stmt) ∉ source.body := by
@@ -27,9 +27,10 @@ theorem row_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
 
 /-- The ordered source pair is present in the owner module's actual planner
 export metadata, with the public and local names kept distinct. -/
-theorem row_pair_published {B : EsmSplit.Bundle} {owner : EsmSplit.Module} {row : EsmSplit.LocalExportUnit}
-    (owned : row.ordinal ∈ owner.stmts) (footprint : row.FootprintMatches (B.stmt row.ordinal))
-    {publicName localName : EsmSplit.Name} (pair : (publicName, localName) ∈ row.names) :
+theorem row_pair_published {B : EsmSplit.Bundle} {owner : EsmSplit.Module}
+    {row : EsmSplit.LocalExportUnit} (owned : row.ordinal ∈ owner.stmts)
+    (footprint : row.FootprintMatches (B.stmt row.ordinal)) {publicName localName : EsmSplit.Name}
+    (pair : (publicName, localName) ∈ row.names) :
     (publicName, localName) ∈ owner.namedExports B := by
   have hexport := (row.matched_local_use_and_public footprint pair).2
   unfold EsmSplit.Module.namedExports EsmSplit.Module.namedExportsFrom
@@ -44,8 +45,9 @@ theorem row_pair_published {B : EsmSplit.Bundle} {owner : EsmSplit.Module} {row 
 /-- If the one original row is the only exporting unit in the authored entry,
 its actual planner export table is precisely the original ordered row. The
 entry can also own executable units before or after the metadata. -/
-theorem exact_public_table {B : EsmSplit.Bundle} {owner : EsmSplit.Module} {row : EsmSplit.LocalExportUnit}
-    (unique : owner.stmts.Nodup) (owned : row.ordinal ∈ owner.stmts) (glue : owner.exports = [])
+theorem exact_public_table {B : EsmSplit.Bundle} {owner : EsmSplit.Module}
+    {row : EsmSplit.LocalExportUnit} (unique : owner.stmts.Nodup)
+    (owned : row.ordinal ∈ owner.stmts) (glue : owner.exports = [])
     (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
     (footprint : row.FootprintMatches (B.stmt row.ordinal)) : owner.namedExports B = row.names := by
   have matched := ExportRows.singleton_matches footprint onlyRow
@@ -59,17 +61,18 @@ theorem row_pair_binding {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit
     (valid : EsmSplit.Valid B S P) {rowOwner declarationOwner : EsmSplit.Module}
     (rowOwnerIn : rowOwner ∈ P.mods) (declarationOwnerIn : declarationOwner ∈ P.mods)
     {row : EsmSplit.LocalExportUnit} (owned : row.ordinal ∈ rowOwner.stmts)
-    (footprint : row.FootprintMatches (B.stmt row.ordinal))
-    {declOrdinal : Nat} (declOwned : declOrdinal ∈ declarationOwner.stmts)
-    {publicName localName : EsmSplit.Name} (pair : (publicName, localName) ∈ row.names)
+    (footprint : row.FootprintMatches (B.stmt row.ordinal)) {declOrdinal : Nat}
+    (declOwned : declOrdinal ∈ declarationOwner.stmts) {publicName localName : EsmSplit.Name}
+    (pair : (publicName, localName) ∈ row.names)
     (declared : localName ∈ (B.stmt declOrdinal).defs) :
     (publicName, localName) ∈ rowOwner.namedExports B ∧
-    S.claimants B declOrdinal = [declarationOwner.name] ∧
-    P.declaredIn B localName = .declared declarationOwner.name ∧
-    ((∃ j ∈ rowOwner.stmts, localName ∈ (B.stmt j).defs) ∨
-      ∃ e ∈ rowOwner.imports, localName ∈ e.2 ∧ e.1 = declarationOwner.name) := by
-  have ⟨claim, binding⟩ := DeclaringOwner.declared_in_original_owner valid.1 valid.2.2.1
-    declarationOwnerIn declOwned declared
+      S.claimants B declOrdinal = [declarationOwner.name] ∧
+      P.declaredIn B localName = .declared declarationOwner.name ∧
+      ((∃ j ∈ rowOwner.stmts, localName ∈ (B.stmt j).defs) ∨
+        ∃ e ∈ rowOwner.imports, localName ∈ e.2 ∧ e.1 = declarationOwner.name) := by
+  have ⟨claim, binding⟩ :=
+    DeclaringOwner.declared_in_original_owner valid.1 valid.2.2.1 declarationOwnerIn declOwned
+      declared
   refine ⟨row_pair_published owned footprint pair, claim, binding, ?_⟩
   by_cases localDecl : rowOwner.declares B localName = true
   · left
@@ -77,8 +80,8 @@ theorem row_pair_binding {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit
     exact ⟨j, hj, List.contains_iff_mem.1 hname⟩
   · right
     have notLocal : rowOwner.declares B localName = false := Bool.eq_false_iff.mpr localDecl
-    exact EsmSplit.MetadataImports.external_use_imported valid rowOwnerIn owned
-      (row.matched_local_use_and_public footprint pair).1 binding notLocal
-
+    exact
+      EsmSplit.MetadataImports.external_use_imported valid rowOwnerIn owned
+        (row.matched_local_use_and_public footprint pair).1 binding notLocal
 
 end CoreJS.InteriorExportNames

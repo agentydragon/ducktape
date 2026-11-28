@@ -21,16 +21,16 @@ private def transportResult {α : Type} (w : World) : Res World.probe α → Res
   | .unknown why s => .unknown why (linkState w s)
   | .fuel => .fuel
 
-private def WorldIndependent {α : Type} (w : World) (concrete : M World.probe α) (general : M w α) : Prop :=
+private def WorldIndependent {α : Type} (w : World) (concrete : M World.probe α) (general : M w α) :
+    Prop :=
   ∀ s : State World.probe, general (linkState w s) = transportResult w (concrete s)
 
-private theorem wi_pure {α : Type} (w : World) (a : α) :
-    WorldIndependent w (pure a) (pure a) := fun _ => rfl
+private theorem wi_pure {α : Type} (w : World) (a : α) : WorldIndependent w (pure a) (pure a) :=
+  fun _ => rfl
 
 private theorem WorldIndependent.bind {w : World} {α β : Type} {m : M World.probe α} {n : M w α}
-    {f : α → M World.probe β} {g : α → M w β}
-    (ha : WorldIndependent w m n) (hf : ∀ a, WorldIndependent w (f a) (g a)) :
-    WorldIndependent w (m >>= f) (n >>= g) := by
+    {f : α → M World.probe β} {g : α → M w β} (ha : WorldIndependent w m n)
+    (hf : ∀ a, WorldIndependent w (f a) (g a)) : WorldIndependent w (m >>= f) (n >>= g) := by
   intro s
   simp only [M.bind_apply, ha s]
   cases m s with
@@ -44,9 +44,8 @@ private theorem wi_lift {α : Type} (w : World) (a : Except Abort α) :
   | ok => rfl
   | error reason => cases reason <;> rfl
 
-private theorem wi_region {w : World} {α : Type} {m : M World.probe α} {n : M w α}
-    (id : Nat) (h : WorldIndependent w m n) :
-    WorldIndependent w (inRegion id m) (inRegion id n) := by
+private theorem wi_region {w : World} {α : Type} {m : M World.probe α} {n : M w α} (id : Nat)
+    (h : WorldIndependent w m n) : WorldIndependent w (inRegion id m) (inRegion id n) := by
   unfold inRegion
   apply WorldIndependent.bind (fun _ => rfl)
   intro _
@@ -68,8 +67,7 @@ private theorem wi_newCells (w : World) (bs : List (Name × Binding)) :
     obtain ⟨name, binding⟩ := b
     exact (wi_newCell w binding).bind fun a => ih.bind fun frame => wi_pure w ((name, a) :: frame)
 
-private theorem wi_alloc (w : World) (o : Obj) :
-    WorldIndependent w (alloc o) (alloc o) := by
+private theorem wi_alloc (w : World) (o : Obj) : WorldIndependent w (alloc o) (alloc o) := by
   intro s
   simp only [alloc, linkState]
   split <;> rfl
@@ -97,29 +95,32 @@ private theorem wi_makeFunc (w : World) (env : Env) (f : Func) :
   intro closed
   apply (wi_alloc w _).bind
   intro a
-  have prototype : WorldIndependent w
-      (if f.kind.hasOwnPrototype then addPrototype a f.kind else pure ())
+  have prototype :
+    WorldIndependent w (if f.kind.hasOwnPrototype then addPrototype a f.kind else pure ())
       (if f.kind.hasOwnPrototype then addPrototype a f.kind else pure ()) := by
     split
     · exact wi_addPrototype _ _ _
     · exact wi_pure _ _
   apply prototype.bind
   intro _
-  have init : WorldIndependent w (initSelf closed f.self f.name (.obj a)) (initSelf closed f.self f.name (.obj a)) := by
+  have init :
+    WorldIndependent w (initSelf closed f.self f.name (.obj a))
+      (initSelf closed f.self f.name (.obj a)) := by
     unfold initSelf
     split
     · exact wi_initVar _ _ _ _
     · exact wi_pure _ _
   exact init.bind fun _ => wi_pure _ _
 
-private theorem wi_makeOpaque (w : World) (code part : Nat) (cells : List (Option Addr)) (name : String)
-    (length : Nat) (constructor : Bool) (proto : Addr) :
+private theorem wi_makeOpaque (w : World) (code part : Nat) (cells : List (Option Addr))
+    (name : String) (length : Nat) (constructor : Bool) (proto : Addr) :
     WorldIndependent w (makeOpaque code part cells name length constructor proto)
       (makeOpaque code part cells name length constructor proto) := by
   unfold makeOpaque
   apply (wi_alloc w _).bind
   intro a
-  have prototype : WorldIndependent w (if constructor then addPrototype a else pure ())
+  have prototype :
+    WorldIndependent w (if constructor then addPrototype a else pure ())
       (if constructor then addPrototype a else pure ()) := by
     split
     · exact wi_addPrototype _ _ _
@@ -128,24 +129,28 @@ private theorem wi_makeOpaque (w : World) (code part : Nat) (cells : List (Optio
 
 private theorem wi_initOpaque (w : World) (code : Nat) (cells : List (Option Addr)) (env : Env)
     (funs : List OpaqueHoist) (part : Nat) :
-    WorldIndependent w (initOpaque code cells env funs part) (initOpaque code cells env funs part) := by
+    WorldIndependent w (initOpaque code cells env funs part)
+      (initOpaque code cells env funs part) := by
   induction funs generalizing part with
   | nil => exact wi_pure _ _
   | cons fn rest ih =>
     obtain ⟨name, length, kind⟩ := fn
     cases kind with
     | ordinary constructor =>
-      exact (wi_makeOpaque w code part cells name length constructor functionProto).bind fun value =>
-        (wi_initVar w env name value).bind fun _ => ih (part + 1)
+      exact
+        (wi_makeOpaque w code part cells name length constructor functionProto).bind fun value =>
+          (wi_initVar w env name value).bind fun _ => ih (part + 1)
     | asyncFn =>
-      exact (wi_makeOpaque w code part cells name length false asyncFunctionProto).bind fun value =>
-        (wi_initVar w env name value).bind fun _ => ih (part + 1)
+      exact
+        (wi_makeOpaque w code part cells name length false asyncFunctionProto).bind fun value =>
+          (wi_initVar w env name value).bind fun _ => ih (part + 1)
 
 private theorem wi_initFunctions (w : World) (units : List LinkedUnit) :
     WorldIndependent w (initFunctions units) (initFunctions units) := by
   induction units with
   | nil => exact wi_pure _ _
-  | cons u us ih =>
+  | cons u us
+    ih =>
     have fn : WorldIndependent w (initFunction u) (initFunction u) := by
       obtain ⟨id, stmt, env⟩ := u
       cases stmt <;> try exact wi_pure _ _
@@ -161,18 +166,21 @@ private theorem wi_declareTops (w : World) (units : List (Nat × Stmt)) :
   | nil => exact wi_pure _ _
   | cons u us ih =>
     obtain ⟨id, stmt⟩ := u
-    exact (wi_region id (wi_newCells w stmt.bindings)).bind fun frame =>
-      ih.bind fun frames => wi_pure w ((id, frame) :: frames)
+    exact
+      (wi_region id (wi_newCells w stmt.bindings)).bind fun frame =>
+        ih.bind fun frames => wi_pure w ((id, frame) :: frames)
 
-private theorem wi_link (w : World) (p : Program) :
-    WorldIndependent w (link p) (link p) := by
+private theorem wi_link (w : World) (p : Program) : WorldIndependent w (link p) (link p) := by
   unfold link linkUsingScopes
   have ids : WorldIndependent w (checkIdentities p.tops) (checkIdentities p.tops) := by
     unfold checkIdentities
     split <;> (intro s; rfl)
-  exact ids.bind fun _ => (wi_declareTops w p.tops).bind fun frames =>
-    (wi_lift w (p.scopes frames p.loaded)).bind fun linked =>
-      (wi_initFunctions w ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))).bind fun _ => wi_pure w linked
+  exact
+    ids.bind fun _ =>
+      (wi_declareTops w p.tops).bind fun frames =>
+        (wi_lift w (p.scopes frames p.loaded)).bind fun linked =>
+          (wi_initFunctions w ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))).bind
+            fun _ => wi_pure w linked
 
 /-- A computed successful link in the probe world describes the scopes and
 initial CoreJS state in every world. -/
@@ -198,17 +206,19 @@ structure CheckedProbePair (source candidate : Program) where
   before : CheckedLink source World.probe
   after : CheckedLink candidate World.probe
 
-def checkProbePair (source candidate : Program) : Except String (CheckedProbePair source candidate) := do
+def checkProbePair (source candidate : Program) :
+    Except String (CheckedProbePair source candidate) := do
   let before ← (checkLink source).mapError ("original linker: " ++ ·)
   let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
   return ⟨before, after⟩
 
-theorem CheckedProbePair.sameExports {source candidate : Program} (pair : CheckedProbePair source candidate)
-    (exportsMatched : exportsMatchFrom pair.before pair.after = true) : SameExports source candidate := by
+theorem CheckedProbePair.sameExports {source candidate : Program}
+    (pair : CheckedProbePair source candidate)
+    (exportsMatched : exportsMatchFrom pair.before pair.after = true) :
+    SameExports source candidate := by
   apply sameExports_of_match
   intro w
   rw [exportsMatch_from_checked (pair.before.forWorld w) (pair.after.forWorld w)]
   exact exportsMatched
-
 
 end CoreJS.LinkedBehavior

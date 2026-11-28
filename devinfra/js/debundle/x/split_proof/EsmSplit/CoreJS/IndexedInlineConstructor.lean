@@ -16,7 +16,8 @@ open LinkedBehavior
 The order-preserving proof uses the original initializer expression unchanged. -/
 private def constInitializer (earlier : List Name) (init : Expr) : Bool :=
   match init with
-  | .arr elements => elements.all fun element => (PrimitiveRhs.check earlier.contains element).isSome
+  | .arr elements =>
+    elements.all fun element => (PrimitiveRhs.check earlier.contains element).isSome
   | .obj [] => true
   | _ => (PrimitiveRhs.check earlier.contains init).isSome
 
@@ -26,36 +27,40 @@ lexical let without an initializer retains the model's `undef` initializer. -/
 def staticDeclarations : List Name → List (Nat × Stmt) → Bool
   | _, [] => true
   | earlier, (_, .decl .const name init) :: rest =>
-      !earlier.contains name && constInitializer earlier init &&
-        staticDeclarations (name :: earlier) rest
+    !earlier.contains name && constInitializer earlier init &&
+      staticDeclarations (name :: earlier) rest
   | earlier, (_, .decl .let_ name .undef) :: rest =>
-      !earlier.contains name && staticDeclarations (name :: earlier) rest
+    !earlier.contains name && staticDeclarations (name :: earlier) rest
   | earlier, (_, .decl .let_ name init) :: rest =>
-      !earlier.contains name && (PrimitiveRhs.check earlier.contains init).isSome &&
-        staticDeclarations (name :: earlier) rest
+    !earlier.contains name && (PrimitiveRhs.check earlier.contains init).isSome &&
+      staticDeclarations (name :: earlier) rest
   | earlier, (_, .decl .var name init) :: rest =>
-      !earlier.contains name && VarInitializer.check earlier name init &&
-        staticDeclarations (name :: earlier) rest
+    !earlier.contains name && VarInitializer.check earlier name init &&
+      staticDeclarations (name :: earlier) rest
   | _, _ => false
 
 /-- Count authored selectors before the planner deduplicates their units. -/
 def SelectorsOnce (body : List (Nat × Stmt)) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Prop :=
-  ∀ unit ∈ body, (S.modules.flatMap fun module => module.2.filter fun selector =>
-    selector.claims B unit.1).length = 1
+  ∀ unit ∈ body,
+    (S.modules.flatMap fun module =>
+          module.2.filter fun selector => selector.claims B unit.1).length =
+      1
 
 instance (body : List (Nat × Stmt)) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
     Decidable (SelectorsOnce body B S) := by
   unfold SelectorsOnce
   infer_instance
 
-structure Construction (decoded : AuthenticatedSource.IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) where
+structure Construction (decoded : AuthenticatedSource.IndexedSource) (B : EsmSplit.Bundle)
+    (S : EsmSplit.Spec) where
   checked : IndexedInlinePlan.Checked decoded B S
   publicEntry : S.privateEntryBody = false
   sequential : S.sequential = true
   selectorsOnce : SelectorsOnce decoded.source.body B S
   schedule : checked.schedule.plan.evalOrder = S.order ++ [S.entry]
   assignment : List UnitPlacement
-  assignmentEq : assignment = IndexedCheckedSplit.assignments decoded.source.body checked.schedule.plan
+  assignmentEq :
+    assignment = IndexedCheckedSplit.assignments decoded.source.body checked.schedule.plan
   program : Program
   constructed : program = splitProgramIndexed decoded.source.body B checked.schedule.plan
   placement : Places assignment decoded.program program
@@ -65,38 +70,50 @@ structure Construction (decoded : AuthenticatedSource.IndexedSource) (B : EsmSpl
 
 /-- Check only decoded-source and authored-plan facts, then return the actual
 indexed construction with its placement, live exports and all-outcome proofs. -/
-def construct (decoded : AuthenticatedSource.IndexedSource) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
-    Except String (Construction decoded B S) := do
-  let .isTrue publicEntry := (inferInstance : Decidable (S.privateEntryBody = false)) |
-    throw "checked split requires no private entry body"
-  let .isTrue sequential := (inferInstance : Decidable (S.sequential = true)) |
-    throw "checked split requires a sequential request"
-  let .isTrue selectorsOnce := (inferInstance : Decidable (SelectorsOnce decoded.source.body B S)) |
-    throw "each executable row must be selected exactly once"
+def construct (decoded : AuthenticatedSource.IndexedSource) (B : EsmSplit.Bundle)
+    (S : EsmSplit.Spec) : Except String (Construction decoded B S) := do
+  let .isTrue publicEntry :=
+    (inferInstance :
+      Decidable (S.privateEntryBody = false)) | throw "checked split requires no private entry body"
+  let .isTrue sequential :=
+    (inferInstance :
+      Decidable (S.sequential = true)) | throw "checked split requires a sequential request"
+  let .isTrue selectorsOnce :=
+    (inferInstance :
+      Decidable
+        (SelectorsOnce decoded.source.body B
+          S)) | throw "each executable row must be selected exactly once"
   let checked ← IndexedInlinePlan.check decoded B S
   let P := checked.schedule.plan
-  let .isTrue schedule := (inferInstance : Decidable (P.evalOrder = S.order ++ [S.entry])) |
-    throw "constructed modules do not follow the requested order"
+  let .isTrue schedule :=
+    (inferInstance :
+      Decidable
+        (P.evalOrder =
+          S.order ++ [S.entry])) | throw "constructed modules do not follow the requested order"
   let labels := IndexedCheckedSplit.assignments decoded.source.body P
-  let .isTrue coverage := (inferInstance : Decidable
-      ((labels.map Prod.fst).Perm (decoded.source.body.map Prod.fst))) |
-    throw "plan does not cover original executable units once"
+  let .isTrue coverage :=
+    (inferInstance :
+      Decidable
+        ((labels.map Prod.fst).Perm
+          (decoded.source.body.map
+            Prod.fst))) | throw "plan does not cover original executable units once"
   have unique := (IndexedInputChecks.checked_footprints checked.footprints).1.uniqueIds
-  have placed := IndexedCheckedSplit.places rfl decoded.singleton checked.source.safePath
-    checked.schedule.safePaths unique coverage
+  have placed :=
+    IndexedCheckedSplit.places rfl decoded.singleton checked.source.safePath
+      checked.schedule.safePaths unique coverage
   have ownerProof : ∀ id owner, (id, owner) ∈ labels → S.claimants B id = [owner] := by
     intro id owner member
     apply IndexedInlinePlan.placementOwner checked
     rw [SparseProjectedOrder.split_indexed_fileUnitPlacements checked.schedule.safePaths]
     exact member
   return ⟨checked, publicEntry, sequential, selectorsOnce, schedule, labels, rfl,
-    splitProgramIndexed decoded.source.body B P, rfl, placed, ownerProof,
-    IndexedInlinePlan.sameExports checked, IndexedInlinePlan.allOutcomes checked⟩
+      splitProgramIndexed decoded.source.body B P, rfl, placed, ownerProof,
+      IndexedInlinePlan.sameExports checked, IndexedInlinePlan.allOutcomes checked⟩
 
 /-- For an original dense body, the indexed constructor yields exactly the
 existing dense CoreJS program when supplied the same source-derived bundle. -/
-theorem dense_program {decoded : AuthenticatedSource.IndexedSource} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
-    (built : Construction decoded B S) {statements : List Stmt}
+theorem dense_program {decoded : AuthenticatedSource.IndexedSource} {B : EsmSplit.Bundle}
+    {S : EsmSplit.Spec} (built : Construction decoded B S) {statements : List Stmt}
     (dense : decoded.source.body = (List.range statements.length).zip statements) :
     built.program = splitProgram statements B (EsmSplit.mkPlan B S) := by
   rw [built.constructed, built.checked.schedule.planEq, dense]

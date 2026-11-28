@@ -35,7 +35,8 @@ variable {W : World}
 
 /-- The object immediately after ECMAScript's ordinary allocation, before host finalization. ErrorData and
 host-defined own properties are outside `Obj`; they must be accounted for by the integration contract. -/
-def receiverAtAllocation : Obj := { proto := some errorProto, props := [] }
+def receiverAtAllocation : Obj :=
+  { proto := some errorProto, props := [] }
 
 /-- A witnessed invocation of CoreJS `alloc`. The states pin the instant of allocation, before host code runs. -/
 structure Receipt (W : World) where
@@ -63,12 +64,15 @@ def constructZero (call : Call W) (finish : Addr → M W Unit) (callee newTarget
     match ctor.code with
     | some (.host "%Error%") =>
       let p ← getProp call newTarget (.str "prototype")
-      if p = .obj errorProto then do
-        let receipt ← allocate
-        finish receipt.receiver
-        pure receipt
-      else unknown "reference Error newTarget prototype is unsupported"
-    | _ => unknown "reference realm Error constructor code is unsupported"
+      if p = .obj errorProto then
+        do
+          let receipt ← allocate
+          finish receipt.receiver
+          pure receipt
+      else
+        unknown "reference Error newTarget prototype is unsupported"
+    | _ =>
+      unknown "reference realm Error constructor code is unsupported"
   else unknown "reference Error call shape is unsupported"
 
 /-- Historical evidence is tied to the exact reference run, not to a public `Receipt`, prototype or name. -/
@@ -81,7 +85,9 @@ receiver really was fresh and had the specified initial shape. This is not a the
 theorem successHasOrigin (call : Call W) (finish : Addr → M W Unit) (callee newTarget : Val)
     (args : List Val) (s t : State W) (receipt : Receipt W)
     (run : OriginEvidence call finish callee newTarget args s t receipt) :
-    callee = .obj errorConstructor ∧ newTarget = .obj errorConstructor ∧ args = [] ∧
+    callee = .obj errorConstructor ∧
+      newTarget = .obj errorConstructor ∧
+      args = [] ∧
       receipt.beforeAlloc.objAt receipt.receiver = none ∧
       receipt.afterAlloc.objAt receipt.receiver = some receiverAtAllocation := by
   change constructZero call finish callee newTarget args s = .ok receipt t at run
@@ -105,11 +111,17 @@ theorem unsupportedHasNoOrigin (call : Call W) (finish : Addr → M W Unit) (cal
 /-! Executable controls: these use only a deliberately empty synthetic host continuation. They do not claim
 that a Node Error has no own stack property or that any real host satisfies this continuation. -/
 
-def start (w : World) : State w := { initialState w 1 with region := 1 }
-def finishEmpty (_ : Addr) : M W Unit := pure ()
+def start (w : World) : State w :=
+  { initialState w 1 with region := 1 }
+
+def finishEmpty (_ : Addr) : M W Unit :=
+  pure ()
+
 def referenceCall : Call W := fun _ _ _ => unknown "unexpected call"
 
-def aliasEnv : Env := { vars := [("Alias", ⟨0, 0⟩)], this := .undef }
+def aliasEnv : Env :=
+  { vars := [("Alias", ⟨0, 0⟩)], this := .undef }
+
 def aliasStart (w : World) : State w :=
   { start w with cells := #[#[{ value := some (.obj errorConstructor), mutable := false }], #[]] }
 
@@ -136,43 +148,65 @@ theorem aliasAllocation :
   exact ⟨rfl, rfl⟩
 
 def successControl : Res World.probe (Receipt World.probe) → Bool
-  | .ok receipt _ => receipt.receiver == ⟨1, 0⟩ &&
-      (receipt.beforeAlloc.objAt receipt.receiver).isNone &&
-      (receipt.afterAlloc.objAt receipt.receiver).any (fun o => o.proto == some errorProto && o.props.isEmpty)
+  | .ok receipt _ =>
+    receipt.receiver == ⟨1, 0⟩ && (receipt.beforeAlloc.objAt receipt.receiver).isNone &&
+      (receipt.afterAlloc.objAt receipt.receiver).any
+        (fun o => o.proto == some errorProto && o.props.isEmpty)
   | _ => false
 
 def unknownControl {α : Type} : Res World.probe α → Bool
   | .unknown .. => true
   | _ => false
 
-#guard successControl (constructZero referenceCall finishEmpty (.obj errorConstructor) (.obj errorConstructor) []
-  (start World.probe))
+#guard
+  successControl
+    (constructZero referenceCall finishEmpty (.obj errorConstructor) (.obj errorConstructor) []
+      (start World.probe))
+
 #guard successControl (viaAlias (aliasStart World.probe))
+
 /-- Ordinary objects and user constructors may share names and prototypes with Error. -/
-def lookalike : Obj := { proto := some errorProto, props := [] }
+def lookalike : Obj :=
+  { proto := some errorProto, props := [] }
+
 def shadowConstructor : Obj :=
-  { proto := some functionProto, code := some (.host "user Error"), props := [
-    ("name", .data (.str "Error") false false true),
-    ("prototype", .data (.obj errorProto) true false false)] }
+  { proto := some functionProto, code := some (.host "user Error"),
+    props :=
+      [("name", .data (.str "Error") false false true),
+        ("prototype", .data (.obj errorProto) true false false)] }
+
 def controlStart (w : World) : State w :=
-  { start w with heap := #[builtins, #[lookalike, shadowConstructor]], cells := #[#[{ value := some (.obj ⟨1, 1⟩), mutable := false }], #[]] }
-def shadowEnv : Env := { vars := [("Error", ⟨0, 0⟩)], this := .undef }
+  { start w with
+    heap := #[builtins, #[lookalike, shadowConstructor]],
+    cells := #[#[{ value := some (.obj ⟨1, 1⟩), mutable := false }], #[]] }
+
+def shadowEnv : Env :=
+  { vars := [("Error", ⟨0, 0⟩)], this := .undef }
+
 def viaShadow : M W (Receipt W) := do
   let callee ← readVar shadowEnv "Error"
   constructZero referenceCall finishEmpty callee callee []
 
-#guard match alloc lookalike (start World.probe) with
-  | .ok a t => a == ⟨1, 0⟩ && (t.objAt a).any (fun o => o.proto == some errorProto) &&
+#guard
+  match alloc lookalike (start World.probe) with
+  | .ok a t =>
+    a == ⟨1, 0⟩ && (t.objAt a).any (fun o => o.proto == some errorProto) &&
       unknownControl (constructZero referenceCall finishEmpty (.obj a) (.obj a) [] t)
   | _ => false
-#guard match readVar shadowEnv "Error" (controlStart World.probe) with
-  | .ok (.obj a) t => a == ⟨1, 1⟩ &&
-      (t.objAt a).any (fun o => (o.props.lookup (.str "name")).isSome && o.proto == some functionProto) &&
+
+#guard
+  match readVar shadowEnv "Error" (controlStart World.probe) with
+  | .ok (.obj a) t =>
+    a == ⟨1, 1⟩ &&
+      (t.objAt a).any
+        (fun o => (o.props.lookup (.str "name")).isSome && o.proto == some functionProto) &&
       unknownControl (viaShadow t)
   | _ => false
+
 /-- A same-named shadow remains unknown; it cannot produce an intrinsic-origin receipt. -/
 theorem shadowRejected :
-    viaShadow (controlStart W) = .unknown "reference Error call shape is unsupported" (controlStart W) := by
+    viaShadow (controlStart W) =
+      .unknown "reference Error call shape is unsupported" (controlStart W) := by
   rfl
 
 /-- The address of the ordinary Error.prototype lookalike does not select the intrinsic constructor. -/
@@ -188,14 +222,21 @@ theorem alternateTargetRejected (s : State W) :
   rfl
 
 -- A different newTarget is outside this ordinary-construction slice, even for the intrinsic callee.
-#guard unknownControl (constructZero referenceCall finishEmpty (.obj errorConstructor) (.obj ⟨1, 1⟩) []
-  (controlStart World.probe))
+#guard
+  unknownControl
+    (constructZero referenceCall finishEmpty (.obj errorConstructor) (.obj ⟨1, 1⟩) []
+      (controlStart World.probe))
 
 /-- Synthetic controls: a host throw after allocation must retain the allocated state. -/
-def finishThrows (_ : Addr) : M W Unit := throwVal (.str "host threw")
-#guard match constructZero referenceCall finishThrows (.obj errorConstructor) (.obj errorConstructor) []
-    (start World.probe) with
-  | .throw (.str why) t => why == "host threw" && (t.objAt ⟨1, 0⟩).any (fun o => o.proto == some errorProto)
+def finishThrows (_ : Addr) : M W Unit :=
+  throwVal (.str "host threw")
+
+#guard
+  match
+    constructZero referenceCall finishThrows (.obj errorConstructor) (.obj errorConstructor) []
+      (start World.probe) with
+  | .throw (.str why) t =>
+    why == "host threw" && (t.objAt ⟨1, 0⟩).any (fun o => o.proto == some errorProto)
   | _ => false
 
 def afterReferenceAllocation (w : World) : State w :=
@@ -203,23 +244,32 @@ def afterReferenceAllocation (w : World) : State w :=
 
 /-- A host finalization throw is not swallowed and retains the freshly allocated receiver. -/
 theorem hostThrowRetained :
-    constructZero referenceCall finishThrows (.obj errorConstructor) (.obj errorConstructor) [] (start W) =
+    constructZero referenceCall finishThrows (.obj errorConstructor) (.obj errorConstructor) []
+        (start W) =
       .throw (.str "host threw") (afterReferenceAllocation W) := by
   rfl
 
 /-- Even an abnormal synthetic descriptor runs its getter, including a throw, before allocating. -/
 def getterState (w : World) : State w :=
-  { start w with heap := (start w).heap.modify errorConstructor.region (·.modify errorConstructor.index
-      fun o => { o with props := [("prototype", .accessor (.host "getter") .undef false false)] }) }
+  { start w with
+    heap :=
+      (start w).heap.modify errorConstructor.region
+        (·.modify errorConstructor.index fun o =>
+          { o with props := [("prototype", .accessor (.host "getter") .undef false false)] }) }
+
 def throwingCall : Call W := fun _ _ _ => throwVal (.str "getter threw")
-#guard match constructZero throwingCall finishEmpty (.obj errorConstructor) (.obj errorConstructor) []
-    (getterState World.probe) with
+
+#guard
+  match
+    constructZero throwingCall finishEmpty (.obj errorConstructor) (.obj errorConstructor) []
+      (getterState World.probe) with
   | .throw (.str why) t => why == "getter threw" && (t.objAt ⟨1, 0⟩).isNone
   | _ => false
 
 /-- Prototype lookup exceptions occur before allocation and are retained. -/
 theorem prototypeThrowRetained :
-    constructZero throwingCall finishEmpty (.obj errorConstructor) (.obj errorConstructor) [] (getterState W) =
+    constructZero throwingCall finishEmpty (.obj errorConstructor) (.obj errorConstructor) []
+        (getterState W) =
       .throw (.str "getter threw") (getterState W) := by
   rfl
 
@@ -229,6 +279,5 @@ theorem productionStillUnknown (fuel : Nat) (s : State W)
     constructTarget (fuel + 1) (.obj errorConstructor) (.obj errorConstructor) [] s =
       .unknown "host function %Error% is constructed" s :=
   StackReadBoundary.errorConstructionUnknown fuel s constructor
-
 
 end CoreJS.IntrinsicErrorReference

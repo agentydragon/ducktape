@@ -14,8 +14,8 @@ private theorem start_le_max_fold (values : List Nat) (start : Nat) :
     rw [List.foldl_cons]
     exact Nat.le_trans (Nat.le_max_left _ _) (ih (max start value))
 
-private theorem mem_le_max_fold (values : List Nat) (start value : Nat)
-    (member : value ∈ values) : value ≤ values.foldl max start := by
+private theorem mem_le_max_fold (values : List Nat) (start value : Nat) (member : value ∈ values) :
+    value ≤ values.foldl max start := by
   induction values generalizing start with
   | nil => simp at member
   | cons head rest ih =>
@@ -26,8 +26,9 @@ private theorem mem_le_max_fold (values : List Nat) (start value : Nat)
     · exact ih (max start head) later
 
 /-- Declaration allocation succeeds in every world even when original IDs have gaps. -/
-theorem source_decl_allocation {body : List (Nat × Stmt)} {sourceProgram : Program} {source : Module}
-    (sourceBody : source.body = body) (singleton : sourceProgram.modules = [source])
+theorem source_decl_allocation {body : List (Nat × Stmt)} {sourceProgram : Program}
+    {source : Module} (sourceBody : source.body = body)
+    (singleton : sourceProgram.modules = [source])
     (decls : ∀ p ∈ body, ∃ kind name init, p.2 = .decl kind name init) (w : World) :
     ∃ frames ready, declareTops body (initialState w sourceProgram.regions) = .ok frames ready := by
   have extent : sourceProgram.regions = (body.map fun row => row.1 + 1).foldl max 0 := by
@@ -38,7 +39,8 @@ theorem source_decl_allocation {body : List (Nat × Stmt)} {sourceProgram : Prog
     have le := mem_le_max_fold _ 0 _ inExtent
     simp only [initialState, Array.size_replicate, extent]
     exact Nat.lt_succ_of_le le
-  obtain ⟨frames, ready, allocation, _⟩ := declareDeclTops_ok body decls (initialState w sourceProgram.regions) bound
+  obtain ⟨frames, ready, allocation, _⟩ :=
+    declareDeclTops_ok body decls (initialState w sourceProgram.regions) bound
   exact ⟨frames, ready, allocation⟩
 
 /-- The original declaration pass succeeds in every world and returns the
@@ -46,8 +48,9 @@ per-row binding facts for the actual sparse identities. -/
 theorem source_decl_bindings {body : List (Nat × Stmt)} {sourceProgram : Program} {source : Module}
     (sourceBody : source.body = body) (singleton : sourceProgram.modules = [source])
     (decls : ∀ p ∈ body, ∃ kind name init, p.2 = .decl kind name init) (w : World) :
-    ∃ frames ready, declareTops body (initialState w sourceProgram.regions) = .ok frames ready ∧
-      IndexedAllocatedCells.TopBindingAllocation ready body frames := by
+    ∃ frames ready,
+      declareTops body (initialState w sourceProgram.regions) = .ok frames ready ∧
+        IndexedAllocatedCells.TopBindingAllocation ready body frames := by
   obtain ⟨frames, ready, allocated⟩ := source_decl_allocation sourceBody singleton decls w
   exact ⟨frames, ready, allocated, IndexedAllocatedCells.declareTops_bindings body allocated⟩
 
@@ -64,20 +67,20 @@ theorem source_allocation {body : List (Nat × Stmt)} {sourceProgram : Program} 
   exact ⟨frames, ready, allocated⟩
 
 /-- Declaration-only programs link in every world to the same public cell table. -/
-theorem declarations_same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
-    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
-    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
-    (singleton : sourceProgram.modules = [source])
-    (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) (kept : SparseProjectedOrder.OrderKept body P)
+theorem declarations_same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle}
+    {S : EsmSplit.Spec} {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {sourceProgram : Program}
+    {source : Module} (sourceBody : source.body = body) (sourceImports : source.imports = [])
+    (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (singleton : sourceProgram.modules = [source]) (ordered : body.Pairwise (fun a b => a.1 ≤ b.1))
+    (kept : SparseProjectedOrder.OrderKept body P)
     (sourceDecls : ∀ p ∈ body, ∃ kind name init, p.2 = .decl kind name init)
     {row : EsmSplit.LocalExportUnit} (sourceRow : InteriorExportNames.SourceRow source row)
-    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
-    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
-    (planEntry : P.find P.entry = some owner)
-    (authored : S.claimants B row.ordinal = [owner.name]) (unitsUnique : owner.stmts.Nodup)
-    (glue : owner.exports = [])
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal)) {owner : EsmSplit.Module}
+    (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
+    (planEntry : P.find P.entry = some owner) (authored : S.claimants B row.ordinal = [owner.name])
+    (unitsUnique : owner.stmts.Nodup) (glue : owner.exports = [])
     (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
     (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
     LinkedBehavior.SameExports sourceProgram (splitProgramIndexed body B P) := by
@@ -87,34 +90,36 @@ theorem declarations_same_exports_of_order_kept {body : List (Nat × Stmt)} {B :
     rw [SparseProjectedOrder.split_indexed_regions_eq_source kept,
       IndexedEntryLink.singleton_source_regions singleton, sourceBody]
   obtain ⟨targetLinked, table, sourceLink, targetLink, _, sourceTable, targetTable, _⟩ :=
-    IndexedEntryLink.row_actual_links_from_allocation valid footprints complete sourceBody sourceImports sourceFind
-      ordered sourceDecls (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) regions allocated
-      sourceRow rowFootprint ownerIn rowWithin planEntry authored unitsUnique glue onlyRow sourceDefs
+    IndexedEntryLink.row_actual_links_from_allocation valid footprints complete sourceBody
+      sourceImports sourceFind ordered sourceDecls
+      (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) regions allocated sourceRow
+      rowFootprint ownerIn rowWithin planEntry authored unitsUnique glue onlyRow sourceDefs
   refine ⟨table, table, ?_, ?_, List.Perm.refl _⟩
   · rw [LinkedBehavior.exports, sourceLink]
     change (EntryExports.resolve sourceProgram.entry _).toOption = some table
     rw [sourceTable]
     rfl
   · rw [LinkedBehavior.exports, targetLink]
-    change (EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked).toOption = some table
+    change
+      (EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked).toOption = some table
     rw [targetTable]
     rfl
 
 /-- All worlds link to the very same ordered public cell table. -/
-theorem same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
-    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
-    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
-    (singleton : sourceProgram.modules = [source])
-    (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) (kept : SparseProjectedOrder.OrderKept body P)
+theorem same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle}
+    {S : EsmSplit.Spec} {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {sourceProgram : Program}
+    {source : Module} (sourceBody : source.body = body) (sourceImports : source.imports = [])
+    (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (singleton : sourceProgram.modules = [source]) (ordered : body.Pairwise (fun a b => a.1 ≤ b.1))
+    (kept : SparseProjectedOrder.OrderKept body P)
     (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init)
     {row : EsmSplit.LocalExportUnit} (sourceRow : InteriorExportNames.SourceRow source row)
-    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
-    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
-    (planEntry : P.find P.entry = some owner)
-    (authored : S.claimants B row.ordinal = [owner.name]) (unitsUnique : owner.stmts.Nodup)
-    (glue : owner.exports = [])
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal)) {owner : EsmSplit.Module}
+    (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
+    (planEntry : P.find P.entry = some owner) (authored : S.claimants B row.ordinal = [owner.name])
+    (unitsUnique : owner.stmts.Nodup) (glue : owner.exports = [])
     (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
     (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
     LinkedBehavior.SameExports sourceProgram (splitProgramIndexed body B P) := by
@@ -122,59 +127,69 @@ theorem same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bun
     intro p member
     obtain ⟨name, init, shape⟩ := sourceConsts p member
     exact ⟨.const, name, init, shape⟩
-  exact declarations_same_exports_of_order_kept valid footprints complete sourceBody sourceImports sourceFind
-    singleton ordered kept decls sourceRow rowFootprint ownerIn rowWithin planEntry authored unitsUnique
-    glue onlyRow sourceDefs
+  exact
+    declarations_same_exports_of_order_kept valid footprints complete sourceBody sourceImports
+      sourceFind singleton ordered kept decls sourceRow rowFootprint ownerIn rowWithin planEntry
+      authored unitsUnique glue onlyRow sourceDefs
 
 /-- All source-indexed local-export rows link to the same public cells in
 every world, provided the actual plan selects their original order. -/
-theorem rows_same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
-    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
-    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
-    (singleton : sourceProgram.modules = [source])
-    (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) (kept : SparseProjectedOrder.OrderKept body P)
+theorem rows_same_exports_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle}
+    {S : EsmSplit.Spec} {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {sourceProgram : Program}
+    {source : Module} (sourceBody : source.body = body) (sourceImports : source.imports = [])
+    (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (singleton : sourceProgram.modules = [source]) (ordered : body.Pairwise (fun a b => a.1 ≤ b.1))
+    (kept : SparseProjectedOrder.OrderKept body P)
     (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init)
     {rows : List EsmSplit.LocalExportUnit} (sourceRows : ExportRows.SourceRows source rows)
     {owner : EsmSplit.Module} (planEntry : P.find P.entry = some owner)
     (unitMatches : ∀ id ∈ owner.stmts, ExportRows.UnitMatches B rows id)
     (orderedRows : owner.stmts.filterMap (ExportRows.rowAt rows) = rows) (glue : owner.exports = [])
-    (sourceDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    (sourceDefs :
+      ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
     LinkedBehavior.SameExports sourceProgram (splitProgramIndexed body B P) := by
   intro w
   obtain ⟨frames, ready, allocated⟩ := source_allocation sourceBody singleton sourceConsts w
   have regions : (splitProgramIndexed body B P).regions = sourceProgram.regions := by
     rw [SparseProjectedOrder.split_indexed_regions_eq_source kept,
       IndexedEntryLink.singleton_source_regions singleton, sourceBody]
-  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by rw [sourceBody]; exact ordered
+  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by
+    rw [sourceBody]; exact ordered
   have sourceTops : sourceProgram.tops = body :=
-    (IndexedEntryLink.import_free_source_tops sourceFind sourceImports sourceOrdered).trans sourceBody
+    (IndexedEntryLink.import_free_source_tops sourceFind sourceImports sourceOrdered).trans
+      sourceBody
   have sourceShape : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init := by
     rw [sourceBody]
     exact sourceConsts
-  have sourceLink := IndexedEntryLink.link_after_const_allocation sourceTops footprints.uniqueIds allocated
-    (IndexedEntryLink.import_free_entry_scopes sourceFind sourceImports frames)
-    (IndexedEntryLink.source_const_init sourceShape)
+  have sourceLink :=
+    IndexedEntryLink.link_after_const_allocation sourceTops footprints.uniqueIds allocated
+      (IndexedEntryLink.import_free_entry_scopes sourceFind sourceImports frames)
+      (IndexedEntryLink.source_const_init sourceShape)
   obtain ⟨targetLinked, table, targetScopes, _, before, after, _⟩ :=
-    ExportRows.rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind
-      sourceRows planEntry unitMatches orderedRows glue sourceDefs
-  have targetAllocation : declareTops body (initialState w (splitProgramIndexed body B P).regions) = .ok frames ready := by
+    ExportRows.rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports
+      sourceFind sourceRows planEntry unitMatches orderedRows glue sourceDefs
+  have targetAllocation :
+    declareTops body (initialState w (splitProgramIndexed body B P).regions) =
+      .ok frames ready := by
     rw [regions]
     exact allocated
-  have targetInit := IndexedEntryLink.indexed_initFunctions_consts (W := w) targetScopes sourceConsts
-  have targetLink := IndexedEntryLink.link_after_const_allocation
-    (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) footprints.uniqueIds
-    targetAllocation targetScopes targetInit
+  have targetInit :=
+    IndexedEntryLink.indexed_initFunctions_consts (W := w) targetScopes sourceConsts
+  have targetLink :=
+    IndexedEntryLink.link_after_const_allocation
+      (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) footprints.uniqueIds
+      targetAllocation targetScopes targetInit
   refine ⟨table, table, ?_, ?_, List.Perm.refl _⟩
   · rw [LinkedBehavior.exports, sourceLink]
     change (EntryExports.resolve sourceProgram.entry _).toOption = some table
     rw [before]
     rfl
   · rw [LinkedBehavior.exports, targetLink]
-    change (EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked).toOption = some table
+    change
+      (EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked).toOption = some table
     rw [after]
     rfl
-
 
 end CoreJS.IndexedConstLink

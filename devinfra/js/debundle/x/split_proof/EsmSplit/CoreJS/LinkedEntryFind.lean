@@ -7,26 +7,30 @@ namespace CoreJS.LinkedEntryFind
 
 /-- If the loaded module list selects a module by name, the actual linked
 list selects that same module with its actual imported scope. -/
-theorem scopes_find (program : Program) (frames : List (Nat × List (Name × Addr)))
-    (name : String) (target : Module) (cells : List (Name × Addr))
+theorem scopes_find (program : Program) (frames : List (Nat × List (Name × Addr))) (name : String)
+    (target : Module) (cells : List (Name × Addr))
     (imported : program.imported frames target.imports = .ok cells) :
     ∀ (modules : List Module) (linked : List (Module × Env)),
       modules.find? (fun m => m.name == name) = some target →
-      program.scopes frames modules = .ok linked →
-      linked.find? (fun (m, _) => m.name == name) =
-        some (target, { vars := target.scope frames ++ cells, this := .undef })
+        program.scopes frames modules = .ok linked →
+        linked.find? (fun (m, _) => m.name == name) =
+          some (target, { vars := target.scope frames ++ cells, this := .undef })
   | [], _, found, _ => by simp at found
   | m :: rest, linked, found, scopes => by
-    change ((do
-      let imported ← program.imported frames m.imports
-      let tail ← program.scopes frames rest
-      pure ((m, { vars := m.scope frames ++ imported, this := .undef }) :: tail)) : Except Abort _)
-      = .ok linked at scopes
+    change
+      ((do
+            let imported ← program.imported frames m.imports
+            let tail ← program.scopes frames rest
+            pure ((m, { vars := m.scope frames ++ imported, this := .undef }) :: tail)) :
+          Except Abort _) =
+        .ok linked at scopes
     cases importedHere : program.imported frames m.imports with
-    | error why => rw [importedHere] at scopes; cases scopes
+    | error why =>
+      rw [importedHere] at scopes; cases scopes
     | ok here =>
       cases later : program.scopes frames rest with
-      | error why => rw [importedHere, later] at scopes; cases scopes
+      | error why =>
+        rw [importedHere, later] at scopes; cases scopes
       | ok tail =>
         rw [importedHere, later] at scopes
         cases scopes
@@ -44,7 +48,8 @@ the plan's module lookup and evaluation order. -/
 theorem loaded_find {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     {target : EsmSplit.Module} (found : P.find P.entry = some target)
     (present : P.entry ∈ P.evalOrder) :
-    (splitProgram ss B P).loaded.find? (fun m => m.name == P.entry) = some (moduleOf ss B P target) := by
+    (splitProgram ss B P).loaded.find? (fun m => m.name == P.entry) =
+      some (moduleOf ss B P target) := by
   let Q := splitProgram ss B P
   have lookup : Q.find P.entry = some (moduleOf ss B P target) := by
     rw [split_find, found]
@@ -53,8 +58,11 @@ theorem loaded_find {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     intro key m h
     have hit := @List.find?_some Module (fun m => m.name == key) m Q.modules h
     simpa using hit
-  have select : ∀ order : List String, P.entry ∈ order →
-      (order.filterMap Q.find).find? (fun m => m.name == P.entry) = some (moduleOf ss B P target) := by
+  have select :
+    ∀ order : List String,
+      P.entry ∈ order →
+        (order.filterMap Q.find).find? (fun m => m.name == P.entry) =
+          some (moduleOf ss B P target) := by
     intro order
     induction order with
     | nil => simp
@@ -83,7 +91,5 @@ theorem loaded_find {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
   unfold Program.loaded
   rw [split_evalOrder]
   exact select P.evalOrder present
-
-
 
 end CoreJS.LinkedEntryFind

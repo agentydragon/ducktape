@@ -15,8 +15,7 @@ theorem executable_coverage {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S
     (footprints : IndexedExportCells.Footprints body B) :
     (SparseProjectedOrder.executableIds body P).Perm (body.map Prod.fst) := by
   obtain ⟨_, _, _, _, _, _, _, permutes, _⟩ := valid
-  have unique : (SparseProjectedOrder.executableIds body P).Nodup := by
-    exact permutes.1.filter _
+  have unique : (SparseProjectedOrder.executableIds body P).Nodup := by exact permutes.1.filter _
   apply (List.perm_ext_iff_of_nodup unique footprints.uniqueIds).2
   intro id
   constructor
@@ -41,15 +40,16 @@ theorem executable_coverage {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S
 order and region extent, even if their eager execution orders differ. -/
 theorem indexed_tops_regions {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B)
-    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
-    (singleton : sourceProgram.modules = [source]) (sourceImports : source.imports = [])
+    (footprints : IndexedExportCells.Footprints body B) {sourceProgram : Program} {source : Module}
+    (sourceBody : source.body = body) (singleton : sourceProgram.modules = [source])
+    (sourceImports : source.imports = [])
     (sourceFind : sourceProgram.find sourceProgram.entry = some source)
     (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) :
     sourceProgram.tops = (splitProgramIndexed body B P).tops ∧
       sourceProgram.regions = (splitProgramIndexed body B P).regions := by
   have covered := executable_coverage valid footprints
-  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by rw [sourceBody]; exact ordered
+  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by
+    rw [sourceBody]; exact ordered
   constructor
   · rw [IndexedEntryLink.import_free_source_tops sourceFind sourceImports sourceOrdered, sourceBody,
       SparseProjectedOrder.split_indexed_tops_of_perm footprints.uniqueIds covered ordered]
@@ -61,21 +61,27 @@ identity-sorted unit scopes as the import-free original. The actual plan may
 order its modules differently, including a cycle through the entry. -/
 theorem indexed_sorted_scopes {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (free : IndexedUnitsAgree.FreeFootprints body B)
-    (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
-    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (footprints : IndexedExportCells.Footprints body B)
+    (free : IndexedUnitsAgree.FreeFootprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {sourceProgram : Program}
+    {source : Module} (sourceBody : source.body = body) (sourceImports : source.imports = [])
+    (sourceFind : sourceProgram.find sourceProgram.entry = some source)
     (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) :
-    ∀ frames, FramesOf sourceProgram.tops frames → ∃ before after,
-      sourceProgram.scopes frames sourceProgram.loaded = .ok before ∧
-      (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok after ∧
-      SameUnits ((unitsOf before).mergeSort fun a b => decide (a.id ≤ b.id))
-        ((unitsOf after).mergeSort fun a b => decide (a.id ≤ b.id)) := by
+    ∀ frames,
+      FramesOf sourceProgram.tops frames →
+        ∃ before after,
+          sourceProgram.scopes frames sourceProgram.loaded = .ok before ∧
+            (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded =
+              .ok after ∧
+            SameUnits ((unitsOf before).mergeSort fun a b => decide (a.id ≤ b.id))
+              ((unitsOf after).mergeSort fun a b => decide (a.id ≤ b.id)) := by
   intro frames frameNames
   have covered := executable_coverage valid footprints
-  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by rw [sourceBody]; exact ordered
+  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by
+    rw [sourceBody]; exact ordered
   have sourceTops : sourceProgram.tops = body :=
-    (IndexedEntryLink.import_free_source_tops sourceFind sourceImports sourceOrdered).trans sourceBody
+    (IndexedEntryLink.import_free_source_tops sourceFind sourceImports sourceOrdered).trans
+      sourceBody
   rw [sourceTops] at frameNames
   obtain ⟨targetLinked, targetScopes, targetKeys, targetAgree⟩ :=
     IndexedUnitsAgree.indexed_units_agree valid footprints free complete frameNames sourceBody
@@ -94,15 +100,15 @@ theorem indexed_sorted_scopes {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} 
     exact env
   have targetTops : (splitProgramIndexed body B P).tops = body :=
     SparseProjectedOrder.split_indexed_tops_of_perm footprints.uniqueIds covered ordered
-  have sortedSame : SameUnits
-      ((unitsOf sourceLinked).mergeSort fun a b => decide (a.id ≤ b.id))
+  have sortedSame :
+    SameUnits ((unitsOf sourceLinked).mergeSort fun a b => decide (a.id ≤ b.id))
       ((unitsOf targetLinked).mergeSort fun a b => decide (a.id ≤ b.id)) := by
     refine sameUnits_of ?_ fun u hu u' hu' _ sameStmt => ?_
-    · rw [List.map_mergeSort (f := fun u : LinkedUnit => (u.1, u.2.1))
-          (s := fun a b : Nat × Stmt => decide (a.1 ≤ b.1)) (fun _ _ _ _ => rfl),
+    · rw [List.map_mergeSort (f := fun u : LinkedUnit => (u.1, u.2.1)) (s := fun a b : Nat × Stmt =>
+          decide (a.1 ≤ b.1)) (fun _ _ _ _ => rfl),
         sourceKeys,
-        List.map_mergeSort (f := fun u : LinkedUnit => (u.1, u.2.1))
-          (s := fun a b : Nat × Stmt => decide (a.1 ≤ b.1)) (fun _ _ _ _ => rfl),
+        List.map_mergeSort (f := fun u : LinkedUnit => (u.1, u.2.1)) (s := fun a b : Nat × Stmt =>
+          decide (a.1 ≤ b.1)) (fun _ _ _ _ => rfl),
         targetKeys, List.mergeSort_of_pairwise (ordered.imp fun h => by simpa using h)]
       exact targetTops.symm
     · rw [sourceEnv_eq u ((List.mergeSort_perm _ _).mem_iff.1 hu), sameStmt]
@@ -113,28 +119,36 @@ theorem indexed_sorted_scopes {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} 
 state. Eager execution and the public surface require separate arguments. -/
 theorem indexed_hoist_link {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (free : IndexedUnitsAgree.FreeFootprints body B)
-    (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (footprints : IndexedExportCells.Footprints body B)
+    (free : IndexedUnitsAgree.FreeFootprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {sourceProgram : Program}
+    {source : Module} (sourceBody : source.body = body)
     (singleton : sourceProgram.modules = [source]) (sourceImports : source.imports = [])
     (sourceFind : sourceProgram.find sourceProgram.entry = some source)
     (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) {w : World}
     (before : CheckedLink sourceProgram w) :
-    ∃ (start : State w) (frames : List (Nat × List (Name × Addr))) (allocated : State w)
-        (after : CheckedLink (splitProgramIndexed body B P) w),
+    ∃ (start : State w) (frames : List (Nat × List (Name × Addr))) (allocated : State w) (after :
+      CheckedLink (splitProgramIndexed body B P) w),
       checkIdentities sourceProgram.tops (initialState w sourceProgram.regions) = .ok () start ∧
-      declareTops sourceProgram.tops start = .ok frames allocated ∧
-      sourceProgram.scopes frames sourceProgram.loaded = .ok before.linked ∧
-      (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok after.linked ∧
-      before.ready = after.ready := by
+        declareTops sourceProgram.tops start = .ok frames allocated ∧
+        sourceProgram.scopes frames sourceProgram.loaded = .ok before.linked ∧
+        (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded =
+          .ok after.linked ∧
+        before.ready = after.ready := by
   obtain ⟨tops, regions⟩ :=
     indexed_tops_regions valid footprints sourceBody singleton sourceImports sourceFind ordered
-  exact OrderedRegion.matching_hoist_link_with_frames regions tops
-    (indexed_sorted_scopes valid footprints free complete sourceBody sourceImports sourceFind ordered) before
+  exact
+    OrderedRegion.matching_hoist_link_with_frames regions tops
+      (indexed_sorted_scopes valid footprints free complete sourceBody sourceImports sourceFind
+        ordered)
+      before
 
 #print axioms executable_coverage
+
 #print axioms indexed_tops_regions
+
 #print axioms indexed_sorted_scopes
+
 #print axioms indexed_hoist_link
 
 end CoreJS.IndexedSortedScopes
