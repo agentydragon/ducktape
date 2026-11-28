@@ -198,6 +198,27 @@ repos:
         language: system
         files: "\\.(js|mjs|cjs|jsx|ts|tsx|css|md|yaml|yml|json|html)$"
 
+      # lean-fmt is built against the same Lean version as split-proof's Bazel
+      # toolchain and lives in the shared Nix pre-commit closure.
+      # Pass only changed files to keep normal commits and CI scoped to their diff.
+      - id: lean-fmt-format
+        name: lean-fmt format
+        entry: lean-fmt format
+        language: system
+        files: "^devinfra/js/debundle/x/split_proof/.*\\.lean$"
+
+      - id: lean-fmt-organize
+        name: lean-fmt organize imports
+        entry: lean-fmt organize
+        language: system
+        files: "^devinfra/js/debundle/x/split_proof/.*\\.lean$"
+
+      - id: lean-fmt-check
+        name: lean-fmt check
+        entry: lean-fmt check
+        language: system
+        files: "^devinfra/js/debundle/x/split_proof/.*\\.lean$"
+
       # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml.
       - id: no-subdir-pyproject-toml
         name: No sub-directory pyproject.toml files

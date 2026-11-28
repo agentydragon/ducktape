@@ -10,6 +10,9 @@ axioms; the test fails when declarations depend on disallowed axioms.
 
 ## Lean targets
 
+The Lake project configuration and toolchain live in the repository root. Its `srcDir` and
+`buildDir` keep sources and build outputs under `split_proof/`; run Lake commands from the repository root.
+
 One `lean_library` per module in `BUILD.bazel`, `deps` = owners of the modules it imports. `rules_lean` compiles
 a multi-module library in `srcs` order and feeds each compile every earlier module, so grouping serializes independent
 modules: splitting cut one edit's critical path 502 s → 144 s (#20549). Group only what cannot stand alone (e.g. a
@@ -17,3 +20,7 @@ generated source). Missing deps fail the compile; extra deps only delay scheduli
 
 Name a target `corejs_<module>` for `EsmSplit/CoreJS/…`, else `<module>` (snake case). Module names follow file paths
 (`rules_lean` and Lake), so moving a file renames its module.
+
+The repository pre-commit hooks `lean-fmt-format`, `lean-fmt-organize`, and
+`lean-fmt-check` format, organize imports, and lint Lean sources under this directory. Run
+them after changing those files.

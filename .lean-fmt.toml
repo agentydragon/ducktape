@@ -1,0 +1,1 @@
+include = ["devinfra/js/debundle/x/split_proof/**/*.lean"]

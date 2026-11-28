@@ -1,4 +1,6 @@
 name = "esm_split"
+srcDir = "devinfra/js/debundle/x/split_proof"
+buildDir = "devinfra/js/debundle/x/split_proof/.lake/build"
 defaultTargets = ["EsmSplit"]
 
 [[lean_lib]]
@@ -6,6 +8,15 @@ name = "EsmSplit"
 
 [[lean_lib]]
 name = "Experiments"
+
+[[lean_lib]]
+name = "TestSupport"
+
+[[lean_lib]]
+name = "SplitDeclaratorSchedule"
+
+[[lean_lib]]
+name = "ProviderInputBoundaryTest"
 
 [[lean_exe]]
 name = "lower"

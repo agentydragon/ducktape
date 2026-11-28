@@ -163,7 +163,7 @@ or its constructor. [Validation test](ast_generator_validation_test.mjs)
 From `translation/` with its standalone dependencies installed:
 
 ```sh
-(cd .. && lake build analysis_inventory)
+(cd "$(git rev-parse --show-toplevel)" && lake build analysis_inventory)
 node coverage_audit.mjs --samples 150 --seed 1 --out COVERAGE.md && prettier --write COVERAGE.md
 ```
 
