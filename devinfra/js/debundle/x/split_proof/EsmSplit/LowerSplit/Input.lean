@@ -16,19 +16,24 @@ def published (s : Json) : List (String × Option String) :=
   | "ExportNamedDeclaration" =>
     if !Lower.isNull (Lower.fld s "declaration") then
       (Lower.topDefs (Lower.fld s "declaration")).map fun n => (n, some n)
-    else (Lower.items (Lower.fld s "specifiers")).toList.map fun sp =>
-      (Lower.specName (Lower.fld sp "exported"),
-        if Lower.isNull (Lower.fld s "source") then some (Lower.specName (Lower.fld sp "local")) else none)
+    else
+      (Lower.items (Lower.fld s "specifiers")).toList.map fun sp =>
+        (Lower.specName (Lower.fld sp "exported"),
+          if Lower.isNull (Lower.fld s "source") then some (Lower.specName (Lower.fld sp "local"))
+          else none)
   | "ExportDefaultDeclaration" => [("default", none)]
   | _ => []
 
 private def toStmt (ast : Json) (f : Lower.Footprint) : Stmt :=
-  { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy,
-    exports := published ast, hoisted := f.hoisted, effect := f.effect }
+  { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps,
+    eager := f.eager, lazy := f.lazy, exports := published ast, hoisted := f.hoisted,
+    effect := f.effect }
 
 /-- `FootprintsOfSyntax`, decided once. Inlined into the verdict, a stack sample on the large bundle found it re-run
 inside the counts below, and the verdict did not finish in 10 minutes. -/
-@[noinline] def footprintsOk (ss : List CoreJS.Stmt) (B : Bundle) : Bool := decide (CoreJS.FootprintsOfSyntax ss B)
+@[noinline]
+def footprintsOk (ss : List CoreJS.Stmt) (B : Bundle) : Bool :=
+  decide (CoreJS.FootprintsOfSyntax ss B)
 
 inductive Placement where
   | fixed
@@ -49,62 +54,90 @@ private def relativeTo (manifest : System.FilePath) (value : String) : System.Fi
   let path : System.FilePath := value
   if path.isAbsolute then path else manifest.parent.getD "." / path
 
-def readDeploymentManifest (path : System.FilePath) (allowOwnedPackage : Bool := false) : IO DeploymentManifest := do
+def readDeploymentManifest (path : System.FilePath) (allowOwnedPackage : Bool := false) :
+    IO DeploymentManifest := do
   let json ← readJson path
   let fields ← IO.ofExcept json.getObj?
-  unless fields.toList.all (fun (field, _) =>
-      ["entry", "chunks"].contains field || (allowOwnedPackage && field == "owned_node_package")) do
+  unless
+    fields.toList.all
+      (fun (field, _) =>
+        ["entry", "chunks"].contains field ||
+          (allowOwnedPackage && field == "owned_node_package")) do
     throw (IO.userError "unexpected deployment manifest field")
   let entry ← IO.ofExcept (json.getObjValAs? String "entry")
-  let ownedNodePackage : Option OwnedNodePackage.Spec ← (fields.get? "owned_node_package").mapM fun pkg => do
-    let fields ← IO.ofExcept pkg.getObj?
-    unless fields.toList.all (fun (field, _) => ["root", "provider", "caller"].contains field) do
-      throw (IO.userError "unexpected owned_node_package field")
-    let root : System.FilePath := ⟨← IO.ofExcept (pkg.getObjValAs? String "root")⟩
-    unless root.isAbsolute do throw (IO.userError "owned_node_package requires an absolute source root")
-    let provider ← IO.ofExcept (pkg.getObjValAs? String "provider")
-    let caller ← IO.ofExcept (pkg.getObjValAs? String "caller")
-    return ⟨root, entry, provider, caller⟩
-  let chunks ← (← IO.ofExcept (json.getObjValAs? (List Json) "chunks")).mapM fun chunk => do
-    let route ← IO.ofExcept (chunk.getObjValAs? String "path")
-    let fields ← IO.ofExcept chunk.getObj?
-    unless fields.toList.all (fun (field, _) => ["path", "source", "spec", "placement", "chunk_id"].contains field) do
-      throw (IO.userError s!"{route}: unexpected deployment chunk field")
-    let source ← IO.ofExcept (chunk.getObjValAs? String "source")
-    if source.isEmpty then throw (IO.userError s!"{route}: expected a source path")
-    let resolve := relativeTo path
-    let chunkId ← IO.ofExcept <| (chunk.getObjVal? "chunk_id").toOption.mapM Json.getStr?
-    let placement : Placement ← match (chunk.getObjVal? "spec").toOption, (chunk.getObjVal? "placement").toOption with
-      | some specPath, none => do
-        unless chunkId.isNone do throw (IO.userError s!"{route}: chunk_id requires placement")
-        let spec ← loadAuthoredSpec (resolve (← IO.ofExcept specPath.getStr?))
-        unless spec.entry == route do throw (IO.userError s!"{route}: spec entry differs from chunk path")
-        pure (.authored spec)
-      | none, some resolved => do
-        let resolvedId ← IO.ofExcept (resolved.getObjValAs? String "chunk_id")
-        if resolvedId.isEmpty then throw (IO.userError s!"{route}: expected a placement chunk_id")
-        pure (.resolved (chunkId.getD resolvedId) resolved)
-      | none, none =>
-        if chunkId.isNone then pure .fixed
-        else throw (IO.userError s!"{route}: chunk_id requires placement")
-      | some _, some _ => throw (IO.userError s!"{route}: supply either spec or placement")
-    return { path := route, source := resolve source, placement : DeploymentChunk }
+  let ownedNodePackage : Option OwnedNodePackage.Spec ←
+    (fields.get? "owned_node_package").mapM fun pkg => do
+        let fields ← IO.ofExcept pkg.getObj?
+        unless
+          fields.toList.all (fun (field, _) => ["root", "provider", "caller"].contains field) do
+          throw (IO.userError "unexpected owned_node_package field")
+        let root : System.FilePath := ⟨← IO.ofExcept (pkg.getObjValAs? String "root")⟩
+        unless root.isAbsolute do
+          throw (IO.userError "owned_node_package requires an absolute source root")
+        let provider ← IO.ofExcept (pkg.getObjValAs? String "provider")
+        let caller ← IO.ofExcept (pkg.getObjValAs? String "caller")
+        return ⟨root, entry, provider, caller⟩
+  let chunks ←
+    (← IO.ofExcept (json.getObjValAs? (List Json) "chunks")).mapM fun chunk => do
+        let route ← IO.ofExcept (chunk.getObjValAs? String "path")
+        let fields ← IO.ofExcept chunk.getObj?
+        unless
+          fields.toList.all
+            (fun (field, _) =>
+              ["path", "source", "spec", "placement", "chunk_id"].contains field) do
+          throw (IO.userError s!"{route}: unexpected deployment chunk field")
+        let source ← IO.ofExcept (chunk.getObjValAs? String "source")
+        if source.isEmpty then
+          throw (IO.userError s!"{route}: expected a source path")
+        let resolve := relativeTo path
+        let chunkId ← IO.ofExcept <| (chunk.getObjVal? "chunk_id").toOption.mapM Json.getStr?
+        let placement : Placement ←
+          match (chunk.getObjVal? "spec").toOption, (chunk.getObjVal? "placement").toOption with
+          | some specPath, none =>
+            do
+              unless chunkId.isNone do
+                throw (IO.userError s!"{route}: chunk_id requires placement")
+              let spec ← loadAuthoredSpec (resolve (← IO.ofExcept specPath.getStr?))
+              unless spec.entry == route do
+                throw (IO.userError s!"{route}: spec entry differs from chunk path")
+              pure (.authored spec)
+          | none, some resolved =>
+            do
+              let resolvedId ← IO.ofExcept (resolved.getObjValAs? String "chunk_id")
+              if resolvedId.isEmpty then
+                throw (IO.userError s!"{route}: expected a placement chunk_id")
+              pure (.resolved (chunkId.getD resolvedId) resolved)
+          | none, none =>
+            if chunkId.isNone then
+              pure .fixed
+            else
+              throw (IO.userError s!"{route}: chunk_id requires placement")
+          | some _, some _ =>
+            throw (IO.userError s!"{route}: supply either spec or placement")
+        return { path := route, source := resolve source, placement : DeploymentChunk }
   let routes := chunks.map (·.path)
   IO.ofExcept (validateModulePaths routes)
-  unless routes.Nodup do throw (IO.userError "duplicate original chunk path")
-  unless routes.contains entry do throw (IO.userError "deployment entry must name an original chunk")
+  unless routes.Nodup do
+    throw (IO.userError "duplicate original chunk path")
+  unless routes.contains entry do
+    throw (IO.userError "deployment entry must name an original chunk")
   return { entry, chunks, ownedNodePackage }
 
 def DeploymentChunk.spec (chunk : DeploymentChunk) (unitCount : Nat) : Except String Spec := do
   match chunk.placement with
-  | .fixed => throw s!"{chunk.path}: a fixed chunk has no placement"
-  | .authored spec => pure spec
-  | .resolved id placement => parseResolvedSpec placement id chunk.path unitCount
+  | .fixed =>
+    throw s!"{chunk.path}: a fixed chunk has no placement"
+  | .authored spec =>
+    pure spec
+  | .resolved id placement =>
+    parseResolvedSpec placement id chunk.path unitCount
 
 def DeploymentChunk.sourceHash (chunk : DeploymentChunk) : Except String (Option String) := do
   match chunk.placement with
-  | .resolved _ placement => some <$> placement.getObjValAs? String "source_sha256"
-  | _ => pure none
+  | .resolved _ placement =>
+    some <$> placement.getObjValAs? String "source_sha256"
+  | _ =>
+    pure none
 
 def javascriptSource (path : System.FilePath) : Bool :=
   path.extension == some "js" || path.extension == some "mjs"
@@ -123,7 +156,8 @@ def deploymentRoot (manifest : DeploymentManifest) : IO System.FilePath := do
       let some parent := dir.parent | throw (IO.userError s!"{chunk.source} has no deployment root")
       dir := parent
     if let some previous := root then
-      unless dir == previous do throw (IO.userError "original chunks must belong to one deployment tree")
+      unless dir == previous do
+        throw (IO.userError "original chunks must belong to one deployment tree")
     root := some dir
   let some directory := root | throw (IO.userError "expected at least one original source")
   return directory
@@ -135,7 +169,8 @@ structure BundleInput where
 
 def readBundle (bundlePath work : System.FilePath) (validateSnapshot timings : Bool)
     (sourceHash : Option String := none) : IO BundleInput := do
-  let program ← timePhase timings "input_parse" fun _ => loadProgram bundlePath work validateSnapshot sourceHash
+  let program ←
+    timePhase timings "input_parse" fun _ => loadProgram bundlePath work validateSnapshot sourceHash
   let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
   let input := work / "source.mjs"
   IO.FS.writeFile input source
@@ -145,9 +180,13 @@ def unsupportedStatement (s : Json) : Option String :=
   -- `export * from` publishes names that only the other module knows: a glue export could shadow one.
   if Lower.typ s == "ExportAllDeclaration" then
     some "unsupported top-level statement: ExportAllDeclaration"
-  else if Lower.typ s == "ImportDeclaration" && Lower.isNull (Lower.fld (Lower.fld s "source") "lit") then
-    some "unsupported top-level statement: an ImportDeclaration whose source has no literal annotation"
-  else (Lower.outsideModel false s).map fun what => s!"unsupported: {what}"
+  else
+    if
+        Lower.typ s == "ImportDeclaration" &&
+          Lower.isNull (Lower.fld (Lower.fld s "source") "lit") then
+      some
+        "unsupported top-level statement: an ImportDeclaration whose source has no literal annotation"
+    else (Lower.outsideModel false s).map fun what => s!"unsupported: {what}"
 
 def analyzeFootprints (asts units : Array Json) (prem : Effects.Premises) (timings : Bool) :
     IO (Array Lower.Footprint × Effects.Result) :=
@@ -163,8 +202,7 @@ in linked CoreJS. An expression (including a parenthesized function) does not
 have declaration-time function instantiation. -/
 private def anonymousDefaultFunction (ast : Json) : Bool :=
   let declaration := Lower.fld ast "declaration"
-  Lower.typ ast == "ExportDefaultDeclaration" &&
-    Lower.typ declaration == "FunctionDeclaration" &&
+  Lower.typ ast == "ExportDefaultDeclaration" && Lower.typ declaration == "FunctionDeclaration" &&
     Lower.isNull (Lower.fld declaration "id")
 
 /-- The linked execution theorem checks the schedules themselves. Its planner needs only the
@@ -179,7 +217,8 @@ def linkedLayoutBundle (asts units : Array Json) : Bundle :=
         lazy := (Effects.dedupeArr t.rawLazy).toList, assigns := Effects.assignedNames t declared,
         exports := published ast, hoisted := t.hoisted }
     if anonymousDefaultFunction ast then
-      { row with defs := ["default"], exports := [("default", some "default")], hoisted := true }
+      { row with
+        defs := ["default"], exports := [("default", some "default")], hoisted := true }
     else row
 
 /-- Build the planner bundle from all checked source nodes, including export metadata. -/
@@ -189,21 +228,25 @@ def sourceBundle (nodes : Array Json) : EsmSplit.Bundle :=
 /-- An identifier default expression creates its own internal binding. Do not
 treat it as a named export of the operand, which would create a live alias. -/
 def isIdentifierDefault (node : Json) : Bool :=
-  Lower.typ node == "ExportDefaultDeclaration" && Lower.typ (Lower.fld node "declaration") == "Identifier"
+  Lower.typ node == "ExportDefaultDeclaration" &&
+    Lower.typ (Lower.fld node "declaration") == "Identifier"
 
 /-- Model the implicit binding in the footprint of the original executable
 export row. Its actual eager read, AST, and ordinal are unaffected. -/
 def snapshotSourceBundle (nodes : Array Json) : Bundle :=
   ((sourceBundle nodes).zip nodes.toList).map fun (row, ast) =>
     if isIdentifierDefault ast then
-      { row with defs := ["default"], exports := [("default", some "default")] }
+      { row with
+        defs := ["default"], exports := [("default", some "default")] }
     else row
 
 /-- The entry module keeps the published interface and loads outside imports before the rest of the bundle. -/
 def entryPlacementProblem (B : Bundle) (S : Spec) (ast : Json) (i : Nat) : Option String :=
   let t := Lower.typ ast
-  if (t == "ImportDeclaration" || t == "ExportNamedDeclaration" || t == "ExportDefaultDeclaration")
-      && S.moduleOf B i != some S.entry then
+  if
+      (t == "ImportDeclaration" || t == "ExportNamedDeclaration" ||
+          t == "ExportDefaultDeclaration") &&
+        S.moduleOf B i != some S.entry then
     some s!"statement {i} is an `{t}` outside the entry module"
   else none
 
