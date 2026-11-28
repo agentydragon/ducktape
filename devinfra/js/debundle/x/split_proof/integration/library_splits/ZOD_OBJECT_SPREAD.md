@@ -23,6 +23,14 @@ order, linked captures, public cells, and all-outcomes proof.
 | Whole #52 body copied verbatim into the same three-row projection | Retained entry unit refused        | Still refused; no artifact. The body includes other forms, including `params?.message`, `delete`, and the error branch. |
 | Unchanged 1,072-unit Zod with halves ownership                    | Refused in the full blocker census | Refused; no artifact. The separate empty-profile source probe stops at eager `Object` in #0.                            |
 
+Replaying complete prefixes of the original #52 body after the spread change
+admits its first three statements. The first refused prefix adds
+`if (params?.message !== void 0) { … }` at UTF-16 range `[36850,37031)`
+([prefix replay](https://app.buildbuddy.io/invocation/74d8bfc1-4511-4fc7-88fd-357d03eb4a79)).
+This branch also contains the optional `error` read, the throw, and the
+assignment; the statement-level refusal by itself does not isolate which
+subexpressions must be admitted.
+
 The control uses an ordinary caller-supplied object. An index getter observes
 its original receiver, deletes a later own key, and adds a key after
 enumeration starts. The copy skips the deleted, late, inherited, and

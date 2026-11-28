@@ -83,6 +83,25 @@ const exactRequest = {
   require: "all-outcomes",
 };
 const exactResult = split(exactRequest);
+// Keep complete original body statements in order. This identifies the
+// first additional source statement the current retained grammar refuses.
+const statements = unit.node.body.body;
+const retainedPrefix = [];
+for (const [i, statement] of statements.entries()) {
+  const body = code.slice(unit.start, statement.end) + "\n}";
+  const prefix = split({
+    ...exactRequest,
+    source: put(`prefix-${i}.mjs`, projection(body)),
+    out: path.join(dir, `prefix-${i}`),
+  });
+  retainedPrefix.push({
+    statement: i,
+    range: [statement.start, statement.end],
+    text: code.slice(statement.start, statement.end),
+    verdict: prefix.verdict,
+  });
+  if (prefix.status === "refused") break;
+}
 const exactProbe = await load(exactRequest.source);
 const { z } = await load(source);
 assert.equal(z.string({ error: "copied" }).safeParse(8).error.issues[0].message, "copied");
@@ -107,6 +126,7 @@ console.log(
     fullSourceShape: sourceShape.error ?? "decoded",
     fullStrict: fullResult.verdict,
     exactUnit: exactResult.verdict,
+    retainedPrefix: retainedPrefix.at(-1),
     control: result.verdict,
   })
 );
@@ -234,6 +254,7 @@ writeFileSync(
       fullSourceShape: sourceShape.error ?? "decoded",
       fullStrict: fullResult.verdict,
       exactUnit: exactResult.verdict,
+      retainedPrefix: retainedPrefix.at(-1),
       control: result.verdict,
     },
     null,
