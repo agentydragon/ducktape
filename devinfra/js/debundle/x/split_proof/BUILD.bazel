@@ -1751,6 +1751,7 @@ lean_library(
         ":corejs_indexed_helper_constructor",
         ":corejs_indexed_hoisted_swap",
         ":corejs_indexed_inline_constructor",
+        ":corejs_indexed_prototype_write",
         ":corejs_indexed_source_facts",
         ":corejs_linked_input",
         ":corejs_linked_primitive_await",
@@ -1768,6 +1769,36 @@ lean_library(
         ":plan",
         ":terminal_export_placement",
     ],
+)
+
+lean_library(
+    name = "corejs_indexed_prototype_write",
+    srcs = ["EsmSplit/CoreJS/IndexedPrototypeWrite.lean"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_constructed_output",
+        ":corejs_deployment_placement",
+        ":corejs_indexed_exported_function",
+        ":corejs_indexed_source_schedule",
+        ":corejs_link_world",
+        ":corejs_linked_pivot_check",
+        ":corejs_move",
+        ":corejs_plan_placement",
+        ":corejs_scope",
+        ":corejs_state_match",
+        ":hoisted_function_link",
+    ],
+)
+
+lean_proof_test(
+    name = "indexed_prototype_write_axioms_test",
+    modules = ["EsmSplit.CoreJS.IndexedPrototypeWrite"],
+    required_theorems = [
+        "CoreJS.IndexedPrototypeWrite.Construction.checkReadback",
+        "CoreJS.IndexedPrototypeWrite.checkBehavior",
+        "CoreJS.IndexedPrototypeWrite.runUnits_move_before_declarations",
+    ],
+    deps = [":corejs_indexed_prototype_write"],
 )
 
 lean_library(
