@@ -13,24 +13,25 @@ Run:
 bbr test --test_output=all //devinfra/js/debundle/x/split_proof/integration/library_splits:retrier_baseline_test
 ```
 
-Ordinary `lowersplit --require all-outcomes` refuses both emit and
-`--check-output` with `no_constructed_rule`, reason
-`no constructor accepts the requested placement of entry.mjs`, null scope
-and guarantee, and `every_ending_matches: false`. Emit creates no destination;
-recheck leaves the existing tree unchanged. The test runner uses the same plan
-with the ESTree printer and reparses the scratch files using the artifact
-comparison gate. This checks the printed syntax and gives Node something to
-run; it does not supply a publication proof.
+The ordinary `lowersplit --require all-outcomes` constructor now publishes
+this exact placement and independently verifies it with `--check-output`.
+Both class bodies are retained as original syntax. The constructor requires
+the same linked statements in the same order, identical captured cells and
+public bindings, and rechecks those facts on the parsed output. The receipt
+covers the modeled module graph and leaves deployment and client coverage
+unclaimed. A duplicated source row or an altered on-disk export is rejected.
 
-In both Node runs the public `retry` method fulfills a simple task with 42.
+In Node on the original and the published files, the public `retry` method fulfills a simple task with 42.
 The discriminator holds an async task at an explicit promise with concurrency
 one. One job is working and one is pending. The held task writes before
 throwing, the retry predicate sees the same error and declines it, and the
 second job starts, writes, and fulfills with 7. Both queues and the working
-count are then zero. The test does not exercise the timer path.
+count are then zero. A controlled replacement for the retrieved `shift` method sees the original
+queue, returns its first callback by identity, and sees the pending count
+drop before the callback runs. This is a Node observation, separate from
+the constructor's same-order proof. The timer path is untested.
 
-The authenticated whole-module classifier and the linked original/reread
-decoder first refuse unit 7: `unsupported global Math`. It comes from
+The separate concrete classifier and concrete decoder still first refuse unit 7: `unsupported global Math`. It comes from
 `RetryTask.id = Math.random().toString(36).slice(2)`, even though the observed
 non-retry consumer never constructs a `RetryTask`. A separate direct-unit
 diagnostic exposes earlier bodies that cannot be lowered directly, including

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { split } from "../../translation/testing/split.mjs";
@@ -61,15 +61,34 @@ async function distinguishOrderAndError(Retrier) {
   const queued = [retrier.working, retrier.pending, retrier.retrying];
   assert.deepEqual(trace, ["first:start"]);
   assert.deepEqual(queued, [1, 1, 0]);
-  release();
-  const [left, right] = await results;
+  const queueTrace = [];
+  const shift = Array.prototype.shift;
+  let pair;
+  try {
+    Array.prototype.shift = function () {
+      // During release, the Retrier is idle with exactly one pending job.
+      // Forward the actual method with the receiver it was given.
+      const observe =
+        retrier.working === 0 && retrier.pending === 1 && this.length === 1 && typeof this[0] === "function";
+      const first = observe ? this[0] : undefined;
+      const task = Reflect.apply(shift, this, []);
+      if (observe) queueTrace.push([task === first, retrier.pending, retrier.working]);
+      return task;
+    };
+    release();
+    pair = await results;
+  } finally {
+    Array.prototype.shift = shift;
+  }
+  const [left, right] = pair;
   assert.deepEqual(left, { status: "rejected", reason: error });
   assert.equal(left.reason, error);
   assert.deepEqual(right, { status: "fulfilled", value: 7 });
   const drained = [retrier.working, retrier.pending, retrier.retrying];
   assert.deepEqual(drained, [0, 0, 0]);
   assert.deepEqual(trace, ["first:start", "first:write", "check:failed", "second:start", "second:write"]);
-  return { trace, queued, drained, error: left.reason.message, value: right.value };
+  assert.deepEqual(queueTrace, [[true, 0, 0]]);
+  return { trace, queueTrace, queued, drained, error: left.reason.message, value: right.value };
 }
 
 const spec = fileURLToPath(new URL("./retrier/split.json", import.meta.url));
@@ -79,20 +98,12 @@ const dest = path.join(root, "certified");
 const scratch = path.join(root, "scratch-estree-only");
 const request = { source, spec, out: dest, require: "all-outcomes" };
 const emit = split(request);
-assert.deepEqual(
-  emit.verdict,
-  {
-    every_ending_matches: false,
-    guarantee: null,
-    reason: "no constructor accepts the requested placement of entry.mjs",
-    reason_code: "no_constructed_rule",
-    requested: "all-outcomes",
-    scope: null,
-    status: "rejected",
-  },
-  emit.log
-);
-assert.equal(existsSync(dest), false);
+assert.equal(emit.status, "certified", emit.log);
+assert.equal(emit.scope, "retained-classes", emit.log);
+assert.equal(emit.guarantee, "all-outcomes", emit.log);
+assert.deepEqual(emit.files, ["entry.mjs", "retry-task.mjs"]);
+assert.deepEqual(emit.verdict.receipt.graph.public_entry.exports, ["Retrier"]);
+assert.deepEqual(emit.verdict.receipt.graph.output.evaluation_order, ["retry-task.mjs", "entry.mjs"]);
 
 const diagnostic = JSON.parse(
   execFileSync(process.env.RETRIER_BASELINE, [source, spec, scratch], { encoding: "utf8" })
@@ -111,14 +122,34 @@ assert.deepEqual(diagnostic, {
     [8, "unsupported global Error"],
   ],
 });
-const recheck = split({ ...request, out: scratch, checkOutput: true });
-assert.deepEqual(recheck.verdict, emit.verdict);
+const recheck = split({ ...request, checkOutput: true });
+assert.equal(recheck.status, "certified", recheck.log);
+assert.equal(recheck.guarantee, "all-outcomes", recheck.log);
+assert.deepEqual(recheck.verdict.receipt, { ...emit.verdict.receipt, operation: "checked-output" });
 
 const Original = await loadPublic(source);
-const Staged = await loadPublic(path.join(scratch, "entry.mjs"));
+const Published = await loadPublic(path.join(dest, "entry.mjs"));
 const original = { success: await consume(Original), discriminator: await distinguishOrderAndError(Original) };
-const staged = { success: await consume(Staged), discriminator: await distinguishOrderAndError(Staged) };
-assert.deepEqual(staged, original);
+const published = { success: await consume(Published), discriminator: await distinguishOrderAndError(Published) };
+assert.deepEqual(published, original);
+
+const publicEntry = path.join(dest, "entry.mjs");
+const entryBytes = readFileSync(publicEntry, "utf8");
+const addedExport = entryBytes + "\nexport { Retrier as unexpected };\n";
+writeFileSync(publicEntry, addedExport);
+const tampered = split({ ...request, checkOutput: true });
+assert.equal(tampered.status, "refused", tampered.log);
+assert.match(tampered.reason, /differs from its generated ESTree/);
+assert.equal(readFileSync(publicEntry, "utf8"), addedExport);
+writeFileSync(publicEntry, entryBytes);
+
+const duplicateSpec = path.join(root, "duplicate-source-id.json");
+const duplicate = JSON.parse(originalSpec);
+duplicate.modules["entry.mjs"].push("#7");
+writeFileSync(duplicateSpec, JSON.stringify(duplicate));
+const refused = split({ ...request, spec: duplicateSpec, out: path.join(root, "duplicate") });
+assert.equal(refused.status, "refused", refused.log);
+assert.deepEqual(refused.files, []);
 assert.deepEqual(readFileSync(source), originalBytes);
 assert.deepEqual(readFileSync(spec), originalSpec);
-console.log(JSON.stringify({ emit: emit.verdict, recheck: recheck.verdict, diagnostic, original, staged }));
+console.log(JSON.stringify({ emit: emit.verdict, recheck: recheck.verdict, diagnostic, original, published }));

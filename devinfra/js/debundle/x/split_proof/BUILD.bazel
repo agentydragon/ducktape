@@ -1774,6 +1774,29 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_retained_class_construction",
+    srcs = ["EsmSplit/CoreJS/RetainedClassConstruction.lean"],
+    deps = [
+        ":corejs_deployment_placement",
+        ":corejs_linked_input",
+        ":corejs_linked_pivot_certificate",
+        ":corejs_plan_placement",
+        ":corejs_syntax_match",
+        ":lowersplit_input",
+    ],
+)
+
+lean_proof_test(
+    name = "retained_class_construction_axioms_test",
+    modules = ["EsmSplit.CoreJS.RetainedClassConstruction"],
+    required_theorems = [
+        "CoreJS.RetainedClassConstruction.Construction.checkOutput",
+        "CoreJS.RetainedClassConstruction.construct",
+    ],
+    deps = [":corejs_retained_class_construction"],
+)
+
+lean_library(
     name = "corejs_retained_tail_construction",
     srcs = ["EsmSplit/CoreJS/RetainedTailConstruction.lean"],
     deps = [
@@ -1826,6 +1849,7 @@ lean_library(
         ":corejs_linked_primitive_await",
         ":corejs_linked_primitive_await_proof",
         ":corejs_resolved_placement",
+        ":corejs_retained_class_construction",
         ":corejs_retained_tail_construction",
         ":corejs_static_provider_construction",
         ":corejs_terminal_source",
