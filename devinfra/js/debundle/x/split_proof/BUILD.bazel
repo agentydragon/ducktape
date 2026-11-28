@@ -735,6 +735,20 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_static_import_motion",
+    srcs = ["EsmSplit/CoreJS/StaticImportMotion.lean"],
+    deps = [
+        ":corejs_link_world",
+        ":corejs_linked_pivot_check",
+        ":corejs_module_location",
+        ":corejs_state_match",
+        ":corejs_static_star_exports",
+        ":estree_units",
+        ":plan",
+    ],
+)
+
+lean_library(
     name = "corejs_linked_input_census",
     srcs = ["EsmSplit/CoreJS/LinkedInputCensus.lean"],
     deps = [
@@ -2267,6 +2281,7 @@ test_runner(
         ":corejs_module_location",
         ":corejs_opaque_input",
         ":corejs_state_match",
+        ":corejs_static_import_motion",
         ":corejs_static_star_exports",
         ":corejs_syntax_match",
         ":corejs_wrapper_loader",

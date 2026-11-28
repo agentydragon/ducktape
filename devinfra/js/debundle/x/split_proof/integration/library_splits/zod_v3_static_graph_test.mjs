@@ -202,6 +202,7 @@ if (process.argv.includes("--linked-diagnostic")) {
   inspect({
     original: original.root,
     candidate: staged.root,
+    wrongDependency: wrongCell.root,
     manifest,
     worker,
     observedNamespaceKeys: candidate.namespace.forwardedKeys,

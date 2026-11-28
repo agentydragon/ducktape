@@ -192,7 +192,7 @@ private def moduleRecord (graph : Graph) (row : Record) (body : List (Nat × Stm
 /-- Project out remote re-export headers and preserve executable ordinals.
 Every forwarded name imports from that immediate provider, so the existing
 linker follows the chain and allocates no new binding cell. -/
-private def lowerRecord (graph : Graph) (row : Record) (base : Nat) : Except String Module := do
+private def lowerRecord (graph : Graph) (row : Record) (identify : Nat → Nat) : Except String Module := do
   if row.requests.any (fun (_, req) => match req with | .namespaceImport .. => true | _ => false) then
     throw "namespace object evaluation is unsupported"
   let mut nodes := #[]
@@ -204,7 +204,7 @@ private def lowerRecord (graph : Graph) (row : Record) (base : Nat) : Except Str
     nodes := nodes.push node
     if !["ImportDeclaration", "EmptyStatement", "DebuggerStatement"].contains kind &&
         !(kind == "ExportNamedDeclaration" && Lower.isNull (Lower.fld node "declaration")) then
-      ids := ids.push (base + id)
+      ids := ids.push (identify id)
   let ordinary ← LinkedInput.parseLinkedModuleWithOrdinals row.path nodes ids.toList
   let expected := row.requests.filterMap fun (_, req) =>
     if let .named edge := req then some edge else none
@@ -215,17 +215,33 @@ private def lowerRecord (graph : Graph) (row : Record) (base : Nat) : Except Str
 
 /-- Build an empty-profile program for linked readback. In particular, successful
 metadata resolution does not make namespace values or provider bodies executable. -/
-def Graph.lower (graph : Graph) (entry : String) : Except String Program := do
+def Graph.lower (graph : Graph) (entry : String)
+    (identify : Option (String → Nat → Nat) := none) : Except String Program := do
   let mut modules := #[]
   let mut base := 0
   for row in graph.records do
-    let m ← (lowerRecord graph row base).mapError (fun why => s!"{row.path}: {why}")
+    let m ← (lowerRecord graph row ((identify.map (· row.path)).getD (base + ·))).mapError (fun why => s!"{row.path}: {why}")
     modules := modules.push m
     base := base + row.nodes.size
   let program : Program := ⟨entry, modules.toList⟩
   unless decide (program.evalOrder.Perm (modules.toList.map (·.name))) do
     throw "static graph has missing or unreachable modules"
   return program
+
+/-- Request-derived evaluation order without lowering bodies or realizing
+namespace objects. -/
+def Graph.order (graph : Graph) (entry : String) : Except String (List String) := do
+  let modules := graph.records.map fun row => moduleRecord graph row []
+  let program : Program := ⟨entry, modules⟩
+  unless decide (program.evalOrder.Perm (modules.map (·.name))) do
+    throw "static graph has missing or unreachable modules"
+  return program.evalOrder
+
+/-- The names that survive star resolution and their source bindings. -/
+def Graph.origins (graph : Graph) (path : String) : Except String (List (Name × Origin)) := do
+  let some table := graph.tables.lookup path | throw s!"missing module {path}"
+  return table.filterMap fun (name, binding) =>
+    if let .found origin _ := binding then some (name, origin) else none
 
 /-- A view of a linked module's named exports. Its members retain addresses,
 not the contents of the cells. JS namespace exotic object operations are

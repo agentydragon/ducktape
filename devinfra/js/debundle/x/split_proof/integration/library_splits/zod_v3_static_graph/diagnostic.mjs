@@ -65,7 +65,7 @@ function schedule(entry, records) {
   return { order, cycles, requests, records };
 }
 
-export function inspect({ original, candidate, manifest, worker, observedNamespaceKeys }) {
+export function inspect({ original, candidate, wrongDependency, manifest, worker, observedNamespaceKeys }) {
   const { entry, chunks } = JSON.parse(readFileSync(manifest, "utf8"));
   const changed = chunks.find(({ spec }) => spec);
   const spec = JSON.parse(readFileSync(changed.spec, "utf8"));
@@ -101,7 +101,13 @@ export function inspect({ original, candidate, manifest, worker, observedNamespa
       ["v3/helpers/parseUtil.js", "defaultErrorMap"],
     ],
   });
+  const wrongWorker = annotations(parseTree(wrongDependency, [worker]))[worker];
   const inputs = [
+    { kind: "importMotion", input: { entry, spec, before: asts, reread: { ...asts, ...files } } },
+    {
+      kind: "importMotion",
+      input: { entry, spec, before: asts, reread: { ...asts, ...files, [worker]: wrongWorker } },
+    },
     { kind: "namespaceLinks", input: namespaceInput(asts) },
     { kind: "namespaceLinks", input: namespaceInput({ ...asts, ...files }) },
     { kind: "starMetadata", input: { files: asts, queries } },
@@ -119,8 +125,15 @@ export function inspect({ original, candidate, manifest, worker, observedNamespa
       maxBuffer: 64 * 1024 * 1024,
     })
   );
-  for (const row of results) assert.ok(row.output, JSON.stringify(row));
-  const [beforeCells, afterCells, beforeStar, afterStar, deployment, ...probes] = results.map(({ output }) => output);
+  const [motionResult, rejectedImport, ...remainder] = results;
+  assert.match(rejectedImport.error, /named bindings/);
+  for (const row of [motionResult, ...remainder]) assert.ok(row.output, JSON.stringify(row));
+  const [motion, beforeCells, afterCells, beforeStar, afterStar, deployment, ...probes] = [
+    motionResult,
+    ...remainder,
+  ].map(({ output }) => output);
+  assert.equal(motion.requests, 2);
+  assert.equal(motion.concrete.error, "v3/ZodError.js: unsupported global Object");
   const starOrigins = [
     [changed.path, "default"],
     [changed.path, "default"],
@@ -155,6 +168,8 @@ export function inspect({ original, candidate, manifest, worker, observedNamespa
     schedule(entry, Object.fromEntries(Object.entries(tree).map(([file, parsed]) => [file, record(parsed, file)])));
   const report = {
     deployment,
+    motion,
+    rejectedImport: rejectedImport.error,
     namespaceCells,
     starOrigins: queries.map((query, i) => ({ query, origin: starOrigins[i] })),
     before: graph(before),
@@ -166,6 +181,7 @@ export function inspect({ original, candidate, manifest, worker, observedNamespa
   console.log(
     JSON.stringify({
       deployment,
+      motion,
       namespaceCells,
       starOrigins: report.starOrigins,
       before: report.before.order,
