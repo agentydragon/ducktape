@@ -48,6 +48,8 @@ from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.platform_sessions import app as platform_sessions
+from cluster.cdk8s.platform_sessions.config import THRIVE_READ_PATHS
+from cluster.cdk8s.platform_sessions.remote import PUBLIC_HOSTNAME
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
@@ -615,7 +617,7 @@ def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
         credential=QUEST_SCHEDULER_READ_POLICY,
         description=(
             "Quest scheduling, account, and insurance lookup API. "
-            "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest-scheduler. "
+            f"The upstream paths are exposed under https://{PUBLIC_HOSTNAME}/proxy/quest-scheduler. "
             "The bearer is substituted only for the listed lookup paths."
         ),
         source=Source.secret_ref(name="platform-sessions-quest-scheduler-bearer", key="token"),
@@ -629,7 +631,7 @@ def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
             rules=[
                 _rule(
                     QUEST_SCHEDULER_READ_POLICY,
-                    "platform-sessions.allegedly.works",
+                    PUBLIC_HOSTNAME,
                     method=PolicySetSpecRulesMethods.GET,
                     paths=[
                         "/proxy/quest-scheduler/guest/getReasons/*",
@@ -647,7 +649,7 @@ def _quest_scheduler_read(scope: Construct, *, namespace: str) -> None:
                 # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
                 _rule(
                     QUEST_SCHEDULER_READ_POLICY,
-                    "platform-sessions.allegedly.works",
+                    PUBLIC_HOSTNAME,
                     method=PolicySetSpecRulesMethods.POST,
                     paths=[
                         "/proxy/quest-scheduler/guest/getPscsWithAvailability",
@@ -681,16 +683,9 @@ def _thrive_read(scope: Construct, *, namespace: str) -> None:
             rules=[
                 _rule(
                     THRIVE_READ_POLICY,
-                    "platform-sessions.allegedly.works",
+                    PUBLIC_HOSTNAME,
                     method=PolicySetSpecRulesMethods.GET,
-                    paths=[
-                        "/proxy/thrive/products",
-                        "/proxy/thrive/account/orders",
-                        "/proxy/thrive/account",
-                        "/proxy/thrive/carts",
-                        "/proxy/thrive/autoship/items",
-                        "/proxy/thrive/autoship/schedule/first",
-                    ],
+                    paths=[f"/proxy/thrive{path}" for path in THRIVE_READ_PATHS],
                 )
             ]
         ),
