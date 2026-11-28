@@ -184,6 +184,36 @@ writeFileSync(entryFile, damaged);
 assert.equal(split({ ...request, checkOutput: true }).status, "refused");
 assert.equal(readFileSync(entryFile, "utf8"), damaged);
 writeFileSync(entryFile, published);
+// The VM comparison above runs the real graph. Ask the ordinary CLI to
+// certify that exact graph separately: the authored chunk is a dependency,
+// not the deployment's public entry. Neither fixed file is rewritten.
+const fixedSibling = "chunk-BLPUKQJE.js";
+const manifest = path.join(artifacts, "wrapper-deployment.json");
+writeFileSync(
+  manifest,
+  JSON.stringify(
+    {
+      entry: wrapper,
+      chunks: [
+        { path: wrapper, source: path.resolve(bundle, wrapper) },
+        { path: entry, source: path.resolve(source), spec },
+        { path: fixedSibling, source: path.resolve(bundle, fixedSibling) },
+      ],
+    },
+    null,
+    2
+  )
+);
+const deployment = split({
+  manifest,
+  out: path.join(root, "wrapper-deployment"),
+  require: "normal-completion",
+});
+assert.equal(deployment.status, "refused", deployment.log);
+assert.equal(deployment.reasonCode, "no_constructed_rule");
+assert.equal(deployment.reason, "no constructor supports multi-chunk deployments");
+assert.deepEqual(deployment.files, []);
+
 writeFileSync(
   path.join(artifacts, "outcomes.json"),
   JSON.stringify(
@@ -200,6 +230,7 @@ writeFileSync(
       strict: strict.verdict,
       reordered: reordered.verdict,
       observations,
+      deployment: deployment.verdict,
     },
     null,
     2
