@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.IteratorFrame
 import EsmSplit.CoreJS.ExpressionFrame
+import EsmSplit.CoreJS.IteratorFrame
 import EsmSplit.CoreJS.ObjectFrame
 import EsmSplit.CoreJS.OpaqueClosureFrame
 import EsmSplit.CoreJS.Request.Dispatch
@@ -10,35 +10,61 @@ namespace CoreJS
 
 variable {W : World}
 
-structure EvaluatorFrames (W : World) (n r : Nat) (R : Addr → Prop) (A : HeapNode → Prop) : Prop where
-  expr : ∀ cells env e, (∀ node ∈ Env.nodes env, A node) →
-    ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val)
-  args : ∀ cells env es, (∀ node ∈ Env.nodes env, A node) →
-    ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v) (evalArgs n env es : M W _)
-  target : ∀ cells env t, (∀ node ∈ Env.nodes env, A node) →
-    ReachFrame r R cells A (RefSafe A) (evalTarget n env t : M W Ref)
-  props : ∀ cells env a ps, (∀ node ∈ Env.nodes env, A node) → A (.obj a) →
-    ReachFrame r R cells A (fun _ => True) (evalProps n env a ps : M W Unit)
-  members : ∀ cells env p c ms, (∀ node ∈ Env.nodes env, A node) → A (.obj p) → A (.obj c) →
-    ReachFrame r R cells A (fun _ => True) (evalMembers n env p c ms : M W _)
-  fields : ∀ cells env a fs, (∀ node ∈ Env.nodes env, A node) → A (.obj a) →
-    ReachFrame r R cells A (fun _ => True) (evalFields n env a fs : M W Unit)
+structure EvaluatorFrames (W : World) (n r : Nat) (R : Addr → Prop) (A : HeapNode → Prop) :
+    Prop where
+  expr :
+    ∀ cells env e,
+      (∀ node ∈ Env.nodes env, A node) →
+        ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val)
+  args :
+    ∀ cells env es,
+      (∀ node ∈ Env.nodes env, A node) →
+        ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v) (evalArgs n env es : M W _)
+  target :
+    ∀ cells env t,
+      (∀ node ∈ Env.nodes env, A node) →
+        ReachFrame r R cells A (RefSafe A) (evalTarget n env t : M W Ref)
+  props :
+    ∀ cells env a ps,
+      (∀ node ∈ Env.nodes env, A node) →
+        A (.obj a) → ReachFrame r R cells A (fun _ => True) (evalProps n env a ps : M W Unit)
+  members :
+    ∀ cells env p c ms,
+      (∀ node ∈ Env.nodes env, A node) →
+        A (.obj p) →
+        A (.obj c) → ReachFrame r R cells A (fun _ => True) (evalMembers n env p c ms : M W _)
+  fields :
+    ∀ cells env a fs,
+      (∀ node ∈ Env.nodes env, A node) →
+        A (.obj a) → ReachFrame r R cells A (fun _ => True) (evalFields n env a fs : M W Unit)
   call : ∀ cells, CallFramed r R cells A (callFn n : Call W)
-  construct : ∀ cells t f args, SafeVal A t → SafeVal A f → (∀ v ∈ args, SafeVal A v) →
-    ReachFrame r R cells A (SafeVal A) (constructTarget n t f args : M W Val)
-  binding : ∀ cells env kind p v, (∀ node ∈ Env.nodes env, A node) → SafeVal A v →
-    ReachFrame r R cells A (fun _ => True) (bindPattern n env kind p v : M W Unit)
-  stmt : ∀ cells env st, (∀ node ∈ Env.nodes env, A node) →
-    ReachFrame r R cells A (FlowSafe A) (execStmt n env st : M W Flow)
-  stmts : ∀ cells env ss, (∀ node ∈ Env.nodes env, A node) →
-    ReachFrame r R cells A (FlowSafe A) (execStmts n env ss : M W Flow)
-  loop : ∀ cells env fresh test update body postTest, (∀ node ∈ Env.nodes env, A node) →
-    ReachFrame r R cells A (FlowSafe A) (loop n env fresh test update body postTest : M W Flow)
-  converse : ∀ code cells told, ReachFrame r R cells A (SafeVal A) (converse n code cells told : M W Val)
+  construct :
+    ∀ cells t f args,
+      SafeVal A t →
+        SafeVal A f →
+        (∀ v ∈ args, SafeVal A v) →
+        ReachFrame r R cells A (SafeVal A) (constructTarget n t f args : M W Val)
+  binding :
+    ∀ cells env kind p v,
+      (∀ node ∈ Env.nodes env, A node) →
+        SafeVal A v → ReachFrame r R cells A (fun _ => True) (bindPattern n env kind p v : M W Unit)
+  stmt :
+    ∀ cells env st,
+      (∀ node ∈ Env.nodes env, A node) →
+        ReachFrame r R cells A (FlowSafe A) (execStmt n env st : M W Flow)
+  stmts :
+    ∀ cells env ss,
+      (∀ node ∈ Env.nodes env, A node) →
+        ReachFrame r R cells A (FlowSafe A) (execStmts n env ss : M W Flow)
+  loop :
+    ∀ cells env fresh test update body postTest,
+      (∀ node ∈ Env.nodes env, A node) →
+        ReachFrame r R cells A (FlowSafe A) (loop n env fresh test update body postTest : M W Flow)
+  converse :
+    ∀ code cells told, ReachFrame r R cells A (SafeVal A) (converse n code cells told : M W Val)
 
 theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
-    (notRead : ∀ a, a.region ≠ r → ¬R a) (n : Nat) :
-    EvaluatorFrames W n r R (Unprotected r R) := by
+    (notRead : ∀ a, a.region ≠ r → ¬R a) (n : Nat) : EvaluatorFrames W n r R (Unprotected r R) := by
   let A := Unprotected r R
   have away : Away r R A := unprotected_away r R
   have cell (a : Addr) (h : a.region ≠ r) : A (.cell a) := ⟨h, notRead a h⟩
@@ -54,20 +80,25 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
   have arrayIteratorRoot : A (.obj arrayIteratorProto) := Ne.symm hr
   have regexpRoot : A (.obj regexpProto) := Ne.symm hr
   have allocate (cells : List (Option Addr)) (o : Obj) (ho : ∀ node ∈ o.nodes, A node) :
-      ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr) :=
+    ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr) :=
     reachFrame_alloc o ho object
-  have make (cells : List (Option Addr)) (env : Env) (safe : ∀ node ∈ env.nodes, A node)
-      (f : Func) (displayName : String := f.name) :
-      ReachFrame r R cells A (SafeVal A) (makeFunc env f displayName : M W Val) :=
-    reachFrame_makeFunc away cell prototypeRoot intrinsicRoot (allocate cells) env safe f displayName
-  have enter (cells : List (Option Addr)) (env : Env) (ss : List Stmt) (safe : ∀ node ∈ env.nodes, A node) :
-      ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterBlock env ss : M W Env) :=
+  have make (cells : List (Option Addr)) (env : Env) (safe : ∀ node ∈ env.nodes, A node) (f : Func)
+    (displayName : String := f.name) :
+    ReachFrame r R cells A (SafeVal A) (makeFunc env f displayName : M W Val) :=
+    reachFrame_makeFunc away cell prototypeRoot intrinsicRoot (allocate cells) env safe f
+      displayName
+  have enter (cells : List (Option Addr)) (env : Env) (ss : List Stmt)
+    (safe : ∀ node ∈ env.nodes, A node) :
+    ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node)
+      (enterBlock env ss : M W Env) :=
     reachFrame_enterBlock away cell prototypeRoot intrinsicRoot (allocate cells) env safe ss
   have enterCall (cells : List (Option Addr)) (f : Func) (env : Env) (this : Val) (args : List Val)
-      (target : Val) (safe : ∀ node ∈ env.nodes, A node) (ht : SafeVal A this)
-      (ha : ∀ arg ∈ args, SafeVal A arg) (hn : SafeVal A target) :
-      ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterFunction f env this args target : M W Env) :=
-    reachFrame_enterFunction away cell prototypeRoot intrinsicRoot arrayRoot (allocate cells) f env safe this ht args ha target hn
+    (target : Val) (safe : ∀ node ∈ env.nodes, A node) (ht : SafeVal A this)
+    (ha : ∀ arg ∈ args, SafeVal A arg) (hn : SafeVal A target) :
+    ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node)
+      (enterFunction f env this args target : M W Env) :=
+    reachFrame_enterFunction away cell prototypeRoot intrinsicRoot arrayRoot (allocate cells) f env
+      safe this ht args ha target hn
   induction n using Nat.strongRecOn with
   | ind n ih =>
     cases n with
@@ -88,17 +119,24 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       · intros; exact reachFrame_fuel
     | succ n =>
       have prev := ih n (Nat.lt_succ_self _)
-      have convo code cells told (_ : ∀ a, some a ∈ cells → A (.cell a)) := prev.converse code cells told
+      have convo code cells told (_ : ∀ a, some a ∈ cells → A (.cell a)) :=
+        prev.converse code cells told
       have createObject (cells : List (Option Addr)) (env : Env) (safe : ∀ node ∈ env.nodes, A node)
-          (ps : List PropDef) : ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.obj ps) : M W Val) := by
+        (ps : List PropDef) :
+        ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.obj ps) : M W Val) := by
         simp only [evalExpr]
-        apply (allocate cells { proto := some objectProto, props := [] } (by simpa [Obj.nodes] using objectRoot)).bind
+        apply
+          (allocate cells { proto := some objectProto, props := [] }
+              (by simpa [Obj.nodes] using objectRoot)).bind
         intro addr ha
-        exact (prev.props cells env addr ps safe ha).bind fun _ _ =>
-          reachFrame_pure r R cells A (Val.obj addr) (safeVal_obj.2 ha)
-      have runBody (cells : List (Option Addr)) (f : Func) (closed : Env) (this : Val) (args : List Val)
-          (safe : ∀ node ∈ closed.nodes, A node) (ht : SafeVal A this) (ha : ∀ a ∈ args, SafeVal A a) :
-          ReachFrame r R cells A (SafeVal A) (do
+        exact
+          (prev.props cells env addr ps safe ha).bind fun _ _ =>
+            reachFrame_pure r R cells A (Val.obj addr) (safeVal_obj.2 ha)
+      have runBody (cells : List (Option Addr)) (f : Func) (closed : Env) (this : Val)
+        (args : List Val) (safe : ∀ node ∈ closed.nodes, A node) (ht : SafeVal A this)
+        (ha : ∀ a ∈ args, SafeVal A a) :
+        ReachFrame r R cells A (SafeVal A)
+          (do
             let env ← enterFunction f closed this args
             Flow.functionResult (← execStmts n env f.body) : M W Val) := by
         apply (enterCall cells f closed this args .undef safe ht ha (fun _ h => by cases h)).bind
@@ -110,75 +148,99 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
         all_goals exact reachFrame_pure r R cells A Val.undef (fun _ h => by cases h)
       constructor
       · intro cells env e safe
-        apply evalExpr_reachFrame_step away env safe objectRoot
-          (reachFrame_prim away (callFn n) (prev.call cells) object objectRoot arrayRoot)
-          (fun e => prev.expr cells env e safe) (fun es => prev.args cells env es safe)
-          (fun t => prev.target cells env t safe) (prev.call cells)
-          (fun f es sf sa => prev.construct cells f f es sf sf sa) (fun f => make cells env safe f)
-          regexpRoot (allocate cells) (createObject cells env safe)
-        · exact evalArray_reachFrame_step env arrayRoot (fun es => prev.args cells env es safe) (allocate cells)
-        · exact evalClass_reachFrame_step away object cell objectRoot functionRoot env safe (prev.members cells) (prev.expr cells)
-        · exact evalDerived_reachFrame_step away object cell objectRoot functionRoot env safe (prev.call cells)
-            (prev.expr cells) (prev.members cells)
+        apply
+          evalExpr_reachFrame_step away env safe objectRoot
+            (reachFrame_prim away (callFn n) (prev.call cells) object objectRoot arrayRoot)
+            (fun e => prev.expr cells env e safe) (fun es => prev.args cells env es safe)
+            (fun t => prev.target cells env t safe) (prev.call cells)
+            (fun f es sf sa => prev.construct cells f f es sf sf sa)
+            (fun f => make cells env safe f) regexpRoot (allocate cells)
+            (createObject cells env safe)
+        · exact
+            evalArray_reachFrame_step env arrayRoot (fun es => prev.args cells env es safe)
+              (allocate cells)
+        · exact
+            evalClass_reachFrame_step away object cell objectRoot functionRoot env safe
+              (prev.members cells) (prev.expr cells)
+        · exact
+            evalDerived_reachFrame_step away object cell objectRoot functionRoot env safe
+              (prev.call cells) (prev.expr cells) (prev.members cells)
       · intro cells env es safe
-        exact evalArgs_reachFrame_step (fun e => prev.expr cells env e safe) (fun es => prev.args cells env es safe)
-          (iteratorValues_reachFrame away (callFn n) (prev.call cells) objectRoot (Ne.symm hr) n) es
+        exact
+          evalArgs_reachFrame_step (fun e => prev.expr cells env e safe)
+            (fun es => prev.args cells env es safe)
+            (iteratorValues_reachFrame away (callFn n) (prev.call cells) objectRoot (Ne.symm hr) n)
+            es
       · intro cells env t safe
         exact evalTarget_reachFrame_step (fun e => prev.expr cells env e safe) t
       · intro cells env a ps safe ha
-        have makeMethod (home : Addr) (h : A (.obj home)) (key : PropertyKey) (affix : String) (f : Func) :
-            ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val) := by
+        have makeMethod (home : Addr) (h : A (.obj home)) (key : PropertyKey) (affix : String)
+          (f : Func) :
+          ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val) := by
           have available := Env.nodes_setHome safe (some home) (by simpa using h)
           cases key with
           | str name => exact make cells _ available f (affix ++ name)
           | wellKnownSymbol sym => exact make cells _ available f (affix ++ s!"[{sym.description}]")
           | symbol => exact reachFrame_unknown r R cells A _ _
-        exact evalProps_reachFrame_step away env ha (prev.call cells).getter (fun e => prev.expr cells env e safe) makeMethod
-          (fun ps => prev.props cells env a ps safe ha) ps
+        exact
+          evalProps_reachFrame_step away env ha (prev.call cells).getter
+            (fun e => prev.expr cells env e safe) makeMethod
+            (fun ps => prev.props cells env a ps safe ha) ps
       · intro cells env p c ms safe hp hc
-        have makeMethod (home : Addr) (h : A (.obj home)) (key : PropertyKey) (affix : String) (f : Func) :
-            ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val) := by
+        have makeMethod (home : Addr) (h : A (.obj home)) (key : PropertyKey) (affix : String)
+          (f : Func) :
+          ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val) := by
           have available := Env.nodes_setHome safe (some home) (by simpa using h)
           cases key with
           | str name => exact make cells _ available f (affix ++ name)
           | wellKnownSymbol sym => exact make cells _ available f (affix ++ s!"[{sym.description}]")
           | symbol => exact reachFrame_unknown r R cells A _ _
-        exact evalMembers_reachFrame_step away env hp hc (fun e => prev.expr cells env e safe) makeMethod
-          (fun ms => prev.members cells env p c ms safe hp hc) ms
+        exact
+          evalMembers_reachFrame_step away env hp hc (fun e => prev.expr cells env e safe)
+            makeMethod (fun ms => prev.members cells env p c ms safe hp hc) ms
       · intro cells env a fs safe ha
-        exact evalFields_reachFrame_step away env ha (fun e => prev.expr cells env e safe)
-          (fun fs => prev.fields cells env a fs safe ha) fs
+        exact
+          evalFields_reachFrame_step away env ha (fun e => prev.expr cells env e safe)
+            (fun fs => prev.fields cells env a fs safe ha) fs
       · intro cells
         exact callFn_reachFrame_of_steps away (Ne.symm hr) object convo (runBody cells)
       · intro cells
-        exact constructTarget_reachFrame_of_steps away (Ne.symm hr) objectRoot (allocate cells) (prev.call cells).getter convo
-          (prev.fields cells) (enterCall cells) (prev.stmts cells) (prev.args cells) (prev.construct cells)
+        exact
+          constructTarget_reachFrame_of_steps away (Ne.symm hr) objectRoot (allocate cells)
+            (prev.call cells).getter convo (prev.fields cells) (enterCall cells) (prev.stmts cells)
+            (prev.args cells) (prev.construct cells)
       · intro cells env kind p v safe hv
-        exact bindPattern_reachFrame_step away env safe (fun e => prev.expr cells env e safe)
-          (reachFrame_getProp away (callFn n) (prev.call cells).getter objectRoot)
-          (fun kind p v hv => prev.binding cells env kind p v safe hv)
-          (fun kind items rest value hv =>
-            bindArrayPattern_reachFrame away (callFn n) (prev.call cells) objectRoot arrayIteratorRoot arrayRoot
-              (allocate cells) n (bindPattern n env kind) (fun p v hv => prev.binding cells env kind p v safe hv)
-              items rest value hv) kind p v hv
+        exact
+          bindPattern_reachFrame_step away env safe (fun e => prev.expr cells env e safe)
+            (reachFrame_getProp away (callFn n) (prev.call cells).getter objectRoot)
+            (fun kind p v hv => prev.binding cells env kind p v safe hv)
+            (fun kind items rest value hv =>
+              bindArrayPattern_reachFrame away (callFn n) (prev.call cells) objectRoot
+                arrayIteratorRoot arrayRoot (allocate cells) n (bindPattern n env kind)
+                (fun p v hv => prev.binding cells env kind p v safe hv) items rest value hv)
+            kind p v hv
       · intro cells env st safe
-        exact execStmt_reachFrame_step away cell (fun e env h => prev.expr cells env e h)
-          (prev.stmt cells) (prev.binding cells) (prev.stmts cells) (prev.loop cells) (enter cells)
-          (fun e kind pattern source body he =>
-            forOf_reachFrame_step away (prev.call cells) objectRoot arrayIteratorRoot
-              (fun exp env h => prev.expr cells env exp h) (prev.binding cells) (prev.stmt cells) (enter cells)
-              e he kind pattern source body)
-          (execOpaque_reachFrame_step away object objectRoot functionRoot convo) env safe st
+        exact
+          execStmt_reachFrame_step away cell (fun e env h => prev.expr cells env e h)
+            (prev.stmt cells) (prev.binding cells) (prev.stmts cells) (prev.loop cells)
+            (enter cells)
+            (fun e kind pattern source body he =>
+              forOf_reachFrame_step away (prev.call cells) objectRoot arrayIteratorRoot
+                (fun exp env h => prev.expr cells env exp h) (prev.binding cells) (prev.stmt cells)
+                (enter cells) e he kind pattern source body)
+            (execOpaque_reachFrame_step away object objectRoot functionRoot convo) env safe st
       · intro cells env ss safe
         exact execStmts_reachFrame_step (prev.stmt cells) (prev.stmts cells) env safe ss
       · intro cells env fresh test update body postTest safe
-        exact loop_reachFrame_step away cell (fun e env h => prev.expr cells env e h) (prev.stmt cells)
-          (prev.loop cells) env safe fresh test update body postTest
+        exact
+          loop_reachFrame_step away cell (fun e env h => prev.expr cells env e h) (prev.stmt cells)
+            (prev.loop cells) env safe fresh test update body postTest
       · intro code cells told
         apply converse_reachFrame r R cells A code (n + 1) _ told
         intro k hk req _
         have lower := ih k hk
-        exact perform_reachFrame hr (callFn k) (construct k) code (lower.call cells)
-          (fun f vs hf ha => lower.construct cells f f vs hf hf ha) req
+        exact
+          perform_reachFrame hr (callFn k) (construct k) code (lower.call cells)
+            (fun f vs hf ha => lower.construct cells f f vs hf hf ha) req
 
 end CoreJS

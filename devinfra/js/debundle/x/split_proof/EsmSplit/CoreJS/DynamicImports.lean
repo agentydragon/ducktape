@@ -26,18 +26,25 @@ structure Boundary where
 /-- Discover the direct static dependencies to collect for one external JavaScript file, using
 the validation the complete boundary check applies to each transitive script. -/
 def requests (name : String) (ast : Json) (resource : Resource) : Except String (Array Import) := do
-  unless (← ast.getObjValAs? String "sourceText") == resource.source do throw "parsed source differs from resource"
+  unless (← ast.getObjValAs? String "sourceText") == resource.source do
+    throw "parsed source differs from resource"
   let mut imports := #[]
   for node in ← ESTreeUnits.checkedNodes ast resource.source do
-    if let some why := Lower.outsideModel false node then throw why
+    if let some why := Lower.outsideModel false node then
+      throw why
     for use in ← ModuleLocation.uses name node do
-      if let .dynamicImport .. := use then throw "nested dynamic import"
+      if let .dynamicImport .. := use then
+        throw "nested dynamic import"
     match Lower.typ node with
-    | "ImportDeclaration" => imports := imports.push (← ModuleInput.importDecl name node)
-    | "ExportAllDeclaration" => throw "unsupported re-export from another module"
+    | "ImportDeclaration" =>
+      imports := imports.push (← ModuleInput.importDecl name node)
+    | "ExportAllDeclaration" =>
+      throw "unsupported re-export from another module"
     | "ExportNamedDeclaration" =>
-      unless (← node.getObjVal? "source") == .null do throw "unsupported re-export from another module"
-    | _ => pure ()
+      unless (← node.getObjVal? "source") == .null do
+        throw "unsupported re-export from another module"
+    | _ =>
+      pure ()
   return imports
 
 /-- Traverse one literal relative import target from the location check. Stop at a linked module,
@@ -47,12 +54,15 @@ promise behavior remain deployment correspondence obligations. -/
 def check (target : String) (linked : List String) (parsed : Json)
     (before after : String → Option Resource) : Except String Boundary := do
   EsmSplit.validateModulePaths (target :: linked)
-  if linked.contains target then throw s!"dynamic import directly requests a linked namespace: {target}"
+  if linked.contains target then
+    throw s!"dynamic import directly requests a linked namespace: {target}"
   let files ← parsed.getObj?
   let rec visit (fuel : Nat) (name : String) (b : Boundary) : Except String Boundary := do
-    if b.scripts.contains name then return b
+    if b.scripts.contains name then
+      return b
     match fuel with
-    | 0 => throw "static dependency traversal exhausted its input files"
+    | 0 =>
+      throw "static dependency traversal exhausted its input files"
     | k + 1 =>
       let some ast := files.get? name | throw s!"missing parsed dynamic dependency {name}"
       let some resource := before name | throw s!"missing original dynamic dependency {name}"
@@ -64,7 +74,8 @@ def check (target : String) (linked : List String) (parsed : Json)
         if linked.contains req.source then
           let edge : LinkedRequest := ⟨name, req.source, req.names.map Prod.fst⟩
           b := { b with requests := edge :: b.requests }
-        else b ← visit k req.source b
+        else
+          b ← visit k req.source b
       return b
   let b ← visit (files.size + 1) target {}
   return ⟨b.scripts.reverse, b.requests.reverse⟩

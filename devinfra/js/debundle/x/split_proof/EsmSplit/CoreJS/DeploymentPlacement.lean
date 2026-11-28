@@ -3,7 +3,8 @@ import EsmSplit.ModulePath
 
 namespace CoreJS
 
-abbrev UnitPlacement := Nat × String
+abbrev UnitPlacement :=
+  Nat × String
 
 def Module.unitPlacements (m : Module) : List UnitPlacement :=
   m.body.map fun (id, _) => (id, m.name)
@@ -18,8 +19,8 @@ the decoded output has exactly the assigned unit IDs and file paths. Import
 and export declarations are checked by the decoder and linker. -/
 def Places (assignment : List UnitPlacement) (before after : Program) : Prop :=
   (assignment.map Prod.fst).Nodup ∧
-  (before.fileUnitPlacements.map Prod.fst).Perm (assignment.map Prod.fst) ∧
-  after.fileUnitPlacements.Perm assignment
+    (before.fileUnitPlacements.map Prod.fst).Perm (assignment.map Prod.fst) ∧
+    after.fileUnitPlacements.Perm assignment
 
 private def checkIncreasing : (ids : List Nat) → Except String (PLift (ids.Pairwise (· < ·)))
   | [] => pure ⟨.nil⟩
@@ -27,11 +28,12 @@ private def checkIncreasing : (ids : List Nat) → Except String (PLift (ids.Pai
   | first :: second :: rest => do
     if order : first < second then
       let ⟨tail⟩ ← checkIncreasing (second :: rest)
-      return ⟨List.pairwise_cons.mpr ⟨by
-        intro id member
-        rcases List.mem_cons.mp member with rfl | later
-        · exact order
-        · exact Nat.lt_trans order ((List.pairwise_cons.mp tail).1 id later), tail⟩⟩
+      return ⟨List.pairwise_cons.mpr
+            ⟨by
+              intro id member
+              rcases List.mem_cons.mp member with rfl | later
+              · exact order
+              · exact Nat.lt_trans order ((List.pairwise_cons.mp tail).1 id later), tail⟩⟩
     else
       throw s!"duplicate placement for unit {first}"
 
@@ -51,13 +53,13 @@ def checkPlaces (assignment : List UnitPlacement) (before after : Program) :
       have planPerm : planned.Perm assignment := List.mergeSort_perm _ _
       have idPerm : ids.Perm (assignment.map Prod.fst) := planPerm.map Prod.fst
       return ⟨by
-        refine ⟨idPerm.nodup_iff.mp (unique.imp (fun h => Nat.ne_of_lt h)), ?_, ?_⟩
-        · refine (List.mergeSort_perm sourceIds byOrdinal).symm.trans ?_
-          rw [sourceOk]
-          exact idPerm
-        · refine (List.mergeSort_perm observed byUnit).symm.trans ?_
-          rw [outputOk]
-          exact planPerm⟩
+          refine ⟨idPerm.nodup_iff.mp (unique.imp (fun h => Nat.ne_of_lt h)), ?_, ?_⟩
+          · refine (List.mergeSort_perm sourceIds byOrdinal).symm.trans ?_
+            rw [sourceOk]
+            exact idPerm
+          · refine (List.mergeSort_perm observed byUnit).symm.trans ?_
+            rw [outputOk]
+            exact planPerm⟩
     else
       throw "decoded output units differ from the planned placement"
   else

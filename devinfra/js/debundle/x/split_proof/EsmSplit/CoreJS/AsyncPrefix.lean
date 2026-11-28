@@ -15,7 +15,8 @@ variable {W : World}
 def pendingObject (prototype : Addr) : Obj :=
   { proto := some prototype, props := [], promise := some .pending }
 
-def allocate (prototype : Addr) : M W Addr := alloc (pendingObject prototype)
+def allocate (prototype : Addr) : M W Addr :=
+  alloc (pendingObject prototype)
 
 /-- Internal settlement operates only on a fresh pending promise from this
 boundary. It never changes the object's ordinary properties or prototype. -/
@@ -25,7 +26,8 @@ def settle (promise : Addr) (result : PromiseSlot) : M W Val := do
   | some .pending, .fulfilled _ | some .pending, .rejected _ =>
     modifyObj promise fun o => { o with promise := some result }
     pure (.obj promise)
-  | _, _ => unknown "model: expected a pending promise and a settlement"
+  | _, _ =>
+    unknown "model: expected a pending promise and a settlement"
 
 /-- An object-like resolution would read its `then` property and may schedule a
 job. Rejection stores the thrown value without inspecting it. -/
@@ -55,15 +57,19 @@ def invoke (prototype : Addr) (body : Nat → M W Val) : Nat → M W Val
   | 0 => outOfFuel
   | n + 1 => invokeBody prototype (body n)
 
-@[simp] theorem invoke_zero (prototype : Addr) (body : Nat → M W Val) (s : State W) :
-    invoke prototype body 0 s = .fuel := rfl
+@[simp]
+theorem invoke_zero (prototype : Addr) (body : Nat → M W Val) (s : State W) :
+    invoke prototype body 0 s = .fuel :=
+  rfl
 
 private theorem bindResult {α β : Type} (m : M W α) (next : α → M W β) (s : State W) :
-    (m >>= next) s = match m s with
+    (m >>= next) s =
+      match m s with
       | .ok value t => next value t
       | .throw e t => .throw e t
       | .unknown why t => .unknown why t
-      | .fuel => .fuel := rfl
+      | .fuel => .fuel :=
+  rfl
 
 theorem invoke_after_allocate {prototype promise : Addr} {body : Nat → M W Val} {n : Nat}
     {s allocated : State W} (fresh : allocate prototype s = .ok promise allocated) :

@@ -15,15 +15,16 @@ variable {W : World}
 /-- Class creation only installs instance methods or accessors with literal keys. -/
 def literalInstanceMembers : List ClassMember → Bool
   | [] => true
-  | .method false (.str _) _ :: rest | .getter false (.str _) _ :: rest
-  | .setter false (.str _) _ :: rest => literalInstanceMembers rest
+  | .method false (.str _) _ :: rest | .getter false (.str _) _ :: rest |
+    .setter false (.str _) _ :: rest => literalInstanceMembers rest
   | _ :: _ => false
 
-theorem literalInstanceMembers_plain {ms : List ClassMember} (h : literalInstanceMembers ms = true) :
-    plainClassMembers ms = true := by
+theorem literalInstanceMembers_plain {ms : List ClassMember}
+    (h : literalInstanceMembers ms = true) : plainClassMembers ms = true := by
   induction ms with
   | nil => rfl
-  | cons m ms ih =>
+  | cons m ms
+    ih =>
     cases m <;> try simp only [literalInstanceMembers, Bool.false_eq_true] at h
     all_goals
       rename_i static k f
@@ -50,8 +51,9 @@ theorem modifyObj_self {s t : State W} {f : Obj → Obj} {a : Addr} {o : Obj}
     have hi : objs[a.index]? = some o := by simpa [hh] using ho
     simp [Array.getElem?_modify, hi]
 
-private theorem defineOwn_preserves_other {s t : State W} {a c : Addr} {key : PropertyKey} {desc : Desc}
-    (hne : c ≠ a) (h : defineOwn a key desc s = .ok () t) : t.objAt c = s.objAt c := by
+private theorem defineOwn_preserves_other {s t : State W} {a c : Addr} {key : PropertyKey}
+    {desc : Desc} (hne : c ≠ a) (h : defineOwn a key desc s = .ok () t) :
+    t.objAt c = s.objAt c := by
   unfold defineOwn at h
   obtain ⟨o, s1, ho, hrest⟩ := bind_ok h
   have hs1 := (inert_getObj a).ok ho
@@ -77,7 +79,8 @@ private theorem evalMembers_instance_preserves_ctor (n : Nat) (env : Env) (proto
   | zero => cases h
   | succ n ih =>
     cases ms with
-    | nil => cases h; exact ho
+    | nil =>
+      cases h; exact ho
     | cons m ms =>
       cases m <;> try simp only [literalInstanceMembers, Bool.false_eq_true] at hm
       all_goals
@@ -104,12 +107,17 @@ private theorem evalMembers_instance_preserves_ctor (n : Nat) (env : Env) (proto
         cases hresult
         exact ih ms hm (hother.trans (hfunc.objs ctor o ho)) hrest
 
-private theorem evalExpr_plainClass_origin {n : Nat} {env : Env} {name : Name}
-    {ctor : Func} {ms : List ClassMember} (hm : literalInstanceMembers ms = true)
-    {s t : State W} {v : Val} (h : evalExpr n env (.cls name false ctor ms) s = .ok v t) :
-    ∃ a p o, v = .obj a ∧ a.region = s.region ∧ t.objAt a = some o ∧
-      o.code = some (.closure ctor ({ env with home := some p }.capture (ctor.free ++ freeMembers ms)) []) ∧
-      o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
+private theorem evalExpr_plainClass_origin {n : Nat} {env : Env} {name : Name} {ctor : Func}
+    {ms : List ClassMember} (hm : literalInstanceMembers ms = true) {s t : State W} {v : Val}
+    (h : evalExpr n env (.cls name false ctor ms) s = .ok v t) :
+    ∃ a p o,
+      v = .obj a ∧
+        a.region = s.region ∧
+        t.objAt a = some o ∧
+        o.code =
+          some
+            (.closure ctor ({ env with home := some p }.capture (ctor.free ++ freeMembers ms)) []) ∧
+        o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
   cases n with
   | zero => cases h
   | succ n =>
@@ -129,17 +137,20 @@ private theorem evalExpr_plainClass_origin {n : Nat} {env : Env} {name : Name}
       cases hback
       exact objAt_modify _ _ _ _ hne
     obtain ⟨keys, s4, hmRun, hfinish⟩ := bind_ok hmembers
-    have hcObj' := evalMembers_instance_preserves_ctor n env proto c hne ms hm (hsame.trans hcObj) hmRun
+    have hcObj' :=
+      evalMembers_instance_preserves_ctor n env proto c hne ms hm (hsame.trans hcObj) hmRun
     rw [plainClassMembers_fieldInits (literalInstanceMembers_plain hm)] at hfinish
     have hz : keys.zip ([] : List Expr) = [] := by cases keys <;> rfl
     rw [hz] at hfinish
-    simp only [List.filterMap_nil, staticInitializers_plain (literalInstanceMembers_plain hm)] at hfinish
+    simp only [List.filterMap_nil,
+      staticInitializers_plain (literalInstanceMembers_plain hm)] at hfinish
     obtain ⟨_, s5, hu, hinit⟩ := bind_ok hfinish
     have hfound := modifyObj_self hcObj' hu
     obtain ⟨_, s6, hi, hfields⟩ := bind_ok hinit
     cases hi
     obtain ⟨_, s7, he, hresult⟩ := bind_ok hfields
-    have hs : s7 = s5 := by cases he; rfl
+    have hs : s7 = s5 := by
+      cases he; rfl
     subst s7
     cases hresult
     exact ⟨c, proto, _, rfl, (alloc_region hc).trans (alloc_ok hp).2.region, hfound, rfl, rfl⟩
@@ -149,15 +160,22 @@ theorem writeVar_origin {env : Env} {x : Name} {v : Val} {s t : State W}
     ∃ c, env.vars.lookup x = some c ∧ t.cellAt c = some ⟨some v, true⟩ ∧ t.heap = s.heap := by
   unfold writeVar at h
   cases hx : env.vars.lookup x with
-  | none => rw [hx] at h; cases h
+  | none =>
+    rw [hx] at h; cases h
   | some c =>
     rw [hx] at h
-    change (match s.cellAt c with
-      | some { value := some _, mutable := true } => setCell c v
-      | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
-      | _ => throwErr .reference s!"cannot access '{x}' before initialization" : M W Unit) s = .ok () t at h
+    change
+      (match s.cellAt c with
+            | some { value := some _, mutable := true } => setCell c v
+            | some { value := some _, mutable := false } =>
+              throwErr .type "assignment to constant variable"
+            | _ => throwErr .reference s!"cannot access '{x}' before initialization" :
+            M W Unit)
+          s =
+        .ok () t at h
     cases hb : s.cellAt c with
-    | none => rw [hb] at h; cases h
+    | none =>
+      rw [hb] at h; cases h
     | some b =>
       rcases b with ⟨_ | _, _ | _⟩ <;> rw [hb] at h <;> cases h
       refine ⟨c, rfl, ?_, rfl⟩
@@ -165,13 +183,20 @@ theorem writeVar_origin {env : Env} {x : Name} {v : Val} {s t : State W}
       simp [State.cellAt_assign_self, hb]
 
 /-- A successful plain class declaration establishes the binding and constructor needed for a heritage read. -/
-theorem plainClassVar_origin {n id : Nat} {env : Env} {x name : Name} {ctor : Func} {ms : List ClassMember}
-    (hm : literalInstanceMembers ms = true) (hhome : ∀ c, env.vars.lookup x = some c → c.region = id + 1)
-    {s t : State W} {flow : Flow} (h : runUnit n env id (.decl .var x (.cls name false ctor ms)) s = .ok flow t) :
-    ∃ cell a p o, env.vars.lookup x = some cell ∧ cell.region = id + 1 ∧
-      t.cellAt cell = some ⟨some (.obj a), true⟩ ∧ a.region = id + 1 ∧ t.objAt a = some o ∧
-      o.code = some (.closure ctor ({ env with home := some p }.capture (ctor.free ++ freeMembers ms)) []) ∧
-      o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
+theorem plainClassVar_origin {n id : Nat} {env : Env} {x name : Name} {ctor : Func}
+    {ms : List ClassMember} (hm : literalInstanceMembers ms = true)
+    (hhome : ∀ c, env.vars.lookup x = some c → c.region = id + 1) {s t : State W} {flow : Flow}
+    (h : runUnit n env id (.decl .var x (.cls name false ctor ms)) s = .ok flow t) :
+    ∃ cell a p o,
+      env.vars.lookup x = some cell ∧
+        cell.region = id + 1 ∧
+        t.cellAt cell = some ⟨some (.obj a), true⟩ ∧
+        a.region = id + 1 ∧
+        t.objAt a = some o ∧
+        o.code =
+          some
+            (.closure ctor ({ env with home := some p }.capture (ctor.free ++ freeMembers ms)) []) ∧
+        o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
   obtain ⟨u, hexec, rfl⟩ := runUnit_ok h
   cases n with
   | zero => cases hexec
@@ -182,6 +207,7 @@ theorem plainClassVar_origin {n id : Nat} {env : Env} {x name : Name} {ctor : Fu
     cases hresult
     obtain ⟨a, p, o, rfl, hr, ho, hcode, hp⟩ := evalExpr_plainClass_origin hm hc
     obtain ⟨cell, hl, hcell, hheap⟩ := writeVar_origin hw
-    exact ⟨cell, a, p, o, hl, hhome _ hl, hcell, hr, by simpa [State.objAt, hheap] using ho, hcode, hp⟩
+    exact
+      ⟨cell, a, p, o, hl, hhome _ hl, hcell, hr, by simpa [State.objAt, hheap] using ho, hcode, hp⟩
 
 end CoreJS

@@ -25,15 +25,15 @@ theorem CellsAgree.symm {cells : Addr → Prop} {s t : State W} (h : CellsAgree 
 theorem CellsAgree.mono {cells cells' : Addr → Prop} {s t : State W} (h : CellsAgree cells s t)
     (hs : ∀ a, cells' a → cells a) : CellsAgree cells' s t := fun a ha => h a (hs a ha)
 
-theorem CellsAgree.assign {cells : Addr → Prop} {s t : State W} (h : CellsAgree cells s t) (a : Addr) (v : Val) :
-    CellsAgree cells (s.assign a v) (t.assign a v) := by
+theorem CellsAgree.assign {cells : Addr → Prop} {s t : State W} (h : CellsAgree cells s t)
+    (a : Addr) (v : Val) : CellsAgree cells (s.assign a v) (t.assign a v) := by
   intro c hc
   by_cases he : c = a
   · subst c; rw [State.cellAt_assign_self, State.cellAt_assign_self, h a hc]
   · rw [State.cellAt_assign_other _ _ _ _ he, State.cellAt_assign_other _ _ _ _ he, h c hc]
 
-private theorem array_modify_comm {γ : Type} (xs : Array γ) {i j : Nat} (f g : γ → γ) (hne : i ≠ j) :
-    (xs.modify i f).modify j g = (xs.modify j g).modify i f := by
+private theorem array_modify_comm {γ : Type} (xs : Array γ) {i j : Nat} (f g : γ → γ)
+    (hne : i ≠ j) : (xs.modify i f).modify j g = (xs.modify j g).modify i f := by
   apply Array.ext_getElem?
   intro k
   by_cases hi : i = k <;> by_cases hj : j = k <;> simp_all [Array.getElem?_modify]
@@ -52,42 +52,56 @@ theorem State.assign_comm (s : State W) (a b : Addr) (v w : Val) (hne : a ≠ b)
   by_cases hr : a.region = b.region
   · have hi : a.index ≠ b.index := by
       intro he
-      exact hne (by cases a; cases b; simp_all)
+      exact
+        hne
+          (by
+            cases a; cases b; simp_all)
     simp only [hr, array_modify_same]
     congr 1
     funext bs
     exact array_modify_comm bs _ _ hi
   · exact array_modify_comm s.cells _ _ hr
 
-abbrev CellPatch := List (Addr × Val)
+abbrev CellPatch :=
+  List (Addr × Val)
 
 def CellPatch.apply (patch : CellPatch) (s : State W) : State W :=
   patch.foldl (fun t p => t.assign p.1 p.2) s
 
-def CellPatch.Supported (patch : CellPatch) (wr : Addr → Prop) : Prop := ∀ p ∈ patch, wr p.1
+def CellPatch.Supported (patch : CellPatch) (wr : Addr → Prop) : Prop :=
+  ∀ p ∈ patch, wr p.1
 
-@[simp] theorem CellPatch.apply_nil (s : State W) : CellPatch.apply [] s = s := rfl
+@[simp]
+theorem CellPatch.apply_nil (s : State W) : CellPatch.apply [] s = s :=
+  rfl
 
-@[simp] theorem CellPatch.apply_cons (p : Addr × Val) (ps : CellPatch) (s : State W) :
-    CellPatch.apply (p :: ps) s = ps.apply (s.assign p.1 p.2) := rfl
+@[simp]
+theorem CellPatch.apply_cons (p : Addr × Val) (ps : CellPatch) (s : State W) :
+    CellPatch.apply (p :: ps) s = ps.apply (s.assign p.1 p.2) :=
+  rfl
 
-@[simp] theorem CellPatch.apply_append (ps qs : CellPatch) (s : State W) :
-    (ps ++ qs).apply s = qs.apply (ps.apply s) := List.foldl_append
+@[simp]
+theorem CellPatch.apply_append (ps qs : CellPatch) (s : State W) :
+    (ps ++ qs).apply s = qs.apply (ps.apply s) :=
+  List.foldl_append
 
-theorem CellPatch.agree (ps : CellPatch) {cells : Addr → Prop} {s t : State W} (h : CellsAgree cells s t) :
-    CellsAgree cells (ps.apply s) (ps.apply t) := by
+theorem CellPatch.agree (ps : CellPatch) {cells : Addr → Prop} {s t : State W}
+    (h : CellsAgree cells s t) : CellsAgree cells (ps.apply s) (ps.apply t) := by
   induction ps generalizing s t with
   | nil => exact h
   | cons p ps ih => exact ih (h.assign p.1 p.2)
 
 theorem CellPatch.agree_outside {ps : CellPatch} {wr cells : Addr → Prop} (hp : ps.Supported wr)
-    (hd : ∀ a, wr a → ¬ cells a) (s : State W) : CellsAgree cells (ps.apply s) s := by
+    (hd : ∀ a, wr a → ¬cells a) (s : State W) : CellsAgree cells (ps.apply s) s := by
   induction ps generalizing s with
   | nil => exact .refl _ _
-  | cons p ps ih =>
+  | cons p ps
+    ih =>
     have ht := ih (fun q hq => hp q (List.mem_cons_of_mem _ hq)) (s.assign p.1 p.2)
     intro a ha
-    exact (ht a ha).trans (State.cellAt_assign_other _ _ _ _ (fun he => hd p.1 (hp p (by simp)) (he ▸ ha)))
+    exact
+      (ht a ha).trans
+        (State.cellAt_assign_other _ _ _ _ (fun he => hd p.1 (hp p (by simp)) (he ▸ ha)))
 
 private theorem CellPatch.apply_assign {ps : CellPatch} (s : State W) (a : Addr) (v : Val)
     (hd : ∀ p ∈ ps, p.1 ≠ a) : ps.apply (s.assign a v) = (ps.apply s).assign a v := by
@@ -107,49 +121,61 @@ theorem CellPatch.apply_comm {ps qs : CellPatch} (s : State W)
     rw [← ps.apply_assign s q.1 q.2 (fun p hp => hd p hp q (by simp))]
     exact ih _ (fun p hp q hq => hd p hp q (List.mem_cons_of_mem _ hq))
 
-@[simp] theorem CellPatch.apply_region (ps : CellPatch) (s : State W) : (ps.apply s).region = s.region := by
+@[simp]
+theorem CellPatch.apply_region (ps : CellPatch) (s : State W) : (ps.apply s).region = s.region := by
   induction ps generalizing s with
   | nil => rfl
   | cons p ps ih => exact ih _
 
-@[simp] theorem CellPatch.apply_heap (ps : CellPatch) (s : State W) : (ps.apply s).heap = s.heap := by
+@[simp]
+theorem CellPatch.apply_heap (ps : CellPatch) (s : State W) : (ps.apply s).heap = s.heap := by
   induction ps generalizing s with
   | nil => rfl
   | cons p ps ih => exact ih _
 
-@[simp] theorem CellPatch.apply_world (ps : CellPatch) (s : State W) : (ps.apply s).world = s.world := by
+@[simp]
+theorem CellPatch.apply_world (ps : CellPatch) (s : State W) : (ps.apply s).world = s.world := by
   induction ps generalizing s with
   | nil => rfl
   | cons p ps ih => exact ih _
 
-@[simp] theorem CellPatch.apply_out (ps : CellPatch) (s : State W) : (ps.apply s).out = s.out := by
+@[simp]
+theorem CellPatch.apply_out (ps : CellPatch) (s : State W) : (ps.apply s).out = s.out := by
   induction ps generalizing s with
   | nil => rfl
   | cons p ps ih => exact ih _
 
-@[simp] theorem CellPatch.apply_setRegion (ps : CellPatch) (s : State W) (r : Nat) :
+@[simp]
+theorem CellPatch.apply_setRegion (ps : CellPatch) (s : State W) (r : Nat) :
     ps.apply { s with region := r } = { ps.apply s with region := r } := by
   induction ps generalizing s with
   | nil => rfl
-  | cons p ps ih =>
-    change CellPatch.apply ps (({ s with region := r }).assign p.1 p.2) =
-      { CellPatch.apply ps (s.assign p.1 p.2) with region := r }
+  | cons p ps
+    ih =>
+    change
+      CellPatch.apply ps (({ s with region := r }).assign p.1 p.2) =
+        { CellPatch.apply ps (s.assign p.1 p.2) with region := r }
     simpa only [State.assign] using ih (s.assign p.1 p.2)
 
 /-- The supported patch and returned value replay on any state agreeing on the read/write binding records.
 No claim is made about an execution which throws, is unknown, or exhausts fuel. -/
 structure CellFootprint (rd wr : Addr → Prop) (m : M W α) : Prop where
-  replay : ∀ s a s', m s = .ok a s' → ∃ patch : CellPatch,
-    patch.Supported wr ∧ s' = patch.apply s ∧
-    ∀ t, CellsAgree (fun c => rd c ∨ wr c) s t → m t = .ok a (patch.apply t)
+  replay :
+    ∀ s a s',
+      m s = .ok a s' →
+        ∃ patch : CellPatch,
+          patch.Supported wr ∧
+            s' = patch.apply s ∧
+            ∀ t, CellsAgree (fun c => rd c ∨ wr c) s t → m t = .ok a (patch.apply t)
 
 theorem CellFootprint.mono {rd wr rd' wr' : Addr → Prop} {m : M W α} (h : CellFootprint rd wr m)
     (hr : ∀ a, rd a → rd' a) (hw : ∀ a, wr a → wr' a) : CellFootprint rd' wr' m := by
   constructor
   intro s a s' hm
   obtain ⟨p, hp, hs, ht⟩ := h.replay s a s' hm
-  exact ⟨p, fun q hq => hw q.1 (hp q hq), hs, fun t h => ht t (h.mono fun c hc => hc.elim
-    (fun h => Or.inl (hr c h)) (fun h => Or.inr (hw c h)))⟩
+  exact
+    ⟨p, fun q hq => hw q.1 (hp q hq), hs, fun t h =>
+      ht t (h.mono fun c hc => hc.elim (fun h => Or.inl (hr c h)) (fun h => Or.inr (hw c h)))⟩
 
 /-- Sequential composition takes the union of each footprint. -/
 theorem CellFootprint.bind {rd wr rd' wr' : Addr → Prop} {m : M W α} {f : α → M W β}
@@ -165,20 +191,24 @@ theorem CellFootprint.bind {rd wr rd' wr' : Addr → Prop} {m : M W α} {f : α 
     exact (List.mem_append.1 hx).elim (fun h => Or.inl (hp x h)) (fun h => Or.inr (hq x h))
   · rw [CellPatch.apply_append, ← hu]; exact hs
   · intro t ht
-    have hp' := hpt t (ht.mono fun c h => h.elim (fun h => Or.inl (Or.inl h)) (fun h => Or.inr (Or.inl h)))
+    have hp' :=
+      hpt t (ht.mono fun c h => h.elim (fun h => Or.inl (Or.inl h)) (fun h => Or.inr (Or.inl h)))
     rw [bind_of_ok hp', CellPatch.apply_append]
     apply hqt
     rw [hu]
-    exact p.agree (ht.mono fun c h => h.elim (fun h => Or.inl (Or.inr h)) (fun h => Or.inr (Or.inr h)))
+    exact
+      p.agree (ht.mono fun c h => h.elim (fun h => Or.inl (Or.inr h)) (fun h => Or.inr (Or.inr h)))
 
 /-- A fixed result neither reads nor writes a binding. -/
-theorem cellFootprint_pure (a : α) : CellFootprint (fun _ => False) (fun _ => False) (pure a : M W α) := by
+theorem cellFootprint_pure (a : α) :
+    CellFootprint (fun _ => False) (fun _ => False) (pure a : M W α) := by
   constructor
   intro s b s' h
   cases h
   exact ⟨[], by simp [CellPatch.Supported], rfl, fun _ _ => rfl⟩
 
-theorem cellFootprint_outOfFuel : CellFootprint (fun _ => False) (fun _ => False) (outOfFuel : M W α) := by
+theorem cellFootprint_outOfFuel :
+    CellFootprint (fun _ => False) (fun _ => False) (outOfFuel : M W α) := by
   constructor
   intro s a s' h
   cases h
@@ -224,27 +254,42 @@ theorem cellFootprint_setCell (a : Addr) (v : Val) :
   exact ⟨[(a, v)], by simp [CellPatch.Supported], rfl, fun _ _ => rfl⟩
 
 private theorem cellFootprint_readInitialized (a : Addr) (tdz : String) :
-    CellFootprint (fun c => c = a) (fun _ => False) (show M W Val from do
-      match (← getState).cellAt a with
-      | some { value := some v, .. } => pure v
-      | _ => throwErr .reference tdz) := by
-  have h := cellFootprint_inspect (W := W) a (fun b => match b with
-    | some { value := some v, .. } => pure v
-    | _ => throwErr .reference tdz) (rd := fun _ => False) (wr := fun _ => False) (by
-      intro b
-      cases b with
-      | none => exact cellFootprint_throwErr _ _
-      | some b =>
-        rcases b with ⟨value, mutable⟩
-        cases value <;> first | exact cellFootprint_throwErr _ _ | exact cellFootprint_pure _)
+    CellFootprint (fun c => c = a) (fun _ => False)
+      (show M W Val from do
+        match (← getState).cellAt a with
+        | some { value := some v, .. } =>
+          pure v
+        | _ =>
+          throwErr .reference tdz) := by
+  have h :=
+    cellFootprint_inspect (W := W) a
+      (fun b =>
+        match b with
+        | some { value := some v, .. } => pure v
+        | _ => throwErr .reference tdz)
+      (rd := fun _ => False) (wr := fun _ => False)
+      (by
+        intro b
+        cases b with
+        | none => exact cellFootprint_throwErr _ _
+        | some b =>
+          rcases b with ⟨value, mutable⟩
+          cases value <;>
+            first
+            | exact cellFootprint_throwErr _ _
+            | exact cellFootprint_pure _)
   exact h.mono (fun _ h => h.elim id False.elim) (fun _ h => h)
 
 private theorem cellFootprint_writeInitialized (a : Addr) (v : Val) (tdz : String) :
-    CellFootprint (fun _ => False) (fun c => c = a) (show M W Unit from do
-      match (← getState).cellAt a with
-      | some { value := some _, mutable := true } => setCell a v
-      | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
-      | _ => throwErr .reference tdz) := by
+    CellFootprint (fun _ => False) (fun c => c = a)
+      (show M W Unit from do
+        match (← getState).cellAt a with
+        | some { value := some _, mutable := true } =>
+          setCell a v
+        | some { value := some _, mutable := false } =>
+          throwErr .type "assignment to constant variable"
+        | _ =>
+          throwErr .reference tdz) := by
   constructor
   intro s b s' h
   simp only [M.bind_apply, getState] at h
@@ -261,7 +306,8 @@ private theorem cellFootprint_writeInitialized (a : Addr) (v : Val) (tdz : Strin
         simp only [hc] at h
         obtain ⟨p, hp, hs, ht⟩ := (cellFootprint_setCell (W := W) a v).replay s b s' h
         refine ⟨p, hp, hs, fun t ha => ?_⟩
-        have hc' : t.cellAt a = some { value := some old, mutable := true } := (ha a (Or.inr rfl)).symm.trans hc
+        have hc' : t.cellAt a = some { value := some old, mutable := true } :=
+          (ha a (Or.inr rfl)).symm.trans hc
         simp only [M.bind_apply, getState, hc']
         exact ht t ha
 
@@ -275,9 +321,12 @@ theorem cellFootprint_writeCell (a : Addr) (v : Val) :
 
 /-- Name lookup is fixed by the environment, independently of the runtime store. -/
 theorem cellFootprint_readVar (env : Env) (x : Name) :
-    CellFootprint (fun c => env.vars.lookup x = some c) (fun _ => False) (readVar env x : M W Val) := by
+    CellFootprint (fun c => env.vars.lookup x = some c) (fun _ => False)
+      (readVar env x : M W Val) := by
   cases hx : env.vars.lookup x with
-  | none => simpa only [readVar, hx, reduceCtorEq] using (cellFootprint_throwErr (W := W) .reference s!"{x} is not defined")
+  | none =>
+    simpa only [readVar, hx, reduceCtorEq] using
+      (cellFootprint_throwErr (W := W) .reference s!"{x} is not defined")
   | some a =>
     simp only [readVar, hx]
     exact
@@ -285,27 +334,36 @@ theorem cellFootprint_readVar (env : Env) (x : Name) :
         (rd' := fun c => some a = some c) (fun c hc => congrArg some hc.symm) (fun _ h => h)
 
 theorem cellFootprint_initVar (env : Env) (x : Name) (v : Val) :
-    CellFootprint (fun _ => False) (fun c => env.vars.lookup x = some c) (initVar env x v : M W Unit) := by
+    CellFootprint (fun _ => False) (fun c => env.vars.lookup x = some c)
+      (initVar env x v : M W Unit) := by
   cases hx : env.vars.lookup x with
-  | none => simpa only [initVar, hx, reduceCtorEq] using (cellFootprint_unknown (W := W) "model: a declaration outside its scope")
+  | none =>
+    simpa only [initVar, hx, reduceCtorEq] using
+      (cellFootprint_unknown (W := W) "model: a declaration outside its scope")
   | some a =>
-    simpa only [initVar, hx] using (cellFootprint_setCell (W := W) a v).mono (fun _ h => h)
-      (wr' := fun c => some a = some c) (fun c hc => by subst c; rfl)
+    simpa only [initVar, hx] using
+      (cellFootprint_setCell (W := W) a v).mono (fun _ h => h) (wr' := fun c => some a = some c)
+        (fun c hc => by
+          subst c; rfl)
 
 theorem cellFootprint_writeVar (env : Env) (x : Name) (v : Val) :
-    CellFootprint (fun _ => False) (fun c => env.vars.lookup x = some c) (writeVar env x v : M W Unit) := by
+    CellFootprint (fun _ => False) (fun c => env.vars.lookup x = some c)
+      (writeVar env x v : M W Unit) := by
   cases hx : env.vars.lookup x with
-  | none => simpa only [writeVar, hx, reduceCtorEq] using (cellFootprint_throwErr (W := W) .reference s!"{x} is not defined")
+  | none =>
+    simpa only [writeVar, hx, reduceCtorEq] using
+      (cellFootprint_throwErr (W := W) .reference s!"{x} is not defined")
   | some a =>
     simp only [writeVar, hx]
     exact
-      (cellFootprint_writeInitialized (W := W) a v s!"cannot access '{x}' before initialization").mono
+      (cellFootprint_writeInitialized (W := W) a v
+            s!"cannot access '{x}' before initialization").mono
         (wr' := fun c => some a = some c) (fun _ h => h) (fun c hc => congrArg some hc.symm)
 
 /-- The two computations cannot write a binding which the other reads or writes. -/
 theorem CellFootprint.commute {rd wr rd' wr' : Addr → Prop} {m : M W α} {n : M W β}
-    (hm : CellFootprint rd wr m) (hn : CellFootprint rd' wr' n)
-    (hab : ∀ c, wr c → ¬ (rd' c ∨ wr' c)) (hba : ∀ c, wr' c → ¬ (rd c ∨ wr c)) : Commute m n := by
+    (hm : CellFootprint rd wr m) (hn : CellFootprint rd' wr' n) (hab : ∀ c, wr c → ¬(rd' c ∨ wr' c))
+    (hba : ∀ c, wr' c → ¬(rd c ∨ wr c)) : Commute m n := by
   intro s u s' a b ha hb
   obtain ⟨p, hp, hu, ht⟩ := hm.replay s a u ha
   obtain ⟨q, hq, hs, hqt⟩ := hn.replay u b s' hb
@@ -330,9 +388,12 @@ theorem CellFootprint.preserves {rd wr : Addr → Prop} {m : M W α} (h : CellFo
 preserves an arbitrary input region. -/
 theorem CellFootprint.inRegion_replay {rd wr : Addr → Prop} {m : M W α} (h : CellFootprint rd wr m)
     (id : Nat) (s : State W) (a : α) (s' : State W) (hm : inRegion id m s = .ok a s') :
-    ∃ patch : CellPatch, patch.Supported wr ∧ s' = { patch.apply s with region := 0 } ∧
-      ∀ t, CellsAgree (fun c => rd c ∨ wr c) s t →
-        inRegion id m t = .ok a { patch.apply t with region := 0 } := by
+    ∃ patch : CellPatch,
+      patch.Supported wr ∧
+        s' = { patch.apply s with region := 0 } ∧
+        ∀ t,
+          CellsAgree (fun c => rd c ∨ wr c) s t →
+            inRegion id m t = .ok a { patch.apply t with region := 0 } := by
   rw [inRegion_result] at hm
   cases hrun : m { s with region := id + 1 } with
   | throw v u => simp [hrun] at hm
@@ -348,9 +409,8 @@ theorem CellFootprint.inRegion_replay {rd wr : Addr → Prop} {m : M W α} (h : 
 
 /-- The unit-region wrapper preserves disjoint-footprint commutation, including its reset to region zero. -/
 theorem CellFootprint.inRegion_commute {rd wr rd' wr' : Addr → Prop} {m : M W α} {n : M W β}
-    (hm : CellFootprint rd wr m) (hn : CellFootprint rd' wr' n)
-    (hab : ∀ c, wr c → ¬ (rd' c ∨ wr' c)) (hba : ∀ c, wr' c → ¬ (rd c ∨ wr c))
-    (i j : Nat) : Commute (inRegion i m) (inRegion j n) := by
+    (hm : CellFootprint rd wr m) (hn : CellFootprint rd' wr' n) (hab : ∀ c, wr c → ¬(rd' c ∨ wr' c))
+    (hba : ∀ c, wr' c → ¬(rd c ∨ wr c)) (i j : Nat) : Commute (inRegion i m) (inRegion j n) := by
   intro s u s' a b ha hb
   obtain ⟨p, hp, hu, ht⟩ := hm.inRegion_replay i s a u ha
   obtain ⟨q, hq, hs, hqt⟩ := hn.inRegion_replay j u b s' hb
@@ -360,10 +420,10 @@ theorem CellFootprint.inRegion_commute {rd wr rd' wr' : Addr → Prop} {m : M W 
     exact p.agree_outside hp hab s
   refine ⟨{ q.apply s with region := 0 }, hn', ?_⟩
   have hm' := ht { q.apply s with region := 0 } (q.agree_outside hq hba s).symm
-  have hpatch := CellPatch.apply_comm s (fun x hx y hy he => hab x.1 (hp x hx) (Or.inr (he ▸ hq y hy)))
+  have hpatch :=
+    CellPatch.apply_comm s (fun x hx y hy he => hab x.1 (hp x hx) (Or.inr (he ▸ hq y hy)))
   have hstate : s' = { p.apply { q.apply s with region := 0 } with region := 0 } := by
     rw [hs, hu, q.apply_setRegion (p.apply s) 0, p.apply_setRegion (q.apply s) 0, hpatch]
   exact hm'.trans (congrArg (Res.ok a) hstate.symm)
-
 
 end CoreJS

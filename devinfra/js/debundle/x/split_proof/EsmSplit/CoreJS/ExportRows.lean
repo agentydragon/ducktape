@@ -30,19 +30,20 @@ instance (source : Module) (B : EsmSplit.Bundle) : Decidable (LocalsDeclared sou
 
 /-- Source-name declaration coverage applies to every actual row alias,
 including repeated aliases of the same local and empty rows. -/
-theorem row_locals_declared {source : Module} {rows : List EsmSplit.LocalExportUnit} {B : EsmSplit.Bundle}
-    (sourceRows : SourceRows source rows) (declared : LocalsDeclared source B)
+theorem row_locals_declared {source : Module} {rows : List EsmSplit.LocalExportUnit}
+    {B : EsmSplit.Bundle} (sourceRows : SourceRows source rows) (declared : LocalsDeclared source B)
     {pair : Name × Name} (member : pair ∈ rows.flatMap (·.names)) :
     ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs := by
-  have inSource : pair ∈ source.exports := by rw [sourceRows.exports]; exact member
+  have inSource : pair ∈ source.exports := by
+    rw [sourceRows.exports]; exact member
   obtain ⟨id, inRange, localDecl⟩ := declared pair.2 (List.mem_map.mpr ⟨pair, inSource, rfl⟩)
   exact ⟨id, List.mem_range.1 inRange, localDecl⟩
 
 /-- The source-name check is exactly the existing per-row declaration check
 when the rows are the source publication; no new acceptance condition is
 introduced, even for empty rows or repeated public aliases. -/
-theorem locals_declared_iff {source : Module} {rows : List EsmSplit.LocalExportUnit} {B : EsmSplit.Bundle}
-    (sourceRows : SourceRows source rows) :
+theorem locals_declared_iff {source : Module} {rows : List EsmSplit.LocalExportUnit}
+    {B : EsmSplit.Bundle} (sourceRows : SourceRows source rows) :
     LocalsDeclared source B ↔
       ∀ pair ∈ rows.flatMap (·.names), ∃ id ∈ List.range B.length, pair.2 ∈ (B.stmt id).defs := by
   constructor
@@ -51,7 +52,8 @@ theorem locals_declared_iff {source : Module} {rows : List EsmSplit.LocalExportU
     exact ⟨id, List.mem_range.2 within, localDecl⟩
   · intro declared name member
     obtain ⟨pair, inSource, same⟩ := List.mem_map.1 member
-    have inRows : pair ∈ rows.flatMap (·.names) := by rw [← sourceRows.exports]; exact inSource
+    have inRows : pair ∈ rows.flatMap (·.names) := by
+      rw [← sourceRows.exports]; exact inSource
     subst name
     exact declared pair inRows
 
@@ -75,8 +77,8 @@ theorem rowAt_singleton (row : EsmSplit.LocalExportUnit) (id : Nat) :
     simp [rowAt, List.lookup_cons]
   · simp [rowAt, List.lookup_cons, beq_eq_false_iff_ne.mpr same, same]
 
-theorem singleton_absent (row : EsmSplit.LocalExportUnit) : ∀ ids : List Nat,
-    row.ordinal ∉ ids → ids.filterMap (rowAt [row]) = []
+theorem singleton_absent (row : EsmSplit.LocalExportUnit) :
+    ∀ ids : List Nat, row.ordinal ∉ ids → ids.filterMap (rowAt [row]) = []
   | [], _ => rfl
   | id :: rest, absent => by
     have different : id ≠ row.ordinal := fun eq => absent (by simp [eq])
@@ -84,8 +86,8 @@ theorem singleton_absent (row : EsmSplit.LocalExportUnit) : ∀ ids : List Nat,
     simp [rowAt_singleton, different, singleton_absent row rest tail]
 
 /-- Unique planned units select one explicitly owned row exactly once. -/
-theorem singleton_selection (row : EsmSplit.LocalExportUnit) : ∀ ids : List Nat,
-    ids.Nodup → row.ordinal ∈ ids → ids.filterMap (rowAt [row]) = [row]
+theorem singleton_selection (row : EsmSplit.LocalExportUnit) :
+    ∀ ids : List Nat, ids.Nodup → row.ordinal ∈ ids → ids.filterMap (rowAt [row]) = [row]
   | [], _, owned => by simp at owned
   | id :: rest, unique, owned => by
     by_cases same : id = row.ordinal
@@ -109,7 +111,8 @@ theorem singleton_matches {B : EsmSplit.Bundle} {owner : EsmSplit.Module}
   · simpa [UnitMatches, rowAt_singleton, same] using onlyRow id member same
 
 private theorem decode_encoded (names : List (Name × Name)) :
-    EsmSplit.localExports (names.map fun (publicName, localName) => (publicName, some localName)) = names := by
+    EsmSplit.localExports (names.map fun (publicName, localName) => (publicName, some localName)) =
+      names := by
   unfold EsmSplit.localExports
   simp only [List.filterMap_map]
   induction names with
@@ -120,9 +123,10 @@ private theorem decode_encoded (names : List (Name × Name)) :
 aliases, and multiplicity. This is a source/plan statement; it does not inspect
 or compare candidate export tables. -/
 theorem fold_entry_exports (B : EsmSplit.Bundle) (rows : List EsmSplit.LocalExportUnit) :
-    ∀ ids : List Nat, (∀ id ∈ ids, UnitMatches B rows id) →
-      EsmSplit.localExports (ids.flatMap fun id => (B.stmt id).exports) =
-        (ids.filterMap (rowAt rows)).flatMap (·.names)
+    ∀ ids : List Nat,
+      (∀ id ∈ ids, UnitMatches B rows id) →
+        EsmSplit.localExports (ids.flatMap fun id => (B.stmt id).exports) =
+          (ids.filterMap (rowAt rows)).flatMap (·.names)
   | [], _ => rfl
   | id :: rest, allMatches => by
     have head := allMatches id (by simp)
@@ -131,12 +135,10 @@ theorem fold_entry_exports (B : EsmSplit.Bundle) (rows : List EsmSplit.LocalExpo
     cases selected : rowAt rows id with
     | none =>
       simp only [UnitMatches, selected] at head
-      simp only [List.flatMap_cons, head, List.nil_append, List.filterMap_cons, selected,
-        ih]
+      simp only [List.flatMap_cons, head, List.nil_append, List.filterMap_cons, selected, ih]
     | some row =>
       simp only [UnitMatches, selected] at head
-      simp only [List.flatMap_cons, head.exports, List.filterMap_cons, selected,
-        List.flatMap_cons]
+      simp only [List.flatMap_cons, head.exports, List.filterMap_cons, selected, List.flatMap_cons]
       unfold EsmSplit.localExports at *
       rw [List.filterMap_append]
       have decoded := decode_encoded row.names
@@ -147,13 +149,11 @@ theorem fold_entry_exports (B : EsmSplit.Bundle) (rows : List EsmSplit.LocalExpo
 rows when the checked entry units select precisely those rows, other units are
 unpublished, and the planner produces no extra glue exports. -/
 theorem exact_entry_exports {B : EsmSplit.Bundle} {owner : EsmSplit.Module}
-    {rows : List EsmSplit.LocalExportUnit}
-    (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
-    (orderedRows : owner.stmts.filterMap (rowAt rows) = rows)
-    (noGlue : owner.exports = []) : owner.namedExports B = rows.flatMap (·.names) := by
+    {rows : List EsmSplit.LocalExportUnit} (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
+    (orderedRows : owner.stmts.filterMap (rowAt rows) = rows) (noGlue : owner.exports = []) :
+    owner.namedExports B = rows.flatMap (·.names) := by
   unfold EsmSplit.Module.namedExports EsmSplit.Module.namedExportsFrom EsmSplit.Module.publishedFrom
   simp only [noGlue, List.nil_append, EsmSplit.Bundle.toArray_getD]
   rw [fold_entry_exports B rows owner.stmts unitMatches, orderedRows]
-
 
 end CoreJS.ExportRows

@@ -13,8 +13,8 @@ constructor; metadata remains at its full-bundle ordinal. -/
 theorem indexed_module_dense (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
     (md : EsmSplit.Module) :
     moduleOfIndexed ((List.range ss.length).zip ss) B P md = moduleOf ss B P md := by
-  have same : indexedNumbered ((List.range ss.length).zip ss) =
-      (fun id => (ss[id]?).map (id, ·)) := by
+  have same :
+    indexedNumbered ((List.range ss.length).zip ss) = (fun id => (ss[id]?).map (id, ·)) := by
     funext id
     simp [indexedNumbered, lookup_zip_range]
   simp [moduleOfIndexed, moduleOf, same]
@@ -25,8 +25,9 @@ theorem indexed_program_dense (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSpl
   simp [splitProgramIndexed, splitProgram, indexed_module_dense]
 
 /-- A successful lookup identifies both the original row and its ordinal. -/
-theorem rowAt_some {rows : List EsmSplit.LocalExportUnit} {id : Nat} {row : EsmSplit.LocalExportUnit}
-    (found : rowAt rows id = some row) : row ∈ rows ∧ row.ordinal = id := by
+theorem rowAt_some {rows : List EsmSplit.LocalExportUnit} {id : Nat}
+    {row : EsmSplit.LocalExportUnit} (found : rowAt rows id = some row) :
+    row ∈ rows ∧ row.ordinal = id := by
   have member := lookup_mem found
   obtain ⟨other, inRows, same⟩ := List.mem_map.1 member
   cases same
@@ -36,10 +37,11 @@ theorem rowAt_some {rows : List EsmSplit.LocalExportUnit} {id : Nat} {row : EsmS
 its planner footprint is the one for its original ordinal. -/
 theorem selected_row {B : EsmSplit.Bundle} {owner : EsmSplit.Module}
     {rows : List EsmSplit.LocalExportUnit} (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
-    (orderedRows : owner.stmts.filterMap (rowAt rows) = rows)
-    {row : EsmSplit.LocalExportUnit} (member : row ∈ rows) :
+    (orderedRows : owner.stmts.filterMap (rowAt rows) = rows) {row : EsmSplit.LocalExportUnit}
+    (member : row ∈ rows) :
     row.ordinal ∈ owner.stmts ∧ row.FootprintMatches (B.stmt row.ordinal) := by
-  have selected : row ∈ owner.stmts.filterMap (rowAt rows) := by rw [orderedRows]; exact member
+  have selected : row ∈ owner.stmts.filterMap (rowAt rows) := by
+    rw [orderedRows]; exact member
   obtain ⟨id, owned, found⟩ := List.mem_filterMap.1 selected
   have same := (rowAt_some found).2
   subst id
@@ -52,75 +54,92 @@ original declaration's live address in the constructed owner. This applies
 to any row in a source list, independent of its position or other rows. -/
 theorem row_alias_live_cell {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {s s' : State W} {frames : List (Nat × List (Name × Addr))}
-    (allocated : declareTops body s = .ok frames s')
+    (footprints : IndexedExportCells.Footprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {s s' : State W}
+    {frames : List (Nat × List (Name × Addr))} (allocated : declareTops body s = .ok frames s')
     {source : Module} (sourceBody : source.body = body) {rows : List EsmSplit.LocalExportUnit}
     (sourceRows : SourceRows source rows) (sourceDeclared : LocalsDeclared source B)
-    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods)
-    {row : EsmSplit.LocalExportUnit} (rowIn : row ∈ rows) (owned : row.ordinal ∈ owner.stmts)
-    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
-    {publicName localName : Name} (pair : (publicName, localName) ∈ row.names) :
+    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) {row : EsmSplit.LocalExportUnit}
+    (rowIn : row ∈ rows) (owned : row.ordinal ∈ owner.stmts)
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal)) {publicName localName : Name}
+    (pair : (publicName, localName) ∈ row.names) :
     ∃ cells declarationOwner id a b,
-      (splitProgramIndexed body B P).imported frames (moduleOfIndexed body B P owner).imports = .ok cells ∧
-      S.claimants B row.ordinal = [owner.name] ∧
-      declarationOwner ∈ P.mods ∧ id ∈ declarationOwner.stmts ∧
-      S.claimants B id = [declarationOwner.name] ∧ localName ∈ (B.stmt id).defs ∧
-      (publicName, localName) ∈ (moduleOfIndexed body B P owner).exports ∧
-      (source.scope frames).lookup localName = some a ∧
-      ((moduleOfIndexed body B P owner).scope frames ++ cells).lookup localName = some a ∧
-      s'.cellAt a = some b := by
+      (splitProgramIndexed body B P).imported frames (moduleOfIndexed body B P owner).imports =
+          .ok cells ∧
+        S.claimants B row.ordinal = [owner.name] ∧
+        declarationOwner ∈ P.mods ∧
+        id ∈ declarationOwner.stmts ∧
+        S.claimants B id = [declarationOwner.name] ∧
+        localName ∈ (B.stmt id).defs ∧
+        (publicName, localName) ∈ (moduleOfIndexed body B P owner).exports ∧
+        (source.scope frames).lookup localName = some a ∧
+        ((moduleOfIndexed body B P owner).scope frames ++ cells).lookup localName = some a ∧
+        s'.cellAt a = some b := by
   have member : (publicName, localName) ∈ rows.flatMap (·.names) :=
     List.mem_flatMap.mpr ⟨row, rowIn, pair⟩
   obtain ⟨id, within, declared⟩ := row_locals_declared sourceRows sourceDeclared member
   have projection := IndexedConstructorCells.projection body B P
-  obtain ⟨cells, imported, agree⟩ := IndexedPlanCells.module_scope_cells valid projection footprints complete
-    (declareTops_names body allocated) sourceBody ownerIn
-  obtain ⟨declarationOwner, declarationOwnerIn, a, declOwned, claimant, publicAlias, original, target⟩ :=
-    InteriorPlanExports.row_pair_scope_cell valid projection footprints complete (declareTops_names body allocated)
-      sourceBody ownerIn agree owned rowFootprint pair within declared
+  obtain ⟨cells, imported, agree⟩ :=
+    IndexedPlanCells.module_scope_cells valid projection footprints complete
+      (declareTops_names body allocated) sourceBody ownerIn
+  obtain
+    ⟨declarationOwner, declarationOwnerIn, a, declOwned, claimant, publicAlias, original, target⟩ :=
+    InteriorPlanExports.row_pair_scope_cell valid projection footprints complete
+      (declareTops_names body allocated) sourceBody ownerIn agree owned rowFootprint pair within
+      declared
   obtain ⟨b, present⟩ := IndexedAllocatedCells.scope_cell_present allocated original
   have rowWithin := valid.2.2.1.2.2.2.2.2.1 owner ownerIn row.ordinal owned
-  have rowClaimant := (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal (List.mem_range.2 rowWithin)).1 owned
-  exact ⟨cells, declarationOwner, id, a, b, imported, rowClaimant, declarationOwnerIn, declOwned, claimant,
-    declared, publicAlias, original, target, present⟩
+  have rowClaimant :=
+    (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal (List.mem_range.2 rowWithin)).1 owned
+  exact
+    ⟨cells, declarationOwner, id, a, b, imported, rowClaimant, declarationOwnerIn, declOwned,
+      claimant, declared, publicAlias, original, target, present⟩
 
 /-- Every public local has the original allocated cell in the actual entry
 scope, with each metadata row retaining its authored owner. All table equality
 comes from the planner's row fold and exact source coverage. -/
 theorem rows_scope_cells {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {s s' : State W} {frames : List (Nat × List (Name × Addr))}
-    (allocated : declareTops body s = .ok frames s')
+    (footprints : IndexedExportCells.Footprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {s s' : State W}
+    {frames : List (Nat × List (Name × Addr))} (allocated : declareTops body s = .ok frames s')
     {source : Module} (sourceBody : source.body = body) {rows : List EsmSplit.LocalExportUnit}
     (sourceRows : SourceRows source rows) {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods)
     (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
     (orderedRows : owner.stmts.filterMap (rowAt rows) = rows) (noGlue : owner.exports = [])
-    (sourceDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
-    ∃ cells, (moduleOfIndexed body B P owner).exports = source.exports ∧
-      (splitProgramIndexed body B P).imported frames (moduleOfIndexed body B P owner).imports = .ok cells ∧
-      (∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧ S.claimants B row.ordinal = [owner.name]) ∧
-      ∀ pair ∈ source.exports, ∃ a b, (source.scope frames).lookup pair.2 = some a ∧
-        ((moduleOfIndexed body B P owner).scope frames ++ cells).lookup pair.2 = some a ∧
-        s'.cellAt a = some b := by
+    (sourceDefs :
+      ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    ∃ cells,
+      (moduleOfIndexed body B P owner).exports = source.exports ∧
+        (splitProgramIndexed body B P).imported frames (moduleOfIndexed body B P owner).imports =
+          .ok cells ∧
+        (∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧ S.claimants B row.ordinal = [owner.name]) ∧
+        ∀ pair ∈ source.exports,
+          ∃ a b,
+            (source.scope frames).lookup pair.2 = some a ∧
+              ((moduleOfIndexed body B P owner).scope frames ++ cells).lookup pair.2 = some a ∧
+              s'.cellAt a = some b := by
   have projection := IndexedConstructorCells.projection body B P
-  obtain ⟨cells, imported, agree⟩ := IndexedPlanCells.module_scope_cells valid projection footprints complete
-    (declareTops_names body allocated) sourceBody ownerIn
+  obtain ⟨cells, imported, agree⟩ :=
+    IndexedPlanCells.module_scope_cells valid projection footprints complete
+      (declareTops_names body allocated) sourceBody ownerIn
   refine ⟨cells, ?_, imported, ?_, ?_⟩
   · rw [projection.exports, exact_entry_exports unitMatches orderedRows noGlue, sourceRows.exports]
   · intro row member
     obtain ⟨owned, _⟩ := selected_row unitMatches orderedRows member
     have within := valid.2.2.1.2.2.2.2.2.1 owner ownerIn row.ordinal owned
-    exact ⟨owned, (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal (List.mem_range.2 within)).1 owned⟩
+    exact
+      ⟨owned, (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal (List.mem_range.2 within)).1 owned⟩
   · intro pair member
-    have inRows : pair ∈ rows.flatMap (·.names) := by rw [← sourceRows.exports]; exact member
+    have inRows : pair ∈ rows.flatMap (·.names) := by
+      rw [← sourceRows.exports]; exact member
     obtain ⟨row, rowIn, pairIn⟩ := List.mem_flatMap.1 inRows
     obtain ⟨owned, rowFootprint⟩ := selected_row unitMatches orderedRows rowIn
     obtain ⟨id, within, declared⟩ := sourceDefs pair inRows
-    obtain ⟨_, _, a, _, _, _, original, target⟩ := InteriorPlanExports.row_pair_scope_cell
-      valid projection footprints complete (declareTops_names body allocated) sourceBody
-      ownerIn agree owned rowFootprint pairIn within declared
+    obtain ⟨_, _, a, _, _, _, original, target⟩ :=
+      InteriorPlanExports.row_pair_scope_cell valid projection footprints complete
+        (declareTops_names body allocated) sourceBody ownerIn agree owned rowFootprint pairIn within
+        declared
     obtain ⟨b, present⟩ := IndexedAllocatedCells.scope_cell_present allocated original
     exact ⟨a, b, original, target, present⟩
 
@@ -129,52 +148,68 @@ ordered public-name/address table. The hypotheses inspect the source rows and
 authored plan, not the result of resolving either table. -/
 theorem rows_resolved_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {s s' : State W} {frames : List (Nat × List (Name × Addr))}
-    (allocated : declareTops body s = .ok frames s')
+    (footprints : IndexedExportCells.Footprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {s s' : State W}
+    {frames : List (Nat × List (Name × Addr))} (allocated : declareTops body s = .ok frames s')
     {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
-    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (sourceImports : source.imports = [])
+    (sourceFind : sourceProgram.find sourceProgram.entry = some source)
     {rows : List EsmSplit.LocalExportUnit} (sourceRows : SourceRows source rows)
     {owner : EsmSplit.Module} (planEntry : P.find P.entry = some owner)
     (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
     (orderedRows : owner.stmts.filterMap (rowAt rows) = rows) (noGlue : owner.exports = [])
-    (sourceDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    (sourceDefs :
+      ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
     ∃ targetLinked table,
-      (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok targetLinked ∧
-      (∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧ S.claimants B row.ordinal = [owner.name]) ∧
-      EntryExports.resolve sourceProgram.entry [(source, { vars := source.scope frames, this := .undef })] = .ok table ∧
-      EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked = .ok table ∧
-      ∀ pair ∈ source.exports, ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ s'.cellAt a = some b := by
+      (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded =
+          .ok targetLinked ∧
+        (∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧ S.claimants B row.ordinal = [owner.name]) ∧
+        EntryExports.resolve sourceProgram.entry
+            [(source, { vars := source.scope frames, this := .undef })] =
+          .ok table ∧
+        EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked = .ok table ∧
+        ∀ pair ∈ source.exports,
+          ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ s'.cellAt a = some b := by
   have ownerIn : owner ∈ P.mods := List.mem_of_find?_eq_some planEntry
   obtain ⟨cells, published, imported, ownership, agree⟩ :=
-    rows_scope_cells valid footprints complete allocated sourceBody sourceRows ownerIn unitMatches orderedRows noGlue sourceDefs
-  obtain ⟨targetLinked, targetScopes⟩ := IndexedEntryLink.indexed_scopes_success valid footprints complete
-    (declareTops_names body allocated) sourceBody
-  have targetFind : (splitProgramIndexed body B P).find (splitProgramIndexed body B P).entry =
+    rows_scope_cells valid footprints complete allocated sourceBody sourceRows ownerIn unitMatches
+      orderedRows noGlue sourceDefs
+  obtain ⟨targetLinked, targetScopes⟩ :=
+    IndexedEntryLink.indexed_scopes_success valid footprints complete
+      (declareTops_names body allocated) sourceBody
+  have targetFind :
+    (splitProgramIndexed body B P).find (splitProgramIndexed body B P).entry =
       some (moduleOfIndexed body B P owner) := by
     change (splitProgramIndexed body B P).find P.entry = some (moduleOfIndexed body B P owner)
     rw [SparseProjectedOrder.split_indexed_find, planEntry]
     rfl
   have sourceScopes := IndexedEntryLink.import_free_entry_scopes sourceFind sourceImports frames
   have sourceEntry := IndexedEntryLink.loaded_entry_find sourceFind
-  obtain ⟨sourceCells, sourceImported, sourceFound⟩ := IndexedEntryLink.scopes_find sourceProgram frames
-    sourceProgram.entry sourceProgram.loaded [(source, { vars := source.scope frames, this := .undef })]
-    source sourceScopes sourceEntry
+  obtain ⟨sourceCells, sourceImported, sourceFound⟩ :=
+    IndexedEntryLink.scopes_find sourceProgram frames sourceProgram.entry sourceProgram.loaded
+      [(source, { vars := source.scope frames, this := .undef })] source sourceScopes sourceEntry
   rw [sourceImports] at sourceImported
   cases sourceImported
-  obtain ⟨targetCells, targetImported, targetFound⟩ := IndexedEntryLink.scopes_find
-    (splitProgramIndexed body B P) frames (splitProgramIndexed body B P).entry
-    (splitProgramIndexed body B P).loaded targetLinked (moduleOfIndexed body B P owner) targetScopes
-    (IndexedEntryLink.loaded_entry_find targetFind)
-  have sameCells : targetCells = cells := by rw [imported] at targetImported; cases targetImported; rfl
+  obtain ⟨targetCells, targetImported, targetFound⟩ :=
+    IndexedEntryLink.scopes_find (splitProgramIndexed body B P) frames
+      (splitProgramIndexed body B P).entry (splitProgramIndexed body B P).loaded targetLinked
+      (moduleOfIndexed body B P owner) targetScopes (IndexedEntryLink.loaded_entry_find targetFind)
+  have sameCells : targetCells = cells := by
+    rw [imported] at targetImported; cases targetImported; rfl
   subst targetCells
-  have envAgree : ∀ pair ∈ source.exports, ∃ a,
-      ({ vars := source.scope frames ++ [], this := .undef } : Env).vars.lookup pair.2 = some a ∧
-      ({ vars := (moduleOfIndexed body B P owner).scope frames ++ cells, this := .undef } : Env).vars.lookup pair.2 = some a := by
+  have envAgree :
+    ∀ pair ∈ source.exports,
+      ∃ a,
+        ({ vars := source.scope frames ++ [], this := .undef } : Env).vars.lookup pair.2 = some a ∧
+          ({ vars := (moduleOfIndexed body B P owner).scope frames ++ cells, this := .undef } :
+                  Env).vars.lookup
+              pair.2 =
+            some a := by
     intro pair member
     obtain ⟨a, _, original, target, _⟩ := agree pair member
     exact ⟨a, by simpa using original, target⟩
-  obtain ⟨table, original, target⟩ := IndexedEntryLink.resolved_entries_equal sourceFound targetFound published envAgree
+  obtain ⟨table, original, target⟩ :=
+    IndexedEntryLink.resolved_entries_equal sourceFound targetFound published envAgree
   refine ⟨targetLinked, table, targetScopes, ownership, ?_, target, ?_⟩
   · simpa using original
   · intro pair member
@@ -185,11 +220,12 @@ theorem rows_resolved_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle
 source link. Scope agreement fixes function initialization as well as the
 scopes of executable units, so this also covers source links that hoist
 functions. No candidate link is run to check the result. -/
-theorem rows_same_exports_from_source_link {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
-    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
-    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
-    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+theorem rows_same_exports_from_source_link {body : List (Nat × Stmt)} {B : EsmSplit.Bundle}
+    {S : EsmSplit.Spec} {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {sourceProgram : Program}
+    {source : Module} (sourceBody : source.body = body) (sourceImports : source.imports = [])
+    (sourceFind : sourceProgram.find sourceProgram.entry = some source)
     (sourceTops : sourceProgram.tops = body)
     (targetTops : (splitProgramIndexed body B P).tops = body)
     (regions : sourceProgram.regions = (splitProgramIndexed body B P).regions)
@@ -199,26 +235,32 @@ theorem rows_same_exports_from_source_link {body : List (Nat × Stmt)} {B : EsmS
     {owner : EsmSplit.Module} (planEntry : P.find P.entry = some owner)
     (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
     (orderedRows : owner.stmts.filterMap (rowAt rows) = rows) (noGlue : owner.exports = [])
-    (sourceDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    (sourceDefs :
+      ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
     LinkedBehavior.SameExports sourceProgram (splitProgramIndexed body B P) := by
   intro w
   let before := sourceLinks w
   obtain ⟨_, frames, _, after, allocated, sourceScope, targetScope, _, _, _⟩ :=
-    OrderedRegion.matching_link_with_frames regions (sourceTops.trans targetTops.symm) scopesAgree before
+    OrderedRegion.matching_link_with_frames regions (sourceTops.trans targetTops.symm) scopesAgree
+      before
   rw [sourceTops] at allocated
   obtain ⟨targetLinked, table, targetScopes, _, sourceTable, targetTable, _⟩ :=
     rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind
       sourceRows planEntry unitMatches orderedRows noGlue sourceDefs
-  have sourceLinked := Except.ok.inj (sourceScope.symm.trans
-    (IndexedEntryLink.import_free_entry_scopes sourceFind sourceImports frames))
-  have targetLinkedEq : after.linked = targetLinked := Except.ok.inj (targetScope.symm.trans targetScopes)
+  have sourceLinked :=
+    Except.ok.inj
+      (sourceScope.symm.trans
+        (IndexedEntryLink.import_free_entry_scopes sourceFind sourceImports frames))
+  have targetLinkedEq : after.linked = targetLinked :=
+    Except.ok.inj (targetScope.symm.trans targetScopes)
   refine ⟨table, table, ?_, ?_, List.Perm.refl _⟩
   · rw [LinkedBehavior.exports, before.equation]
     change (EntryExports.resolve sourceProgram.entry before.linked).toOption = some table
     rw [sourceLinked, sourceTable]
     rfl
   · rw [LinkedBehavior.exports, after.equation]
-    change (EntryExports.resolve (splitProgramIndexed body B P).entry after.linked).toOption = some table
+    change
+      (EntryExports.resolve (splitProgramIndexed body B P).entry after.linked).toOption = some table
     rw [targetLinkedEq, targetTable]
     rfl
 
@@ -230,29 +272,36 @@ footprints, and the original order of metadata rows remain explicit premises;
 no equality of the resulting export tables is assumed. `SourceRows` does not
 by itself detect an omitted empty metadata row; the caller must establish
 complete source-unit provenance at its input boundary. -/
-theorem rows_resolved_from_mkPlan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
-    (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S))
-    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
-    {s s' : State W} {frames : List (Nat × List (Name × Addr))}
-    (allocated : declareTops body s = .ok frames s')
+theorem rows_resolved_from_mkPlan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle}
+    {S : EsmSplit.Spec} (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S))
+    (footprints : IndexedExportCells.Footprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B) {s s' : State W}
+    {frames : List (Nat × List (Name × Addr))} (allocated : declareTops body s = .ok frames s')
     {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
-    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (sourceImports : source.imports = [])
+    (sourceFind : sourceProgram.find sourceProgram.entry = some source)
     {rows : List EsmSplit.LocalExportUnit} (sourceRows : SourceRows source rows)
     {owner : EsmSplit.Module}
     (planEntry : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some owner)
     (unitMatches : ∀ id ∈ owner.stmts, UnitMatches B rows id)
     (orderedRows : owner.stmts.filterMap (rowAt rows) = rows)
     (covered : EsmSplit.PlanGlue.EntryCovered B S owner)
-    (sourceDefs : ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    (sourceDefs :
+      ∀ pair ∈ rows.flatMap (·.names), ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
     ∃ targetLinked table,
       (splitProgramIndexed body B (EsmSplit.mkPlan B S)).scopes frames
-        (splitProgramIndexed body B (EsmSplit.mkPlan B S)).loaded = .ok targetLinked ∧
-      (∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧ S.claimants B row.ordinal = [owner.name]) ∧
-      EntryExports.resolve sourceProgram.entry [(source, { vars := source.scope frames, this := .undef })] = .ok table ∧
-      EntryExports.resolve (splitProgramIndexed body B (EsmSplit.mkPlan B S)).entry targetLinked = .ok table ∧
-      ∀ pair ∈ source.exports, ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ s'.cellAt a = some b :=
-  rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind sourceRows
-    planEntry unitMatches orderedRows (EsmSplit.PlanGlue.mkPlan_no_extra_glue planEntry covered) sourceDefs
-
+            (splitProgramIndexed body B (EsmSplit.mkPlan B S)).loaded =
+          .ok targetLinked ∧
+        (∀ row ∈ rows, row.ordinal ∈ owner.stmts ∧ S.claimants B row.ordinal = [owner.name]) ∧
+        EntryExports.resolve sourceProgram.entry
+            [(source, { vars := source.scope frames, this := .undef })] =
+          .ok table ∧
+        EntryExports.resolve (splitProgramIndexed body B (EsmSplit.mkPlan B S)).entry targetLinked =
+          .ok table ∧
+        ∀ pair ∈ source.exports,
+          ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ s'.cellAt a = some b :=
+  rows_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind
+    sourceRows planEntry unitMatches orderedRows
+    (EsmSplit.PlanGlue.mkPlan_no_extra_glue planEntry covered) sourceDefs
 
 end CoreJS.ExportRows

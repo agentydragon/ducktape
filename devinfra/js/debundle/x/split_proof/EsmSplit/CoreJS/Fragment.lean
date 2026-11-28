@@ -13,7 +13,8 @@ namespace CoreJS
 /-- Plain class creation stores method bodies without running them. Fields and computed keys are excluded. -/
 def plainClassMembers : List ClassMember → Bool
   | [] => true
-  | .method _ (.str _) _ :: ms | .getter _ (.str _) _ :: ms | .setter _ (.str _) _ :: ms => plainClassMembers ms
+  | .method _ (.str _) _ :: ms | .getter _ (.str _) _ :: ms | .setter _ (.str _) _ :: ms =>
+    plainClassMembers ms
   | _ :: _ => false
 
 theorem plainClassMembers_fieldInits {ms : List ClassMember} (h : plainClassMembers ms = true) :
@@ -30,10 +31,9 @@ theorem plainClassMembers_fieldInits {ms : List ClassMember} (h : plainClassMemb
 /-- Class members whose keys do not run user code. Static blocks are excluded. -/
 def literalClassMembers : List ClassMember → Bool
   | [] => true
-  | .method _ (.str _) _ :: ms | .getter _ (.str _) _ :: ms | .setter _ (.str _) _ :: ms
-  | .field _ (.str _) _ :: ms => literalClassMembers ms
+  | .method _ (.str _) _ :: ms | .getter _ (.str _) _ :: ms | .setter _ (.str _) _ :: ms |
+    .field _ (.str _) _ :: ms => literalClassMembers ms
   | _ :: _ => false
-
 
 /-- Logical negation does not coerce objects to primitives. Numeric negation is safe here
 only on a syntactic number literal, whose conversion cannot call user code. `void`
@@ -44,8 +44,7 @@ def localUnaryOperand (op : UnOp) (operand : Expr) : Bool :=
     (op == .void && (operand matches .undef | .null | .bool _ | .num _ | .str _))
 
 theorem localUnaryOperand_ops {op : UnOp} {e : Expr} (h : localUnaryOperand op e = true) :
-    op = .void ∨ op = .not ∨ op = .neg := by
-  cases op <;> simp_all [localUnaryOperand]
+    op = .void ∨ op = .not ∨ op = .neg := by cases op <;> simp_all [localUnaryOperand]
 
 /-- These operators on two Numbers always return a Number, including NaN and infinities. -/
 def BinOp.numberArithmetic : BinOp → Bool
@@ -73,17 +72,14 @@ def Expr.allocOnly : Expr → Bool
   | .arr elems => allocOnlyAll elems
   | .cls _ _ _ members => allocOnlyClassMembers members
   | _ => false
-
 def allocOnlyAll : List Expr → Bool
   | [] => true
   | e :: es => e.allocOnly && allocOnlyAll es
-
 def allocOnlyProps : List PropDef → Bool
   | [] => true
   | .init (.str _) v :: ps => v.allocOnly && allocOnlyProps ps
   | .method (.str _) _ :: ps => allocOnlyProps ps
   | _ :: _ => false
-
 /-- Instance initializers are deferred; static initializers run at class creation. -/
 def allocOnlyClassMembers : List ClassMember → Bool
   | [] => true
@@ -94,59 +90,79 @@ def allocOnlyClassMembers : List ClassMember → Bool
   | _ :: _ => false
 end
 
-theorem allocOnlyClassMembers_literal {ms : List ClassMember} (h : allocOnlyClassMembers ms = true) :
-    literalClassMembers ms = true := by
+theorem allocOnlyClassMembers_literal {ms : List ClassMember}
+    (h : allocOnlyClassMembers ms = true) : literalClassMembers ms = true := by
   induction ms with
   | nil => rfl
   | cons m ms ih =>
     cases m with
     | field static key init =>
       cases static <;> cases key <;> simp_all [allocOnlyClassMembers, literalClassMembers]
-    | method static key f | getter static key f | setter static key f =>
-      cases key <;> simp_all [allocOnlyClassMembers, literalClassMembers]
+    | method static key f
+    | getter static key f
+    | setter static key f => cases key <;> simp_all [allocOnlyClassMembers, literalClassMembers]
     | staticBlock body => simp [allocOnlyClassMembers] at h
 
-
-theorem Expr.argument_of_allocOnly {e : Expr} (h : e.allocOnly = true) : e.argument = (false, e) := by
-  cases e <;> first | rfl | simp [Expr.allocOnly] at h
-
+theorem Expr.argument_of_allocOnly {e : Expr} (h : e.allocOnly = true) :
+    e.argument = (false, e) := by
+  cases e <;>
+    first
+    | rfl
+    | simp [Expr.allocOnly] at h
 
 /-- Opaque method bodies stay deferred during plain class creation. -/
 theorem allocOnly_plainClass_opaqueMethod :
     (Expr.cls "Plain" true (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.method false (.str "method") (.opaque "method" .method false 0 0 1 ["later"] none)]).allocOnly = true := rfl
+          [.method false (.str "method")
+              (.opaque "method" .method false 0 0 1 ["later"] none)]).allocOnly =
+      true :=
+  rfl
 
 theorem allocOnly_class_staticField_accepted :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.field true (.str "field") .undef]).allocOnly = true := rfl
+          [.field true (.str "field") .undef]).allocOnly =
+      true :=
+  rfl
 
 theorem allocOnly_class_staticField_effect_rejected :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.field true (.str "field") (.call (.var "effect") [])]).allocOnly = false := rfl
+          [.field true (.str "field") (.call (.var "effect") [])]).allocOnly =
+      false :=
+  rfl
 
 theorem allocOnly_class_staticComputedField_rejected :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.field true (.var "key") .undef]).allocOnly = false := rfl
+          [.field true (.var "key") .undef]).allocOnly =
+      false :=
+  rfl
 
 theorem allocOnly_class_staticBlock_rejected :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.staticBlock (.opaque "block" .arrow false 0 0 0 [] none)]).allocOnly = false := rfl
+          [.staticBlock (.opaque "block" .arrow false 0 0 0 [] none)]).allocOnly =
+      false :=
+  rfl
 
 theorem allocOnly_class_instanceField_accepted :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.field false (.str "field") (.call (.var "sideEffect") [])]).allocOnly = true := rfl
+          [.field false (.str "field") (.call (.var "sideEffect") [])]).allocOnly =
+      true :=
+  rfl
 
 theorem allocOnly_class_instanceComputedField_rejected :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.field false (.var "key") .undef]).allocOnly = false := rfl
+          [.field false (.var "key") .undef]).allocOnly =
+      false :=
+  rfl
 
 theorem allocOnly_class_nonliteralKey_rejected :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.method false (.var "key") (.opaque "method" .method false 0 0 1 [] none)]).allocOnly = false := rfl
+          [.method false (.var "key") (.opaque "method" .method false 0 0 1 [] none)]).allocOnly =
+      false :=
+  rfl
 
 theorem allocOnly_derivedClass_rejected :
-    (Expr.derived "Derived" false (.var "Base") [] none).allocOnly = false := rfl
-
+    (Expr.derived "Derived" false (.var "Base") [] none).allocOnly = false :=
+  rfl
 
 mutual
 /-- The names an allocation-only expression reads when it runs. Functions and instance
@@ -158,25 +174,25 @@ def Expr.readsNow : Expr → List Name
   | .arr elems => readsNowAll elems
   | .cls _ _ _ members => readsNowClassMembers members
   | _ => []
-
 def readsNowAll : List Expr → List Name
   | [] => []
   | e :: es => e.readsNow ++ readsNowAll es
-
 def readsNowProps : List PropDef → List Name
   | [] => []
   | .init _ v :: ps => v.readsNow ++ readsNowProps ps
   | _ :: ps => readsNowProps ps
-
 def readsNowClassMembers : List ClassMember → List Name
   | [] => []
   | .field true _ init :: ms => init.readsNow ++ readsNowClassMembers ms
   | _ :: ms => readsNowClassMembers ms
 end
 
-example : (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-    [.field false (.str "later") (.var "deferred"), .field true (.str "now") (.var "eager")]).readsNow =
-    ["eager"] := rfl
+example :
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
+          [.field false (.str "later") (.var "deferred"),
+            .field true (.str "now") (.var "eager")]).readsNow =
+      ["eager"] :=
+  rfl
 
 /-- A statement that does nothing when it runs: its work is done when the program is linked. An opaque statement that
 declares only functions is one. -/
@@ -201,11 +217,15 @@ def mayMove (a b : Stmt) : Bool :=
     | _, _ => false
 
 /-- Negating an object can invoke a user-defined conversion. -/
-example : (Expr.unary .neg (.var "obj")).allocOnly = false := rfl
+example : (Expr.unary .neg (.var "obj")).allocOnly = false :=
+  rfl
 
 /-- Negating a binding reads it, including when the result initializes a fresh record. -/
-example : mayMove (.decl .const "flag" (.obj []))
-    (.decl .const "record" (.obj [.init (.str "value") (.unary .not (.var "flag"))])) = false := rfl
+example :
+    mayMove (.decl .const "flag" (.obj []))
+        (.decl .const "record" (.obj [.init (.str "value") (.unary .not (.var "flag"))])) =
+      false :=
+  rfl
 
 /-- Statements `i` and `j` of the bundle `ss` may run in either order. -/
 def MayMove (ss : List Stmt) (i j : Nat) : Bool :=
@@ -219,8 +239,8 @@ def MayMoveAt (ss : Array Stmt) (i j : Nat) : Bool :=
   | some a, some b => mayMove a b
   | _, _ => false
 
-theorem mayMoveAt_toArray (ss : List Stmt) (i j : Nat) : MayMoveAt ss.toArray i j = MayMove ss i j := by
-  simp [MayMoveAt, MayMove]
+theorem mayMoveAt_toArray (ss : List Stmt) (i j : Nat) :
+    MayMoveAt ss.toArray i j = MayMove ss i j := by simp [MayMoveAt, MayMove]
 
 /-- Every pair that `order` runs out of the bundle's order passes `MayMove`: the last hypothesis of `moves_preserve`,
 decided in time quadratic in the length of `order` (`movesOk_iff`). -/

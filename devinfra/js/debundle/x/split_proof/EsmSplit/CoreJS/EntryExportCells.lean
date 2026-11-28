@@ -10,8 +10,8 @@ namespace CoreJS.EntryExportCells
 theorem bundle_decl_cell {ss : List Stmt} {B : EsmSplit.Bundle}
     (footprints : FootprintsOfSyntax ss B) (uniqueDefs : EsmSplit.UniqueDefs B)
     {frames : List (Nat × List (Name × Addr))}
-    (frameNames : FramesOf ((List.range ss.length).zip ss) frames)
-    {j : Nat} {u : Name} (within : j < ss.length) (declared : u ∈ (B.stmt j).defs) :
+    (frameNames : FramesOf ((List.range ss.length).zip ss) frames) {j : Nat} {u : Name}
+    (within : j < ss.length) (declared : u ∈ (B.stmt j).defs) :
     ∃ a, (bundleEnv ss frames).vars.lookup u = some a := by
   have inBundle : ∃ p ∈ (bundleModule ss).body, p.1 = j := by
     refine ⟨(j, ss[j]), ?_, rfl⟩
@@ -23,14 +23,15 @@ theorem bundle_decl_cell {ss : List Stmt} {B : EsmSplit.Bundle}
       (lookup_none_iff_not_mem_keys.mp h) ((frame_keys footprints frameNames).2 ⟨within, declared⟩)
   refine ⟨a, ?_⟩
   show ((bundleModule ss).scope frames ++ []).lookup u = some a
-  rw [List.append_nil, scope_lookup_decl footprints frameNames uniqueDefs inBundle within declared, ha]
+  rw [List.append_nil, scope_lookup_decl footprints frameNames uniqueDefs inBundle within declared,
+    ha]
 
 /-- A name that a plan module declares or imports has an original source cell. -/
-theorem original_cell_of_bound {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
+theorem original_cell_of_bound {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
     {frames : List (Nat × List (Name × Addr))}
-    (frameNames : FramesOf ((List.range ss.length).zip ss) frames)
-    {md : EsmSplit.Module} (moduleIn : md ∈ P.mods) {u : Name}
+    (frameNames : FramesOf ((List.range ss.length).zip ss) frames) {md : EsmSplit.Module}
+    (moduleIn : md ∈ P.mods) {u : Name}
     (bound : (∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2)) :
     ∃ a, (bundleEnv ss frames).vars.lookup u = some a := by
   rcases bound with ⟨j, hj, hu⟩ | imported
@@ -45,23 +46,30 @@ theorem original_cell_of_bound {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSp
 same cell as the original bundle scope. This applies to export-list locals,
 not just names occurring in executable statements. Imports are resolved by
 the actual `splitProgram` linker. -/
-theorem module_scope_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
+theorem module_scope_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
     {frames : List (Nat × List (Name × Addr))}
-    (frameNames : FramesOf ((List.range ss.length).zip ss) frames)
-    {md : EsmSplit.Module} (moduleIn : md ∈ P.mods) :
-    ∃ cells, (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
-      ∀ u, (∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2) →
-        ((moduleOf ss B P md).scope frames ++ cells).lookup u = (bundleEnv ss frames).vars.lookup u := by
+    (frameNames : FramesOf ((List.range ss.length).zip ss) frames) {md : EsmSplit.Module}
+    (moduleIn : md ∈ P.mods) :
+    ∃ cells,
+      (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
+        ∀ u,
+          (∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2) →
+            ((moduleOf ss B P md).scope frames ++ cells).lookup u =
+              (bundleEnv ss frames).vars.lookup u := by
   have hv := valid
   obtain ⟨uniqueDefs, -, faithful, linkable, -, -, -, -, -⟩ := valid
   have within : ∀ j ∈ md.stmts, j < ss.length := fun j hj =>
     footprints.1 ▸ faithful.2.2.2.2.2.1 md moduleIn j hj
-  have imported : ∃ cells,
+  have imported :
+    ∃ cells,
       (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
-      ∀ u, cells.lookup u = if u ∈ md.imports.flatMap (·.2) then (bundleEnv ss frames).vars.lookup u else none := by
-    apply imported_ok (splitProgram ss B P) frames ((bundleEnv ss frames).vars.lookup ·)
-      (fun src u => EsmSplit.exportNameFor (P.namedExports B src) u) md.imports
+        ∀ u,
+          cells.lookup u =
+            if u ∈ md.imports.flatMap (·.2) then (bundleEnv ss frames).vars.lookup u else none := by
+    apply
+      imported_ok (splitProgram ss B P) frames ((bundleEnv ss frames).vars.lookup ·)
+        (fun src u => EsmSplit.exportNameFor (P.namedExports B src) u) md.imports
     intro e he
     refine ⟨?_, ?_⟩
     · rw [split_find, Option.isSome_map]
@@ -102,17 +110,20 @@ theorem module_scope_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.
 module resolves every such export local to the original bundle cell. The
 premise is a source/plan name-resolution condition; it does not inspect or
 compare the candidate's execution. -/
-theorem module_export_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
+theorem module_export_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
     {frames : List (Nat × List (Name × Addr))}
-    (frameNames : FramesOf ((List.range ss.length).zip ss) frames)
-    {md : EsmSplit.Module} (moduleIn : md ∈ P.mods)
-    (bound : ∀ e ∈ md.namedExports B,
-      (∃ j ∈ md.stmts, e.2 ∈ (B.stmt j).defs) ∨ e.2 ∈ md.imports.flatMap (·.2)) :
-    ∃ cells, (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
-      ∀ e ∈ (moduleOf ss B P md).exports, ∃ a,
-        (bundleEnv ss frames).vars.lookup e.2 = some a ∧
-        ((moduleOf ss B P md).scope frames ++ cells).lookup e.2 = some a := by
+    (frameNames : FramesOf ((List.range ss.length).zip ss) frames) {md : EsmSplit.Module}
+    (moduleIn : md ∈ P.mods)
+    (bound :
+      ∀ e ∈ md.namedExports B,
+        (∃ j ∈ md.stmts, e.2 ∈ (B.stmt j).defs) ∨ e.2 ∈ md.imports.flatMap (·.2)) :
+    ∃ cells,
+      (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
+        ∀ e ∈ (moduleOf ss B P md).exports,
+          ∃ a,
+            (bundleEnv ss frames).vars.lookup e.2 = some a ∧
+              ((moduleOf ss B P md).scope frames ++ cells).lookup e.2 = some a := by
   obtain ⟨cells, linked, agreement⟩ := module_scope_cells valid footprints frameNames moduleIn
   refine ⟨cells, linked, ?_⟩
   intro e he
@@ -122,26 +133,36 @@ theorem module_export_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit
 /-- The actual scopes constructed for all loaded modules have the original
 cell for every local declaration and every generated import. In particular,
 the property includes imported names used only by an export list. -/
-theorem linked_scope_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
+theorem linked_scope_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
     {frames : List (Nat × List (Name × Addr))}
     (frameNames : FramesOf ((List.range ss.length).zip ss) frames) :
-    ∃ linked, (splitProgram ss B P).scopes frames (splitProgram ss B P).loaded = .ok linked ∧
-      ∀ p ∈ linked, ∃ md ∈ P.mods, p.1 = moduleOf ss B P md ∧
-        ∀ u, (∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2) →
-          p.2.vars.lookup u = (bundleEnv ss frames).vars.lookup u := by
-  obtain ⟨linked, hlinked, _, every⟩ := scopes_ok (splitProgram ss B P) frames
-    (fun m cells => ∃ md ∈ P.mods, m = moduleOf ss B P md ∧
-      ∀ u, (∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2) →
-        ((moduleOf ss B P md).scope frames ++ cells).lookup u = (bundleEnv ss frames).vars.lookup u)
-    (splitProgram ss B P).loaded (by
-      intro m hm
-      obtain ⟨name, _, found⟩ := List.mem_filterMap.1 hm
-      rw [split_find] at found
-      obtain ⟨md, hfind, rfl⟩ := Option.map_eq_some_iff.1 found
-      have hmd : md ∈ P.mods := List.mem_of_find?_eq_some hfind
-      obtain ⟨cells, hcells, hagree⟩ := module_scope_cells valid footprints frameNames hmd
-      exact ⟨cells, hcells, md, hmd, rfl, hagree⟩)
+    ∃ linked,
+      (splitProgram ss B P).scopes frames (splitProgram ss B P).loaded = .ok linked ∧
+        ∀ p ∈ linked,
+          ∃ md ∈ P.mods,
+            p.1 = moduleOf ss B P md ∧
+              ∀ u,
+                (∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2) →
+                  p.2.vars.lookup u = (bundleEnv ss frames).vars.lookup u := by
+  obtain ⟨linked, hlinked, _, every⟩ :=
+    scopes_ok (splitProgram ss B P) frames
+      (fun m cells =>
+        ∃ md ∈ P.mods,
+          m = moduleOf ss B P md ∧
+            ∀ u,
+              (∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2) →
+                ((moduleOf ss B P md).scope frames ++ cells).lookup u =
+                  (bundleEnv ss frames).vars.lookup u)
+      (splitProgram ss B P).loaded
+      (by
+        intro m hm
+        obtain ⟨name, _, found⟩ := List.mem_filterMap.1 hm
+        rw [split_find] at found
+        obtain ⟨md, hfind, rfl⟩ := Option.map_eq_some_iff.1 found
+        have hmd : md ∈ P.mods := List.mem_of_find?_eq_some hfind
+        obtain ⟨cells, hcells, hagree⟩ := module_scope_cells valid footprints frameNames hmd
+        exact ⟨cells, hcells, md, hmd, rfl, hagree⟩)
   refine ⟨linked, hlinked, ?_⟩
   intro p hp
   obtain ⟨cells, ⟨md, hmd, hm, hagree⟩, henv⟩ := every p hp
@@ -152,15 +173,20 @@ theorem linked_scope_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.
 
 /-- For each generated export local that the source plan binds, the actual
 linked module scope and the bundle scope contain the same live address. -/
-theorem linked_export_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
+theorem linked_export_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
     {frames : List (Nat × List (Name × Addr))}
     (frameNames : FramesOf ((List.range ss.length).zip ss) frames) :
-    ∃ linked, (splitProgram ss B P).scopes frames (splitProgram ss B P).loaded = .ok linked ∧
-      ∀ p ∈ linked, ∃ md ∈ P.mods, p.1 = moduleOf ss B P md ∧
-        ∀ e ∈ md.namedExports B,
-          ((∃ j ∈ md.stmts, e.2 ∈ (B.stmt j).defs) ∨ e.2 ∈ md.imports.flatMap (·.2)) →
-          ∃ a, (bundleEnv ss frames).vars.lookup e.2 = some a ∧ p.2.vars.lookup e.2 = some a := by
+    ∃ linked,
+      (splitProgram ss B P).scopes frames (splitProgram ss B P).loaded = .ok linked ∧
+        ∀ p ∈ linked,
+          ∃ md ∈ P.mods,
+            p.1 = moduleOf ss B P md ∧
+              ∀ e ∈ md.namedExports B,
+                ((∃ j ∈ md.stmts, e.2 ∈ (B.stmt j).defs) ∨ e.2 ∈ md.imports.flatMap (·.2)) →
+                  ∃ a,
+                    (bundleEnv ss frames).vars.lookup e.2 = some a ∧
+                      p.2.vars.lookup e.2 = some a := by
   obtain ⟨linked, hlinked, every⟩ := linked_scope_cells valid footprints frameNames
   refine ⟨linked, hlinked, ?_⟩
   intro p hp
@@ -172,16 +198,20 @@ theorem linked_export_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit
 
 /-- The generated module preserves both aliasing and distinctness of its
 source-plan-bound names. Equality here is equality of addresses, not values. -/
-theorem linked_alias_iff {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
+theorem linked_alias_iff {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (footprints : FootprintsOfSyntax ss B)
     {frames : List (Nat × List (Name × Addr))}
     (frameNames : FramesOf ((List.range ss.length).zip ss) frames) :
-    ∃ linked, (splitProgram ss B P).scopes frames (splitProgram ss B P).loaded = .ok linked ∧
-      ∀ p ∈ linked, ∃ md ∈ P.mods, p.1 = moduleOf ss B P md ∧
-        ∀ u v, ((∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2)) →
-          ((∃ j ∈ md.stmts, v ∈ (B.stmt j).defs) ∨ v ∈ md.imports.flatMap (·.2)) →
-          (p.2.vars.lookup u = p.2.vars.lookup v ↔
-            (bundleEnv ss frames).vars.lookup u = (bundleEnv ss frames).vars.lookup v) := by
+    ∃ linked,
+      (splitProgram ss B P).scopes frames (splitProgram ss B P).loaded = .ok linked ∧
+        ∀ p ∈ linked,
+          ∃ md ∈ P.mods,
+            p.1 = moduleOf ss B P md ∧
+              ∀ u v,
+                ((∃ j ∈ md.stmts, u ∈ (B.stmt j).defs) ∨ u ∈ md.imports.flatMap (·.2)) →
+                  ((∃ j ∈ md.stmts, v ∈ (B.stmt j).defs) ∨ v ∈ md.imports.flatMap (·.2)) →
+                  (p.2.vars.lookup u = p.2.vars.lookup v ↔
+                    (bundleEnv ss frames).vars.lookup u = (bundleEnv ss frames).vars.lookup v) := by
   obtain ⟨linked, hlinked, every⟩ := linked_scope_cells valid footprints frameNames
   refine ⟨linked, hlinked, ?_⟩
   intro p hp
@@ -189,6 +219,5 @@ theorem linked_alias_iff {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Sp
   refine ⟨md, hmd, hm, ?_⟩
   intro u v hu hv
   rw [agreement u hu, agreement v hv]
-
 
 end CoreJS.EntryExportCells

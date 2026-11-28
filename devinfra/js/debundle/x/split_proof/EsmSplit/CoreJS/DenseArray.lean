@@ -25,8 +25,10 @@ private def readOwn (s : State W) (env : Env) (name key : String) : Option Val :
   return value
 
 private theorem readOwn_witness {s : State W} (h : readOwn s env name key = some v) :
-    ∃ c a b o w e d, env.vars.lookup name = some c ∧ s.cellAt c = some ⟨some (.obj a), b⟩ ∧
-      s.objAt a = some o ∧ o.props.lookup (PropertyKey.str key) = some (.data v w e d) := by
+    ∃ c a b o w e d,
+      env.vars.lookup name = some c ∧
+        s.cellAt c = some ⟨some (.obj a), b⟩ ∧
+        s.objAt a = some o ∧ o.props.lookup (PropertyKey.str key) = some (.data v w e d) := by
   cases hc : env.vars.lookup name with
   | none => simp [readOwn, receiver, hc] at h
   | some cell =>
@@ -67,8 +69,8 @@ private theorem withObjects_self {s : State W} (h : s.heap[s.region]? = some obj
   have hs : s.heap.set! s.region objs = s.heap := set!_same h objs
   simp only [withObjects, hs]
 
-private theorem withObjects_get {s : State W} (h : s.heap[s.region]? = some objs) (next : Array Obj) :
-    (withObjects s next).heap[(withObjects s next).region]? = some next := by
+private theorem withObjects_get {s : State W} (h : s.heap[s.region]? = some objs)
+    (next : Array Obj) : (withObjects s next).heap[(withObjects s next).region]? = some next := by
   have bound := (Array.getElem?_eq_some_iff.mp h).1
   simp [withObjects, bound]
 
@@ -94,8 +96,8 @@ private theorem Allocations.objects_push (a : Allocations) (base : Array Obj) (o
   simp [Allocations.objects, Allocations.push]
 
 mutual
-private def tryExpr (read : String → String → Option Val) (region fuel : Nat) (allocations : Allocations)
-    (expr : Expr) : Option (Val × Allocations) :=
+private def tryExpr (read : String → String → Option Val) (region fuel : Nat)
+    (allocations : Allocations) (expr : Expr) : Option (Val × Allocations) :=
   match fuel with
   | 0 => none
   | n + 1 =>
@@ -107,16 +109,16 @@ private def tryExpr (read : String → String → Option Val) (region fuel : Nat
     | .num value => some (.num value, allocations)
     | .get (.var name) (.str key) =>
       if n == 0 then none else (read name key).map fun v => (v, allocations)
-    | .unary .void expr => (tryExpr read region n allocations expr).map fun (_, next) => (.undef, next)
+    | .unary .void expr =>
+      (tryExpr read region n allocations expr).map fun (_, next) => (.undef, next)
     | .arr elems =>
       match tryArgs read region n allocations elems with
       | none => none
       | some (values, next) => some (.obj ⟨region, next.nextIndex⟩, next.push (arrayObject values))
     | _ => none
 termination_by structural fuel
-
-private def tryArgs (read : String → String → Option Val) (region fuel : Nat) (allocations : Allocations)
-    (elems : List Expr) : Option (List Val × Allocations) :=
+private def tryArgs (read : String → String → Option Val) (region fuel : Nat)
+    (allocations : Allocations) (elems : List Expr) : Option (List Val × Allocations) :=
   match fuel, elems with
   | 0, _ => none
   | _ + 1, [] => some ([], allocations)
@@ -132,18 +134,24 @@ end
 
 private theorem succeeds (origin : State W) (env : Env) (base : Array Obj) (fuel : Nat) :
     (∀ (expr : Expr) (s : State W) (acc : Allocations) (v : Val) (next : Allocations),
-      Extends origin s → s.heap[s.region]? = some (acc.objects base) → acc.nextIndex = (acc.objects base).size →
-      tryExpr (readOwn origin env) s.region fuel acc expr = some (v, next) →
-      evalExpr fuel env expr s = .ok v (withObjects s (next.objects base)) ∧
-        Extends s (withObjects s (next.objects base)) ∧ next.nextIndex = (next.objects base).size) ∧
-    (∀ (elems : List Expr) (s : State W) (acc : Allocations) (values : List Val) (next : Allocations),
-      Extends origin s → s.heap[s.region]? = some (acc.objects base) → acc.nextIndex = (acc.objects base).size →
-      tryArgs (readOwn origin env) s.region fuel acc elems = some (values, next) →
-      evalArgs fuel env elems s = .ok values (withObjects s (next.objects base)) ∧
-        Extends s (withObjects s (next.objects base)) ∧ next.nextIndex = (next.objects base).size) := by
+        Extends origin s →
+          s.heap[s.region]? = some (acc.objects base) →
+          acc.nextIndex = (acc.objects base).size →
+          tryExpr (readOwn origin env) s.region fuel acc expr = some (v, next) →
+          evalExpr fuel env expr s = .ok v (withObjects s (next.objects base)) ∧
+            Extends s (withObjects s (next.objects base)) ∧
+            next.nextIndex = (next.objects base).size) ∧
+      (∀ (elems : List Expr) (s : State W) (acc : Allocations) (values : List Val)
+        (next : Allocations),
+        Extends origin s →
+          s.heap[s.region]? = some (acc.objects base) →
+          acc.nextIndex = (acc.objects base).size →
+          tryArgs (readOwn origin env) s.region fuel acc elems = some (values, next) →
+          evalArgs fuel env elems s = .ok values (withObjects s (next.objects base)) ∧
+            Extends s (withObjects s (next.objects base)) ∧
+            next.nextIndex = (next.objects base).size) := by
   induction fuel with
-  | zero =>
-    constructor <;> intro _ _ _ _ _ _ _ _ h <;> cases h
+  | zero => constructor <;> intro _ _ _ _ _ _ _ _ h <;> cases h
   | succ n ih =>
     constructor
     · intro expr s acc v next ext hs size run
@@ -158,7 +166,8 @@ private theorem succeeds (origin : State W) (env : Env) (base : Array Obj) (fuel
         | succ n =>
           cases read : readOwn origin env name key with
           | none => simp [read] at run
-          | some value =>
+          | some
+            value =>
             simp only [Option.map_some, beq_eq_false_iff_ne.mpr (Nat.succ_ne_zero _),
               Bool.false_eq_true, ite_false, read] at run
             cases run
@@ -183,10 +192,12 @@ private theorem succeeds (origin : State W) (env : Env) (base : Array Obj) (fuel
           simp only [h] at run
           cases run
           obtain ⟨he, hExt, nextSize⟩ := ih.2 _ _ _ _ _ ext hs size h
-          have ha (obj : Obj) : alloc obj (withObjects s (updated.objects base)) =
-              .ok ⟨s.region, updated.nextIndex⟩ (withObjects s ((updated.push obj).objects base)) := by
-            rw [Allocations.objects_push, nextSize,
-              ← withObjects_twice s (updated.objects base) ((updated.objects base).push obj)]
+          have ha (obj : Obj) :
+            alloc obj (withObjects s (updated.objects base)) =
+              .ok ⟨s.region, updated.nextIndex⟩
+                (withObjects s ((updated.push obj).objects base)) := by
+            rw [Allocations.objects_push, nextSize, ←
+              withObjects_twice s (updated.objects base) ((updated.objects base).push obj)]
             simp only [alloc, withObjects_get hs (updated.objects base)] <;> rfl
           refine ⟨?_, hExt.trans (alloc_ok (ha (arrayObject values))).2, ?_⟩
           · simp only [evalExpr, M.bind_apply, he, ha] <;> rfl
@@ -194,7 +205,8 @@ private theorem succeeds (origin : State W) (env : Env) (base : Array Obj) (fuel
             simp [Allocations.push, nextSize]
     · intro elems s acc values next ext hs size run
       cases elems with
-      | nil => cases run; rw [withObjects_self hs]; exact ⟨rfl, Extends.refl s, size⟩
+      | nil =>
+        cases run; rw [withObjects_self hs]; exact ⟨rfl, Extends.refl s, size⟩
       | cons expr rest =>
         simp only [tryArgs] at run
         cases h : tryExpr (readOwn origin env) s.region n acc expr with
@@ -208,12 +220,16 @@ private theorem succeeds (origin : State W) (env : Env) (base : Array Obj) (fuel
             obtain ⟨tail, final⟩ := result
             simp only [h, h'] at run
             cases run
-            obtain ⟨ht, hExt', finalSize⟩ := ih.2 _ _ _ _ _ (ext.trans hExt)
-              (withObjects_get hs (updated.objects base)) nextSize h'
+            obtain ⟨ht, hExt', finalSize⟩ :=
+              ih.2 _ _ _ _ _ (ext.trans hExt) (withObjects_get hs (updated.objects base)) nextSize
+                h'
             rw [withObjects_twice] at ht hExt'
             refine ⟨?_, hExt.trans hExt', finalSize⟩
             have head : expr.argument = (false, expr) := by
-              cases expr <;> first | rfl | cases n <;> simp [tryExpr] at h
+              cases expr <;>
+                first
+                | rfl
+                | cases n <;> simp [tryExpr] at h
             have hp {α : Type} (a : α) (st : State W) : (pure a : M W α) st = .ok a st := rfl
             simp only [evalArgs, head, Bool.false_eq_true, ↓reduceIte, M.bind_apply, he, hp, ht]
             rfl
@@ -224,7 +240,8 @@ private def ordinary (n : Nat) (env : Env) (elems : List Expr) : M W Val := do
   pure (.obj addr)
 
 private def reduceBody (n : Nat) (env : Env) (elems : List Expr) : M W Val := fun s =>
-  if elems.length < 16 then ordinary n env elems s else
+  if elems.length < 16 then ordinary n env elems s
+  else
     match s.heap[s.region]? with
     | none => ordinary n env elems s
     | some objs =>
@@ -247,7 +264,8 @@ theorem reduce (n : Nat) (env : Env) (elems : List Expr) :
   split
   · rfl
   rename_i v next run
-  exact ((succeeds s env objs (n + 1)).1 _ _ _ _ _ (Extends.refl s)
-    (by simpa [Allocations.objects] using hs) (by simp [Allocations.objects]) run).1
+  exact
+    ((succeeds s env objs (n + 1)).1 _ _ _ _ _ (Extends.refl s)
+        (by simpa [Allocations.objects] using hs) (by simp [Allocations.objects]) run).1
 
 end CoreJS.DenseArray

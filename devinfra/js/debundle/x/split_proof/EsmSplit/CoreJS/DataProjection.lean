@@ -10,6 +10,7 @@ on states where the selected properties are own data properties.
 -/
 
 namespace CoreJS
+
 namespace DataProjection
 
 structure Field where
@@ -20,7 +21,8 @@ structure Field where
 def Field.statement (base : Name) (f : Field) : Stmt :=
   .decl .var f.target (.get (.var base) (.str f.key))
 
-structure ReceiverAt (s : State W) (env : Env) (base : Name) (cell obj : Addr) (record : Obj) : Prop where
+structure ReceiverAt (s : State W) (env : Env) (base : Name) (cell obj : Addr) (record : Obj) :
+    Prop where
   lookup : env.vars.lookup base = some cell
   binding : ∃ mutable, s.cellAt cell = some ⟨some (.obj obj), mutable⟩
   object : s.objAt obj = some record
@@ -31,7 +33,9 @@ def Field.own (record : Obj) (f : Field) : Prop :=
 private def writeField (n : Nat) (env : Env) (f : Field) : M W Flow :=
   match n with
   | 0 | 1 | 2 => outOfFuel
-  | _ + 3 => do writeVar env f.target f.value; pure .normal
+  | _ + 3 => do
+    writeVar env f.target f.value;
+    pure .normal
 
 private theorem field_eq (h : ReceiverAt s env base cell obj record) (hp : f.own record) (n : Nat) :
     execStmt n env (f.statement base) s = writeField n env f s := by
@@ -58,12 +62,13 @@ private def writes (n : Nat) (env : Env) (fs : List Field) : M W Flow :=
   | _ + 1, [] => pure .normal
   | k + 1, f :: rest => do
     match ← writeField k env f with
-    | .normal => writes k env rest
-    | other => pure other
+    | .normal =>
+      writes k env rest
+    | other =>
+      pure other
 
 private theorem writes_eq (n : Nat) (fs : List Field) (s : State W)
-    (h : ReceiverAt s env base cell obj record)
-    (hp : ∀ f ∈ fs, f.own record)
+    (h : ReceiverAt s env base cell obj record) (hp : ∀ f ∈ fs, f.own record)
     (frozen : s.cellAt cell = some ⟨some (.obj obj), false⟩) :
     execStmts n env (fs.map (Field.statement base)) s = writes n env fs s := by
   induction n generalizing fs s with
@@ -71,8 +76,10 @@ private theorem writes_eq (n : Nat) (fs : List Field) (s : State W)
   | succ n ih =>
     cases fs with
     | nil => rfl
-    | cons f rest =>
-      simp only [List.map_cons, execStmts, writes, M.bind_apply, field_eq h (hp f List.mem_cons_self)]
+    | cons f
+      rest =>
+      simp only [List.map_cons, execStmts, writes, M.bind_apply,
+        field_eq h (hp f List.mem_cons_self)]
       cases hw : writeField n env f s with
       | ok flow t =>
         cases flow <;> try rfl
@@ -95,9 +102,12 @@ private theorem writes_eq (n : Nat) (fs : List Field) (s : State W)
                 simp only [writeVar, ← he, M.bind_apply, getState, frozen] at hu
                 cases hu
               have hfrozen := hk.cells cell _ hne frozen
-              exact ih rest _ ⟨h.lookup, ⟨false, hfrozen⟩, hk.objs obj _ h.object⟩
-                (fun g hg => hp g (List.mem_cons_of_mem _ hg)) hfrozen
-      | throw | unknown | fuel => rfl
+              exact
+                ih rest _ ⟨h.lookup, ⟨false, hfrozen⟩, hk.objs obj _ h.object⟩
+                  (fun g hg => hp g (List.mem_cons_of_mem _ hg)) hfrozen
+      | throw
+      | unknown
+      | fuel => rfl
 
 private theorem writes_local (n : Nat) (fs : List Field)
     (home : ∀ f ∈ fs, ∀ c, env.vars.lookup f.target = some c → c.region = r) :
@@ -118,7 +128,8 @@ private theorem writes_local (n : Nat) (fs : List Field)
           | succ n =>
             cases n with
             | zero => exact local_outOfFuel
-            | succ n => exact (local_writeVar (home f List.mem_cons_self) _).bind' fun _ => local_pure _
+            | succ n =>
+              exact (local_writeVar (home f List.mem_cons_self) _).bind' fun _ => local_pure _
       · intro flow
         cases flow <;> try exact local_pure _
         exact ih rest fun f hf => home f (List.mem_cons_of_mem _ hf)
@@ -154,7 +165,8 @@ private theorem enter_declaration (fs : List Field) (source tmp : Name) (env : E
     induction fs with
     | nil => rfl
     | cons f rest ih => exact ih
-  have hl' : lexDecls (.decl .const tmp (.var source) :: fs.map (Field.statement tmp)) = [(tmp, false)] := by
+  have hl' :
+    lexDecls (.decl .const tmp (.var source) :: fs.map (Field.statement tmp)) = [(tmp, false)] := by
     change (tmp, false) :: lexDecls _ = _
     rw [hl]
   have hf' : funDecls (.decl .const tmp (.var source) :: fs.map (Field.statement tmp)) = [] := hf
@@ -170,15 +182,16 @@ private def snapshot (n : Nat) (env : Env) (tmp : Name) (obj : Addr) (fs : List 
   | k + 1 => do
     let c ← newCell ⟨none, false⟩
     match k with
-    | 0 | 1 | 2 => outOfFuel
-    | n + 3 => do
-      setCell c (.obj obj)
-      writes (n + 2) (capturedEnv env tmp c) fs
+    | 0 | 1 | 2 =>
+      outOfFuel
+    | n + 3 =>
+      do
+        setCell c (.obj obj)
+        writes (n + 2) (capturedEnv env tmp c) fs
 
 private theorem snapshot_local (n : Nat) (fs : List Field)
     (home : ∀ f ∈ fs, ∀ c, env.vars.lookup f.target = some c → c.region = r)
-    (ht : ∀ f ∈ fs, tmp ≠ f.target) :
-    Local r R (snapshot n env tmp obj fs : M W Flow) := by
+    (ht : ∀ f ∈ fs, tmp ≠ f.target) : Local r R (snapshot n env tmp obj fs : M W Flow) := by
   cases n with
   | zero => exact local_outOfFuel
   | succ k =>
@@ -199,20 +212,24 @@ private theorem snapshot_local (n : Nat) (fs : List Field)
           apply writes_local
           intro f hf addr ha
           apply home f hf addr
-          simpa only [capturedEnv, List.lookup_cons, beq_eq_false_iff_ne.mpr (ht f hf).symm] using ha
+          simpa only [capturedEnv, List.lookup_cons, beq_eq_false_iff_ne.mpr (ht f hf).symm] using
+            ha
 
-private theorem pure_apply (a : α) (s : State W) : (pure a : M W α) s = .ok a s := rfl
+private theorem pure_apply (a : α) (s : State W) : (pure a : M W α) s = .ok a s :=
+  rfl
 
 private theorem snapshot_eq (n : Nat) (fs : List Field) (s : State W)
-    (h : ReceiverAt s env source cell obj record)
-    (hp : ∀ f ∈ fs, f.own record) (hs : tmp ≠ source) :
+    (h : ReceiverAt s env source cell obj record) (hp : ∀ f ∈ fs, f.own record)
+    (hs : tmp ≠ source) :
     execStmt n env (declaration source tmp fs) s = snapshot n env tmp obj fs s := by
   cases n with
   | zero => rfl
   | succ k =>
     simp only [declaration, execStmt, enter_declaration, snapshot, M.bind_apply]
     cases hn : newCell ⟨none, false⟩ s with
-    | throw | unknown | fuel => rfl
+    | throw
+    | unknown
+    | fuel => rfl
     | ok c t =>
       have ext := (newCell_ok hn).2
       obtain ⟨mutable, hb⟩ := h.binding
@@ -239,24 +256,26 @@ private theorem snapshot_eq (n : Nat) (fs : List Field) (s : State W)
               simp only [initVar, capturedEnv, List.lookup_cons, BEq.rfl]
               rfl
             have hset : setCell c (.obj obj) t = .ok () u := rfl
-            simpa only [pure_apply, execStmts, execStmt, evalExpr, M.bind_apply, hr, hi, hset] using he
+            simpa only [pure_apply, execStmts, execStmt, evalExpr, M.bind_apply, hr, hi, hset] using
+              he
 
 /-- Given a resolved RHS with the requested own data descriptors, a whole
 pattern declaration commutes with an independent local unit. This includes
 the initial read, the block-local receiver cell, and every target write. -/
 theorem declaration_commutes_at {s : State W} (fs : List Field) (n : Nat)
-    (h : ReceiverAt s env source cell obj record) (hp : ∀ f ∈ fs, f.own record)
-    (hs : tmp ≠ source) (ht : ∀ f ∈ fs, tmp ≠ f.target)
+    (h : ReceiverAt s env source cell obj record) (hp : ∀ f ∈ fs, f.own record) (hs : tmp ≠ source)
+    (ht : ∀ f ∈ fs, tmp ≠ f.target)
     (home : ∀ f ∈ fs, ∀ c, env.vars.lookup f.target = some c → c.region = i + 1)
-    (hl : Local (j + 1) R m) (hr : ∀ c, R c → c.region ≠ i + 1)
-    (hij : i ≠ j) (hc : cell.region ≠ j + 1) (ho : obj.region ≠ j + 1) :
+    (hl : Local (j + 1) R m) (hr : ∀ c, R c → c.region ≠ i + 1) (hij : i ≠ j)
+    (hc : cell.region ≠ j + 1) (ho : obj.region ≠ j + 1) :
     let a := runUnit n env i (declaration source tmp fs)
     let b := inRegion j m
     ∀ f v t, (∃ u, a s = .ok f u ∧ b u = .ok v t) ↔ (∃ u, b s = .ok v u ∧ a u = .ok f t) := by
   intro a b f v t
   have eqAt (s' : State W) (h' : ReceiverAt s' env source cell obj record) :
-      a s' = inRegion i (snapshot n env tmp obj fs) s' := by
-    have h'' : ReceiverAt {s' with region := i + 1} env source cell obj record := ⟨h'.lookup, h'.binding, h'.object⟩
+    a s' = inRegion i (snapshot n env tmp obj fs) s' := by
+    have h'' : ReceiverAt { s' with region := i + 1 } env source cell obj record :=
+      ⟨h'.lookup, h'.binding, h'.object⟩
     have he := snapshot_eq n fs _ h'' hp hs
     simp only [a, runUnit, inRegion, M.bind_apply, modifyState, he]
   have hw := snapshot_local (W := W) (obj := obj) (R := fun _ => False) n fs home ht
@@ -272,4 +291,5 @@ theorem declaration_commutes_at {s : State W} (fs : List Field) (n : Nat)
     exact ⟨u', (eqAt s h).trans ha', hb'⟩
 
 end DataProjection
+
 end CoreJS
