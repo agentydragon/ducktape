@@ -541,6 +541,7 @@ _OWNERSHIP_SOURCES = [":real_bundles/" + variant + ".mjs" for variant in _LIBRAR
 
 _OWNERSHIP_TEST_DATA = [
     "acorn_locutil.mjs",
+    "acorn_regexp.mjs",
     "results/acorn-8.19.0-rollup-map.json.gz",
     "results/full-blocker-census.json.gz",
     "smoke.mjs",
@@ -599,6 +600,7 @@ js_test(
     entry_point = "source_ownership_test.mjs",
     env = _OWNERSHIP_TEST_ENV | {
         "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
+        "NODE_OPTIONS": "--experimental-vm-modules",
     },
 )
 

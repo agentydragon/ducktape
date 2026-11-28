@@ -113,3 +113,33 @@ The [recorded replay](https://app.buildbuddy.io/invocation/7a03b1ae-304b-4bc6-99
 writes `acorn-locutil.json` and `acorn-locutil-spec.json`. If strict emission
 succeeds in a future replay, the test checks the actual files from disk
 before repeating the public location and namespace checks.
+
+## Observe the first eager constructor on disk
+
+The exact bundle's first strict source diagnostic is
+`statement 8: unsupported global RegExp`. The first construction is
+`var nonASCIIidentifierStart = new RegExp(...)` at row #8 (ESTree expression
+range [11567, 11619)); the following identifier-character construction is at
+row #9 ([11646, 11724)).
+
+The Node test links the pinned bundle and the 27-file forwarded source-files
+tree from disk in separate realms. It installs a getter for the global
+`RegExp` that supplies a different constructor on each read, checks
+`new.target`, and records the arguments in order. The 15 startup
+constructions match. The first constructor reenters the linked public
+`isIdentifierStart` with an ASCII input and sees the same public binding
+states at that point. Later calls to the real public identifier helpers and
+parser reach the objects returned by construction with the same receiver;
+they also observe four more constructor lookups and calls. In a separate
+run, the first constructor throws the same sentinel in both trees and no
+later constructor runs. Swapping the two original declarations on disk
+keeps the public parser results used here but changes both the trace and the
+first throwing constructor's arguments.
+
+The test writes the observations to `acorn-regexp.json`. They cover the
+original full bundle and the emitted Rust tree with its explicit public
+entry; there is no source projection or added regex model. The strict
+`all-outcomes` request still refuses and publishes no files. The
+two-owner location request separately retains its Rust scheduling cycle
+between rows #36 and #64. These Node observations give no deployment or
+whole-program equivalence result.
