@@ -321,6 +321,25 @@ js_test(
     env = {"CYCLE_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:acorn_hoisted_cycle_test_runner)"},
 )
 
+js_test(
+    name = "zod_join_values_test",
+    size = "small",
+    args = ["$(rootpath :real_bundles/zod.mjs)"],
+    data = [
+        ":real_bundles/zod.mjs",
+        "//devinfra/js/debundle/x/split_proof:corejs",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "zod_join_values_test.mjs",
+    env = {
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof:corejs)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+    },
+)
+
 js_library(
     name = "lint_sources",
     testonly = True,
