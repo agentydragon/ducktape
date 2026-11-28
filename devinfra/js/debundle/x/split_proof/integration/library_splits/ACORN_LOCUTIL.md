@@ -38,9 +38,6 @@ position creation (#258), AST node construction (#269), token construction
 (#399), and parse-error reporting (#256) exercise the group. The original
 `Parser.acorn` assignment (#442) and entry export row (#446) both publish
 `Position`, `SourceLocation`, and `getLineInfo`. The scanner is private.
-The [earlier node-location projection](ACORN_NODE_LOCATION.md) dropped the
-two constructor exports and kept #38 in entry while moving #35–37; its
-successful readback does not apply to this request.
 
 | Full-bundle request     | Requested group / total owners                                           | Rust output                                                                                                                                                   | Strict `all-outcomes` output  |
 | ----------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
@@ -58,6 +55,16 @@ cycle does not establish that the prototype method calls `TokenType`.
 Both ordinary strict requests returned `no_constructed_rule`. The separate
 source-shape probe stopped at the eager `RegExp` in #8, before reaching
 the location group.
+
+The [eight-row projection from #20713](ACORN_NODE_LOCATION.md) certifies
+all four location units in `locations.mjs` at `all-outcomes`, passes disk
+readback, and rejects a changed scanner binding. It puts #22 and #23 in
+separate earlier owners and exports only `Node`, `getLineInfo`, and
+`isNewLine` from entry. The full concentrated request keeps the predicate
+and scanner in entry and preserves the original public constructors and
+`Parser.acorn` requirements. The existing full source-files request
+places #22 and #23 together in the `whitespace.js` owner. The proof of
+the projected placement does not test these full-bundle layouts.
 
 The public consumer parses CRLF, an astral string, and a Unicode line
 separator. It checks token, comment, AST and syntax-error locations,
