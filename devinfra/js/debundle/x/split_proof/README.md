@@ -5,9 +5,9 @@ The experimental splitter emits ES modules after Lean certifies the requested
 CoreJS guarantee. The [target theorem](PLAN.md#target) covers every input and spec accepted by the constructor, with its proof checked when building the splitter. [Certification commands and guarantees](#request-a-corejs-guarantee)
 
 The [import guarantees specification](docs/import_guarantees.md) separates the
-resolved CoreJS graph comparison, the proposed public-client contract, and
+resolved CoreJS graph comparison, the public-client contract, and
 deployment realization. A graph proof does not by itself establish that a
-runtime loads those graphs or that arbitrary clients satisfy the proposed
+runtime loads those graphs or that arbitrary clients satisfy the stated
 boundary. The [receipt audit](docs/publication_receipt_boundary.md) records
 current route coverage and a measured Node package-format gap.
 

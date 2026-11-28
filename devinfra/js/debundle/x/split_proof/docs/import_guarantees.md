@@ -1,11 +1,11 @@
 # Import guarantees and publication boundaries
 
 This is the contract for evaluating an import-preserving split. It separates
-three obligations: the CoreJS graph comparison, the proposed public-client
+three obligations: the CoreJS graph comparison, the public-client
 boundary, and realization of the checked graphs in a deployment. The
 [publication receipt audit](publication_receipt_boundary.md) records what the
-existing routes actually check. A proposed obligation below is not itself a
-Lean theorem or a CLI admission rule.
+existing routes actually check. The agreed obligations below do not by
+themselves establish a general contextual theorem or a CLI admission rule.
 
 ## CoreJS graph boundary
 
@@ -33,7 +33,7 @@ abstract graph result does not by itself prove all future calls through exported
 values or a multi-entry client theorem. Those claims need their own modeled
 contexts and proofs; specific callable rules can prove more within their scope.
 
-## Proposed public-client contract
+## Public-client contract
 
 Declare the original public entry points, including each supported public
 subpath. A conforming transformation must preserve what clients can observe
@@ -46,14 +46,14 @@ function names, descriptors, source text, or other observations merely because
 an implementation or model does not currently cover them.
 
 Generated paths are private to this contract. A client that detects, imports,
-or enumerates implementation files is outside the proposed API theorem unless
+or enumerates implementation files is outside this client boundary unless
 the deployment actually encapsulates those files so that the observation is
 unchanged. Privacy here describes the permitted observation boundary; placing
 a file on disk does not make it inaccessible. The condition is about what a
 client can observe or reach, including through calls and capabilities, not
 whether its own AST lacks a particular token or import expression. A checker
 may instead certify a specific narrower client, provided it states and proves
-that narrower context. Neither a proposed public boundary nor a copied caller
+that narrower context. Neither the public boundary nor a copied caller
 establishes such a theorem by itself.
 
 Public initialization order belongs to the contract when a client can observe

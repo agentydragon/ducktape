@@ -8,7 +8,7 @@ proof: [design.md](https://github.com/agentydragon/ducktape/blob/devel/devinfra/
 
 The experimental Lean-certified splitter has a separate
 [import guarantees specification](x/split_proof/docs/import_guarantees.md).
-Its graph proof, proposed client boundary and deployment premises do not change
+Its graph proof, client boundary and deployment premises do not change
 the `debundle` CLI guarantees in this document.
 
 ## Resolved CLI invocations

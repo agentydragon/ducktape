@@ -63,6 +63,6 @@ bbr test "$p/integration/library_splits:default_snapshot_format_audit" \
 ## Contract
 
 The [import guarantees specification](import_guarantees.md) states the
-approved graph and proposed client boundaries and the separate deployment
+approved graph and client boundaries and the separate deployment
 obligation. This audit is evidence for that contract; it does not implement
 importability checks or change a CLI or receipt schema.
