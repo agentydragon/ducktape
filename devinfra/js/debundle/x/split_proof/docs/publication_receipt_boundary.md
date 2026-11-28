@@ -1,0 +1,90 @@
+# What a split publication receipt checks
+
+This audit starts at devel `6b3da2f148`. The owned-package caller defect
+([#20657](https://github.com/agentydragon/ducktape/pull/20657#issuecomment-7230274306))
+is tracked separately. The ordinary CLI selects these routes in
+[Certified.lean](../EsmSplit/LowerSplit/Certified.lean).
+
+A success reports a constructor `scope`, `strategy: compiled-constructor`,
+`guarantee: all-outcomes`, and `every_ending_matches: true`. The guarantee
+selects the CoreJS theorem about all modeled outcomes, worlds and fuel.
+The receipt has no separate field for the deployment realization or for a
+caller observation contract. It also does not say whether it was issued for
+a fresh publication or a verification of an existing tree.
+
+| Route                                   | Authenticated source and modeled public observations                                                                                                                                                                                              | Deployment evidence and limits                                                                                                                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `named-declarations`                    | Import-free authenticated source, exact original declaration selections, checked ordered initialization and live entry exports.                                                                                                                   | Generated `.mjs` only. No provider, caller, or enclosing deployment is included.                                                                                                                                                     |
+| `literal-reorder`                       | Same source admission; the specific independent literal transposition preserves the run and exported cells.                                                                                                                                       | Same generated-only `.mjs` boundary.                                                                                                                                                                                                 |
+| `indexed-local-exports`                 | Import-free primitive const body, original standalone export rows, exact public live cells and order (including the supported private-priority plan without extra entry exports).                                                                 | Same generated-only `.mjs` boundary.                                                                                                                                                                                                 |
+| `ordered-helper`                        | Import-free raw source; keeps the authored helper, captures and original declaration identities. Ordered run and public cells are checked.                                                                                                        | Generated `.mjs` only; no external caller or ambient context checked.                                                                                                                                                                |
+| `indexed-exported-function`             | Import-free raw source, original standalone exports, capture and cell identities; [proof](../EsmSplit/CoreJS/IndexedExportedFunction.lean) also covers modeled calls through public cells.                                                        | Generated `.mjs` only. The Acorn Node callers are regression observations.                                                                                                                                                           |
+| `indexed-hoisted-swap`                  | Import-free raw source, exact adjacent declaration swap in the constructed graph, real links and public cell agreement.                                                                                                                           | Generated `.mjs` only. The checked import cycle is internal to the split.                                                                                                                                                            |
+| `indexed-default-snapshot`              | Import-free raw source; the separate default cell snapshots the original closure at its authored ordinal. The linked run and entry cells are checked.                                                                                             | Allows generated `.js` as well as `.mjs`. It checks ESM syntax, but **does not establish Node's interpretation of `.js`** at source or destination. The Lodash consumer regression supplies its own package manifest and dependency. |
+| `shared-static-provider`                | One raw `.mjs` importer and one closed relative `.mjs` provider, resolved from the real source directory. The provider runs once and first; the proof checks its live cells, importer aliases, and the ordered consumer suffix and entry exports. | Generated `.mjs` plus the provider at its checked relative route. Provider bytes are compared exactly; no declared caller, package, origin, or external loader is authenticated.                                                     |
+| Diagnostic and test-only artifact tools | Diagnostics write plan and move reports, without using the production publication path. The private checked-artifact runner validates fixture artifacts against its own theorem.                                                                  | Neither issues a production CLI receipt.                                                                                                                                                                                             |
+
+The ordinary source decoder reparses raw source (or validates a source-backed
+snapshot on the routes that admit one). The common
+[publication gate](../EsmSplit/SplitFiles.lean) checks the expected file set,
+reparses generated files, compares their normalized ESTree, and passes the
+actual parsed files to the constructor's exact CoreJS readback check.
+Fixed provider files are byte-checked. Fresh publication verifies the stage
+before renaming it; `--check-output` reconstructs from the supplied input and
+checks the existing tree without updating it. It is not a historical record
+of which invocation created the directory.
+
+## Reproduced format gap
+
+The original pinned `lodash-es/isLength.js` and its unchanged
+[placement](../integration/library_splits/lodash_is_length/split.json)
+emit byte-identical `isLength.js` and `limits.mjs` in two fresh destination
+trees. The only difference is the parent `package.json` outside each output
+tree. Both fresh publications and both `--check-output` calls report the
+same success. Node imports and calls the default successfully under
+`"type": "module"`; under `"type": "commonjs"` it refuses to load
+`isLength.js` with a syntax error. The original callable returns `true` for
+the input `3`.
+
+[Uncached replay](https://app.buildbuddy.io/invocation/c181210b-e07e-4fd6-9dde-71c3d27cca76).
+The [manual reproduction](../integration/library_splits/default_snapshot_format_audit.mjs)
+records the current mismatch; change the CommonJS assertion when a reviewed
+receipt or admission change addresses it.
+
+```sh
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p/integration/library_splits:default_snapshot_format_audit" \
+  --nocache_test_results --test_output=all
+```
+
+## Design proposal for review
+
+1. **Closed resolved graph.** Keep the current Lean result at its actual
+   boundary: linked and resolved source and output graphs with the designated
+   entry bindings, ordered effects and modeled outcomes. Preserve any
+   admitted external import edge, the identity of its binding, and its
+   evaluation order and effects. A syntactically valid import is not
+   evidence of a resolved, unchanged edge.
+2. **Public entry context.** State which external contexts may observe the
+   designated public routes, their exported values, calls and modeled
+   effects. Require new helper names to be fresh in the realized graph and
+   private to that contract. A client importing or probing a helper by path
+   can observe a real difference: the helper request fails in the original
+   tree and succeeds after the split. The #20657 caller probe did exactly
+   this. Exclude that observation explicitly for clients of designated
+   entries, or check a narrower caller and its observation contract. Copying
+   a caller or checking its first static import does not prove that contract.
+   Private in this sense does not make a file inaccessible.
+3. **Deployment realization.** Separately state what establishes that the
+   source and published bytes load as the checked graphs (format, routes,
+   and dependency identity). State which facts the writer verifies from
+   files and which are supplied assumptions. Ordinary readback establishes
+   file-set and syntax correspondence, not the enclosing package format.
+   The owned-package gate checks more packaging facts by capturing fixed
+   bytes and guarding its owned root; caller behavior remains a separate
+   question. A graph-only or explicitly conditional receipt must not be
+   presented as proof that an unverified Node deployment runs.
+
+This audit does not propose a new resolver, implement importability checks,
+or change the CLI or certificate schema. The receipt and admission policy
+should be decided in design review.
