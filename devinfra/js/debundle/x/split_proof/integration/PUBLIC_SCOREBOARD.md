@@ -1,5 +1,68 @@
 # Public split-proof scoreboard
 
+## Snapshot 2026-11-28 — devel `8dff388f2271f31ee30cef0eebbfaf191b0acd8c`
+
+This update retains the prior snapshot below. The [full-bundle census](library_splits/results/full-blocker-census.json.gz)
+has now landed with exact source spans, requests and outcomes; its 11 tested
+placements remain separate from the historical diagnostic matrix. The
+[saved 122 replay](https://app.buildbuddy.io/invocation/7ddea425-5c46-46c9-bbfe-876597820f8b)
+reproduces the same per-ID ledger: one fully observed certificate and 121
+refusals. No additional original allocation is inferred from those results.
+
+### Unchanged artifact maps are not splits
+
+The independently measured [identity baseline](excalidraw/identity_baseline.md)
+covers ten pinned artifact maps: 104 files, 97 JS owners, 7,116,547 bytes and
+10,012 source ordinals. These totals describe that baseline's exact files,
+including its readable bundle bytes; they are not a sum of the earlier
+whole-bundle split table. There are zero moved units, new owners, splitter
+certificates, or native consumer checks for those maps. Fourteen configurations
+in three CLI modes give 42 fail-closed requests; existing copies remain intact.
+The [snapshot and controls](https://app.buildbuddy.io/invocation/c7b01e86-ca7a-4c6c-bba2-01f18473e405)
+separately include one synthetic inline certificate with zero moves and one
+synthetic two-unit, two-owner split with one moved unit, disk recheck and
+Node result `7`. Neither is a pinned-workload split. Copying identical files
+also leaves deployment observations such as module URL and instance identity
+as separate obligations.
+
+### Additional shipped D3 graph and Excalidraw boundary
+
+The shipped [D3 BasisClosed graph](library_splits/D3_BASIS_CLOSED_GRAPH.md)
+has one five-row entry and two fixed original modules; their input bytes are
+not yet in this ledger. Original file routes are known; the helper ownership
+is authored-only. Two distinct placements were tested. The requested
+prototype-only move leaks the previously private constructor through an entry
+export, a public behavior change. The explicit alternative moves the original
+constructor too, changing one entry-row owner relative to that first request.
+Both ordinary CLI requests refuse and publish nothing. The alternative's
+separately staged test artifacts are reread and have a linked modeled proof and
+Node drawing, identity and throw observations, but are not a CLI certificate.
+[Replay](https://app.buildbuddy.io/invocation/9c02af35-3994-481a-ba96-cfaec4cc194e).
+
+The newer [Excalidraw wrapper diagnosis](excalidraw/scroll_refusal.md)
+traces the actual pinned provider and captures for the existing scroll requests.
+The single and pair placements remain refused; no original allocation or
+browser certificate is added. A reentrant throwing callback control observes
+cached partial exports. The complete provider's first classifier refusal is
+`Object.create` at #0; this is not a proof that later obligations are solved.
+[Replay](https://app.buildbuddy.io/invocation/d047d580-ef84-454a-a906-85d6f11172ee).
+
+### Recovery accounting
+
+For a known upstream logical group, compare its surviving declarations,
+associated prototype/method and initialization writes to output groups by
+contents, independent of output filenames and printed text. Report members
+recovered together, unrelated members mixed in, and members left residual or
+split across files. Unknown and many-to-many origins stay separate; generated
+glue is separate, and leaked private names or changed behavior are correctness
+failures. Pairwise correct co-membership, false grouping and false separation
+need their own denominators; neither one giant file nor singleton shards count
+as recovering all groups. Source-span bytes are secondary to these group counts.
+Input hashes and exact reread authenticate artifacts, not recovered module
+fidelity. A byte-verified source-map attribution and the current tree-owner
+report are in progress; their results will be added with their own version and
+evidence when available.
+
 ## Snapshot 2026-11-28 — devel `d535b64e433b00100bde86154ce9e08eb2d59c39`
 
 This is a versioned evidence ledger, not a claim about arbitrary programs or
