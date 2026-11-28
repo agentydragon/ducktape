@@ -607,3 +607,20 @@ js_test(
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
     },
 )
+
+js_test(
+    name = "semver_caller_test",
+    size = "small",
+    args = ["$(rootpath :real_bundles/semver.mjs)"],
+    data = [
+        ":real_bundles/semver.json",
+        ":real_bundles/semver.mjs",
+        "//devinfra/js/debundle/x/split_proof:semver_caller_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    entry_point = "semver_caller_test.mjs",
+    env = {
+        "SEMVER_CALLER": "$(rootpath //devinfra/js/debundle/x/split_proof:semver_caller_runner)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+)
