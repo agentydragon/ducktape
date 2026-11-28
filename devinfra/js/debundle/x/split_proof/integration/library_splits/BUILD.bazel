@@ -328,6 +328,7 @@ js_test(
     data = [
         ":real_bundles/zod.mjs",
         "//devinfra/js/debundle/x/split_proof:corejs",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
         "//devinfra/js/debundle/x/split_proof:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
@@ -336,6 +337,7 @@ js_test(
     entry_point = "zod_join_values_test.mjs",
     env = {
         "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof:corejs)",
+        "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
     },
 )

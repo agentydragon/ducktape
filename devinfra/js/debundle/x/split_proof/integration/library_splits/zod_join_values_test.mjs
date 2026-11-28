@@ -67,6 +67,7 @@ if (process.argv.includes("--before")) {
   assert.deepEqual(Object.keys(emitted), ["joinValues"]);
   const joined = emitted.joinValues;
   assert.equal(joined, (await load(path.join(out, helper))).joinValues);
+  assert.equal(joined.name, fromBundle.name);
   assert.equal(joined.length, 1);
   const values = [1, "s", 3n];
   for (const [args, want] of [
@@ -103,6 +104,36 @@ if (process.argv.includes("--before")) {
   }
   for (const join of [fromBundle, flat, joined]) assert.deepEqual(exercise(join), ["get map", "3n", null]);
 
+  // A user-supplied map can save the actual callback beyond this call, mutate
+  // the receiver, and abort before join or a second callback invocation.
+  function abortMap(join) {
+    const sentinel = {};
+    const trace = [];
+    const input = {
+      saved: undefined,
+      get map() {
+        trace.push("get map");
+        return function (convert) {
+          assert.equal(this, input);
+          this.saved = convert;
+          this.formatted = convert("before");
+          trace.push(this.formatted);
+          throw sentinel;
+        };
+      },
+    };
+    assert.throws(
+      () => join(input),
+      (error) => error === sentinel
+    );
+    assert.equal(input.formatted, '"before"');
+    assert.equal(input.saved.name, "");
+    assert.equal(input.saved.length, 1);
+    assert.equal(input.saved("after"), '"after"');
+    assert.deepEqual(trace, ["get map", '"before"']);
+  }
+  for (const join of [fromBundle, flat, joined]) abortMap(join);
+
   const observer = `
 import { joinValues } from "./entry.mjs";
 const mapped = { join(sep) { console.log(this === mapped); console.log(sep); } };
@@ -116,6 +147,24 @@ const input = { get map() {
 } };
 joinValues(input);
 joinValues(input, null);
+const token = {};
+const abort = {
+  saved: undefined,
+  map(convert) {
+    console.log(this === abort);
+    this.saved = convert;
+    this.formatted = convert("before");
+    throw token;
+  },
+};
+try {
+  joinValues(abort);
+  console.log("unexpected completion");
+} catch (error) {
+  console.log(error === token);
+}
+console.log(abort.formatted);
+console.log(abort.saved("after"));
 `;
   function model(providers, code = observer) {
     const input = write("model.jsonl", JSON.stringify({ ...dump(code), entry: "consumer.mjs", providers }) + "\n");
@@ -130,7 +179,7 @@ joinValues(input, null);
     const prefix = ["get map", "true", '"text"', "true"];
     assert.deepEqual(
       [observed.end, observed.out],
-      ["normal", [...prefix, "|", ...prefix, "null"]],
+      ["normal", [...prefix, "|", ...prefix, "null", "true", "true", '"before"', '"after"']],
       JSON.stringify(observed)
     );
     const array = model(providers, 'import { joinValues } from "./entry.mjs"; joinValues([1]);');
@@ -204,18 +253,35 @@ joinValues(input, null);
   );
   const bundle = split({ source: file, spec: whole, out: path.join(dir, "whole"), require: "all-outcomes" });
   assert.equal(bundle.reasonCode, "no_constructed_rule", bundle.log);
+  const classification = JSON.parse(
+    execFileSync(process.env.LINKED_INPUT_CHECKER, {
+      input:
+        JSON.stringify([
+          {
+            kind: "sourceClassification",
+            input: { source: dump(code, { includeOpaqueCaptures: true }), sourceText: code, entry },
+          },
+        ]) + "\n",
+      encoding: "utf8",
+    })
+  )[0];
+  assert.equal(classification.error, "statement 0: unsupported global Object");
   writeFileSync(
     path.join(artifacts, "join-values.json"),
     JSON.stringify(
       {
-        original: { sha256: sha(code), ordinals: [17, 54] },
+        original: { sha256: sha(code), units: units.length, ordinals: [17, 54], published: false, classification },
         projection: {
           sha256: sha(projection),
           bytes: Buffer.byteLength(projection),
+          units: 3,
           receipt: receipt.verdict,
           disk: disk.verdict,
         },
         negative: { tampered: badDisk.verdict, wrongOwner: badOwner.verdict },
+        reached: { suppliedMap: true, savedCallback: true, throwAfterWrite: true, nativeArrayMap: "unknown" },
+        node: { originalPublicRoute: "z.util.joinValues", projectionAndOutputCompared: true },
+        deployment: "unchecked",
         whole: bundle.verdict,
       },
       null,
