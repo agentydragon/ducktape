@@ -2208,6 +2208,9 @@ test_runner(
         ":corejs_module_location",
         ":corejs_opaque_input",
         ":corejs_state_match",
+        ":corejs_syntax_match",
+        ":corejs_wrapper_loader",
+        ":estree_units",
         ":lowersplit_input",
         ":lowersplit_slice_certificate",
     ],
@@ -2456,6 +2459,31 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/WrapperLinked.lean"],
     visibility = ["//visibility:private"],
     deps = [":corejs_wrapper_move"],
+)
+
+lean_library(
+    name = "corejs_wrapper_loader",
+    testonly = True,
+    srcs = ["EsmSplit/CoreJS/WrapperLoader.lean"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":corejs_class_parents",
+        ":corejs_wrapper_move",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_wrapper_loader_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.WrapperLoader"],
+    required_theorems = [
+        "CoreJS.WrapperLoader.cache_hit",
+        "CoreJS.WrapperLoader.call_from_object",
+        "CoreJS.WrapperLoader.eval_body",
+        "CoreJS.WrapperLoader.linked_suffix",
+        "CoreJS.WrapperLoader.prepareArgs_origin",
+    ],
+    deps = [":corejs_wrapper_loader"],
 )
 
 lean_library(
