@@ -4583,6 +4583,29 @@ lean_library(
     deps = [":corejs_value"],
 )
 
+test_runner(
+    name = "opaque_caller_test_runner",
+    src = "OpaqueCallerTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_link_world",
+        ":corejs_opaque_caller",
+    ],
+)
+
+lean_library(
+    name = "corejs_opaque_caller",
+    srcs = ["EsmSplit/CoreJS/OpaqueCaller.lean"],
+    deps = [
+        ":corejs_call_turn",
+        ":corejs_entry_exports",
+        ":corejs_linked_input",
+        ":corejs_state_match",
+        ":estree_units",
+    ],
+)
+
 lean_library(
     name = "corejs_call_turn",
     srcs = ["EsmSplit/CoreJS/CallTurn.lean"],

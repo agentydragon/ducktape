@@ -92,6 +92,27 @@ js_test(
 )
 
 js_test(
+    name = "opaque_caller_test",
+    size = "small",
+    args = ["$(rootpath :real_bundles/semver.mjs)"],
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":real_bundles/semver.mjs",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:opaque_caller_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "opaque_caller_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+        "OPAQUE_CALLER": "$(rootpath //devinfra/js/debundle/x/split_proof:opaque_caller_test_runner)",
+    },
+)
+
+js_test(
     name = "static_star_exports_test",
     size = "small",
     data = [
