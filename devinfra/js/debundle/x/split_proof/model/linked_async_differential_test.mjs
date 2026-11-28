@@ -115,3 +115,13 @@ await arrows(`
   const second = run("b");
   export {run, first, second};
 `);
+
+// Run the unchanged saved member call on a Promise whose prototype getter
+// was replaced. The model compares the original scope with its capture.
+assert.deepEqual(model(memo, "memo-call"), {
+  value: "load:first:a",
+  trace: ["lookup", "call"],
+  receiverSeen: true,
+  callbackSeen: true,
+  queue: [1],
+});

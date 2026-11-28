@@ -4596,7 +4596,11 @@ lean_library(
 lean_library(
     name = "corejs_property_turn",
     srcs = ["EsmSplit/CoreJS/PropertyTurn.lean"],
-    deps = [":corejs_call_turn"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [
+        ":corejs_call_turn",
+        ":corejs_scope",
+    ],
 )
 
 lean_proof_test(
@@ -4606,6 +4610,8 @@ lean_proof_test(
     required_theorems = [
         "CoreJS.evalGet_projects",
         "CoreJS.getProp_projects",
+        "CoreJS.memberCallTurn_agree",
+        "CoreJS.memberCallTurn_projects",
         "CoreJS.performGet_projects",
     ],
     deps = [":corejs_property_turn"],
@@ -4615,7 +4621,7 @@ executable_test(
     name = "call_turn_test",
     src = "CallTurnTest.lean",
     deps = [
-        ":corejs_call_turn",
+        ":corejs_property_turn",
         ":corejs_state_match",
     ],
 )

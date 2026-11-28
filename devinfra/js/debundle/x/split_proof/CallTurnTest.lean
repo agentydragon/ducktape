@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.CallTurn
+import EsmSplit.CoreJS.PropertyTurn
 import EsmSplit.CoreJS.StateMatch
 
 open CoreJS
@@ -284,7 +284,50 @@ private def checkGetter (ending : Ending) : IO Unit := do
       ⟨state, jobs⟩ | throw (IO.userError "bad key handle should fail before lookup")
   untouched badHandle
 
+private def thenFixture (getterThrows : Bool) : M World.probe (Env × Env × Addr) := do
+  let callback ← makeFunc emptyEnv (.mk "callback" .arrow false [] [log "callback"])
+  let closed ← declare emptyEnv [("cb", ⟨some callback, false⟩)]
+  let argument ← makeFunc closed
+    (.mk "argument" .normal false [] [log "argument", .ret (.var "cb")])
+  let method ← makeFunc emptyEnv (.mk "replacement" .method false ["cb"] [
+    log "call", .expr (.assign (.member .this (.str "called")) (.bool true)),
+    .expr (.call (.var "cb") []), .throw (.str "callee")])
+  let captured ← declare emptyEnv [("method", ⟨some method, false⟩)]
+  let getter ← makeFunc captured (.mk "get then" .method false [] [
+    log "lookup", .expr (.assign (.member .this (.str "observed")) (.bool true)),
+    if getterThrows then .throw (.str "getter") else .ret (.var "method")])
+  modifyObj promiseProto fun o =>
+    { o with props := (.str "then", .accessor getter .undef true true) ::
+      o.props.filter (·.1 != .str "then") }
+  let receiver ← alloc { proto := some promiseProto, props := [], promise := some (.fulfilled (.str "memo")) }
+  let source ← declare emptyEnv [("promise", ⟨some (.obj receiver), false⟩),
+    ("argument", ⟨some argument, false⟩), ("sourceOnly", ⟨some .undef, false⟩)]
+  let emitted := source.capture ["promise", "argument"]
+  return (source, emitted, receiver)
+
+private def checkThen (getterThrows : Bool) : IO Unit := do
+  let .ok (source, emitted, receiver) state :=
+    thenFixture getterThrows (initialState World.probe 0) |
+      throw (IO.userError "could not install the Promise receiver")
+  let invoke env := memberCallTurn 64 env (.var "promise") (.str "then")
+    [.call (.var "argument") []] (callFnTurn 64) ⟨state, jobs⟩
+  let .throw reason left := invoke source | throw (IO.userError "expected source throw")
+  let .throw reason' right := invoke emitted | throw (IO.userError "expected emitted throw")
+  let expected := if getterThrows then "getter" else "callee"
+  let out := if getterThrows then #["lookup"] else #["lookup", "argument", "call", "callback"]
+  unless reason == .str expected && reason' == reason && left.state.out == out &&
+      (StateMatch.probe left.state right.state).isSome do
+    throw (IO.userError "paired member calls differ in receiver, callback, order, or throw state")
+  assertQueue left
+  assertQueue right
+  let some result := left.state.objAt receiver | throw (IO.userError "lost Promise receiver")
+  unless (result.props.lookup (.str "observed")).isSome &&
+      (result.props.lookup (.str "called")).isSome == !getterThrows do
+    throw (IO.userError "wrong receiver or call after getter throw")
+
 def main : IO Unit := do
+  checkThen false
+  checkThen true
   checkUpdatedBody .returns
   checkUpdatedBody .throws
   checkUpdatedBody .refuses

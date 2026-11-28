@@ -155,6 +155,7 @@ test_runner(
     deps = [
         "//devinfra/js/debundle/x/split_proof:corejs_eval",
         "//devinfra/js/debundle/x/split_proof:corejs_linked_input",
+        "//devinfra/js/debundle/x/split_proof:corejs_property_turn",
     ],
 )
 
