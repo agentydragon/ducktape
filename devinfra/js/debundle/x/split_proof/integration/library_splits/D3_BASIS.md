@@ -90,3 +90,6 @@ request still refuses and creates no output; that layout loses public
 Changing `lineStart` on disk to set `_point` to 1 instead of 0 changes the
 observed behavior without changing the public names. `--check-output`
 refuses the changed helper and leaves the destination untouched.
+
+The [BasisClosed graph](D3_BASIS_CLOSED_GRAPH.md) follows this with a
+prototype allocation that reads two fixed imports.

@@ -2161,6 +2161,23 @@ lean_proof_test(
 )
 
 test_runner(
+    name = "basis_closed_graph_test_runner",
+    src = "BasisClosedGraphTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":cli",
+        ":corejs_deployment_placement",
+        ":corejs_link_world",
+        ":corejs_linked_input",
+        ":corejs_linked_pivot_check",
+        ":corejs_state_match",
+        ":estree_emit",
+        ":estree_units",
+        ":lowersplit_input",
+    ],
+)
+
+test_runner(
     name = "basis_placement_test_runner",
     src = "BasisPlacementTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
