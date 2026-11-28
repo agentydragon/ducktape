@@ -137,8 +137,52 @@ private def checkPrototypeBlock (owns : Nat → Bool) (reader : Name) (rows : Li
       return tail
   return rest
 
+/-- Accept the saved slots of an ordinary identifier parameter list with defaults.
+The lexical declarations still run in source order in the parameter scope. -/
+private def defaultBindings : List Name → List Stmt → Except String (List Name)
+  | [], [] => pure []
+  | slot :: slots, .decl .let_ name init :: rest => do
+    match init with
+    | .var read =>
+      unless read == slot do throw "parameter initializer reads a different argument slot"
+    | .cond (.binary .strictEq (.var test) .undef) fallback (.var read) =>
+      unless test == slot && read == slot && entryExpr false 128 fallback do
+        throw "expected an undefined-only default on the original argument slot"
+    | _ => throw "expected an identifier parameter initializer"
+    return name :: (← defaultBindings slots rest)
+  | _, _ => throw "parameter initializers do not match the original argument slots"
+
+/-- One owner may hold a public defaulted mapper and its only module capture,
+a closed formatter. The ordinary method calls remain in the checked body:
+the rule assumes neither an array receiver nor any particular method identity. -/
+private def checkDefaultedMapper (source : Module) (B : EsmSplit.Bundle)
+    (request : EsmSplit.Spec) (owner : String) : Except String Unit := do
+  let [(mapperId, .funDecl (mapper@(.withDefaults name .normal false slots _ body))),
+      (formatterId, .funDecl formatter)] :=
+    source.body | throw "expected a defaulted mapper followed by its formatter"
+  let .block
+      [.ret (.callMethod
+        (.callMethod (.var receiver) (.str "map")
+          [.func (.mk _ .arrow false [item] [.ret (.call (.var convert) [.var value])])])
+        (.str "join") [.var separator])] :: reversed := body.reverse |
+    throw "expected a map callback followed by a join with the bound separator"
+  let bound ← defaultBindings slots reversed.reverse
+  unless bound.Nodup && bound.contains receiver && bound.contains separator && receiver != separator &&
+      item == value && item != convert && !bound.contains convert &&
+      convert == formatter.name && name != convert &&
+      mapper.free.contains convert && mapper.free.all (· == convert) &&
+      formatter.free.isEmpty && entryFunc false 128 formatter do
+    throw "expected the defaulted mapper to capture only its closed formatter"
+  unless source.exports == [(name, name)] &&
+      request.claimants B mapperId == [owner] && request.claimants B formatterId == [owner] do
+    throw "the two hoists must share the helper and publish only the original mapper"
+
 private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSplit.Spec)
     (helper : String) (readerOwner prototypeOwner : Option String) : Except String Unit := do
+  if let (_, .funDecl (.withDefaults ..)) :: _ := source.body then
+    unless readerOwner.isNone && prototypeOwner.isNone do
+      throw "the defaulted mapper requires one helper owner"
+    return ← checkDefaultedMapper source B request helper
   let authored owner (row : Nat × Stmt) := request.claimants B row.1 == [owner]
   let (prefixRows, remaining) := source.body.span (authored helper)
   unless !prefixRows.isEmpty do
