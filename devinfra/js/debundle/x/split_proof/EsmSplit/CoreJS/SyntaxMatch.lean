@@ -76,6 +76,11 @@ partial def exprEq : MatchEq Expr
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
+  | .getOptionalThen o k p, .getOptionalThen o' k' p' => do
+    let ⟨base⟩ ← exprEq o o'
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨property⟩ ← exprEq p p'
+    return ⟨base ▸ key ▸ property ▸ rfl⟩
   | .delete o k, .delete o' k' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'

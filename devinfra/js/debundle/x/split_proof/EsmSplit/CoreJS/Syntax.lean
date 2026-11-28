@@ -196,6 +196,9 @@ inductive Expr where
   | getSuper (k : Expr)
     /-- `o?.[k]`: evaluate the receiver once and skip the key on a nullish value. -/
   | getOptional (o k : Expr)
+    /-- `o?.[k][property]`: carry the optional read's short circuit across one
+    ordinary property access, but do not skip an actual undefined result. -/
+  | getOptionalThen (o k property : Expr)
     /-- `k in o`. -/
   | hasProp (k o : Expr)
   | delete (o k : Expr)
@@ -474,6 +477,7 @@ def Expr.free : Expr → List Name
     ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor).filter fun x =>
       !(self && x == name)
   | .get o k | .getOptional o k => o.free ++ k.free
+  | .getOptionalThen o k property => o.free ++ k.free ++ property.free
   | .getSuper k => k.free
   | .hasProp k o => k.free ++ o.free
   | .delete o k => o.free ++ k.free

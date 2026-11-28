@@ -104,7 +104,7 @@ assert.deepEqual(diagnostic, {
   indexed: "statement 7: unsupported global Math",
   linked: "statement 7: unsupported global Math",
   directUnitRefusals: [
-    [3, "unsupported optional chain"],
+    [3, "unsupported global globalThis"],
     [4, "unsupported global Date"],
     [6, "unsupported global Promise"],
     [7, "unsupported global Math"],
