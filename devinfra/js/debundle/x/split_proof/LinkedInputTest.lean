@@ -2,9 +2,12 @@ import EsmSplit.Cli
 import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.DynamicImports
+import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedInputCensus
+import EsmSplit.CoreJS.LinkWorld
+import EsmSplit.CoreJS.StaticStarExports
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.CoreJS.StateMatch
@@ -425,6 +428,26 @@ private def moduleDiagnostic (input : Json) : Except String Json := do
                   (if m.imports.isEmpty then [("isolatedExecution", dependencyFreeProbe m)]
                   else []))))]
 
+private def starMetadata (input : Json) : Except String Json := do
+  let graph ← CoreJS.StaticStarExports.resolve (← input.getObjVal? "files")
+  let queries ← input.getObjValAs? (List (String × String)) "queries"
+  return .arr (queries.toArray.map fun (path, name) => report (toJson <$> graph.origin path name))
+
+/-- Link and run a freshly parsed small graph, then inspect actual export cells.
+This is a readback test and does not publish files. -/
+private def starReadback (input : Json) : Except String Json := do
+  let graph ← CoreJS.StaticStarExports.resolve (← input.getObjVal? "files")
+  let program ← graph.lower (← input.getObjValAs? String "entry")
+  let linked ← CoreJS.LinkedBehavior.checkLink program
+  let .ok () ready := CoreJS.runProgram CoreJS.World.probe 256 program | throw "execution did not complete"
+  let queries ← input.getObjValAs? (List (String × String)) "queries"
+  let values ← queries.mapM fun (path, name) => do
+    let exports ← CoreJS.EntryExports.resolve path linked.linked
+    let some addr := exports.lookup name | throw s!"{path}: no linked export {name}"
+    let some (.bool val) := (ready.cellAt addr).bind (·.value) | throw s!"{path}: not a boolean: {name}"
+    return Json.mkObj [("cell", toJson [addr.region, addr.index]), ("value", toJson val)]
+  return Json.mkObj [("order", toJson program.evalOrder), ("exports", toJson values)]
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr
@@ -444,6 +467,10 @@ private def fixtures (input : Json) : Except String Json := do
                 pure (structural (← fixture.getObjVal? "input"))
               | "structuralSparseHole" =>
                 pure (structuralSparseHole (← fixture.getObjVal? "input"))
+              | "starMetadata" =>
+                pure (starMetadata (← fixture.getObjVal? "input"))
+              | "starReadback" =>
+                pure (starReadback (← fixture.getObjVal? "input"))
               | "deploymentDiagnostic" =>
                 pure (deploymentDiagnostic (← fixture.getObjVal? "input"))
               | "moduleDiagnostic" =>

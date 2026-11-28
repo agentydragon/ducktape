@@ -723,6 +723,17 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_static_star_exports",
+    srcs = ["EsmSplit/CoreJS/StaticStarExports.lean"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_module_input",
+        ":estree_units",
+        ":lower_module",
+    ],
+)
+
+lean_library(
     name = "corejs_linked_input_census",
     srcs = ["EsmSplit/CoreJS/LinkedInputCensus.lean"],
     deps = [
@@ -2225,12 +2236,15 @@ test_runner(
         ":corejs_authenticated_source",
         ":corejs_checked_split",
         ":corejs_dynamic_imports",
+        ":corejs_entry_exports",
         ":corejs_indexed_inline_constructor",
+        ":corejs_link_world",
         ":corejs_linked_input",
         ":corejs_linked_input_census",
         ":corejs_module_location",
         ":corejs_opaque_input",
         ":corejs_state_match",
+        ":corejs_static_star_exports",
         ":corejs_syntax_match",
         ":corejs_wrapper_loader",
         ":estree_units",

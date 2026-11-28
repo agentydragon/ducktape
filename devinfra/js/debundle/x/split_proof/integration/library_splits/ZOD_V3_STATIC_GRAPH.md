@@ -143,8 +143,8 @@ public functions are executable. Independent candidate parses likewise lower
 the worker's declaration (with the same deferred body) and the facade's
 snapshot. They do not check the linked cells of either complete graph.
 
-A language-only next step is to represent and resolve the fixed barrel's
-star re-exports. Keep those module requests in evaluation order and resolve
+At this boundary, a language-only next step was to represent and resolve the
+fixed barrel's star re-exports. Keep those module requests in evaluation order and resolve
 star names to the provider's existing cells, excluding `default` and
 handling collisions and identical resolutions. The concrete check here is
 that `zod/v3`'s `defaultErrorMap` reaches
@@ -162,4 +162,48 @@ empty profile by itself.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:zod_v3_linked_diagnostic --test_output=all
+```
+
+## Star forwarding and remaining obligations
+
+The [static star adapter](../../EsmSplit/CoreJS/StaticStarExports.lean) resolves
+ordinary star exports in a closed graph of annotated ESTree module records. It
+excludes `default`, gives explicit local exports and named re-exports priority,
+and treats two routes as one only when they resolve to the same original binding. A conflict stays
+absent from the forwarded export table and causes a named import of that name
+to fail. Cyclic module graphs are explicitly refused. The CoreJS projection
+keeps every request in its source position, even when a star contributes no
+names. Forwarded names are modeled as imports from the immediate provider and
+local export aliases, so the existing linker reaches the original live cell.
+
+The [star readback and diagnostic run](https://app.buildbuddy.io/invocation/1e3d806c-e8c8-4769-a3ee-6eba3af4e64b)
+resolves `defaultErrorMap` on the exact original and reference
+trees, starting independently at `index.js`, `external.js`, and `errors.js`.
+All six lookups reach `v3/locales/en.js:default`. This checks parsed static
+metadata, not linked addresses or namespace values for Zod. The small readback
+fixture checks the addresses and evaluated values across a barrel, a diamond,
+an explicit override, and an alternate provider, and compares the results with
+Node. It reparses files on disk and does not publish them.
+
+| Module (under `v3/`)                   | Remaining obligation for accepting the locale split                                                                                                                                                                                                                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.js`                             | Model the namespace import from `external.js` and its live member cells. The explicit `z` export denotes that namespace binding; `export default z` evaluates a separate snapshot with the same namespace object value. Check the actual public namespace at linked readback. |
+| `external.js`                          | Static star origins resolve. Carry all six requests, including the empty contribution from `typeAliases.js`, through accepted linked readback with the right order, export shape, and live provider cells.                                                                    |
+| `errors.js`                            | Ensure the named local re-export and imported binding reach the locale facade's default snapshot cell; prove initialization, later overrides, and restores still use the same state and callback behavior.                                                                    |
+| `helpers/parseUtil.js`                 | Resolve both its direct locale import and its `errors.js` import, and preserve reuse of the same locale default cell. The `INVALID` initializer needs modeled `Object`; deferred `isAsync` needs `Promise`. The public parse path still has to execute.                       |
+| `helpers/typeAliases.js`               | No executable body, but its `export {}` supplies no names and the barrel request must still retain this module's position.                                                                                                                                                    |
+| `helpers/util.js`                      | Model the eager `util` initializer (first deferred refusal: `Object`; `Number` in the existing ECMAScript census). Preserve its setup of `arrayToEnum`, its `ZodParsedType` value and the calls the locale makes through `util`.                                              |
+| `helpers/errorUtil.js`                 | The isolated module completes. Compose its fixed exports and cells in the full graph and show the `types.js` imports and calls still agree.                                                                                                                                   |
+| `ZodError.js`                          | Preserve `util.arrayToEnum` execution and the `ZodIssueCode` cell. The class currently refuses `Object`, and `quotelessJson` defers on `JSON`.                                                                                                                                |
+| `types.js`                             | Preserve its named imports, star-visible exports and initialization order. The first outer lowering failure is `RegExp`; `handleResult` already defers on `Error`. Prove the public validators through the modeled provider bodies.                                           |
+| `locales/en.js`                        | Admit the authorized motion of both original import requests without changing provider resolution or initialization order. Keep the executable default snapshot here; both consumers must share that cell.                                                                    |
+| `locales/en-error-map.mjs` (candidate) | Retain the original declaration and import cells, authenticate the glue in linked readback, and show the moved closure observes those same cells when called. The arrow body still defers on `Date`.                                                                          |
+
+The deployment and placement guards remain in force. The star diagnostic
+neither changes the manifest nor grants the ordinary CLI a new route. No
+complete Zod program linked or ran in Lean.
+
+```sh
+p=//devinfra/js/debundle/x/split_proof/integration/library_splits
+bbr test "$p:static_star_exports_test" "$p:zod_v3_linked_diagnostic" --test_output=all
 ```
