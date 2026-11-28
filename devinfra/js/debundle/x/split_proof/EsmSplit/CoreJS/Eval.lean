@@ -24,6 +24,8 @@ inductive Flow where
   | ret (v : Val)
   | brk
   | cont
+  | breakTo (label : Name)
+  | continueTo (label : Name)
 
 /-- The value of a completed ordinary function body. -/
 def Flow.functionResult : Flow → M W Val
@@ -503,6 +505,10 @@ def loopIterator (call : Call W) (iteration : Val → M W Flow) : Nat → Iterat
       iteratorClose call next (.ok .normal)
     | .ok (.ret v) =>
       iteratorClose call next (.ok (.ret v))
+    | .ok (.breakTo label) =>
+      iteratorClose call next (.ok (.breakTo label))
+    | .ok (.continueTo label) =>
+      iteratorClose call next (.ok (.continueTo label))
     | .error e =>
       iteratorClose call next (.error e)
 
@@ -1073,6 +1079,16 @@ def execStmt : Nat → Env → Stmt → M W Flow
           n cursor
     | .brk => pure .brk
     | .cont => pure .cont
+    | .breakTo label => pure (.breakTo label)
+    | .continueTo label => pure (.continueTo label)
+    | .labelScope label body => do
+      match ← execStmt n env body with
+      | .breakTo target => if label == target then pure .normal else pure (.breakTo target)
+      | result => pure result
+    | .labelContinue label body => do
+      match ← execStmt n env body with
+      | .continueTo target => if label == target then pure .cont else pure (.continueTo target)
+      | result => pure result
     | .throw e => do
       throwVal (← evalExpr n env e)
     | .tryCatch body param handler => fun s =>
@@ -1132,6 +1148,10 @@ def loop : Nat → Env → List Name → Expr → Expr → Stmt → Bool → M W
         pure .normal
       | .ret v =>
         pure (.ret v)
+      | .breakTo target =>
+        pure (.breakTo target)
+      | .continueTo target =>
+        pure (.continueTo target)
       | _ =>
         do
           if !(← loopCondition postTest (evalExpr n env test)) then

@@ -233,6 +233,36 @@ for (const [i, source] of unarySources.entries()) {
   );
 }
 
+// Targeted completions must cross nested loops and switches, and finally must
+// run before the matching label consumes the completion.
+const labelSources = [
+  `let n = 0; outer: while (n < 5) { n++; switch (n) { case 2: switch (n) { case 2: break outer; } } } throw n;`,
+  `let n = 0, sum = 0; outer: while (n < 4) { n++; let i = 0; while (i < 2) { i++; if (i === 1) continue outer; sum += 100; } } throw n + sum;`,
+  `let n = 0; outer: while (true) { try { break outer; } finally { n = 7; } } throw n;`,
+  `let n = 0; outer: while (n < 3) { try { n++; continue outer; } finally { n++; } } throw n;`,
+  `let n = 0; first: second: while (n < 4) { n++; if (n === 2) break first; } throw n;`,
+  `let n = 0; first: second: while (n < 3) { n++; continue first; } throw n;`,
+  `let n = 0; outer: { inner: { n = 4; break outer; } n = 8; } throw n;`,
+  `let n = 0; outer: for (const x of [1, 2, 3]) { for (const y of [4, 5]) { n += x; continue outer; } } throw n;`,
+  `let trace = ""; function iter(tag) { return { [Symbol.iterator]() { let n = 0; return {
+    next() { return { done: n++ > 0, value: 1 }; }, return() { trace += tag; return {}; }
+  }; } }; } outer: for (const x of iter("o")) { for (const y of iter("i")) { continue outer; } } throw trace;`,
+  `let trace = ""; function iter(tag) { return { [Symbol.iterator]() { return {
+    next() { return { done: false, value: 1 }; }, return() { trace += tag; return {}; }
+  }; } }; } outer: for (const x of iter("o")) { for (const y of iter("i")) { break outer; } } throw trace;`,
+];
+const labels = run(
+  labelSources.map((source) => ({ ...dumpSource(source), symbolConstructor: true, iteratorSymbol: true })),
+  true
+);
+for (const [i, source] of labelSources.entries()) {
+  assert.deepEqual(
+    [labels[i].end, labels[i].detail],
+    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#label-${i}`),
+    source
+  );
+}
+
 // The standalone AST path also needs the realm's template registry. Two
 // evaluations of the same site share one object; different sites stay distinct.
 const taggedSource =

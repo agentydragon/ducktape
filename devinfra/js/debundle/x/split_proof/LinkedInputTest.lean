@@ -571,6 +571,8 @@ private def fixtures (input : Json) : Except String Json := do
                 pure (heritagePlan (← fixture.getObjVal? "input"))
               | "moduleDiagnostic" =>
                 pure (moduleDiagnostic (← fixture.getObjVal? "input"))
+              | "labelUnit" =>
+                pure ((CoreJS.FromESTree.linkedUnit [] (← fixture.getObjVal? "input")).map fun _ => Json.null)
               | "singletonSourceShape" =>
                 pure (singletonSourceShape (← fixture.getObjVal? "input"))
               | "wrapperCrossingShape" =>

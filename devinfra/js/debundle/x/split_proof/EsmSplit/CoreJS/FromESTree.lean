@@ -476,6 +476,43 @@ private partial def namesOfType (kind : String) (j : Json) : List String :=
   | .arr items => items.toList.flatMap (namesOfType kind)
   | _ => []
 
+-- Labels are lexical control targets, not bindings. Reset the target stack
+-- at every function boundary, including functions nested inside expressions.
+private partial def labelIsLoop (j : Json) : Bool :=
+  let kind := (field j "type").toOption.getD ""
+  if kind == "LabeledStatement" then
+    labelIsLoop ((j.getObjVal? "body").toOption.getD .null)
+  else ["WhileStatement", "DoWhileStatement", "ForStatement", "ForOfStatement"].contains kind
+
+private partial def validateLabelTargets (targets : List (Name × Bool)) (j : Json) : Except String Unit := do
+  match j with
+  | .obj fields =>
+    let kind := (field j "type").toOption.getD ""
+    if kind == "LabeledStatement" then
+      let name ← j.getObjVal? "label" >>= identifier
+      if targets.any (fun target => target.1 == name) then throw "duplicate active label"
+      let body ← j.getObjVal? "body"
+      validateLabelTargets ((name, labelIsLoop body) :: targets) body
+    else if kind == "BreakStatement" || kind == "ContinueStatement" then
+      let target ← j.getObjVal? "label"
+      if target != .null then
+        let name ← identifier target
+        let some isLoop := targets.lookup name | throw "unbound control label"
+        if kind == "ContinueStatement" && !isLoop then throw "continue target is not a supported loop"
+    else
+      let nested := ["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].contains kind
+      for (_, child) in fields.toList do
+        validateLabelTargets (if nested then [] else targets) child
+  | .arr items =>
+    for child in items do validateLabelTargets targets child
+  | _ => pure ()
+
+private partial def attachLabelContinue (label : Name) : Stmt → Except String Stmt
+  | .loop init test update body post => pure (.loop init test update (.labelContinue label body) post)
+  | .forOf kind pattern source body => pure (.forOf kind pattern source (.labelContinue label body))
+  | .labelScope inner body => .labelScope inner <$> attachLabelContinue label body
+  | _ => throw "labeled loop lowering requires a supported loop"
+
 /-- Conservatively exclude suspension syntax, including in nested functions.
 No call that reaches this body can require suspending its evaluation. -/
 private partial def hasAsyncSuspension (j : Json) : Bool :=
@@ -1293,6 +1330,7 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
 private partial def linkedFunctionParts (profile : HostProfile) (imports : List Name)
     (kind : FuncKind) (name : Name) (self : Bool) (j : Json) : Except String LinkedFunctionParts :=
   do
+  validateLabelTargets [] j
   let async ← j.getObjValAs? Bool "async"
   let parameters ← j.getObjValAs? (Array Json) "params"
   let tags ← parameters.mapM fun param => field param "type"
@@ -1905,13 +1943,19 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
   let nested := scope != .module
   if
       nested ||
-        ["BlockStatement", "IfStatement", "TryStatement", "ForStatement", "ForOfStatement",
+        ["BlockStatement", "LabeledStatement", "IfStatement", "TryStatement", "ForStatement", "ForOfStatement",
               "ForInStatement", "WhileStatement", "DoWhileStatement", "SwitchStatement"].contains
           kind then
     let blockScope := if nested then scope else LinkedScope.moduleBlock
     match kind with
     | "BlockStatement" =>
       return ← linkedBlock profile imports blockScope j
+    | "LabeledStatement" =>
+      let label ← j.getObjVal? "label" >>= identifier
+      let body ← j.getObjVal? "body"
+      let lowered ← linkedStatement profile imports blockScope body
+      let lowered ← if labelIsLoop body then attachLabelContinue label lowered else pure lowered
+      return .labelScope label lowered
     | "ClassDeclaration" =>
       let name ← j.getObjVal? "id" >>= localBinding
       let classScope : LinkedExprScope := ⟨scope == .function, false⟩
@@ -2026,9 +2070,11 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let pattern ← linkedBindingPattern lower (scope.varBinder kind) (← d.getObjVal? "id")
       return .forOf (← parseDeclKind kind) pattern source body
     | "BreakStatement" | "ContinueStatement" =>
-      unless (← j.getObjVal? "label") == .null do
-        throw "unsupported labeled loop control"
-      return if (← field j "type") == "BreakStatement" then .brk else .cont
+      let target ← j.getObjVal? "label"
+      if target == .null then
+        return if kind == "BreakStatement" then .brk else .cont
+      let label ← identifier target
+      return if kind == "BreakStatement" then .breakTo label else .continueTo label
     | "TryStatement" =>
       let body ← linkedBlock profile imports blockScope (← j.getObjVal? "block")
       let handler ← j.getObjVal? "handler"
@@ -2114,6 +2160,7 @@ def primitiveAwaitParts (j : Json) : Except String PrimitiveAwaitParts := do
 Function declarations initialize their cells at link time. -/
 def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) :
     Except String (List Name × Stmt) := do
+  validateLabelTargets [] j
   match ← field j "type" with
   | "FunctionDeclaration" =>
     let name ← j.getObjVal? "id" >>= moduleBinding
@@ -2147,6 +2194,7 @@ def linkedDefaultExport (imports : List Name) (d : Json) (profile : HostProfile 
 /-- A top-level executable statement of the linked fragment. -/
 def linkedUnit (imports : List Name) (j : Json) (profile : HostProfile := .empty) :
     Except String Stmt := do
+  validateLabelTargets [] j
   if
       ["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"].contains
         (← field j "type") then

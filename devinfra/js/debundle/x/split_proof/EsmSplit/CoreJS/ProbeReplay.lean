@@ -338,6 +338,8 @@ private def replayStmtBlockers : Stmt → List ReplayBlocker
   | .bind _ pattern init =>
     .other "binding-pattern" :: replayBindingPatternBlockers pattern ++ replayExprBlockers init
   | .varDecl _ | .funDecl _ | .brk | .cont => []
+  | .breakTo _ | .continueTo _ => [.other "labeled-control"]
+  | .labelScope _ body | .labelContinue _ body => .other "labeled-control" :: replayStmtBlockers body
   | .ret value => .other "return" :: replayExprBlockers value
   | .ite condition yes no =>
     .other "branch-statement" :: replayExprBlockers condition ++ replayStmtBlockers yes ++

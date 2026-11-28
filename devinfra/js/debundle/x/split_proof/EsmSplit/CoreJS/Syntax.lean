@@ -301,6 +301,10 @@ inductive Stmt where
   | forOf (kind : DeclKind) (pattern : BindingPattern) (source : Expr) (body : Stmt)
   | brk
   | cont
+  | breakTo (label : Name)
+  | continueTo (label : Name)
+  | labelScope (label : Name) (body : Stmt)
+  | labelContinue (label : Name) (body : Stmt)
   | throw (e : Expr)
   | tryCatch (body : Stmt) (param : Option Name) (handler : Stmt)
   | tryFinally (body : Stmt) (finalizer : Stmt)
@@ -409,6 +413,7 @@ def Stmt.varNames : Stmt → List Name
   | .block ss => varNamesOf ss
   | .loop init _ _ body _ => varNamesOf init ++ body.varNames
   | .breakScope body => body.varNames
+  | .labelScope _ body | .labelContinue _ body => body.varNames
   | .forOf kind pattern _ body => (if kind == .var then pattern.names else []) ++ body.varNames
   | .tryCatch body _ handler => body.varNames ++ handler.varNames
   | .tryFinally body finalizer => body.varNames ++ finalizer.varNames
@@ -572,10 +577,11 @@ def Stmt.free : Stmt → List Name
     (freeStmts init ++ (test.free ++ (update.free ++ body.free))).filter fun x =>
       !(lexNames init).contains x
   | .breakScope body => body.free
+  | .labelScope _ body | .labelContinue _ body => body.free
   | .forOf kind pattern source body =>
     let own := if kind == .var then [] else pattern.names
     (source.free ++ pattern.free ++ body.free).filter fun x => !own.contains x
-  | .brk | .cont => []
+  | .brk | .cont | .breakTo _ | .continueTo _ => []
   | .tryCatch body param handler => body.free ++ handler.free.filter fun x => !(param == some x)
   | .tryFinally body finalizer => body.free ++ finalizer.free
   | .opaque _ decls funs free _ => opaqueNames decls funs free
