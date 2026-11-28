@@ -1,5 +1,62 @@
 # Public split-proof scoreboard
 
+## Snapshot 2026-11-28 — devel `b394c691eb63582cc35cbfa13a24a86a4a3e09c8`
+
+### Saved placements: retained-tail construction landed
+
+The [uncached 122-request replay](https://app.buildbuddy.io/invocation/6cb3eb5f-a82a-4b7b-9bc4-56bdc6a53f02)
+on this revision measures **3 certificates with disk readback / 122**, of
+which **2 / 122** pass all applicable authored observations. One certified
+request has unchecked observations; 119 refuse (49 untranslated member
+renames and 70 without a constructed rule). The former 1/122 checkpoint
+below remains historical. The two newly certified cases request and receive
+`normal-completion`, not `all-outcomes`.
+
+| Saved request                                              | Original input / requested owners                                                                                  | Physical result and authored observations                                                                                                                                                                                                     |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catchall_exports/unclaimed`                               | 127 bytes, 2 original units, 2 authored-only owners                                                                | Both files emitted; `all-outcomes` and disk pass. All saved stdout, namespace and probe assertions pass.                                                                                                                                      |
+| `comma_list_split_does_not_invent_cross_module_cycle/spec` | 130 bytes, 7 original units: #0 and #2 to `mod_x`, #1, #3 and #4 to `mod_y`, #5–6 to entry; 3 authored-only owners | All 3 files emitted; `normal-completion` and disk pass. The authored entry and original/emitted stdout `1 42 42 x` pass; no other observation category is authored.                                                                           |
+| `split_declarator_fragments/spec`                          | 83 bytes, 6 original units: #2 to `x`, #0–1 and #3 to residual, #4–5 to entry; 3 authored-only owners              | All 3 files emitted; `normal-completion` and disk pass. Original/emitted stdout `3` and authored entry pass. Both nonentry namespace assertions and `check_all_js` remain **unchecked**, so this is not a complete authored-observation pass. |
+
+The separately [reviewed census](https://github.com/agentydragon/ducktape/pull/20700)
+has landed; its Rust-surface differences and conditional retained-suffix
+evidence remain separate from the above ordinary results. The emitted source
+and its original unit identities are checked for the accepted requests; the
+ledger does not turn the remaining unsupported observations into passes.
+
+### Pinned Excalidraw source-owner audit
+
+The [allocation audit under review](https://github.com/agentydragon/ducktape/pull/20708)
+measured the pinned v0.18.1 Rust artifacts at devel `a710e07a78f3587e660adf67ad9d47d6cd57ea48`.
+“Known” is bounded by its Rust source-selector/owner evidence; unknown and
+ambiguous upstream origins are not inferred from output filenames. The
+[measurement and five-target replay](https://app.buildbuddy.io/invocation/e629bedf-6863-4815-85ce-83be2275bdcf)
+are distinct from current strict certification.
+
+| Original chunks | Original rows / executable | Known owner units / bags | Rust correctly named / files | Known retained | Unknown retained |
+| --------------- | -------------------------: | -----------------------: | ---------------------------: | -------------: | ---------------: |
+| Editor          |              1,787 / 1,781 |                 501 / 51 |                     403 / 37 |             98 |            1,280 |
+| Main            |              1,628 / 1,620 |                  71 / 24 |                      71 / 24 |              0 |            1,549 |
+| All 79 chunks   |              5,312 / 5,082 |                 572 / 75 |                     474 / 61 |             98 |            4,510 |
+
+Within this bounded evidence, there are no known wrong named units or unknown
+units assigned to named owners. Editor's known bags are 31 complete, 6 partial
+and 14 with no correctly named output; main's 24 are complete. Main's 19
+residual groups additionally hold its eight original import rows. The older
+canonical editor 272/35, historical selected editor 365, and current Rust 403/37
+are different placements; 283 of those 365 selected editor units are correctly
+named today and 82 retained. These counts are not additive.
+
+Physical JS bytes are also separate from original-unit recovery: editor
+517,159 input / 830,006 emitted / 245,176 named; main 802,981 input /
+1,488,223 emitted / 472,069 named; all chunks and bootstrap 4,937,119 input /
+6,264,089 emitted / 717,245 named. Printed bytes include glue. The full editor,
+main and historical joint strict requests refused without publishing; these
+Rust emissions add **zero strict certificates** and no new strict disk or
+browser result. The historical structural/browser evidence remains labeled in
+the older snapshot. A stale full replay is a harness issue pending its fix; it
+must not be counted as a semantic or certification outcome.
+
 ## Snapshot 2026-11-28 — devel `27b68135d257d9ed34c358cf203eb36eefb77cd2`
 
 ### Attributed source files in the four readable bundles
