@@ -95,7 +95,7 @@ def concreteRetainedStatement (stmt : Stmt) (switchBody : Bool := false) : Bool 
 /-- One owner can retain adjacent constructor initializations and the eager
 prototype write between them. Each initializer is closed; the installed
 method can capture only the constructor whose prototype it modifies. -/
-private def checkPrototypeBlock (owns : Nat → Bool) (rows : List (Nat × Stmt)) :
+private def checkPrototypeBlock (owns : Nat → Bool) (reader : Name) (rows : List (Nat × Stmt)) :
     Except String (List (Nat × Stmt)) := do
   let
     (first, .decl .var ctor (.func init)) ::
@@ -113,6 +113,15 @@ private def checkPrototypeBlock (owns : Nat → Bool) (rows : List (Nat × Stmt)
       entryFunc false 128 endInit &&
       endInit.free.isEmpty do
     throw "expected closed constructors and a method on the original prototype"
+  -- A trailing hoisted location routine may live beside the constructor
+  -- it uses. Its other capture is the already checked reader binding.
+  if let (id, .funDecl locate) :: tail := rest then
+    if owns id then
+      let reads := locate.free
+      unless entryFunc false 128 locate && reads.contains ctor && reads.contains reader &&
+          reads.all (fun name => name == ctor || name == reader) do
+        throw "the grouped location routine must capture only the constructor and the reader"
+      return tail
   return rest
 
 private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSplit.Spec)
@@ -131,10 +140,10 @@ private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSp
         "expected strict comparisons and logical expressions over the parameter and literal captures"
   unless (source.exports.map Prod.snd).contains name do
     throw "the source export must name the original predicate"
-  let afterReader ←
+  let (afterReader, readerName) ←
     match readerOwner with
     | none =>
-      pure remaining
+      pure (remaining, none)
     | some owner =>
       let (id, .funDecl (.mk reader .normal false params body)) :: rest :=
         remaining | throw "expected a hoisted reader immediately after the predicate prefix"
@@ -144,13 +153,14 @@ private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSp
       let reads := f.free
       unless entryFunc false 128 f && reads.contains name && reads.all (· == name) do
         throw "the second helper must be concrete and capture only the predicate"
-      pure rest
+      pure (rest, some reader)
   let entryRows ←
     match prototypeOwner with
     | none =>
       pure afterReader
     | some owner =>
-      checkPrototypeBlock (fun id => request.claimants B id == [owner]) afterReader
+      let some reader := readerName | throw "a prototype module requires the ordered reader"
+      checkPrototypeBlock (fun id => request.claimants B id == [owner]) reader afterReader
   unless entryRows.all (authored request.entry) do
     throw "remaining executable units must be authored in the entry"
   for (id, stmt) in entryRows do
