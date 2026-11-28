@@ -195,3 +195,13 @@ console.log(
     checkOutput: reread.verdict,
   })
 );
+
+if (process.argv.includes("--linked-diagnostic")) {
+  const { inspect } = await import("./zod_v3_static_graph/diagnostic.mjs");
+  inspect({
+    original: original.root,
+    candidate: staged.root,
+    manifest,
+    worker,
+  });
+}

@@ -4,6 +4,7 @@ import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.DynamicImports
 import EsmSplit.CoreJS.IndexedInlineConstructor
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.LinkedInputCensus
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.CoreJS.StateMatch
@@ -256,6 +257,70 @@ private def defaultLayout (input : Json) : Except String Json := do
     ("initializedAtLink", toJson ((value before.ready).isSome)),
     ("sameFunctionObject", toJson (value before.ready == some (.obj object)))]
 
+private def report (result : Except String Json) : Json :=
+  match result with
+  | .ok output => Json.mkObj [("output", output)]
+  | .error reason => Json.mkObj [("error", toJson reason)]
+
+/-- Feed the real source and readback ASTs to the existing deployment decoder.
+The other probes are independent and can report after that decoder refuses. -/
+private def deploymentDiagnostic (input : Json) : Except String Json := do
+  let entry ← input.getObjValAs? String "entry"
+  let source ← input.getObjVal? "source"
+  let files ← input.getObjVal? "files"
+  let fixed ← input.getObjVal? "fixed"
+  let spec ← EsmSplit.parseSpec (← input.getObjVal? "spec")
+  let nodes ← ESTreeUnits.checkedNodes source (← source.getObjValAs? String "sourceText")
+  let plan := EsmSplit.mkPlan (EsmSplit.LowerSplit.sourceBundle nodes) spec
+  let stages : Except String Json := do
+    let decoded ← (CoreJS.LinkedInput.decodeDeployment entry [⟨source, files, plan⟩] fixed none .empty
+      (fun _ => [])).mapError CoreJS.LinkedBehavior.StructuralRefusal.reason
+    let _ ← CoreJS.checkPlaces decoded.assignment decoded.before decoded.after
+    return toJson [decoded.before.evalOrder, decoded.after.evalOrder]
+  return report stages
+
+private def outerCallableRefusal (s : CoreJS.Stmt) : Option String := do
+  let f ← match s with
+    | .decl _ _ (.func f) | .funDecl f | .expr (.call (.func f) _) => some f
+    | _ => none
+  let (_, _, _, reason) ← f.opaqueBody
+  reason
+
+private def dependencyFreeProbe (m : CoreJS.Module) : Json :=
+  let result := CoreJS.runProgram CoreJS.World.probe 1024 { entry := m.name, modules := [m] }
+  let failed (reason : String) (region : Nat) := Json.mkObj [
+    ("reason", toJson reason), ("unit", toJson (if region == 0 then none else some (region - 1)))]
+  match result with
+  | .ok () _ => Json.mkObj [("status", .str "ok")]
+  | .fuel => Json.mkObj [("status", .str "fuel")]
+  | .throw _ state => failed "throw" state.region
+  | .unknown reason state => failed reason state.region
+
+private def moduleDiagnostic (input : Json) : Except String Json := do
+  let path ← input.getObjValAs? String "path"
+  let ast ← input.getObjVal? "ast"
+  let nodes ← ESTreeUnits.checkedNodes ast (← ast.getObjValAs? String "sourceText")
+  let units ← CoreJS.LinkedInputCensus.censusUnits ast
+  let ecma ← CoreJS.LinkedInputCensus.censusUnits ast .ecmascript
+  let records := (units.zip ecma).map fun (u, e) =>
+    let kind := match u.statement with
+      | .ok (.opaque ..) => "retained-unit"
+      | .ok _ => "lowered"
+      | .error _ => "refused"
+    let callable (u : CoreJS.LinkedInputCensus.CensusUnit) := u.statement.toOption.bind outerCallableRefusal
+    Json.mkObj [("unit", toJson u.ordinal), ("kind", toJson kind),
+      ("loweringRefusal", toJson u.concreteRefusal), ("outerCallableRefusal", toJson (callable u)),
+      ("ecmaOuterCallableRefusal", toJson (callable e))]
+  let ids := units.toList.map (·.ordinal)
+  let hasImports := nodes.any fun j => (j.getObjValAs? String "type").toOption == some "ImportDeclaration"
+  -- The source decoder preserves ordinals even for unhandled export headers.
+  -- For relative imports use the path-aware decoder instead.
+  let parsed ← pure <| if hasImports then CoreJS.LinkedInput.parseLinkedModuleWithOrdinals path nodes ids else
+    (CoreJS.LinkedInput.decodeSingletonSourceNodes nodes path).map (·.source)
+  return Json.mkObj [("units", .arr records), ("module", report (parsed.map fun m =>
+    Json.mkObj ([("exports", toJson m.exports)] ++
+      (if m.imports.isEmpty then [("isolatedExecution", dependencyFreeProbe m)] else []))))]
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
@@ -266,6 +331,8 @@ private def fixtures (input : Json) : Except String Json := do
       | "singletonPlacement" => pure (singletonPlacement (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "structuralSparseHole" => pure (structuralSparseHole (← fixture.getObjVal? "input"))
+      | "deploymentDiagnostic" => pure (deploymentDiagnostic (← fixture.getObjVal? "input"))
+      | "moduleDiagnostic" => pure (moduleDiagnostic (← fixture.getObjVal? "input"))
       | "singletonSourceShape" => pure (singletonSourceShape (← fixture.getObjVal? "input"))
       | "sourceClassification" => pure (sourceClassification (← fixture.getObjVal? "input"))
       | "inlineConstructor" => pure (inlineConstructor (← fixture.getObjVal? "input"))
@@ -275,9 +342,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"
-    return match result with
-      | .ok output => Json.mkObj [("output", output)]
-      | .error reason => Json.mkObj [("error", toJson reason)])
+    return report result)
 
 def main : IO UInt32 := do
   let line ← (← IO.getStdin).getLine

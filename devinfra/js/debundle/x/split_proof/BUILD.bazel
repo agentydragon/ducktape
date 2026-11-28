@@ -2130,6 +2130,7 @@ test_runner(
         ":corejs_dynamic_imports",
         ":corejs_indexed_inline_constructor",
         ":corejs_linked_input",
+        ":corejs_linked_input_census",
         ":corejs_module_location",
         ":corejs_opaque_input",
         ":corejs_state_match",
