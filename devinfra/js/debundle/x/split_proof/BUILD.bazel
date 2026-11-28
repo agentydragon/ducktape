@@ -2106,6 +2106,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.OrderedArrowInit"],
     required_theorems = [
         "CoreJS.OrderedArrowInit.bindings_var_arrow",
+        "CoreJS.OrderedArrowInit.Behavior.observeExport_eq",
         "CoreJS.OrderedArrowInit.check",
         "CoreJS.OrderedArrowInit.checkReadback",
         "CoreJS.OrderedArrowInit.runUnit_var_arrow",

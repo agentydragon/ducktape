@@ -170,12 +170,45 @@ const visibleElementsInputs = [
   { id:"freedraw", type:"freedraw", width:5, height:0, points:[[0,0],[5,0]] }
 ];
 const visibleElementsActual = Lm(visibleElementsInputs);
+function exerciseSuppliedFilter(fails) {
+  const sentinel = {};
+  const first = fails ? {
+    ...visibleElementsInputs[5],
+    get isDeleted() { throw sentinel; },
+  } : visibleElementsInputs[5];
+  const second = visibleElementsInputs[2];
+  const receiver = {
+    trace: 0,
+    filter(callback) {
+      if (this !== receiver) throw new Error("lost receiver");
+      this.trace = 1;
+      const firstDecision = callback(first);
+      this.firstDecision = firstDecision;
+      this.trace = 12;
+      const secondDecision = callback(second);
+      const result = [];
+      if (firstDecision) result.push(first);
+      if (secondDecision) result.push(second);
+      return result;
+    },
+  };
+  try {
+    const result = Lm(receiver);
+    if (result === receiver || result.at(-1) !== second) throw new Error("wrong result reference");
+    return { trace: receiver.trace, selected: result.length, threw: false };
+  } catch (error) {
+    if (error !== sentinel) throw error;
+    if ("firstDecision" in receiver) throw new Error("callback completed before throw");
+    return { trace: receiver.trace, selected: 0, threw: true };
+  }
+}
 console.log(JSON.stringify({
   ids:visibleElementsActual.map(e=>e.id),
   sameObjects:visibleElementsActual.every(e=>visibleElementsInputs.includes(e)),
   freshArray:visibleElementsActual !== visibleElementsInputs,
   linear:ye(visibleElementsInputs[3]),
-  smallFreedraw:Vc(visibleElementsInputs[5])
+  smallFreedraw:Vc(visibleElementsInputs[5]),
+  suppliedFilter: [exerciseSuppliedFilter(false), exerciseSuppliedFilter(true)],
 }));
 `;
 function observe(file) {
@@ -205,6 +238,10 @@ const expected = {
   freshArray: true,
   linear: true,
   smallFreedraw: true,
+  suppliedFilter: [
+    { trace: 12, selected: 1, threw: false },
+    { trace: 1, selected: 0, threw: true },
+  ],
 };
 assert.deepEqual(observe(flat), expected);
 const handWired = observe(layout("reference-layout", "st"));
@@ -212,7 +249,12 @@ assert.deepEqual(handWired, expected);
 // Rewire only the private import to a different original function. gs
 // expects a type string; the original st expects an element object.
 const wrong = observe(layout("wrong-cell", "gs as st"));
-assert.deepEqual(wrong, { ...expected, ids: ["box", "line", "short-freedraw", "freedraw"], smallFreedraw: false });
+assert.deepEqual(wrong, {
+  ...expected,
+  ids: ["box", "line", "short-freedraw", "freedraw"],
+  smallFreedraw: false,
+  suppliedFilter: [{ ...expected.suppliedFilter[0], selected: 2 }, expected.suppliedFilter[1]],
+});
 
 const request = {
   source: flat,
@@ -280,6 +322,7 @@ assert(initialized.report, JSON.stringify(initialized));
 assert.deepEqual(model(flat, spec, staged, true), initialized);
 assert.equal(initialized.report.filter, "host function Array.prototype.filter is called");
 assert.equal(initialized.report.ownFilter, "false");
+assert.deepEqual(initialized.report.suppliedFilter, expected.suppliedFilter);
 assert.equal(initialized.report.early, "undefined");
 assert.equal(initialized.report.late, "object");
 assert.deepEqual(observe(path.join(staged, entry)), expected);
@@ -288,6 +331,15 @@ const edited = path.join(artifacts, "edited-initialization");
 cpSync(staged, edited, { recursive: true });
 const editedEntry = path.join(edited, entry);
 const beforeEdit = readFileSync(editedEntry, "utf8");
+function exportedNames(file) {
+  return parse(readFileSync(file, "utf8")).ast.body.flatMap(({ type, specifiers }) =>
+    type === "ExportNamedDeclaration" ? specifiers.map(({ exported }) => exported.name) : []
+  );
+}
+const stagedPublic = exportedNames(path.join(staged, entry));
+const stagedGlue = exportedNames(path.join(staged, helper));
+assert.deepEqual(stagedPublic.toSorted(), ["hc", "kc", "zj"]);
+assert(stagedGlue.includes("st") && !stagedPublic.includes("st"));
 const typeImports = parse(beforeEdit).ast.body.find(({ type }) => type === "ImportDeclaration").specifiers;
 const privateRead = typeImports.find(({ local }) => local.name === "st");
 const linearType = typeImports.find(({ local }) => local.name === "gs");
@@ -339,6 +391,8 @@ const report = {
   region: {
     ids,
     projectionHash: sha256(flatCode),
+    projectionBytes: Buffer.byteLength(flatCode),
+    originalBytes: Buffer.byteLength(code),
     spec,
     verdict: region.verdict,
     files: region.files,
@@ -347,6 +401,8 @@ const report = {
     indexed: indexed.error ?? indexed.output,
     node: { expected, handWired, wrong },
     initializationOnly: initialized.report,
+    stagedPublic,
+    stagedGlue,
     negative: { wrongReread, earlyGate, earlyCli: earlyCli.verdict },
   },
 };

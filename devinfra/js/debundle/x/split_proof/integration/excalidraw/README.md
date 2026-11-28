@@ -67,27 +67,11 @@ Only `editor` and `main` have named module assignments in the Excalidraw spec.
 The shared roughjs chunk stays in its entry. The vendor swap on the roughjs
 entry stub is a separate transformation.
 
-The replay gives Lean the generated specs and independently reads the Rust reports.
-It compares every original source unit's owner and evaluation position in Lean's
-plan with the Rust reports, including on rejection.
-Lean derives its own imports and exports and checks its own footprints. This
-measures agreement on placement and execution order; it does not validate the
-Rust emitter's JavaScript or vendor substitutions.
-
-| Chunk  | Units outside entry | Nonentry modules | Inversions in Rust order | Lean rejection                              |
-| ------ | ------------------: | ---------------: | -----------------------: | ------------------------------------------- |
-| Editor |        272 of 1,787 |               35 |                  295,384 | `OrderOk`                                   |
-| Main   |      1,628 of 1,628 |               43 |                  136,940 | Static imports 0–7 outside entry; `OrderOk` |
-
-Main's 43 modules include 19 generated residual groups. Editor passes the other
-eight structural checks. One `OrderOk` witness reverses adjacent editor units:
-474 evaluates `S8.includes(devicePixelRatio)` in the entry, and 475 declares
-the arrow function `Ii` in `packages/excalidraw/appstate`. Lean's footprint for
-474 includes `Ii` among 1,545 possible writes. Moving the declaration ahead of
-the call therefore reverses a pair that Lean requires to stay ordered. The next
-question is which possible writes the checker can soundly exclude for that call.
-Both replays stop at structural checks before reaching the module URL guard.
-[Exact schedules, checker logs, and move reports](https://app.buildbuddy.io/invocation/03ee0f61-d9eb-48d8-b30e-63e9cf62e0b8)
+The replay compares the full Rust owner maps and evaluation schedules with
+Lean's diagnostic plans and measures the historical selected subset on the
+same original chunks. See the [current strict fidelity report](strict_fidelity.md)
+for the executable-row denominators, per-owner artifacts, independent refusals,
+and the nearest host-independent feature region.
 
 ### Strict certification of the scroll module
 
