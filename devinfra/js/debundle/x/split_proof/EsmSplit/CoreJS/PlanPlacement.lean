@@ -23,10 +23,10 @@ private theorem numberedPlacements (ss : List Stmt) (owner : String) (ids : List
     simp [h, ih hrest]
 
 private theorem collectModules (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
-    (mods : List EsmSplit.Module)
-    (safe : ∀ m ∈ mods, EsmSplit.safeModulePath m.name = true)
+    (mods : List EsmSplit.Module) (safe : ∀ m ∈ mods, EsmSplit.safeModulePath m.name = true)
     (bounded : ∀ m ∈ mods, ∀ id ∈ m.stmts, id < ss.length) :
-    ((mods.map (moduleOf ss B P)).filter (fun m => EsmSplit.safeModulePath m.name)).flatMap Module.unitPlacements =
+    ((mods.map (moduleOf ss B P)).filter (fun m => EsmSplit.safeModulePath m.name)).flatMap
+        Module.unitPlacements =
       mods.flatMap (fun m => m.stmts.map fun id => (id, m.name)) := by
   induction mods with
   | nil => rfl
@@ -35,10 +35,11 @@ private theorem collectModules (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSp
     have hbound : ∀ id ∈ m.stmts, id < ss.length := bounded m (by simp)
     have hs : ∀ m ∈ rest, EsmSplit.safeModulePath m.name = true := fun m h => safe m (by simp [h])
     have hb : ∀ m ∈ rest, ∀ id ∈ m.stmts, id < ss.length := fun m h => bounded m (by simp [h])
-    simp only [List.map_cons, List.filter_cons, moduleOf, hm, ↓reduceIte,
-      List.flatMap_cons, Module.unitPlacements]
-    have hplaced : (m.stmts.filterMap (fun i => (ss[i]?).map (i, ·))).map
-        (fun p => (p.1, m.name)) = m.stmts.map (fun id => (id, m.name)) := by
+    simp only [List.map_cons, List.filter_cons, moduleOf, hm, ↓reduceIte, List.flatMap_cons,
+      Module.unitPlacements]
+    have hplaced :
+      (m.stmts.filterMap (fun i => (ss[i]?).map (i, ·))).map (fun p => (p.1, m.name)) =
+        m.stmts.map (fun id => (id, m.name)) := by
       exact numberedPlacements ss m.name m.stmts hbound
     rw [hplaced, ih hs hb]
 
@@ -63,9 +64,8 @@ theorem authored_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.P
 
 /-- If a source/plan check establishes exact coverage, the actual split
 satisfies the ordinary `Places` predicate for the plan assignment. -/
-theorem planned_places (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
-    (name : String) (exports : List (Name × Name))
-    (sourceSafe : EsmSplit.safeModulePath name = true)
+theorem planned_places (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) (name : String)
+    (exports : List (Name × Name)) (sourceSafe : EsmSplit.safeModulePath name = true)
     (safe : ∀ m ∈ P.mods, EsmSplit.safeModulePath m.name = true)
     (coverage : ((assignments P).map Prod.fst).Perm (List.range ss.length)) :
     Places (assignments P) ⟨name, [⟨name, [], (List.range ss.length).zip ss, exports⟩]⟩
@@ -79,8 +79,8 @@ theorem planned_places (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan
     exact List.mem_range.mp (coverage.mem_iff.mp inIds)
   refine ⟨coverage.nodup_iff.mpr List.nodup_range, ?_, ?_⟩
   · unfold Program.fileUnitPlacements Module.unitPlacements
-    simp only [sourceSafe, List.filter_cons, ↓reduceIte,
-      List.filter_nil, List.flatMap_cons, List.flatMap_nil, List.append_nil]
+    simp only [sourceSafe, List.filter_cons, ↓reduceIte, List.filter_nil, List.flatMap_cons,
+      List.flatMap_nil, List.append_nil]
     rw [List.map_map]
     change (((List.range ss.length).zip ss).map Prod.fst).Perm ((assignments P).map Prod.fst)
     rw [List.map_fst_zip (by simp)]
@@ -97,11 +97,11 @@ theorem faithful_planned_places (ss : List Stmt) (B : EsmSplit.Bundle) (S : EsmS
     (faithful : EsmSplit.Faithful B S (EsmSplit.mkPlan B S))
     (coverage : ((assignments (EsmSplit.mkPlan B S)).map Prod.fst).Perm (List.range ss.length)) :
     Places (assignments (EsmSplit.mkPlan B S))
-      ⟨name, [⟨name, [], (List.range ss.length).zip ss, exports⟩]⟩
-      (splitProgram ss B (EsmSplit.mkPlan B S)) ∧
-    ∀ id owner, (id, owner) ∈ assignments (EsmSplit.mkPlan B S) → S.claimants B id = [owner] := by
-  exact ⟨planned_places ss B (EsmSplit.mkPlan B S) name exports sourceSafe safe coverage,
-    fun _ _ member => authored_owner faithful member⟩
-
+        ⟨name, [⟨name, [], (List.range ss.length).zip ss, exports⟩]⟩
+        (splitProgram ss B (EsmSplit.mkPlan B S)) ∧
+      ∀ id owner, (id, owner) ∈ assignments (EsmSplit.mkPlan B S) → S.claimants B id = [owner] := by
+  exact
+    ⟨planned_places ss B (EsmSplit.mkPlan B S) name exports sourceSafe safe coverage,
+      fun _ _ member => authored_owner faithful member⟩
 
 end CoreJS.PlanPlacement

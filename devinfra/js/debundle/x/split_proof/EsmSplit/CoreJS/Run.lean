@@ -1,8 +1,8 @@
-import EsmSplit.ESTreeUnits
-import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.Decode
 import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.Fragment
+import EsmSplit.CoreJS.FromESTree
+import EsmSplit.ESTreeUnits
 
 /-!
 # CoreJS: the `corejs` executable
@@ -56,7 +56,8 @@ structure Conversation extends Script where
 
 /-- The scripted part of opaque code: `(code, part)` and its requests, in which `WVal.handle k` stands for register
 `k`. -/
-abbrev Scripts := List ((Nat × Nat) × Script)
+abbrev Scripts :=
+  List ((Nat × Nat) × Script)
 
 /-- Where a replay stands: the calls that are left, the first call of the model that was not the recorded one, and
 the conversations about opaque code that are under way, innermost first. -/
@@ -68,7 +69,9 @@ structure Replay where
 
 /-- A request of a script with its registers filled in. -/
 def Request.fill (regs : Array WVal) (r : Request) : Request :=
-  let v : WVal → WVal := fun | .handle k => regs.getD k (.prim .undef) | w => w
+  let v : WVal → WVal := fun
+    | .handle k => regs.getD k (.prim .undef)
+    | w => w
   match r with
   | .done x => .done (v x)
   | .throw x => .throw (v x)
@@ -111,13 +114,21 @@ def Replay.told (told : Told) (st : Replay) : Request × Replay :=
   | .run code part callee this args _, talks =>
     match st.scripts.lookup (code, part) with
     | none => (.unknown s!"world: no script for part {part} of opaque code {code}", st)
-    | some script => Replay.next { st with talks := { toScript := script, regs := #[callee, this] ++ args.toArray } :: talks }
+    | some script =>
+      Replay.next
+        { st with
+          talks := { toScript := script, regs := #[callee, this] ++ args.toArray } :: talks }
   | .value v, c :: rest => Replay.next { st with talks := { c with regs := c.regs.push v } :: rest }
   | .keys keys, c :: rest =>
     match c.expectedKeys with
     | expected :: more =>
       if keys == expected then
-        Replay.next { st with talks := { c with expectedKeys := more, regs := c.regs.push (.prim .undef) } :: rest }
+        Replay.next
+          { st with
+            talks :=
+              { c with
+                  expectedKeys := more, regs := c.regs.push (.prim .undef) } ::
+                rest }
       else (.unknown s!"model: own keys {repr keys}, expected {repr expected}", st)
     | [] => (.unknown "model: own keys have no Node expectation", st)
   | .threw v, _ :: rest => (.throw v, { st with talks := rest })
@@ -147,20 +158,27 @@ def showCall (fn : String) (this : Option Primitive) (args : List (Option Primit
   s!"{fn} on {showArg this} with ({", ".intercalate (args.map showArg)})"
 
 /-- The world a recording describes. A call that is not the next recorded one stops the replay and throws. -/
-def replay (calls : List Recorded) (scripts : Scripts := []) (refs : List (HostRef × String) := []) : World where
+def replay (calls : List Recorded) (scripts : Scripts := [])
+    (refs : List (HostRef × String) := []) : World
+    where
   σ := Replay
   init := { left := calls, scripts }
   talk := Replay.told
   hostRef ref st := (refs.lookup ref).map fun identity => (.identity identity, st)
   step fn this args st :=
     let stop (why : String) : HostResult × Replay :=
-      (.throw (.str "world: not the recorded call"), { st with left := [], problem := st.problem.or (some why) })
+      (.throw (.str "world: not the recorded call"),
+        { st with
+          left := [], problem := st.problem.or (some why) })
     match st.left with
     | r :: rest =>
       if r.fn == fn && r.this.any (samePrimitive · this) && samePrimitives r.args args then
         (r.result, { st with left := rest })
-      else stop s!"the model calls {showCall fn (some this) (args.map some)}, Node called {showCall r.fn r.this r.args}"
-    | [] => stop s!"the model calls {showCall fn (some this) (args.map some)} after Node's last call"
+      else
+        stop
+          s!"the model calls {showCall fn (some this) (args.map some)}, Node called {showCall r.fn r.this r.args}"
+    | [] =>
+      stop s!"the model calls {showCall fn (some this) (args.map some)} after Node's last call"
 
 namespace Decode
 
@@ -168,15 +186,22 @@ namespace Decode
 with well-formed Unicode text. -/
 def primitive (j : Json) : Except String Primitive := do
   match (← j.getArr?).toList with
-  | [.str "u"] => pure .undef
-  | [.str "n"] => pure .null
-  | [.str "b", b] => .bool <$> b.getBool?
+  | [.str "u"] =>
+    pure .undef
+  | [.str "n"] =>
+    pure .null
+  | [.str "b", b] =>
+    .bool <$> b.getBool?
   | [.str "d", .str hex] =>
     match Num.natOf 16 hex.toList with
-    | some bits => pure (.num (Float.ofBits bits.toUInt64))
-    | none => throw s!"not the bits of a number: {hex}"
-  | [.str "s", .str s] => pure (.str s)
-  | _ => throw "a primitive was expected"
+    | some bits =>
+      pure (.num (Float.ofBits bits.toUInt64))
+    | none =>
+      throw s!"not the bits of a number: {hex}"
+  | [.str "s", .str s] =>
+    pure (.str s)
+  | _ =>
+    throw "a primitive was expected"
 
 /-- The recorder writes an isolated surrogate as `["x"]` before JSON encoding. -/
 def recordedPrimitive (j : Json) : Except String (Option Primitive) :=
@@ -197,28 +222,42 @@ def recorded (j : Json) : Except String Recorded := do
   let fn ← j.getObjValAs? String "fn"
   let this ← j.getObjVal? "this" >>= recordedPrimitive
   let args ← (← j.getObjVal? "args" >>= Json.getArr?).toList.mapM recordedPrimitive
-  let result ← match j.getObjVal? "ret", j.getObjVal? "throw", j.getObjVal? "error", j.getObjVal? "unknown" with
-    | .ok v, _, _, _ => do
-      match ← recordedPrimitive v with
-      | some p => pure (.ret p)
-      | none => pure (.unknown "the host returns a string containing an isolated UTF-16 surrogate")
-    | _, .ok v, _, _ => do
-      match ← recordedPrimitive v with
-      | some p => pure (.throw p)
-      | none => pure (.unknown "the host throws a string containing an isolated UTF-16 surrogate")
-    | _, _, .ok (.str name), _ => (.error · "") <$> errorKind name
-    | _, _, _, .ok (.str why) => pure (.unknown why)
-    | _, _, _, _ => throw s!"the recorded call of {fn} has no ending"
+  let result ←
+    match j.getObjVal? "ret", j.getObjVal? "throw", j.getObjVal? "error",
+      j.getObjVal? "unknown" with
+    | .ok v, _, _, _ =>
+      do
+        match ← recordedPrimitive v with
+        | some p =>
+          pure (.ret p)
+        | none =>
+          pure (.unknown "the host returns a string containing an isolated UTF-16 surrogate")
+    | _, .ok v, _, _ =>
+      do
+        match ← recordedPrimitive v with
+        | some p =>
+          pure (.throw p)
+        | none =>
+          pure (.unknown "the host throws a string containing an isolated UTF-16 surrogate")
+    | _, _, .ok (.str name), _ =>
+      (.error · "") <$> errorKind name
+    | _, _, _, .ok (.str why) =>
+      pure (.unknown why)
+    | _, _, _, _ =>
+      throw s!"the recorded call of {fn} has no ending"
   pure { fn, this, args, result }
 
 /-- A value in a script: a primitive as in a recording, or `["r", k]` for register `k`. -/
 def wval (j : Json) : Except String WVal :=
   match j.getArr? with
-  | .ok #[.str "r", k] => do pure (.handle (← k.getNat?))
+  | .ok #[.str "r", k] => do
+    pure (.handle (← k.getNat?))
   | _ => do
     match ← recordedPrimitive j with
-    | some p => pure (.prim p)
-    | none => pure .illFormedString
+    | some p =>
+      pure (.prim p)
+    | none =>
+      pure .illFormedString
 
 def primName : String → Except String Prim
   | "log" => pure .log
@@ -231,46 +270,82 @@ def primName : String → Except String Prim
 /-- A request of a script: `[op, operand…]`. -/
 def request (j : Json) : Except String Request := do
   match (← j.getArr?).toList with
-  | [.str "done", x] => .done <$> wval x
-  | [.str "throw", x] => .throw <$> wval x
-  | [.str "unknown", .str why] => pure (.unknown why)
-  | [.str "readVar", i] => .readVar <$> i.getNat?
-  | [.str "writeVar", i, x] => do pure (.writeVar (← i.getNat?) (← wval x))
-  | [.str "initVar", i, x] => do pure (.initVar (← i.getNat?) (← wval x))
-  | [.str "get", o, k] => do pure (.get (← wval o) (← wval k))
-  | [.str "set", o, k, x] => do pure (.set (← wval o) (← wval k) (← wval x))
-  | [.str "delete", o, k] => do pure (.delete (← wval o) (← wval k))
-  | [.str "has", k, o] => do pure (.has (← wval k) (← wval o))
-  | [.str "keys", o] => .keys <$> wval o
-  | .str "call" :: f :: this :: args => do pure (.call (← wval f) (← wval this) (← args.mapM wval))
-  | .str "construct" :: f :: args => do pure (.construct (← wval f) (← args.mapM wval))
-  | [.str "newObject"] => pure (.newObject none)
-  | [.str "newObject", p] => do pure (.newObject (some (← wval p)))
-  | [.str "newFunction", part, .str name, length, .bool constructor] => do
-    pure (.newFunction (← part.getNat?) name (← length.getNat?) constructor)
-  | .str "prim" :: .str p :: args => do pure (.prim (← primName p) (← args.mapM wval))
-  | _ => throw s!"not a request of a script: {j.compress}"
+  | [.str "done", x] =>
+    .done <$> wval x
+  | [.str "throw", x] =>
+    .throw <$> wval x
+  | [.str "unknown", .str why] =>
+    pure (.unknown why)
+  | [.str "readVar", i] =>
+    .readVar <$> i.getNat?
+  | [.str "writeVar", i, x] =>
+    do
+      pure (.writeVar (← i.getNat?) (← wval x))
+  | [.str "initVar", i, x] =>
+    do
+      pure (.initVar (← i.getNat?) (← wval x))
+  | [.str "get", o, k] =>
+    do
+      pure (.get (← wval o) (← wval k))
+  | [.str "set", o, k, x] =>
+    do
+      pure (.set (← wval o) (← wval k) (← wval x))
+  | [.str "delete", o, k] =>
+    do
+      pure (.delete (← wval o) (← wval k))
+  | [.str "has", k, o] =>
+    do
+      pure (.has (← wval k) (← wval o))
+  | [.str "keys", o] =>
+    .keys <$> wval o
+  | .str "call" :: f :: this :: args =>
+    do
+      pure (.call (← wval f) (← wval this) (← args.mapM wval))
+  | .str "construct" :: f :: args =>
+    do
+      pure (.construct (← wval f) (← args.mapM wval))
+  | [.str "newObject"] =>
+    pure (.newObject none)
+  | [.str "newObject", p] =>
+    do
+      pure (.newObject (some (← wval p)))
+  | [.str "newFunction", part, .str name, length, .bool constructor] =>
+    do
+      pure (.newFunction (← part.getNat?) name (← length.getNat?) constructor)
+  | .str "prim" :: .str p :: args =>
+    do
+      pure (.prim (← primName p) (← args.mapM wval))
+  | _ =>
+    throw s!"not a request of a script: {j.compress}"
 
 /-- `"scripts": [{"code", "part", "steps": [request, …]}, …]`: what the world does for opaque code. -/
 def scripts (j : Json) : Except String Scripts :=
   match j.getObjVal? "scripts" with
   | .ok all => do
     (← all.getArr?).toList.mapM fun s => do
-      let expectedKeys ← match s.getObjVal? "expectedKeys" with
-        | .ok j => (← j.getArr?).toList.mapM fun keys => do (← keys.getArr?).toList.mapM Json.getStr?
-        | .error _ => pure []
-      pure ((← s.getObjValAs? Nat "code", ← s.getObjValAs? Nat "part"),
-        { steps := ← (← s.getObjVal? "steps" >>= Json.getArr?).toList.mapM request, expectedKeys })
+        let expectedKeys ←
+          match s.getObjVal? "expectedKeys" with
+          | .ok j =>
+            (← j.getArr?).toList.mapM fun keys => do
+                (← keys.getArr?).toList.mapM Json.getStr?
+          | .error _ =>
+            pure []
+        pure
+            ((← s.getObjValAs? Nat "code", ← s.getObjValAs? Nat "part"),
+              { steps := ← (← s.getObjVal? "steps" >>= Json.getArr?).toList.mapM request,
+                expectedKeys })
   | .error _ => pure []
 
 /-- The recording that comes with a program, if one does. -/
 def world (j : Json) : Except String (List Recorded) :=
   match j.getObjVal? "world" with
-  | .ok calls => do (← calls.getArr?).toList.mapM recorded
+  | .ok calls => do
+    (← calls.getArr?).toList.mapM recorded
   | .error _ => pure []
 
 def hostRefs (j : Json) : Except String (List (HostRef × String)) := do
-  let observed key := match j.getObjVal? key with
+  let observed key :=
+    match j.getObjVal? key with
     | .ok value => value.getBool?
     | .error _ => pure false
   let iteratorSymbol ← observed "iteratorSymbol"
@@ -278,9 +353,9 @@ def hostRefs (j : Json) : Except String (List (HostRef × String)) := do
   let tag ← observed "toStringTagSymbol"
   let symbolConstructor ← observed "symbolConstructor"
   return (if iteratorSymbol then [(.property "Symbol" "iterator", "Symbol.iterator")] else []) ++
-    (if hasInstance then [(.property "Symbol" "hasInstance", "Symbol.hasInstance")] else []) ++
-    (if tag then [(.property "Symbol" "toStringTag", "Symbol.toStringTag")] else []) ++
-    (if symbolConstructor then [(.binding "Symbol", "intrinsic.Symbol")] else [])
+      (if hasInstance then [(.property "Symbol" "hasInstance", "Symbol.hasInstance")] else []) ++
+      (if tag then [(.property "Symbol" "toStringTag", "Symbol.toStringTag")] else []) ++
+      (if symbolConstructor then [(.binding "Symbol", "intrinsic.Symbol")] else [])
 
 end Decode
 
@@ -302,7 +377,8 @@ def describe {W : World} (s : State W) : Val → String
   | .error .uri _ => "URIError"
   | .host _ => "host"
 
-private def showSymbol (a : Addr) : String := s!"symbol@{a.region}.{a.index}"
+private def showSymbol (a : Addr) : String :=
+  s!"symbol@{a.region}.{a.index}"
 
 /-- A value as text, an object or a fresh symbol by its address. -/
 def showVal : Val → String
@@ -322,7 +398,8 @@ private def showKey : PropertyKey → String
   | .wellKnownSymbol sym => sym.description
   | .symbol a => showSymbol a
 
-def showAddr (a : Addr) : String := s!"@{a.region}.{a.index}"
+def showAddr (a : Addr) : String :=
+  s!"@{a.region}.{a.index}"
 
 def showProperty : Property → String
   | .data v w e c => s!"data {showVal v} {w} {e} {c}"
@@ -333,11 +410,13 @@ def showCode : Code → String
   | .derivedFields env fields =>
     s!"derived fields {env.vars.map fun (x, a) => (x, showAddr a)} {fields.map fun (key, _) => showKey key}"
   | .derivedBody before args f env fields =>
-    let argumentShape := match args with
+    let argumentShape :=
+      match args with
       | .forward => "forward"
       | .explicit es => toString es.length
       | .conditional _ yes no => s!"if({yes.length},{no.length})"
-    let base := s!"derived {f.name} {f.params} {before.length} {argumentShape} {env.vars.map fun (x, a) => (x, showAddr a)}"
+    let base :=
+      s!"derived {f.name} {f.params} {before.length} {argumentShape} {env.vars.map fun (x, a) => (x, showAddr a)}"
     if fields.isEmpty then base else s!"{base} {fields.map fun (key, _) => showKey key}"
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map fun (k, _) => showKey k}"
@@ -345,14 +424,16 @@ def showCode : Code → String
   | .opaque code part cells ctor => s!"opaque {code} {part} {cells.map (·.map showAddr)} {ctor}"
 
 def showObj (o : Obj) : String :=
-  let promise := match o.promise with
+  let promise :=
+    match o.promise with
     | none => ""
     | some .pending => " promise: pending"
     | some (.fulfilled value) => s!" promise: fulfilled {showVal value}"
     | some (.rejected reason) => s!" promise: rejected {showVal reason}"
   s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (showKey k, showProperty p)} {o.code.map showCode} {o.array} {repr o.regexp}{promise}"
 
-def showBinding (b : Binding) : String := s!"{b.value.map showVal} {b.mutable}"
+def showBinding (b : Binding) : String :=
+  s!"{b.value.map showVal} {b.mutable}"
 
 /-- Every object and every binding of a state as text, each at its address. Two states with the same text have the
 same heap and the same bindings, up to the code of their functions, of which only the name, the parameters and the
@@ -363,17 +444,20 @@ def showState {W : World} (s : State W) : String :=
 /-- `s`: the state the run ended in. Its region says where: 0 outside every statement, `i + 1` in the statement
 with identity `i`. `state` is a hash of `showState`. -/
 def report {calls : List Recorded} {scripts : Scripts} {refs : List (HostRef × String)}
-    (order : List String) (s : State (replay calls scripts refs)) (ending detail : String) : String :=
-  (Json.mkObj [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail), ("region", s.region),
-    ("order", Json.arr (order.toArray.map Json.str)), ("world", s.world.state.problem.getD ""),
-    ("left", s.world.state.left.length), ("handed", s.world.handed.size),
-    ("state", toString (hash (showState s)))]).compress
+    (order : List String) (s : State (replay calls scripts refs)) (ending detail : String) :
+    String :=
+  (Json.mkObj
+      [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail),
+        ("region", s.region), ("order", Json.arr (order.toArray.map Json.str)),
+        ("world", s.world.state.problem.getD ""), ("left", s.world.state.left.length),
+        ("handed", s.world.handed.size), ("state", toString (hash (showState s)))]).compress
 
 def runLine (fuel : Nat) (line : String)
     (decode : Json → Scripts → Except String Program := fun j _ => Decode.program j) : String :=
-  match Json.parse line >>= fun j => do
-    let scripts ← Decode.scripts j
-    pure (← decode j scripts, ← Decode.world j, scripts, ← Decode.hostRefs j) with
+  match
+    Json.parse line >>= fun j => do
+      let scripts ← Decode.scripts j
+      pure (← decode j scripts, ← Decode.world j, scripts, ← Decode.hostRefs j) with
   | .error msg => report [] (initialState (replay [] []) 0) "malformed" msg
   | .ok (program, calls, scripts, refs) =>
     let order := program.evalOrder
@@ -384,7 +468,8 @@ def runLine (fuel : Nat) (line : String)
     | .unknown why s => report order s "unknown" why
     | .fuel => report order (initialState recorded 0) "fuel" ""
 
-def strings (names : List String) : Json := Json.arr (names.toArray.map Json.str)
+def strings (names : List String) : Json :=
+  Json.arr (names.toArray.map Json.str)
 
 /-- **`FootprintsOfSyntax`, checked** (`Split.lean`): for the statement with identity `i`, the footprint on line `i`
 names as `defs` what the statement declares (`Stmt.bindings`), and every name the statement mentions
@@ -402,23 +487,31 @@ def checkFootprints (program : Program) (lines : List String) : Except String St
     let fp ← Json.parse line
     let defs ← names fp "defs"
     let known := defs ++ (← names fp "eager") ++ (← names fp "lazy")
-    let found : Option String := match body.lookup i with
-      | none => if defs.isEmpty then none else some s!"declares {defs} and has no statement in the model"
+    let found : Option String :=
+      match body.lookup i with
+      | none =>
+        if defs.isEmpty then none else some s!"declares {defs} and has no statement in the model"
       | some s =>
         let declared := s.bindings.map (·.1)
         if !(defs.all declared.contains && declared.all defs.contains) then
           some s!"the footprint declares {defs}, the statement {declared}"
-        else match s.free.filter (!known.contains ·) with
+        else
+          match s.free.filter (!known.contains ·) with
           | [] => none
           | missing => some s!"mentions {missing.eraseDups}, which the footprint does not list"
     checked := checked + 1
-    if let some (.opaque ..) := body.lookup i then opaques := opaques + 1
+    if let some (.opaque ..) := body.lookup i then
+      opaques := opaques + 1
     if let some why := found then
       failed := failed + 1
-      if problems.size < 20 then problems := problems.push s!"{i}: {why}"
-  if body.any (·.1 ≥ lines.length) then throw "a statement has no footprint"
-  pure (Json.mkObj [("checked", checked), ("opaque", opaques), ("failed", failed),
-    ("problems", Json.arr (problems.map Json.str))]).compress
+      if problems.size < 20 then
+        problems := problems.push s!"{i}: {why}"
+  if body.any (·.1 ≥ lines.length) then
+    throw "a statement has no footprint"
+  pure
+      (Json.mkObj
+          [("checked", checked), ("opaque", opaques), ("failed", failed),
+            ("problems", Json.arr (problems.map Json.str))]).compress
 
 /-- **Which statements have a proved footprint** (`Fragment.lean`): the statements that do nothing when they run, and
 the others that only allocate: declarations whose initializers only allocate, opaque statements that only make
@@ -439,72 +532,100 @@ def moveCensus (program : Program) (lines : Option (List String)) : Except Strin
   let mut writes : Nat := 0
   let mut findings : Array String := #[]
   for (i, s) in body do
-    if let .opaque .. := s then opaques := opaques + 1
+    if let .opaque .. := s then
+      opaques := opaques + 1
     if s.inert then
       inert := inert + 1
       if let some fp := fps[i]? then
-        if (fp.getObjValAs? Bool "effect").toOption == some true then inertEffect := inertEffect + 1
+        if (fp.getObjValAs? Bool "effect").toOption == some true then
+          inertEffect := inertEffect + 1
     else if let some (_, reads) := s.allocs then
       allocs := allocs + 1
       if let some fp := fps[i]? then
-        if (fp.getObjValAs? Bool "effect").toOption == some true then effect := effect + 1
-        if !(← names fp "writes").isEmpty then writes := writes + 1
+        if (fp.getObjValAs? Bool "effect").toOption == some true then
+          effect := effect + 1
+        if !(← names fp "writes").isEmpty then
+          writes := writes + 1
         let known := (← names fp "defs") ++ (← names fp "eager")
         match reads.filter (!known.contains ·) with
-        | [] => pure ()
-        | missing => findings := findings.push s!"{i}: reads {missing.eraseDups}, which the footprint does not list"
-  let counts : List (String × Json) := [("units", (body.length : Nat)), ("opaque", (opaques : Nat)),
-    ("inert", (inert : Nat)), ("allocate", (allocs : Nat))]
-  let analysis : List (String × Json) := [("inert_effect", (inertEffect : Nat)), ("allocate_effect", (effect : Nat)),
-    ("allocate_writes", (writes : Nat)),
-    ("findings", Json.arr (findings.map Json.str))]
+        | [] =>
+          pure ()
+        | missing =>
+          findings :=
+            findings.push s!"{i}: reads {missing.eraseDups}, which the footprint does not list"
+  let counts : List (String × Json) :=
+    [("units", (body.length : Nat)), ("opaque", (opaques : Nat)), ("inert", (inert : Nat)),
+      ("allocate", (allocs : Nat))]
+  let analysis : List (String × Json) :=
+    [("inert_effect", (inertEffect : Nat)), ("allocate_effect", (effect : Nat)),
+      ("allocate_writes", (writes : Nat)), ("findings", Json.arr (findings.map Json.str))]
   pure (Json.mkObj (counts ++ if lines.isSome then analysis else [])).compress
 
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["--host-names"] =>
     let ownStringNames (o : Obj) := strings (o.props.filterMap fun (k, _) => k.string?)
-    IO.println (Json.mkObj [
-      ("prototypes", Json.mkObj [
-        ("Object.prototype", strings ("__proto__" :: objectProtoNames)),
-        ("Function.prototype", strings (["length", "name", "arguments", "caller"] ++ functionProtoNames)),
-        ("Array.prototype", strings ("length" :: arrayProtoNames)),
-        ("ArrayIterator.prototype", ownStringNames arrayIteratorPrototype),
-        ("Iterator.prototype", ownStringNames iteratorPrototype),
-        ("Generator.prototype", ownStringNames generatorPrototype),
-        ("AsyncIterator.prototype", ownStringNames asyncIteratorPrototype),
-        ("AsyncGenerator.prototype", ownStringNames asyncGeneratorPrototype),
-        ("AsyncGeneratorFunction.prototype", ownStringNames asyncGeneratorFunctionPrototype),
-        ("GeneratorFunction.prototype", ownStringNames generatorFunctionPrototype),
-        ("RegExp.prototype", ownStringNames regexpPrototype),
-        ("AsyncFunction.prototype", ownStringNames asyncFunctionPrototype),
-        ("String.prototype", strings stringProtoNames),
-        ("Number.prototype", strings numberProtoNames),
-        ("Boolean.prototype", strings booleanProtoNames)]),
-      ("methods", strings (qualified worldMethodNames)),
-      ("functions", strings (hostFunctions ++ qualified hostNamespaces)),
-      ("globals", strings (hostFunctions ++ hostNamespaces.map (·.1)).eraseDups)]).compress
+    IO.println
+        (Json.mkObj
+            [("prototypes",
+                Json.mkObj
+                  [("Object.prototype", strings ("__proto__" :: objectProtoNames)),
+                    ("Function.prototype",
+                      strings (["length", "name", "arguments", "caller"] ++ functionProtoNames)),
+                    ("Array.prototype", strings ("length" :: arrayProtoNames)),
+                    ("ArrayIterator.prototype", ownStringNames arrayIteratorPrototype),
+                    ("Iterator.prototype", ownStringNames iteratorPrototype),
+                    ("Generator.prototype", ownStringNames generatorPrototype),
+                    ("AsyncIterator.prototype", ownStringNames asyncIteratorPrototype),
+                    ("AsyncGenerator.prototype", ownStringNames asyncGeneratorPrototype),
+                    ("AsyncGeneratorFunction.prototype",
+                      ownStringNames asyncGeneratorFunctionPrototype),
+                    ("GeneratorFunction.prototype", ownStringNames generatorFunctionPrototype),
+                    ("RegExp.prototype", ownStringNames regexpPrototype),
+                    ("AsyncFunction.prototype", ownStringNames asyncFunctionPrototype),
+                    ("String.prototype", strings stringProtoNames),
+                    ("Number.prototype", strings numberProtoNames),
+                    ("Boolean.prototype", strings booleanProtoNames)]),
+              ("methods", strings (qualified worldMethodNames)),
+              ("functions", strings (hostFunctions ++ qualified hostNamespaces)),
+              ("globals", strings (hostFunctions ++ hostNamespaces.map (·.1)).eraseDups)]).compress
     pure 0
   | ["--footprints", programFile, footprintsFile] =>
     let lines := ((← IO.FS.readFile footprintsFile).splitOn "\n").filter (· != "")
-    match Json.parse (← IO.FS.readFile programFile) >>= Decode.program >>= (checkFootprints · lines) with
-    | .ok report => IO.println report; pure 0
-    | .error msg => IO.eprintln msg; pure 1
+    match
+      Json.parse (← IO.FS.readFile programFile) >>= Decode.program >>=
+        (checkFootprints · lines) with
+    | .ok report =>
+      IO.println report;
+      pure 0
+    | .error msg =>
+      IO.eprintln msg;
+      pure 1
   | "--moves" :: programFile :: rest =>
-    let lines ← match rest with
-      | [] => pure none
-      | [footprintsFile] => pure (some (((← IO.FS.readFile footprintsFile).splitOn "\n").filter (· != "")))
-      | _ => IO.eprintln "usage: corejs --moves program.json [footprints.jsonl]"; return 2
+    let lines ←
+      match rest with
+      | [] =>
+        pure none
+      | [footprintsFile] =>
+        pure (some (((← IO.FS.readFile footprintsFile).splitOn "\n").filter (· != "")))
+      | _ =>
+        IO.eprintln "usage: corejs --moves program.json [footprints.jsonl]";
+        return 2
     match Json.parse (← IO.FS.readFile programFile) >>= Decode.program >>= (moveCensus · lines) with
-    | .ok report => IO.println report; pure 0
-    | .error msg => IO.eprintln msg; pure 1
+    | .ok report =>
+      IO.println report;
+      pure 0
+    | .error msg =>
+      IO.eprintln msg;
+      pure 1
   | [file] | [file, "--fuel", _] =>
     let fuel := (args[2]?.bind String.toNat?).getD 100000
     for line in (← IO.FS.lines file) do
       IO.println (runLine fuel line)
     pure 0
   | _ =>
-    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --ast dumps.jsonl | corejs --host-names | corejs --footprints program.json footprints.jsonl | corejs --moves program.json [footprints.jsonl]"
+    IO.eprintln
+        "usage: corejs programs.jsonl [--fuel N] | corejs --ast dumps.jsonl | corejs --host-names | corejs --footprints program.json footprints.jsonl | corejs --moves program.json [footprints.jsonl]"
     pure 2
 
 end CoreJS

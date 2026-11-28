@@ -24,7 +24,8 @@ def runProgramTurn (w : World) (fuel : Nat) (p : TurnProgram) : TurnResult w Uni
 failed links. -/
 theorem runProgramTurn_sync (w : World) (fuel : Nat) (p : Program) :
     runProgramTurn w fuel (p : TurnProgram) = TurnResult.withJobs [] (runProgram w fuel p) := by
-  simp only [runProgramTurn, withLinkedTurn, TurnResult.andThen, runProgram, M.bind_apply, TurnUnits.runLinked]
+  simp only [runProgramTurn, withLinkedTurn, TurnResult.andThen, runProgram, M.bind_apply,
+    TurnUnits.runLinked]
   cases link p (initialState w p.regions)
   case ok linked ready => cases runUnits fuel (unitsOf linked) ready <;> rfl
   all_goals rfl

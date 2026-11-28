@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.LinkedBehavior
+import EsmSplit.CoreJS.Split
 import EsmSplit.Split
 
 /-! A plan can retain terminal non-executable source units while the actual
@@ -18,19 +18,23 @@ The caller still supplies provenance that the last unit is metadata. -/
 def TerminalOnly (source : Module) (metadataOrdinal : Nat) : Prop :=
   source.body.map Prod.fst = List.range source.body.length ∧ metadataOrdinal = source.body.length
 
-instance (source : Module) (metadataOrdinal : Nat) : Decidable (TerminalOnly source metadataOrdinal) := by
+instance (source : Module) (metadataOrdinal : Nat) :
+    Decidable (TerminalOnly source metadataOrdinal) := by
   unfold TerminalOnly
   infer_instance
 
 /-- Reject sparse executable IDs before applying the terminal-only projection. -/
-def checkTerminalOnly (source : Module) (metadataOrdinal : Nat) : Except String (PLift (TerminalOnly source metadataOrdinal)) :=
+def checkTerminalOnly (source : Module) (metadataOrdinal : Nat) :
+    Except String (PLift (TerminalOnly source metadataOrdinal)) :=
   if h : TerminalOnly source metadataOrdinal then .ok ⟨h⟩
   else .error "expected dense executable original IDs followed by one terminal metadata unit"
 
 /-- Under that source-side check, compact body positions are exactly the
 original executable IDs. No later executable unit is renumbered. -/
-theorem terminal_body (source : Module) {metadataOrdinal : Nat} (shape : TerminalOnly source metadataOrdinal) :
-    source.body = (List.range (source.body.map Prod.snd).length).zip (source.body.map Prod.snd) := by
+theorem terminal_body (source : Module) {metadataOrdinal : Nat}
+    (shape : TerminalOnly source metadataOrdinal) :
+    source.body =
+      (List.range (source.body.map Prod.snd).length).zip (source.body.map Prod.snd) := by
   symm
   rw [List.length_map, ← shape.1, List.zip_map']
   exact List.map_id _
@@ -41,7 +45,8 @@ def executable (ss : List Stmt) (P : EsmSplit.Plan) : List Nat :=
   P.execOrder.filter fun id => id < ss.length
 
 /-- The executable units run in their original source order. -/
-def Kept (ss : List Stmt) (P : EsmSplit.Plan) : Prop := executable ss P = List.range ss.length
+def Kept (ss : List Stmt) (P : EsmSplit.Plan) : Prop :=
+  executable ss P = List.range ss.length
 
 instance (ss : List Stmt) (P : EsmSplit.Plan) : Decidable (Kept ss P) := by
   unfold Kept
@@ -50,8 +55,9 @@ instance (ss : List Stmt) (P : EsmSplit.Plan) : Decidable (Kept ss P) := by
 /-- A valid all-unit plan containing a terminal metadata position cannot
 satisfy the older order predicate that requires every planned ID to be an
 executable ID. -/
-theorem full_order_incompatible {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (valid : EsmSplit.Valid B S P) (terminal : ss.length < B.length) : ¬ OrderKept ss P := by
+theorem full_order_incompatible {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P) (terminal : ss.length < B.length) :
+    ¬OrderKept ss P := by
   intro kept
   obtain ⟨-, -, -, -, -, -, -, ⟨-, -, all⟩, -⟩ := valid
   have present : ss.length ∈ P.execOrder := all ss.length (List.mem_range.2 terminal)
@@ -61,7 +67,8 @@ theorem full_order_incompatible {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmS
 /-- Removing non-executable IDs does not change the statements `moduleOf`
 constructs; the remaining IDs are not renumbered. -/
 theorem numbered_filter (ss : List Stmt) (ids : List Nat) :
-    (ids.filter fun id => id < ss.length).filterMap (numbered ss) = ids.filterMap (numbered ss) := by
+    (ids.filter fun id => id < ss.length).filterMap (numbered ss) =
+      ids.filterMap (numbered ss) := by
   induction ids with
   | nil => rfl
   | cons id rest ih =>
@@ -69,7 +76,8 @@ theorem numbered_filter (ss : List Stmt) (ids : List Nat) :
     · simp only [List.filter_cons, h, decide_true, ↓reduceIte, List.filterMap_cons]
       rw [ih]
     · have noStmt : ss[id]? = none := List.getElem?_eq_none (Nat.le_of_not_gt h)
-      simp only [List.filter_cons, h, decide_false, Bool.false_eq_true, ↓reduceIte, List.filterMap_cons]
+      simp only [List.filter_cons, h, decide_false, Bool.false_eq_true, ↓reduceIte,
+        List.filterMap_cons]
       simpa [numbered, noStmt] using ih
 
 /-- IDs remaining in numbered module bodies are precisely the filtered IDs. -/
@@ -98,16 +106,20 @@ theorem scopes_modules (program : Program) (frames : List (Nat × List (Name × 
     cases h
     rfl
   | m :: rest, linked, h => by
-    change ((do
-      let imported ← program.imported frames m.imports
-      let tail ← program.scopes frames rest
-      pure ((m, { vars := m.scope frames ++ imported, this := .undef }) :: tail)) : Except Abort _)
-      = .ok linked at h
+    change
+      ((do
+            let imported ← program.imported frames m.imports
+            let tail ← program.scopes frames rest
+            pure ((m, { vars := m.scope frames ++ imported, this := .undef }) :: tail)) :
+          Except Abort _) =
+        .ok linked at h
     cases imports : program.imported frames m.imports with
-    | error why => rw [imports] at h; cases h
+    | error why =>
+      rw [imports] at h; cases h
     | ok cells =>
       cases later : program.scopes frames rest with
-      | error why => rw [imports, later] at h; cases h
+      | error why =>
+        rw [imports, later] at h; cases h
       | ok tail =>
         rw [imports, later] at h
         cases h
@@ -117,8 +129,8 @@ theorem scopes_modules (program : Program) (frames : List (Nat × List (Name × 
 /-- Whenever the real link succeeds, its unit IDs are the executable
 projection of the full plan order. This conditional fact does not assume
 link success for certification or assert anything about link failures. -/
-theorem linked_ids (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
-    {w : World} (before : CheckedLink (splitProgram ss B P) w) :
+theorem linked_ids (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) {w : World}
+    (before : CheckedLink (splitProgram ss B P) w) :
     (unitsOf before.linked).map Prod.fst = executable ss P := by
   let program := splitProgram ss B P
   have linked := before.equation
@@ -126,40 +138,53 @@ theorem linked_ids (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
   unfold link linkUsingScopes at linked
   obtain ⟨_, afterCheck, _, linked⟩ := bind_ok linked
   obtain ⟨frames, afterDeclare, _, linked⟩ := bind_ok linked
-  change ((lift (program.scopes frames program.loaded) >>= fun linked => do
-      initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))
-      pure linked) : M w _) afterDeclare = .ok before.linked before.ready at linked
+  change
+    ((lift (program.scopes frames program.loaded) >>= fun linked => do
+            initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))
+            pure linked) :
+          M w _)
+        afterDeclare =
+      .ok before.linked before.ready at linked
   cases result : program.scopes frames program.loaded with
-  | error why => cases why <;> simp [result, lift, M.bind_apply, throwErr, throwVal, unknown] at linked
+  | error why =>
+    cases why <;> simp [result, lift, M.bind_apply, throwErr, throwVal, unknown] at linked
   | ok scope =>
     rw [result] at linked
-    change (initFunctions ((unitsOf scope).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => pure scope)
-      afterDeclare = .ok before.linked before.ready at linked
+    change
+      (initFunctions ((unitsOf scope).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ =>
+            pure scope)
+          afterDeclare =
+        .ok before.linked before.ready at linked
     obtain ⟨_, _, _, returned⟩ := bind_ok linked
     change Res.ok scope _ = .ok before.linked before.ready at returned
     have eq : scope = before.linked := by injection returned
     have modules := scopes_modules program frames program.loaded scope result
     have idkeys : (unitsOf scope).map Prod.fst = (scope.flatMap (·.1.body)).map Prod.fst := by
-      simpa only [List.map_map, Function.comp_def] using congrArg (List.map Prod.fst) (unitsOf_keys scope)
+      simpa only [List.map_map, Function.comp_def] using
+        congrArg (List.map Prod.fst) (unitsOf_keys scope)
     rw [← eq, idkeys]
-    rw [show scope.flatMap (·.1.body) = (scope.map Prod.fst).flatMap (·.body) by rw [List.flatMap_map]]
+    rw [show scope.flatMap (·.1.body) = (scope.map Prod.fst).flatMap (·.body) by
+        rw [List.flatMap_map]]
     rw [modules]
     exact loaded_ids ss B P
 
 /-- For an admitted terminal-only source and an order-kept full plan, the
 actual loaded module bodies retain exactly the original executable ID order.
 The full graph still determines module ordering before projection. -/
-theorem terminal_loaded_ids (source : Module) (metadataOrdinal : Nat) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
-    (shape : TerminalOnly source metadataOrdinal) (kept : Kept (source.body.map Prod.snd) P) :
-    ((splitProgram (source.body.map Prod.snd) B P).loaded.flatMap (·.body)).map Prod.fst = source.body.map Prod.fst := by
+theorem terminal_loaded_ids (source : Module) (metadataOrdinal : Nat) (B : EsmSplit.Bundle)
+    (P : EsmSplit.Plan) (shape : TerminalOnly source metadataOrdinal)
+    (kept : Kept (source.body.map Prod.snd) P) :
+    ((splitProgram (source.body.map Prod.snd) B P).loaded.flatMap (·.body)).map Prod.fst =
+      source.body.map Prod.fst := by
   rw [loaded_ids, kept]
   simpa only [List.length_map] using shape.1.symm
 
 /-- If the actual full-plan link succeeds, the linked execution schedule has
 the same original IDs. No success premise is introduced into certification. -/
-theorem terminal_linked_ids (source : Module) (metadataOrdinal : Nat) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
-    (shape : TerminalOnly source metadataOrdinal) (kept : Kept (source.body.map Prod.snd) P)
-    {w : World} (before : CheckedLink (splitProgram (source.body.map Prod.snd) B P) w) :
+theorem terminal_linked_ids (source : Module) (metadataOrdinal : Nat) (B : EsmSplit.Bundle)
+    (P : EsmSplit.Plan) (shape : TerminalOnly source metadataOrdinal)
+    (kept : Kept (source.body.map Prod.snd) P) {w : World}
+    (before : CheckedLink (splitProgram (source.body.map Prod.snd) B P) w) :
     (unitsOf before.linked).map Prod.fst = source.body.map Prod.fst := by
   rw [linked_ids, kept]
   simpa only [List.length_map] using shape.1.symm
@@ -167,9 +192,9 @@ theorem terminal_linked_ids (source : Module) (metadataOrdinal : Nat) (B : EsmSp
 /-- An executable original unit occurs in exactly the module claimed by a
 faithful authored specification; this says nothing about metadata ownership. -/
 theorem authored_executable_owner {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
-    {m : EsmSplit.Module} {id : Nat}
-    (faithful : EsmSplit.Faithful B S (EsmSplit.mkPlan B S))
-    (member : m ∈ (EsmSplit.mkPlan B S).mods) (inSource : id < ss.length) (inBundle : id < B.length) :
+    {m : EsmSplit.Module} {id : Nat} (faithful : EsmSplit.Faithful B S (EsmSplit.mkPlan B S))
+    (member : m ∈ (EsmSplit.mkPlan B S).mods) (inSource : id < ss.length)
+    (inBundle : id < B.length) :
     (id, ss[id]) ∈ (moduleOf ss B (EsmSplit.mkPlan B S) m).body ↔ S.claimants B id = [m.name] := by
   change (id, ss[id]) ∈ m.stmts.filterMap (numbered ss) ↔ S.claimants B id = [m.name]
   rw [mem_numbered]
@@ -211,7 +236,9 @@ theorem split_regions (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
       | some md =>
         simp only [hf, Option.map_some, Option.getD_some] at hm
         simp only [splitProgram, List.flatMap_map, List.mem_flatMap, List.mem_map]
-        refine ⟨md, List.mem_of_find?_eq_some hf, (ss.length - 1, ss[ss.length - 1]), ?_, Nat.sub_add_cancel h⟩
+        refine
+          ⟨md, List.mem_of_find?_eq_some hf, (ss.length - 1, ss[ss.length - 1]), ?_,
+            Nat.sub_add_cancel h⟩
         exact (mem_numbered ss).2 ⟨hm, by simp⟩
 
 /-- The projected coverage premise supplies the unchanged regions and tops
@@ -219,7 +246,7 @@ needed by the existing all-world schedule theorem. -/
 theorem holds_statements {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     (coverage : (executable ss P).Perm (List.range ss.length)) :
     (Program.single ss).regions = (splitProgram ss B P).regions ∧
-    (Program.single ss).tops = (splitProgram ss B P).tops := by
+      (Program.single ss).tops = (splitProgram ss B P).tops := by
   rw [single_regions, split_regions ss B P coverage, single_tops, split_tops ss B P coverage]
   exact ⟨rfl, rfl⟩
 
@@ -231,6 +258,5 @@ theorem run_same {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     (scopes : ScopesAgree (Program.single ss) (splitProgram ss B P)) (w : World) (fuel : Nat) :
     runProgram w fuel (Program.single ss) = runProgram w fuel (splitProgram ss B P) :=
   CoreJS.run_same (holds_statements coverage).1 (holds_statements coverage).2 scopes fuel
-
 
 end CoreJS.ProjectedOrder
