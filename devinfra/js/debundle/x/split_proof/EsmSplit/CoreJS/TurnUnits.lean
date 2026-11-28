@@ -42,7 +42,7 @@ private def sameDeferred : Func → Func → Bool
 
 /-- The executable payload is attached to one concrete linked closure. An
 identical name at a different address cannot acquire the payload. -/
-private structure Cut where
+structure Cut where
   callee : Addr
   closed : Env
   lowered : DeferredAwait
@@ -64,7 +64,7 @@ private def bindCut (id : Nat) (lowered : DeferredAwait) (units : List LinkedUni
   let .obj addr ← readVar unit.env name | unknown "model: expected the linked async declaration"
   bindClosure id lowered addr
 
-private def bindCuts (units : List LinkedUnit) (parts : List (Nat × DeferredAwait)) :
+def bindCuts (units : List LinkedUnit) (parts : List (Nat × DeferredAwait)) :
     M W (List (Name × Cut)) :=
   parts.mapM (fun (id, part) => bindCut id part units)
 
@@ -115,7 +115,7 @@ private def finishDirect (env : Env) (target : Option Name) (promise : Val) : M 
   if let some dest := target then initVar env dest promise
   modifyState fun s => { s with region := 0 }
 
-private def runUnitWithCuts (cuts : List (Name × Cut)) (fuel : Nat) (unit : LinkedUnit)
+def runUnitWithCuts (cuts : List (Name × Cut)) (fuel : Nat) (unit : LinkedUnit)
     (turn : Turn W) : TurnResult W Unit :=
   match fuel, directCall? unit.stmt with
   | n + 3, some (target, name, args) =>
@@ -131,11 +131,15 @@ private def runUnitWithCuts (cuts : List (Name × Cut)) (fuel : Nat) (unit : Lin
           TurnM.lift (finishDirect unit.env target promise)) prepared
   | _, _ => ordinary fuel unit turn
 
-private def runUnitsWithCuts (cuts : List (Name × Cut)) (fuel : Nat) :
+def runUnitsWithCuts (cuts : List (Name × Cut)) (fuel : Nat) :
     List LinkedUnit → TurnM W Unit
   | [] => pure ()
   | unit :: rest => fun turn =>
-    (runUnitWithCuts cuts fuel unit >>= fun () => runUnitsWithCuts cuts fuel rest) turn
+    match runUnitWithCuts cuts fuel unit turn with
+    | .ok _ next => runUnitsWithCuts cuts fuel rest next
+    | .throw why stopped => .throw why stopped
+    | .unknown why stopped => .unknown why stopped
+    | .fuel => .fuel
 
 private theorem find_same {us vs : List LinkedUnit} (units : SameUnits us vs) (id : Nat) :
     match us.find? (·.id == id), vs.find? (·.id == id) with
@@ -253,6 +257,12 @@ def runLinked (fuel : Nat) (parts : List (Nat × DeferredAwait))
   match parts with
   | [] => TurnResult.andThen (runUnits fuel units) turn fun () done => .ok () done
   | parts => TurnResult.andThen (bindCuts units parts) turn fun cuts ready => runUnitsWithCuts cuts fuel units ready
+
+theorem runLinked_boundCuts (fuel : Nat) (head : Nat × DeferredAwait) (tail : List (Nat × DeferredAwait))
+    (units : List LinkedUnit) (turn : Turn W) (cuts : List (Name × Cut)) (next : State W)
+    (bound : bindCuts units (head :: tail) turn.state = .ok cuts next) :
+    runLinked fuel (head :: tail) units turn = runUnitsWithCuts cuts fuel units { turn with state := next } := by
+  simp only [runLinked, TurnResult.andThen, bound]
 
 theorem runLinked_same (fuel : Nat) (parts : List (Nat × DeferredAwait))
     {us vs : List LinkedUnit} (units : SameUnits us vs) (turn : Turn W) :

@@ -76,7 +76,7 @@ observed in the probe; the resumed trace changes from `A7B7` to `B7A7`.
 Moving only the captured `trace` binding is refused because the original
 assignment would target an import.
 
-The staging callback always refuses publication. The checker proves an
+The diagnostic staging callback always refuses publication. The checker proves an
 all-world, all-fuel claim about the explicit primitive-await semantics and
 the actual reread files. The ordinary projection still runs unlowered
 programs with the same semantics and fuel.
@@ -110,5 +110,14 @@ to reach the operand. At fuel 7, the lowered program has two pending jobs.
 `checkProductionBridges` uses the exact decoded pair and checked links to
 prove both full-turn equalities for every world and fuel. The publication
 interface also requires a positive language completion and successful
-empty drain in every world. The staging callback still refuses publication.
+empty drain in every world. For the original two-file fixture, the support proof
+transports its checked link, checks the immediate turn at fuel 7, and checks
+each resume at fuel 7. The first resume writes through the original trace cell,
+rejects the first Promise, and leaves the second job queued. The second resume
+reads the same live cells, fulfills its Promise with 7, and leaves the FIFO empty.
+
+The normal CLI admits this source and placement through checked reread and
+the publication theorem. It uses the authored statement order, so reversing
+the two calls fails the schedule check and leaves the destination untouched.
+The diagnostic runner still exercises the abrupt variant without publishing it.
 No ambient global policy is needed.

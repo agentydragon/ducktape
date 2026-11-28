@@ -5,6 +5,7 @@ import EsmSplit.CoreJS.PrimitiveAwait
 import EsmSplit.CoreJS.ProgramTurn
 import EsmSplit.CoreJS.LinkedPrimitiveAwaitProof
 import EsmSplit.CoreJS.StateMatch
+import EsmSplit.CoreJS.TwoJobAwait
 import EsmSplit.ESTreeEmit
 import EsmSplit.ESTreeUnits
 import EsmSplit.LowerSplit.Input
@@ -91,6 +92,13 @@ private def replay (source files : Json) (plan : EsmSplit.Plan) (swap abrupt : B
   | .ok proof =>
     if swap then throw "swapped call sites passed the all-fuel check"
     let _ := proof.down
+  if !abrupt then
+    match LinkedPrimitiveAwait.checkStagedPublication source files plan TwoJobAwait.checkSupport with
+    | .error "different ordered linked units or bindings" =>
+      unless swap do throw "the preserving readback lost publication evidence"
+    | .error reason => throw reason
+    | .ok _ =>
+      if swap then throw "the swapped readback acquired publication evidence"
   let .ok .paused firstTurn := drain 96 1 ta | throw "one job must leave the second job pending"
   let .str "A7" ← value firstTurn ea "trace" | throw "lost the write before the first continuation threw"
   let .rejected (.str "left") ← settled firstTurn ea "first" | throw "the first continuation did not reject"

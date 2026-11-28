@@ -252,12 +252,12 @@ js_test(
 
 js_test(
     name = "await_staged_link_test",
-    data = [
+    data = _TEST_DATA + [
         "//devinfra/js/debundle/x/split_proof:await_staged_link_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     entry_point = "await_staged_link_test.mjs",
-    env = {
+    env = _TEST_ENV | {
         "AWAIT_STAGED_LINK": "$(rootpath //devinfra/js/debundle/x/split_proof:await_staged_link_test_runner)",
         "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
     },
