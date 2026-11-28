@@ -254,6 +254,29 @@ js_test(
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
 )
 
+js_test(
+    name = "semver_wrapper_node_test",
+    size = "medium",
+    args = ["$(rootpath :real_bundles/semver.mjs)"],
+    data = [
+        "semver_wrapper_controls.mjs",
+        "smoke.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":real_bundles/semver.mjs",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation:syntax_inventory",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "semver_wrapper_node_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+        "MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+)
+
 _COHORT_SOURCES = [":real_bundles/" + variant + ".mjs" for variant in _LIBRARY_VARIANTS]
 
 js_test(
