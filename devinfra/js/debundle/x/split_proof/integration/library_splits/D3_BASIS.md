@@ -23,7 +23,7 @@ The point counter has already reached 3, but the previous coordinates
 are still 0 and 6. These observations invoke the original helper
 without requiring a browser, native array method, or host call.
 
-The authenticated decoder recognizes all four
+In the baseline replay, the authenticated decoder recognizes all four
 rows and all three public bindings: `point`, `Basis`, and `default`.
 The ordinary CLI refuses both specs at `all-outcomes`, creates no output,
 and reports the narrower ordered-helper admission condition. The indexed
@@ -36,8 +36,8 @@ helper, so the entry interface does not match. The prototype plan orders
 `[2,0,1,3]` and resolves all three entry exports to the original live
 cells. These checks are on the plan model; the CLI does not publish files.
 
-The shared evaluator reaches the actual `Basis.prototype.point` method
-at fuel 256 after initialization. On the original source it reports
+Before the switch fix, the shared evaluator reaches the actual
+`Basis.prototype.point` method at fuel 256 after initialization and reports
 `deferred function point: unsupported switch fallthrough`. The method's
 third-point case calls `lineTo` and continues into the default case,
 which calls the spline helper. Equal deferred outcomes do not establish
@@ -68,3 +68,25 @@ sentinel object, the preceding writes remain: `_point` is 3 and the two
 previous x-coordinate fields are still 0 and 6, as in Node. The same two
 observations hold for the two plan models. The entry export and CLI
 admission issues above remain separate.
+
+## Ordinary certification of the prototype placement
+
+The prototype request now passes `lowersplit --require all-outcomes` and
+`--check-output` under the `indexed-prototype-write` rule. The two functions
+ahead of the write are already instantiated before either layout executes.
+Lean checks that crossing their inert declaration steps preserves every
+outcome at the same fuel, including throws. Both links have the same ready
+state, the same resolved captures, and the same three public cells. The
+publication gate independently parses the output and checks that it is the
+program covered by the proof.
+
+The test runs the unchanged `bundle.js` against the emitted `basis.js` and
+`spline.mjs`. Node verifies the public namespace, the exported constructor
+and factory, a direct call to public `point`, and the drawing and sentinel
+paths. The helper contains the unchanged prototype write. The point-move
+request still refuses and creates no output; that layout loses public
+`point` at the entry.
+
+Changing `lineStart` on disk to set `_point` to 1 instead of 0 changes the
+observed behavior without changing the public names. `--check-output`
+refuses the changed helper and leaves the destination untouched.

@@ -8,6 +8,7 @@ import EsmSplit.CoreJS.IndexedExportedFunction
 import EsmSplit.CoreJS.IndexedHelperConstructor
 import EsmSplit.CoreJS.IndexedHoistedSwap
 import EsmSplit.CoreJS.IndexedInlineConstructor
+import EsmSplit.CoreJS.IndexedPrototypeWrite
 import EsmSplit.CoreJS.IndexedSourceFacts
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedPrimitiveAwait
@@ -394,6 +395,31 @@ private def tryOrderedHelper (spec : Spec) (src : BundleInput)
     | .error refusal => return some (← emitRefusal options.request.label refusal "ordered-helper")
   catch e => return some (← emitVerdict options.request.label (.error e.toString) "ordered-helper")
 
+/-- The private file runs the original prototype write before the entry's
+already-instantiated declarations. Verify the authored links and the files
+read back from the publication gate. -/
+private def tryPrototypeWrite (spec : Spec) (src : BundleInput)
+    (decoded : CoreJS.AuthenticatedSource.IndexedSource) (out work : System.FilePath)
+    (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  let bundle := sourceBundle decoded.nodes
+  unless CoreJS.IndexedPrototypeWrite.recognises decoded.source bundle spec do return none
+  let scope := "indexed-prototype-write"
+  let built ← match CoreJS.IndexedPrototypeWrite.construct decoded bundle spec with
+    | .ok built => pure built
+    | .error reason =>
+      return some (← emitRefusal options.request.label
+        { reason, reasonCode := some "no_constructed_rule" } scope)
+  try
+    let programs ← IO.ofExcept (ESTreeEmit.programs decoded.nodes bundle built.plan src.source spec.entry)
+    let checked ← stageGenerated programs src out work options timings fun files => do
+      let _ ← (built.checkReadback files).mapError fun reason => ({ reason } : CertificationRefusal)
+      return ()
+    match checked with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) scope
+        [("strategy", toJson "compiled-constructor")])
+    | .error refusal => return some (← emitRefusal options.request.label refusal scope)
+  catch e => return some (← emitVerdict options.request.label (.error e.toString) scope)
+
 private def runOwnedNodePackage (pkg : OwnedNodePackage.Spec) (chunk : DeploymentChunk)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
   let scope := "owned-node-callable-provider"
@@ -489,6 +515,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
             if let some verdict ← tryDefaultSnapshot spec src decoded out work options timings then return verdict
             -- Standalone exports take precedence over the helper's rejection of metadata.
             if let some verdict ← tryExportedFunction spec src decoded out work options timings then return verdict
+            if let some verdict ← tryPrototypeWrite spec src decoded out work options timings then return verdict
             if let some verdict ← tryOrderedHelper spec src decoded out work options timings then return verdict
   noConstructor options.request.label s!"no constructor accepts the requested placement of {chunk.path}"
 

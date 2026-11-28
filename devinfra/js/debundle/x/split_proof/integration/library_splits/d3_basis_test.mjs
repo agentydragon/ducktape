@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as acorn from "acorn";
@@ -42,8 +42,10 @@ assert.equal(actualImport.specifiers[0].imported.name, "Basis");
 function observe(basis, bundle) {
   const script = `
 import assert from "node:assert/strict";
-import factory, {Basis, point} from ${JSON.stringify(pathToFileURL(basis).href)};
+import factory, * as api from ${JSON.stringify(pathToFileURL(basis).href)};
 import bundle from ${JSON.stringify(pathToFileURL(bundle).href)};
+assert.deepEqual(Object.keys(api), ["Basis", "default", "point"]);
+const {Basis, point} = api;
 const pathCalls = [];
 const context = {
   moveTo(x,y) { assert.equal(this, context); pathCalls.push(["move",x,y]); },
@@ -56,22 +58,38 @@ assert(instance instanceof Basis);
 assert.equal(instance._context, context);
 assert.notEqual(factory(context), instance);
 assert.equal(factory(context).point, instance.point);
-assert.equal(typeof point, "function");
+point({_context: context, _x0: 0, _y0: 0, _x1: 6, _y1: 6}, 12, 12);
+const directPoint = pathCalls.pop();
+assert.deepEqual(directPoint, ["curve",2,2,4,4,6,6]);
 instance.lineStart();
+assert.equal(instance._point, 0);
 for (const x of [0, 6, 12]) instance.point(x,x);
 instance.lineEnd();
 assert.deepEqual(pathCalls, [
   ["move",0,0], ["line",1,1], ["curve",2,2,4,4,6,6], ["curve",8,8,10,10,11,11], ["line",12,12]
 ]);
+assert.deepEqual([instance._point, instance._x0, instance._y0, instance._x1, instance._y1], [3, 6, 6, 12, 12]);
+const pathBeforeThrow = pathCalls.length;
 const failure = new Error("supplied bezier failure");
-context.bezierCurveTo = function () { assert.equal(this,context); throw failure; };
+context.bezierCurveTo = function (...coords) {
+  assert.equal(this,context);
+  pathCalls.push(["curve", ...coords]);
+  throw failure;
+};
 const failed = bundle.beta(1)(context);
 failed.lineStart();
 failed.point(0,0);
 failed.point(6,6);
 assert.throws(() => failed.point(12,12), (value) => value === failure);
 assert.deepEqual([failed._point, failed._x0, failed._x1], [3, 0, 6]);
-console.log(JSON.stringify({pathCalls:pathCalls.slice(0,5), earlyThrow:true, partial:[failed._point, failed._x0, failed._x1]}));
+assert.deepEqual([failed._y0, failed._y1], [0, 6]);
+assert.deepEqual(pathCalls.slice(pathBeforeThrow), [
+  ["move",0,0], ["line",1,1], ["curve",2,2,4,4,6,6]
+]);
+console.log(JSON.stringify({
+  directPoint, pathCalls:pathCalls.slice(0,pathBeforeThrow), beforeThrow:pathCalls.slice(pathBeforeThrow),
+  earlyThrow:true, partial:[failed._point, failed._x0, failed._x1]
+}));
 `;
   return JSON.parse(
     execFileSync(process.execPath, ["--experimental-default-type=module", "--input-type=module", "-e", script], {
@@ -124,15 +142,74 @@ const movedExport = checkPlan(spec);
 const privateSpec = { ...spec, modules: { [helper]: ["#2"], [entry]: ["#0", "#1", "#3"] } };
 const movedPrototype = checkPlan(privateSpec);
 writeFileSync(path.join(artifacts, "basis-prototype-placement.json"), JSON.stringify(privateSpec, null, 2));
-const privateResult = split({
+const prototypeRequest = {
   ...request,
   spec: path.join(artifacts, "basis-prototype-placement.json"),
   out: path.join(process.env.TEST_TMPDIR, "basis-prototype"),
-});
+};
+const privateResult = split(prototypeRequest);
 console.log(JSON.stringify({ movedExport, movedPrototype, privateVerdict: privateResult.verdict }));
 
-assert.equal(privateResult.status, "refused", privateResult.log);
-assert.equal(privateResult.reasonCode, "no_constructed_rule", privateResult.log);
+assert.equal(privateResult.status, "certified", privateResult.log);
+assert.equal(privateResult.scope, "indexed-prototype-write", privateResult.log);
+assert.equal(privateResult.guarantee, "all-outcomes", privateResult.log);
+assert.deepEqual(privateResult.files, [entry, helper]);
+const recheck = split({ ...prototypeRequest, checkOutput: true });
+assert.deepEqual(recheck.verdict, privateResult.verdict);
+const emittedEntry = path.join(prototypeRequest.out, entry);
+const emittedHelper = path.join(prototypeRequest.out, helper);
+const emittedCode = readFileSync(emittedHelper, "utf8");
+const helperRows = parse(emittedCode).ast.body;
+assert.deepEqual(
+  helperRows.map(({ type }) => type),
+  ["ImportDeclaration", "ExpressionStatement"]
+);
+assert.equal(helperRows[0].source.value, "./basis.js");
+assert.deepEqual(helperRows[0].specifiers.map(({ imported }) => imported.name).sort(), ["Basis", "point"]);
+assert.equal(emittedCode.slice(helperRows[1].start, helperRows[1].end), code.slice(rows[2].start, rows[2].end));
+
+// Change a literal in the emitted method without changing either file's
+// paths or public names. The disk check must reject the changed behavior.
+const lineStart = helperRows[1].expression.right.properties.find(({ key }) => key.name === "lineStart");
+const pointInit = lineStart.value.body.body.at(-1).expression;
+assert.equal(pointInit.left.property.name, "_point");
+assert.equal(pointInit.right.type, "Literal");
+assert.equal(pointInit.right.value, 0);
+const { start, end } = pointInit.right;
+writeFileSync(emittedHelper, emittedCode.slice(0, start) + "1" + emittedCode.slice(end));
+let tamperedVerdict;
+try {
+  const observed = execFileSync(
+    process.execPath,
+    [
+      "--experimental-default-type=module",
+      "--input-type=module",
+      "-e",
+      `const api = await import(process.argv[1]);
+       const curve = api.default({});
+       curve.lineStart();
+       console.log(JSON.stringify({ names: Object.keys(api), point: curve._point }));`,
+      pathToFileURL(emittedEntry).href,
+    ],
+    { encoding: "utf8" }
+  );
+  assert.deepEqual(JSON.parse(observed), { names: ["Basis", "default", "point"], point: 1 });
+  // split() snapshots the existing tree and asserts that a refusal did not change it.
+  const tampered = split({ ...prototypeRequest, checkOutput: true });
+  assert.equal(tampered.status, "refused", tampered.log);
+  assert.match(tampered.reason, /output module spline\.mjs differs from its generated ESTree/);
+  tamperedVerdict = tampered.verdict;
+} finally {
+  writeFileSync(emittedHelper, emittedCode);
+}
+
+const shippedCaller = path.join(prototypeRequest.out, "bundle.js");
+copyFileSync(caller, shippedCaller);
+assert.equal(sha256(readFileSync(shippedCaller)), sha256(readFileSync(caller)));
+const emitted = observe(emittedEntry, shippedCaller);
+assert.deepEqual(emitted, node);
+copyFileSync(emittedEntry, path.join(artifacts, "emitted-basis.js"));
+copyFileSync(emittedHelper, path.join(artifacts, "emitted-spline.mjs"));
 for (const plan of [movedExport, movedPrototype]) {
   assert.equal(plan.valid, true);
   assert.deepEqual(plan.sourcePublic, ["point", "Basis", "default"]);
@@ -153,9 +230,10 @@ writeFileSync(
   JSON.stringify(
     {
       original: { node, decoded, inline },
+      emitted,
       movedExport,
       movedPrototype,
-      verdicts: [result.verdict, privateResult.verdict],
+      verdicts: [result.verdict, privateResult.verdict, recheck.verdict, tamperedVerdict],
     },
     null,
     2
