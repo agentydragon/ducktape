@@ -234,14 +234,14 @@ function readNodePackage(dir, result, entry, provider, caller) {
   });
 }
 
-// This root supplies only the format premise for three declared .js files.
+// This root supplies only the format premise for the bounded .js graph.
 function readNodeEsmRoot(dir, requests, result) {
   const root = canonicalDirectory(dir);
   const names = readJson(requests);
   if (
     !Array.isArray(names) ||
-    names.length !== 3 ||
-    new Set(names).size !== 3 ||
+    ![2, 3].includes(names.length) ||
+    new Set(names).size !== names.length ||
     !names.every(
       (name) =>
         typeof name === "string" &&
@@ -249,7 +249,7 @@ function readNodeEsmRoot(dir, requests, result) {
         name.split("/").every((part) => /^[A-Za-z0-9_.~-]+$/.test(part) && ![".", "..", "node_modules"].includes(part))
     )
   )
-    throw new Error("expected three distinct local .js routes");
+    throw new Error("expected two or three distinct local .js routes");
   const packageFile = path.join(root, "package.json");
   if (!fs.lstatSync(packageFile, { throwIfNoEntry: false })?.isFile())
     throw new Error("expected a regular package.json at node_esm_root");
