@@ -2,15 +2,16 @@ import EsmSplit.CoreJS.DeploymentPlacement
 import EsmSplit.CoreJS.IndexedExportedFunction
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.LinkedPivotCheck
+import EsmSplit.CoreJS.OrderedArrowInit
 import EsmSplit.CoreJS.PlanPlacement
 import EsmSplit.CoreJS.StateMatch
 import EsmSplit.CoreJS.StaticProviderConstruction
 import EsmSplit.LowerSplit.Input
 import EsmSplit.ModulePath
 
-/-! A closed, named-import DAG with one authored split and independently
-decoded fixed modules. Match the entire linked schedule, including the
-fixed modules, before claiming any equality of evaluator results. -/
+/-! Closed static named-import graphs with one authored split and independently
+decoded fixed modules. Check the whole linked schedule. The two-file hoist
+cycle additionally checks evaluation from both original module routes. -/
 
 namespace CoreJS.FiniteStaticGraph
 
@@ -51,12 +52,7 @@ private def inputCells (inputs : List Module) (linked : List (Module × Env)) :
     let (_, env) ← linked.find? (fun (linkedModule, _) => linkedModule.name == m.name)
     (m.imports.flatMap (·.names)).mapM fun (_, localName) => env.vars.lookup localName
 
-structure Construction where
-  before : Program
-  plan : EsmSplit.Plan
-  program : Program
-  assignment : List UnitPlacement
-  places : Places assignment before program
+structure RootBehavior (before program : Program) : Prop where
   sameInputCells :
     ∀ w,
       ∃ a : CheckedLink before w,
@@ -66,6 +62,60 @@ structure Construction where
               inputCells before.modules b.linked = some cells
   sameExports : SameExports before program
   allOutcomes : ∀ w fuel, runProgram w fuel before = runProgram w fuel program
+  linked :
+    ∀ w, ∃ a : CheckedLink before w, ∃ b : CheckedLink program w,
+      a.ready = b.ready ∧ SameUnits (unitsOf a.linked) (unitsOf b.linked)
+
+/-- Calls through an original public cell start with the same value and
+complete state. The observer may construct arbitrary modeled arguments,
+methods or receivers, and may make further calls after the first one. -/
+theorem RootBehavior.observeExport_eq {before program : Program}
+    (proof : RootBehavior before program) (w : World) (fuel : Nat) (name : Name) (cell : Addr)
+    (observe : Val → M w α) :
+    OrderedArrowInit.observeExport before fuel name cell observe =
+      OrderedArrowInit.observeExport program fuel name cell observe :=
+  OrderedArrowInit.Behavior.observeExport_eq
+    ⟨proof.linked, proof.sameExports, proof.allOutcomes⟩ w fuel name cell observe
+
+private def checkRoot (before program : Program) : Except String (PLift (RootBehavior before program)) := do
+  let pair ← checkProbePair before program
+  let ⟨cells, ⟨beforeCells⟩⟩ ←
+    (show Except String (Σ cells, PLift (inputCells before.modules pair.before.linked = some cells))
+        from
+        match inputCells before.modules pair.before.linked with
+        | some cells => .ok ⟨cells, ⟨rfl⟩⟩
+        | none => .error "original input edge did not resolve")
+  let .isTrue afterCells :=
+    (inferInstance : Decidable (inputCells before.modules pair.after.linked = some cells)) |
+      throw "original inputs resolve to different cells"
+  let some ⟨ready⟩ :=
+    StateMatch.probe pair.before.ready pair.after.ready | throw "different state after linking"
+  let some ⟨units⟩ :=
+    sameUnits? (unitsOf pair.before.linked)
+      (unitsOf pair.after.linked) | throw "different ordered linked units or bindings"
+  let .isTrue exports :=
+    (inferInstance : Decidable (exportsMatchFrom pair.before pair.after = true)) |
+      throw "different public export bindings"
+  return ⟨⟨fun w => ⟨pair.before.forWorld w, pair.after.forWorld w, cells, beforeCells, afterCells⟩,
+    pair.sameExports exports, fun w fuel => by
+      rw [run_after_link fuel (pair.before.forWorld w), run_after_link fuel (pair.after.forWorld w)]
+      change
+        runUnits fuel (unitsOf pair.before.linked) (linkState w pair.before.ready) =
+          runUnits fuel (unitsOf pair.after.linked) (linkState w pair.after.ready)
+      rw [ready, runUnits_same fuel units],
+    fun w => ⟨pair.before.forWorld w, pair.after.forWorld w, congrArg (linkState w) ready, units⟩⟩⟩
+
+def RootCertificate (before program : Program) :=
+  { root : String // RootBehavior { before with entry := root } { program with entry := root } }
+
+structure Construction where
+  before : Program
+  plan : EsmSplit.Plan
+  program : Program
+  assignment : List UnitPlacement
+  places : Places assignment before program
+  primary : RootBehavior before program
+  otherRoots : List (RootCertificate before program) := []
 
 /-- The additional format-checked family moves a hoisted constructor together
 with the single prototype write that uses it. Fixed providers are executable
@@ -128,12 +178,43 @@ private def checkPrototype (source : LinkedInput.DecodedSource) (fixed : List Mo
 inductive Family where
   | primitive
   | nodePrototype
+  | nodeHoistCycle
   deriving BEq
+
+/-- The moved functions are a concrete, closed two-declaration group. The
+mapper keeps its original default, call receiver and lexical formatter. -/
+private def checkCycleHoists (modules : List Module) (original : Module) (helper : String)
+    (plan : EsmSplit.Plan) : Except String (List Name) := do
+  let [core] := modules | throw "expected one fixed module in the cycle"
+  let [intoCore] := original.imports | throw "expected one original utility import"
+  let [intoUtil] := core.imports | throw "expected one original core import"
+  unless intoCore.source == core.name && intoUtil.source == original.name &&
+      !intoCore.names.isEmpty && !intoUtil.names.isEmpty do
+    throw "expected two original routes with named imports of one another"
+  let some owner := plan.find helper | throw "missing helper"
+  let [(mapperId, .funDecl (mapper@(.withDefaults name .normal false [first, second] 1
+      [.decl .let_ input (.var slot),
+        .decl .let_ separator (.cond (.binary .strictEq (.var check) .undef) (.str _) (.var actual)),
+        .block [.ret (.callMethod
+          (.callMethod (.var receiver) (.str _)
+            [.func (.mk _ .arrow false [item] [.ret (.call (.var convert) [.var value])])])
+          (.str _) [.var join])]]))),
+      (formatId, .funDecl formatter)] := original.body.filter (fun row => owner.stmts.contains row.1) |
+      throw "expected two defaulted utility hoists"
+  unless owner.stmts == [mapperId, formatId] && first == slot && second == check &&
+      second == actual && input == receiver && separator == join && input != separator &&
+      item == value && item != convert && ![input, separator].contains convert &&
+      name != convert && convert == formatter.name && mapper.free == [convert] &&
+      formatter.free.isEmpty && concreteHoist formatter do
+    throw "expected the original defaulted mapper and its closed formatter"
+  return [name, convert]
 
 def construct (source : LinkedInput.DecodedSource) (fixedSources : List LinkedInput.DecodedSource)
     (request : EsmSplit.Spec) (family : Family := .primitive) : Except String Construction := do
-  unless fixedSources.length >= 2 do
-    throw "expected at least two fixed source modules"
+  if family == .nodeHoistCycle then
+    unless fixedSources.length == 1 do throw "expected one original cyclic provider"
+  else
+    unless fixedSources.length >= 2 do throw "expected at least two fixed source modules"
   let [helper] := request.order | throw "expected exactly one authored helper"
   unless
     source.source.name == request.entry && request.sequential && !request.privateEntryBody &&
@@ -152,14 +233,14 @@ def construct (source : LinkedInput.DecodedSource) (fixedSources : List LinkedIn
       throw "expected .mjs module routes"
     for decoded in source :: fixedSources do
       checkSource decoded
-  | .nodePrototype =>
+  | .nodePrototype | .nodeHoistCycle =>
     unless helper.endsWith ".mjs" && (request.entry :: fixedNames).all (·.endsWith ".js") do
       throw "expected original .js files and one .mjs helper"
     for decoded in source :: fixedSources do
       unless !decoded.hasTemplates && completeSource decoded do
         throw s!"{decoded.source.name}: expected every original row and no template sites"
   let before : Program := { entry := source.source.name, modules := source.source :: fixed }
-  checkOrder before
+  if family != .nodeHoistCycle then checkOrder before
   let B := EsmSplit.LowerSplit.sourceBundle source.nodes
   if family == .nodePrototype then
     checkPrototype source fixed request B helper
@@ -170,63 +251,70 @@ def construct (source : LinkedInput.DecodedSource) (fixedSources : List LinkedIn
               row.2.filter fun selector => selector.claims B id).length ==
           1) do
     throw "each original entry ordinal must be selected exactly once"
-  let plan := EsmSplit.mkPlan B request
-  unless decide (EsmSplit.Valid B request plan) do
+  let basePlan := EsmSplit.mkPlan B request
+  unless decide (EsmSplit.Valid B request basePlan) do
     throw "authored source placement is invalid"
+  let forwarded ←
+    if family == .nodeHoistCycle then
+      checkCycleHoists fixed source.source helper basePlan
+    else pure []
+  let plan :=
+    if forwarded.isEmpty then basePlan else
+      { basePlan with mods := basePlan.mods.map fun m =>
+        if m.name == request.entry then
+          { m with imports := [(helper, forwarded)], exports := forwarded.map fun n => (n, n) }
+        else m }
   let picks := PlanPlacement.assignments plan
   unless decide ((picks.map Prod.fst).Perm (List.range source.nodes.size)) do
     throw "authored placement does not cover the entry ordinals"
   unless
     (metadataOrdinals source.nodes).all
-      (fun id => picks.filter (fun p => p.1 == id) == [(id, plan.entry)]) do
+      (fun id =>
+        picks.filter (fun p => p.1 == id) == [(id, plan.entry)] ||
+          (!forwarded.isEmpty && picks.filter (fun p => p.1 == id) == [(id, helper)] &&
+            ((source.source.body.lookup id).any fun
+              | .funDecl f => forwarded.contains f.name
+              | _ => false))) do
     throw "original import and export metadata must stay in the entry"
   let ids := source.source.body.map Prod.fst
   let moved := picks.filter (fun p => ids.contains p.1)
   unless moved.any (fun p => p.2 == helper) do
     throw "expected an executable unit in the authored helper"
-  let program : Program :=
-    { entry := plan.entry, modules := plan.mods.map (outputModule source.source plan) ++ fixed }
-  checkOrder program
-  unless program.evalOrder == before.evalOrder.dropLast ++ request.order ++ [request.entry] do
-    throw
-        "output does not keep the fixed dependency order followed by the authored helper and entry"
+  if !forwarded.isEmpty then
+    unless forwarded.all (fun name => source.source.exports.contains (name, name)) &&
+        (plan.find helper).any (fun m => m.imports.isEmpty && m.exports.isEmpty) do
+      throw "expected two original inline exports in an independent helper"
+    for (id, stmt) in source.source.body ++ fixed.flatMap (·.body) do
+      unless (moved.any (fun row => row.1 == id && row.2 == helper)) ||
+          IndexedExportedFunction.concreteRetainedStatement stmt do
+        throw s!"unit {id}: retained cycle code must lower concretely"
+  let modules := plan.mods.map fun m =>
+    let out := outputModule source.source plan m
+    if forwarded.isEmpty then out else
+      let movedExports := forwarded.map fun name => (name, name)
+      { out with
+        exports := if m.name == helper then movedExports
+          else source.source.exports.filter (fun e => !movedExports.contains e) ++ movedExports }
+  let program : Program := { entry := plan.entry, modules := modules ++ fixed }
+  if family != .nodeHoistCycle then
+    checkOrder program
+    unless program.evalOrder == before.evalOrder.dropLast ++ request.order ++ [request.entry] do
+      throw "output does not keep the fixed dependency order followed by the authored helper and entry"
+  else
+    unless program.evalOrder == fixedNames ++ [helper, request.entry] do
+      throw "utility-rooted graph does not follow the authored helper order"
   if family == .primitive && !(ordinaryModuleGraph before && ordinaryModuleGraph program) then
     throw "expected reads only from named imports and earlier const declarations"
   let assignment := moved ++ fixed.flatMap Module.unitPlacements
   let ⟨places⟩ ← checkPlaces assignment before program
-  let pair ← checkProbePair before program
-  let ⟨cells, ⟨beforeCells⟩⟩ ←
-    (show Except String (Σ cells, PLift (inputCells before.modules pair.before.linked = some cells))
-        from
-        match inputCells before.modules pair.before.linked with
-        | some cells => .ok ⟨cells, ⟨rfl⟩⟩
-        | none => .error "original input edge did not resolve")
-  let .isTrue afterCells :=
-    (inferInstance :
-      Decidable
-        (inputCells before.modules pair.after.linked =
-          some cells)) | throw "original inputs resolve to different cells"
-  let some ⟨ready⟩ :=
-    StateMatch.probe pair.before.ready pair.after.ready | throw "different state after linking"
-  let some ⟨units⟩ :=
-    sameUnits? (unitsOf pair.before.linked)
-      (unitsOf pair.after.linked) | throw "different ordered linked units or bindings"
-  let .isTrue exports :=
-    (inferInstance :
-      Decidable
-        (exportsMatchFrom pair.before pair.after = true)) | throw "different public export bindings"
-  return {
-      before, plan, program, assignment, places
-      sameInputCells := fun w =>
-        ⟨pair.before.forWorld w, pair.after.forWorld w, cells, beforeCells, afterCells⟩
-      sameExports := pair.sameExports exports
-      allOutcomes := fun w fuel => by
-        rw [run_after_link fuel (pair.before.forWorld w),
-          run_after_link fuel (pair.after.forWorld w)]
-        change
-          runUnits fuel (unitsOf pair.before.linked) (linkState w pair.before.ready) =
-            runUnits fuel (unitsOf pair.after.linked) (linkState w pair.after.ready)
-        rw [ready, runUnits_same fuel units] }
+  let ⟨primary⟩ ← checkRoot before program
+  let otherRoots ←
+    if family == .nodeHoistCycle then
+      fixedNames.mapM fun root => do
+        let ⟨behavior⟩ ← checkRoot { before with entry := root } { program with entry := root }
+        pure (⟨root, behavior⟩ : RootCertificate before program)
+    else pure []
+  return { before, plan, program, assignment, places, primary, otherRoots }
 
 /-- The printer emits original imports itself, including duplicates for a
 moved unit. Only imports between generated modules are emitted as glue. -/
@@ -248,6 +336,11 @@ theorem Construction.readbackGuarantees (built : Construction) {observed : Progr
               inputCells built.before.modules a.linked = some cells ∧
                 inputCells built.before.modules b.linked = some cells) ∧
       ∀ w fuel, runProgram w fuel built.before = runProgram w fuel observed :=
-  same ▸ ⟨built.places, built.sameExports, built.sameInputCells, built.allOutcomes⟩
+  same ▸ ⟨built.places, built.primary.sameExports, built.primary.sameInputCells, built.primary.allOutcomes⟩
+
+theorem Construction.rootReadback (built : Construction) {observed : Program}
+    (same : observed = built.program) (root : RootCertificate built.before built.program) :
+    RootBehavior { built.before with entry := root.val } { observed with entry := root.val } :=
+  same ▸ root.property
 
 end CoreJS.FiniteStaticGraph

@@ -783,12 +783,13 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
 The .js family requires the explicit Node ESM root opt-in. -/
 private def finiteStaticInput (manifest : DeploymentManifest) :
     Option (Spec × List DeploymentChunk) := do
-  guard (manifest.ownedNodePackage.isNone && manifest.chunks.length >= 3)
+  guard (manifest.ownedNodePackage.isNone &&
+    (manifest.chunks.length >= 3 || (manifest.nodeEsmRoot.isSome && manifest.chunks.length == 2)))
   let entry ← manifest.chunks.find? (·.path == manifest.entry)
   let .authored spec := entry.placement | none
   let fixed := manifest.chunks.filter (·.path != manifest.entry)
   let ext := if manifest.nodeEsmRoot.isSome then "js" else "mjs"
-  guard (manifest.nodeEsmRoot.isNone || fixed.length == 2)
+  guard (manifest.nodeEsmRoot.isNone || fixed.length == 1 || fixed.length == 2)
   guard
       (manifest.chunks.all
           (fun chunk => chunk.path.endsWith ("." ++ ext) && chunk.source.extension == some ext) &&
@@ -802,7 +803,8 @@ private def finiteStaticInput (manifest : DeploymentManifest) :
 private def runFiniteStaticGraph (manifest : DeploymentManifest) (spec : Spec)
     (fixed : List DeploymentChunk) (out work : System.FilePath) (options : CertifiedOptions)
     (timings : Bool) : IO UInt32 := do
-  let scope := "finite-static-graph"
+  let cyclic := manifest.nodeEsmRoot.isSome && fixed.length == 1
+  let scope := if cyclic then "node-hoist-cycle" else "finite-static-graph"
   let refuse := fun reason => noConstructor options.request.label s!"finite static graph: {reason}"
   try
     let root ← deploymentRoot manifest
@@ -838,7 +840,8 @@ private def runFiniteStaticGraph (manifest : DeploymentManifest) (spec : Spec)
             return (name, ← files.getObjVal? name))
     let decoded ← IO.ofExcept (providers.mapM fun (name, ast) => decode ast name)
     let family :=
-      if manifest.nodeEsmRoot.isSome then CoreJS.FiniteStaticGraph.Family.nodePrototype
+      if cyclic then CoreJS.FiniteStaticGraph.Family.nodeHoistCycle
+      else if manifest.nodeEsmRoot.isSome then CoreJS.FiniteStaticGraph.Family.nodePrototype
       else .primitive
     let built ←
       match CoreJS.FiniteStaticGraph.construct entry decoded spec family with
@@ -875,6 +878,12 @@ private def runFiniteStaticGraph (manifest : DeploymentManifest) (spec : Spec)
               CoreJS.ConstructedOutput.decodeConstructedOutput files built.program =
                 .ok observed) =>
           built.readbackGuarantees (Except.ok.inj (decoded.symm.trans same))
+        let _otherProofs :=
+          fun observed
+            (decoded :
+              CoreJS.ConstructedOutput.decodeConstructedOutput files built.program =
+                .ok observed) root =>
+            built.rootReadback (Except.ok.inj (decoded.symm.trans same)) root
         return ()
     let result ←
       certifyOutputWithFixed [part] (fixedBytes ++ format) out work options.checkOnly timings verify
@@ -883,6 +892,7 @@ private def runFiniteStaticGraph (manifest : DeploymentManifest) (spec : Spec)
     | .ok _ =>
       emitVerdict options.request.label (.ok .allOutcomes) scope
           [("strategy", toJson "compiled-constructor"),
+            ("checked_roots", toJson (built.before.entry :: built.otherRoots.map Subtype.val)),
             importReceipt options built.before built.program (fixedNames ++ format.map Prod.fst)
               (nodeEsmRoot := manifest.nodeEsmRoot.isSome)]
     | .error why =>
@@ -919,7 +929,7 @@ def certified (args : List String) : IO UInt32 := do
     IO.FS.withTempDir fun work =>
         if let [chunk] := manifest.chunks then do
           if manifest.nodeEsmRoot.isSome then
-            return ← noConstructor label "node_esm_root requires the declared three-file graph"
+            return ← noConstructor label "node_esm_root requires a declared two- or three-file graph"
           match manifest.ownedNodePackage with
           | some pkg =>
             runOwnedNodePackage pkg chunk out work { request, checkOnly } timings

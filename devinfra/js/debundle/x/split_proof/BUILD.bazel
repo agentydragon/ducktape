@@ -1849,6 +1849,7 @@ lean_library(
         ":corejs_indexed_exported_function",
         ":corejs_link_world",
         ":corejs_linked_pivot_check",
+        ":corejs_ordered_arrow_init",
         ":corejs_plan_placement",
         ":corejs_state_match",
         ":corejs_static_provider_construction",
@@ -1863,6 +1864,8 @@ lean_proof_test(
     required_theorems = [
         "CoreJS.FiniteStaticGraph.construct",
         "CoreJS.FiniteStaticGraph.Construction.readbackGuarantees",
+        "CoreJS.FiniteStaticGraph.Construction.rootReadback",
+        "CoreJS.FiniteStaticGraph.RootBehavior.observeExport_eq",
     ],
     deps = [":corejs_finite_static_graph"],
 )
