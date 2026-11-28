@@ -41,51 +41,54 @@ private def seeds (names : List Name) : List (Nat × Stmt) → Option (List Name
 -- deferred bodies and ambient operations cannot be used to justify a move.
 mutual
 
-private def entryExpr : Nat → Expr → Bool
+private def entryExpr (switchBody : Bool) : Nat → Expr → Bool
   | 0, _ => false
   | n + 1, expr =>
     match expr with
     | .undef | .this | .var _ => true
-    | .func f => entryFunc n f
-    | .arr elems => elems.all (entryExpr n)
-    | .get a b | .binary _ a b | .logical _ a b => entryExpr n a && entryExpr n b
-    | .unary _ e => entryExpr n e
-    | .cond test yes no => entryExpr n test && entryExpr n yes && entryExpr n no
-    | .assign target value => entryTarget n target && entryExpr n value
-    | .update target _ _ => entryTarget n target
-    | .call callee args | .new callee args => entryExpr n callee && args.all (entryExpr n)
-    | .callMethod receiver key args => entryExpr n receiver && entryExpr n key && args.all (entryExpr n)
+    | .func f => entryFunc switchBody n f
+    | .arr elems => elems.all (entryExpr switchBody n)
+    | .get a b | .binary _ a b | .logical _ a b => entryExpr switchBody n a && entryExpr switchBody n b
+    | .seq a b => switchBody && entryExpr switchBody n a && entryExpr switchBody n b
+    | .unary _ e => entryExpr switchBody n e
+    | .cond test yes no => entryExpr switchBody n test && entryExpr switchBody n yes && entryExpr switchBody n no
+    | .assign target value => entryTarget switchBody n target && entryExpr switchBody n value
+    | .update target _ _ => entryTarget switchBody n target
+    | .call callee args | .new callee args => entryExpr switchBody n callee && args.all (entryExpr switchBody n)
+    | .callMethod receiver key args => entryExpr switchBody n receiver && entryExpr switchBody n key && args.all (entryExpr switchBody n)
     | e => literal e
 
-private def entryTarget : Nat → Target → Bool
+private def entryTarget (switchBody : Bool) : Nat → Target → Bool
   | 0, _ => false
   | _ + 1, .var _ => true
-  | n + 1, .member receiver key => entryExpr n receiver && entryExpr n key
+  | n + 1, .member receiver key => entryExpr switchBody n receiver && entryExpr switchBody n key
   | _ + 1, .frozen _ => false
 
-private def entryStmt : Nat → Stmt → Bool
+private def entryStmt (switchBody : Bool) : Nat → Stmt → Bool
   | 0, _ => false
   | n + 1, stmt =>
     match stmt with
-    | .expr e | .decl _ _ e | .ret e => entryExpr n e
-    | .funDecl f => entryFunc n f
+    | .expr e | .decl _ _ e | .ret e => entryExpr switchBody n e
+    | .funDecl f => entryFunc switchBody n f
     | .varDecl _ => true
-    | .block body => body.all (entryStmt n)
-    | .ite test yes no => entryExpr n test && entryStmt n yes && entryStmt n no
+    | .breakScope body => switchBody && entryStmt switchBody n body
+    | .brk => switchBody
+    | .block body => body.all (entryStmt switchBody n)
+    | .ite test yes no => entryExpr switchBody n test && entryStmt switchBody n yes && entryStmt switchBody n no
     | .loop init test update body _ =>
-      init.all (entryStmt n) && entryExpr n test && entryExpr n update && entryStmt n body
+      init.all (entryStmt switchBody n) && entryExpr switchBody n test && entryExpr switchBody n update && entryStmt switchBody n body
     | _ => false
 
-private def entryFunc : Nat → Func → Bool
-  | n + 1, .mk _ .normal _ _ body => body.all (entryStmt n)
+private def entryFunc (switchBody : Bool) : Nat → Func → Bool
+  | n + 1, .mk _ .normal _ _ body => body.all (entryStmt switchBody n)
   | _, _ => false
 
 end
 
 /-- The concrete statement fragment shared with the adjacent hoist rule.
 It excludes deferred bodies while allowing ordinary calls to modeled values. -/
-def concreteRetainedStatement (stmt : Stmt) : Bool :=
-  entryStmt 128 stmt
+def concreteRetainedStatement (stmt : Stmt) (switchBody : Bool := false) : Bool :=
+  entryStmt switchBody 128 stmt
 
 /-- One owner can retain adjacent constructor initializations and the eager
 prototype write between them. Each initializer is closed; the installed
@@ -99,9 +102,9 @@ private def checkPrototypeBlock (owns : Nat → Bool) (rows : List (Nat × Stmt)
     throw "expected two constructor initializations with a prototype write between them"
   unless owns first && owns write && owns last do
     throw "one module must own the constructors and their prototype write"
-  unless receiver == ctor && ctor != other && entryFunc 128 init && init.free.isEmpty &&
-      entryFunc 128 method && method.free.all (· == ctor) &&
-      entryFunc 128 endInit && endInit.free.isEmpty do
+  unless receiver == ctor && ctor != other && entryFunc false 128 init && init.free.isEmpty &&
+      entryFunc false 128 method && method.free.all (· == ctor) &&
+      entryFunc false 128 endInit && endInit.free.isEmpty do
     throw "expected closed constructors and a method on the original prototype"
   return rest
 
@@ -128,7 +131,7 @@ private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSp
       unless authored owner (id, .funDecl f) do
         throw "the second helper must own the reader"
       let reads := f.free
-      unless entryFunc 128 f && reads.contains name && reads.all (· == name) do
+      unless entryFunc false 128 f && reads.contains name && reads.all (· == name) do
         throw "the second helper must be concrete and capture only the predicate"
       pure rest
   let entryRows ← match prototypeOwner with
@@ -137,7 +140,7 @@ private def checkFamily (source : Module) (B : EsmSplit.Bundle) (request : EsmSp
   unless entryRows.all (authored request.entry) do
     throw "remaining executable units must be authored in the entry"
   for (id, stmt) in entryRows do
-    unless entryStmt 128 stmt do throw s!"entry unit {id}: expected concrete retained code"
+    unless entryStmt false 128 stmt do throw s!"entry unit {id}: expected concrete retained code"
 
 /-- Call a public cell after a fresh module evaluation. Failure, fuel and
 the final call state are retained. The receiver of the imported call is undefined. -/

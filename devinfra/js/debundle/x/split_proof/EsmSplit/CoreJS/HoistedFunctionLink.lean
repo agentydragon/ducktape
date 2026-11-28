@@ -74,7 +74,7 @@ private theorem runUnits_inert_head (fuel : Nat) (pivot : LinkedUnit)
 
 /-- An inert unit can swap with its neighbor without changing any modeled
 result, including throws, unknown results and fuel exhaustion. -/
-private theorem runUnits_inert_adjacent (fuel : Nat) (pivot other : LinkedUnit)
+theorem runUnits_inert_adjacent (fuel : Nat) (pivot other : LinkedUnit)
     (suffix : List LinkedUnit) (s : State w) (inert : pivot.stmt.inert = true) :
     runUnits fuel (pivot :: other :: suffix) s = runUnits fuel (other :: pivot :: suffix) s := by
   cases fuel with

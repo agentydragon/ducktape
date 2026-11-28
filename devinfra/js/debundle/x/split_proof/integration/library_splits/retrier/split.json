@@ -1,0 +1,9 @@
+{
+  "entry": "entry.mjs",
+  "modules": {
+    "entry.mjs": ["#8", "#9"],
+    "retry-task.mjs": ["#0", "#1", "#2", "#3", "#4", "#5", "#6", "#7"]
+  },
+  "order": ["retry-task.mjs"],
+  "sequential": true
+}

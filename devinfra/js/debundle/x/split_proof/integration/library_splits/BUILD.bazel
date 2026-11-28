@@ -350,3 +350,23 @@ js_test(
         "@d3_shape_source//:src/curve/bundle.js",
     ],
 )
+
+js_test(
+    name = "retrier_baseline_test",
+    size = "small",
+    args = ["$(rootpath //:pinned_retrier_package)"],
+    data = [
+        "retrier/split.json",
+        "//:pinned_retrier_package",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof:retrier_baseline_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "retrier_baseline_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+        "RETRIER_BASELINE": "$(rootpath //devinfra/js/debundle/x/split_proof:retrier_baseline_runner)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+)
