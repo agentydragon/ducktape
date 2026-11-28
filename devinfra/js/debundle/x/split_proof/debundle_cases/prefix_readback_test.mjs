@@ -105,5 +105,13 @@ const ordinary = run(process.execPath, [runner, "--certify", "--filter", id, "--
 assert.equal(ordinary.status, 0, ordinary.stdout + ordinary.stderr);
 const full = JSON.parse(readFileSync(report, "utf8"));
 assert.equal(full.id, id);
-assert.equal(full.outcome, "rejected");
-assert.equal(full.emission.code, "no_constructed_rule");
+assert.equal(full.outcome, "certified");
+assert.deepEqual(full.emission, { guarantee: "normal-completion", scope: "retained-tail" });
+assert.deepEqual(full.disk, full.emission);
+// The ordinary adapter still does not observe authored non-entry namespaces
+// or full-tree syntax. Do not call this a complete authored behavior pass.
+assert.equal(full.behavior, "unchecked");
+assert.deepEqual(
+  full.expectations.filter(({ status }) => status === "unchecked").map(({ assertion }) => assertion),
+  ["exports:static/app/modules/x.js", "exports:static/app/modules/residual/unhandled.js", "check_all_js"]
+);

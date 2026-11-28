@@ -830,6 +830,16 @@ standalone export-unit identities. -/
 def decodeSingletonSource (source : Json) (entry : String) : Except String Program :=
   Prod.fst <$> decodeSingletonSourceWithLocalExports source entry
 
+/-- Source-only lowering for a constructor that keeps non-pivots as opaque
+units. It does not load external modules or assign any location capabilities. -/
+def decodeRetainedSource (nodes : Array Json) (entry : String) (pivots : List Nat) :
+    Except String Module := do
+  let parsed ← (parse (.structural (Std.HashSet.ofList pivots) {} .null) .empty entry nodes 0).mapError
+    StructuralRefusal.reason
+  unless parsed.imports.isEmpty && parsed.templates.isEmpty do
+    throw "retained source requires an import-free module without template sites"
+  return parsed.numbered entry 0
+
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use
 disjoint ordinals. Selected pivots have their actual CoreJS statements on both sides. Retained statements

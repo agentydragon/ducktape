@@ -43,6 +43,16 @@ bbr test "$p:ordinary_certification_test" "$p:corpus_certificate_test"
 bb run "$p:debundle_cases" -- --certify --out "$out/certificates.jsonl"
 ```
 
+The retained-tail constructor admits the unchanged comma-list placement in
+`realizability/comma_list_split_does_not_invent_cross_module_cycle/spec`. The
+source and priority determine the graph; Lean checks its primitive declaration
+schedule and preserves the original final operation, captures, and public
+live cells without a host profile. Its normal-completion verdict is independently
+rechecked from disk, and it passes all its authored observations. The same
+constructor admits `emission/lowering/split_declarator_fragments/spec`, but the
+ordinary adapter still cannot report a complete observation pass for its two
+non-entry namespace assertions and full-tree syntax check.
+
 The separate `corpus_certificate_test` requires a compiled constructor to emit a supported placement. It checks its live export in Node, rechecks the files, and rejects a tampered provider and a wrong owner. The [historical structural report](https://github.com/agentydragon/ducktape/blob/c42cc83cf15aa5bf544ca998624af8932b2370ef/devinfra/js/debundle/x/split_proof/debundle_cases/results/certificates.jsonl) records earlier results under different proof rules.
 
 ## What the adapter does
