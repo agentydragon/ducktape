@@ -6,9 +6,10 @@ import EsmSplit.LowerSplit.Input
 /-! Test-facing pure mapping for the bounded sparse CoreJS construction.
 The ordinary emitter writes the candidate; the ordinary decoder rechecks it. -/
 
-namespace EsmSplit.LowerSplit.SparseArtifact
+namespace TestSupport.SparseArtifact
 
 open Lean (Json)
+open EsmSplit.LowerSplit (sourceBundle)
 open CoreJS CoreJS.LinkedBehavior
 
 /-- Refuse every omitted node except a local named-export list. Executable
@@ -52,7 +53,7 @@ structure Prepared {source request} (original : Json) (sourceText : String)
   metadataInEntry : metadata.all entry.stmts.contains = true
   labelsMatch : (executableLabels plan (placement.module.body.map Prod.fst)).Perm placement.assignment
   programs : Json
-  generated : ESTreeEmit.programs nodes (sourceBundle nodes) plan sourceText = .ok programs
+  generated : EsmSplit.ESTreeEmit.programs nodes (sourceBundle nodes) plan sourceText = .ok programs
 
 private def witness {α : Type} (result : Except String α) :
     Except String (Σ value : α, PLift (result = .ok value)) := do
@@ -83,7 +84,7 @@ def prepare {source request} (original : Json) (sourceText : String)
     | some entry =>
       if held : metadata.all entry.stmts.contains = true then
         if labels : (executableLabels plan ids).Perm placement.assignment then
-          let ⟨programs, ⟨generated⟩⟩ ← witness (ESTreeEmit.programs nodes bundle plan sourceText)
+          let ⟨programs, ⟨generated⟩⟩ ← witness (EsmSplit.ESTreeEmit.programs nodes bundle plan sourceText)
           return {
             nodes := nodes
             nodesMatch := nodesMatch
@@ -139,4 +140,4 @@ theorem verify_sound {original files source request requested} {placement : Spar
     Verified original files built plan := proof.down
 
 
-end EsmSplit.LowerSplit.SparseArtifact
+end TestSupport.SparseArtifact

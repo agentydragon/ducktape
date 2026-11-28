@@ -1,13 +1,14 @@
 import EsmSplit.ESTreeEmit
-import EsmSplit.LowerSplit.CheckedArtifact
 import EsmSplit.LowerSplit.Input
-import EsmSplit.LowerSplit.SparseArtifact
+import TestSupport.CheckedArtifact
+import TestSupport.SparseArtifact
 
 /-! Test-only entry point for the checked construction and real file staging. -/
 
 open Lean (Json toJson)
 open EsmSplit EsmSplit.SplitFiles EsmSplit.LowerSplit
 open CoreJS (Guarantee)
+open TestSupport
 
 private def run (manifestPath out : System.FilePath) (requested : Guarantee) (checkOnly : Bool) : IO Unit := do
   let manifest ← readDeploymentManifest manifestPath
