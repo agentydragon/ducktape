@@ -8,7 +8,8 @@ namespace CoreJS
 variable {W : World}
 
 private theorem descriptorField_safe {A : HeapNode → Prop} {v : Val} (safe : SafeVal A v) :
-    ∀ a, a ∈ some v → SafeVal A a := fun _ h => by cases h; exact safe
+    ∀ a, a ∈ some v → SafeVal A a := fun _ h => by
+  cases h; exact safe
 
 private theorem descriptorNone_safe {A : HeapNode → Prop} :
     ∀ a, a ∈ (none : Option Val) → SafeVal A a := fun _ h => by cases h
@@ -20,7 +21,8 @@ private theorem reachFrame_createData {r R cells A} (away : Away r R A) {a : Add
     ⟨descriptorField_safe safe, descriptorNone_safe, descriptorNone_safe⟩
 
 private theorem reachFrame_copySpreadKeys {r R cells A} (away : Away r R A) (call : Call W)
-    (getter : ∀ f base, SafeVal A f → SafeVal A base → ReachFrame r R cells A (SafeVal A) (call f base []))
+    (getter :
+      ∀ f base, SafeVal A f → SafeVal A base → ReachFrame r R cells A (SafeVal A) (call f base []))
     {target source : Addr} (ht : A (.obj target)) (hs : A (.obj source)) (keys : List PropertyKey) :
     ReachFrame r R cells A (fun _ => True) (copySpreadKeys call target source keys) := by
   induction keys with
@@ -37,24 +39,31 @@ private theorem reachFrame_copySpreadKeys {r R cells A} (away : Away r R A) (cal
 
 /-- A spread snapshots keys, then checks each own descriptor in the state left by earlier getters. -/
 theorem reachFrame_copySpread {r R cells A} (away : Away r R A) (call : Call W)
-    (getter : ∀ f base, SafeVal A f → SafeVal A base → ReachFrame r R cells A (SafeVal A) (call f base []))
-    {target : Addr} (ht : A (.obj target)) (excluded : List Name) (source : Val) (hs : SafeVal A source) :
+    (getter :
+      ∀ f base, SafeVal A f → SafeVal A base → ReachFrame r R cells A (SafeVal A) (call f base []))
+    {target : Addr} (ht : A (.obj target)) (excluded : List Name) (source : Val)
+    (hs : SafeVal A source) :
     ReachFrame r R cells A (fun _ => True) (copySpread call target excluded source) := by
   cases source <;> simp only [copySpread]
   case obj a =>
-    exact (reachFrame_ownKeys away (.obj a) hs).bind fun keys _ =>
-      reachFrame_copySpreadKeys away call getter ht (safeVal_obj.1 hs) _
+    exact
+      (reachFrame_ownKeys away (.obj a) hs).bind fun keys _ =>
+        reachFrame_copySpreadKeys away call getter ht (safeVal_obj.1 hs) _
   case str s =>
     split
-    · apply ReachFrame.bind (P := fun _ => True) (Q := fun _ => True) _ (fun _ _ => reachFrame_pure r R cells A () trivial)
+    · apply
+        ReachFrame.bind (P := fun _ => True) (Q := fun _ => True) _
+          (fun _ _ => reachFrame_pure r R cells A () trivial)
       generalize s.toList.zipIdx.filter (fun item => !excluded.contains (toString item.2)) = chars
       induction chars with
       | nil => exact reachFrame_pure r R cells A () trivial
       | cons c rest ih =>
         simp only [List.forIn_cons]
         apply ReachFrame.bind (P := fun step => step = .yield ())
-        · exact (reachFrame_createData away ht (toString c.2) (.str (String.singleton c.1))
-            (by simp [SafeVal, Val.nodes])).bind fun _ _ => reachFrame_pure r R cells A _ rfl
+        · exact
+            (reachFrame_createData away ht (toString c.2) (.str (String.singleton c.1))
+                  (by simp [SafeVal, Val.nodes])).bind
+              fun _ _ => reachFrame_pure r R cells A _ rfl
         · intro step h
           subst step
           exact ih
@@ -63,9 +72,10 @@ theorem reachFrame_copySpread {r R cells A} (away : Away r R A) (call : Call W)
   case error => exact reachFrame_unknown r R cells A _ _
   all_goals exact reachFrame_pure r R cells A () trivial
 
-private theorem reachFrame_directProto {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
-    (p : Option Addr) (hp : ∀ b ∈ p, A (.obj b)) :
-    ReachFrame r R cells A (fun _ => True) (modifyObj a fun o => { o with proto := p } : M W Unit) := by
+private theorem reachFrame_directProto {r R cells A} (away : Away r R A) {a : Addr}
+    (ha : A (.obj a)) (p : Option Addr) (hp : ∀ b ∈ p, A (.obj b)) :
+    ReachFrame r R cells A (fun _ => True)
+      (modifyObj a fun o => { o with proto := p } : M W Unit) := by
   apply reachFrame_modifyObj away a ha
   intro o node h
   simp only [Obj.nodes, List.mem_append] at h
@@ -77,8 +87,7 @@ private theorem reachFrame_directProto {r R cells A} (away : Away r R A) {a : Ad
   · exact Or.inl (List.mem_append_right _ promise)
 
 theorem evalFields_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env) {a : Addr}
-    (ha : A (.obj a))
-    (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
+    (ha : A (.obj a)) (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
     (rest : ∀ fs, ReachFrame r R cells A (fun _ => True) (evalFields n env a fs : M W Unit))
     (fs : List (PropertyKey × Expr)) :
     ReachFrame r R cells A (fun _ => True) (evalFields (n + 1) env a fs : M W Unit) := by
@@ -94,11 +103,18 @@ theorem evalFields_reachFrame_step {r R cells A n} (away : Away r R A) (env : En
 
 theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env) {a : Addr}
     (ha : A (.obj a))
-    (getter : ∀ f base, SafeVal A f → SafeVal A base →
-      ReachFrame r R cells A (SafeVal A) (callFn n f base [] : M W Val))
+    (getter :
+      ∀ f base,
+        SafeVal A f →
+          SafeVal A base → ReachFrame r R cells A (SafeVal A) (callFn n f base [] : M W Val))
     (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
-    (make : ∀ home : Addr, A (.obj home) → ∀ key : PropertyKey, ∀ affix : String, ∀ f,
-      ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val))
+    (make :
+      ∀ home : Addr,
+        A (.obj home) →
+          ∀ key : PropertyKey,
+            ∀ affix : String,
+              ∀ f,
+                ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val))
     (rest : ∀ ps, ReachFrame r R cells A (fun _ => True) (evalProps n env a ps : M W Unit))
     (ps : List PropDef) :
     ReachFrame r R cells A (fun _ => True) (evalProps (n + 1) env a ps : M W Unit) := by
@@ -112,15 +128,17 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
       intro kv _
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
-      exact (eval v).bind fun value hv =>
-        (reachFrame_createData away ha key value hv).bind fun _ _ => rest tail
+      exact
+        (eval v).bind fun value hv =>
+          (reachFrame_createData away ha key value hv).bind fun _ _ => rest tail
     | method k f =>
       apply (eval k).bind
       intro kv _
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
-      exact (make a ha key "" f).bind fun value hv =>
-        (reachFrame_createData away ha key value hv).bind fun _ _ => rest tail
+      exact
+        (make a ha key "" f).bind fun value hv =>
+          (reachFrame_createData away ha key value hv).bind fun _ _ => rest tail
     | getter k f =>
       apply (eval k).bind
       intro kv _
@@ -128,8 +146,10 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
       intro key _
       apply (make a ha key "get " f).bind
       intro getter safe
-      exact (reachFrame_defineOwn away ha key _ ⟨descriptorNone_safe, descriptorField_safe safe, descriptorNone_safe⟩).bind
-        fun _ _ => rest tail
+      exact
+        (reachFrame_defineOwn away ha key _
+              ⟨descriptorNone_safe, descriptorField_safe safe, descriptorNone_safe⟩).bind
+          fun _ _ => rest tail
     | setter k f =>
       apply (eval k).bind
       intro kv _
@@ -137,28 +157,39 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
       intro key _
       apply (make a ha key "set " f).bind
       intro setter safe
-      exact (reachFrame_defineOwn away ha key _ ⟨descriptorNone_safe, descriptorNone_safe, descriptorField_safe safe⟩).bind
-        fun _ _ => rest tail
+      exact
+        (reachFrame_defineOwn away ha key _
+              ⟨descriptorNone_safe, descriptorNone_safe, descriptorField_safe safe⟩).bind
+          fun _ _ => rest tail
     | spread e excluded =>
-      exact (eval e).bind fun source hs =>
-        (reachFrame_copySpread away (callFn n) getter ha excluded source hs).bind fun _ _ => rest tail
+      exact
+        (eval e).bind fun source hs =>
+          (reachFrame_copySpread away (callFn n) getter ha excluded source hs).bind fun _ _ =>
+            rest tail
     | proto e =>
       apply (eval e).bind
       intro v hv
       cases v
       case obj parent =>
-        exact (reachFrame_directProto away ha (some parent) (fun p hp => by cases hp; exact safeVal_obj.1 hv)).bind
-          fun _ _ => rest tail
+        exact
+          (reachFrame_directProto away ha (some parent)
+                (fun p hp => by
+                  cases hp; exact safeVal_obj.1 hv)).bind
+            fun _ _ => rest tail
       case null =>
-        exact (reachFrame_directProto away ha none (fun _ h => by cases h)).bind fun _ _ => rest tail
+        exact
+          (reachFrame_directProto away ha none (fun _ h => by cases h)).bind fun _ _ => rest tail
       case host name => exact reachFrame_unknown r R cells A _ _
       all_goals exact rest tail
 
 theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env) {proto c : Addr}
     (hp : A (.obj proto)) (hc : A (.obj c))
     (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
-    (make : ∀ home : Addr, A (.obj home) → ∀ key affix f,
-      ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val))
+    (make :
+      ∀ home : Addr,
+        A (.obj home) →
+          ∀ key affix f,
+            ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val))
     (rest : ∀ ms, ReachFrame r R cells A (fun _ => True) (evalMembers n env proto c ms : M W _))
     (ms : List ClassMember) :
     ReachFrame r R cells A (fun _ => True) (evalMembers (n + 1) env proto c ms : M W _) := by
@@ -178,8 +209,9 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
       intro key _
       apply (make _ (hs static) key "" f).bind
       intro v hv
-      apply (reachFrame_defineOwn away (hs static) key _
-        ⟨descriptorField_safe hv, descriptorNone_safe, descriptorNone_safe⟩).bind
+      apply
+        (reachFrame_defineOwn away (hs static) key _
+            ⟨descriptorField_safe hv, descriptorNone_safe, descriptorNone_safe⟩).bind
       intro _ _
       exact (rest tail).bind fun xs _ => reachFrame_pure r R cells A xs trivial
     | getter static k f =>
@@ -189,8 +221,9 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
       intro key _
       apply (make _ (hs static) key "get " f).bind
       intro v hv
-      apply (reachFrame_defineOwn away (hs static) key _
-        ⟨descriptorNone_safe, descriptorField_safe hv, descriptorNone_safe⟩).bind
+      apply
+        (reachFrame_defineOwn away (hs static) key _
+            ⟨descriptorNone_safe, descriptorField_safe hv, descriptorNone_safe⟩).bind
       intro _ _
       exact (rest tail).bind fun xs _ => reachFrame_pure r R cells A xs trivial
     | setter static k f =>
@@ -200,8 +233,9 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
       intro key _
       apply (make _ (hs static) key "set " f).bind
       intro v hv
-      apply (reachFrame_defineOwn away (hs static) key _
-        ⟨descriptorNone_safe, descriptorNone_safe, descriptorField_safe hv⟩).bind
+      apply
+        (reachFrame_defineOwn away (hs static) key _
+            ⟨descriptorNone_safe, descriptorNone_safe, descriptorField_safe hv⟩).bind
       intro _ _
       exact (rest tail).bind fun xs _ => reachFrame_pure r R cells A xs trivial
     | field static k _ =>
@@ -210,13 +244,15 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
       exact (rest tail).bind fun xs _ => reachFrame_pure r R cells A ((static, key) :: xs) trivial
-    | staticBlock _ =>
-      exact (rest tail).bind fun xs _ => reachFrame_pure r R cells A xs trivial
+    | staticBlock _ => exact (rest tail).bind fun xs _ => reachFrame_pure r R cells A xs trivial
 
 theorem evalArray_reachFrame_step {r R cells A n} (env : Env) (root : A (.obj arrayProto))
-    (args : ∀ es, ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v) (evalArgs n env es : M W _))
-    (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
-      ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
+    (args :
+      ∀ es, ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v) (evalArgs n env es : M W _))
+    (allocate :
+      ∀ o : Obj,
+        (∀ node ∈ o.nodes, A node) →
+          ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (es : List Expr) :
     ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.arr es) : M W Val) :=
   (args es).bind fun values hv =>
@@ -226,7 +262,9 @@ theorem evalArray_reachFrame_step {r R cells A n} (env : Env) (root : A (.obj ar
 private theorem reachFrame_constructorLink {r R cells A} (away : Away r R A) (proto c : Addr)
     (hp : A (.obj proto)) (hc : A (.obj c)) :
     ReachFrame r R cells A (fun _ => True)
-      (modifyObj proto fun o => { o with props := [("constructor", .data (.obj c) true false true)] } : M W Unit) := by
+      (modifyObj proto fun o =>
+          { o with props := [("constructor", .data (.obj c) true false true)] } :
+        M W Unit) := by
   apply reachFrame_modifyObj away proto hp
   intro o node hn
   simp [Obj.nodes, Property.nodes, Val.nodes] at hn ⊢
@@ -250,8 +288,8 @@ private theorem reachFrame_constructorCode {r R cells A} (away : Away r R A) (c 
   · exact Or.inl (Or.inr (Or.inr (Or.inr h)))
 
 private theorem reachFrame_staticInitializers {r R cells A} (away : Away r R A)
-    (eval : Expr → M W Val) (framed : ∀ e, ReachFrame r R cells A (SafeVal A) (eval e))
-    (c : Addr) (hc : A (.obj c)) (plan : List (Option PropertyKey × Expr)) :
+    (eval : Expr → M W Val) (framed : ∀ e, ReachFrame r R cells A (SafeVal A) (eval e)) (c : Addr)
+    (hc : A (.obj c)) (plan : List (Option PropertyKey × Expr)) :
     ReachFrame r R cells A (fun _ => True) (evalStaticInitializers eval c plan) := by
   induction plan with
   | nil => exact reachFrame_pure r R cells A () trivial
@@ -264,15 +302,21 @@ private theorem reachFrame_staticInitializers {r R cells A} (away : Away r R A)
     | none => exact ih
 
 theorem evalClass_reachFrame_step {r R cells A n} (away : Away r R A)
-    (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (bindings : ∀ a : Addr, a.region ≠ r → A (.cell a))
-    (objectRoot : A (.obj objectProto)) (functionRoot : A (.obj functionProto))
-    (env : Env) (safe : ∀ node ∈ env.nodes, A node)
-    (evalMemberList : ∀ e proto c ms, (∀ node ∈ Env.nodes e, A node) → A (.obj proto) → A (.obj c) →
-      ReachFrame r R cells A (fun _ => True) (evalMembers n e proto c ms : M W _))
-    (eval : ∀ e exp, (∀ node ∈ Env.nodes e, A node) →
-      ReachFrame r R cells A (SafeVal A) (evalExpr n e exp : M W Val))
+    (objects : ∀ a : Addr, a.region ≠ r → A (.obj a))
+    (bindings : ∀ a : Addr, a.region ≠ r → A (.cell a)) (objectRoot : A (.obj objectProto))
+    (functionRoot : A (.obj functionProto)) (env : Env) (safe : ∀ node ∈ env.nodes, A node)
+    (evalMemberList :
+      ∀ e proto c ms,
+        (∀ node ∈ Env.nodes e, A node) →
+          A (.obj proto) →
+          A (.obj c) → ReachFrame r R cells A (fun _ => True) (evalMembers n e proto c ms : M W _))
+    (eval :
+      ∀ e exp,
+        (∀ node ∈ Env.nodes e, A node) →
+          ReachFrame r R cells A (SafeVal A) (evalExpr n e exp : M W Val))
     (name : Name) (self : Bool) (ctor : Func) (members : List ClassMember) :
-    ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.cls name self ctor members) : M W Val) := by
+    ReachFrame r R cells A (SafeVal A)
+      (evalExpr (n + 1) env (.cls name self ctor members) : M W Val) := by
   simp only [evalExpr]
   apply (reachFrame_selfScope away bindings env self name safe).bind
   intro localEnv hlocal
@@ -281,17 +325,21 @@ theorem evalClass_reachFrame_step {r R cells A n} (away : Away r R A)
     let closed := { localEnv with home := some proto }.capture (ctor.free ++ freeMembers members)
     have safeClosed : ∀ node ∈ closed.nodes, A node :=
       Env.nodes_capture (Env.nodes_setHome hlocal (some proto) (by simpa)) _
-    have ctorObj := reachFrame_alloc (W := W) (cells := cells) (R := R)
-      { proto := some functionProto, code := some (.closure ctor closed []),
-        props := [("length", .data (.num (Float.ofNat ctor.length)) false false true),
-          ("name", .data (.str name) false false true), ("prototype", .data (.obj proto) false false false)] }
-      (by
-        intro node h
-        simp [Obj.nodes, Property.nodes, Val.nodes, Code.nodes] at h
-        rcases h with rfl | rfl | capture
-        · exact functionRoot
-        · exact hp
-        · exact safeClosed node capture) objects
+    have ctorObj :=
+      reachFrame_alloc (W := W) (cells := cells) (R := R)
+        { proto := some functionProto, code := some (.closure ctor closed []),
+          props :=
+            [("length", .data (.num (Float.ofNat ctor.length)) false false true),
+              ("name", .data (.str name) false false true),
+              ("prototype", .data (.obj proto) false false false)] }
+        (by
+          intro node h
+          simp [Obj.nodes, Property.nodes, Val.nodes, Code.nodes] at h
+          rcases h with rfl | rfl | capture
+          · exact functionRoot
+          · exact hp
+          · exact safeClosed node capture)
+        objects
     apply ctorObj.bind
     intro c hc
     apply (reachFrame_constructorLink away proto c hp hc).bind
@@ -299,21 +347,24 @@ theorem evalClass_reachFrame_step {r R cells A n} (away : Away r R A)
     apply (evalMemberList localEnv proto c members hlocal hp hc).bind
     intro keys _
     let fields := keys.zip (fieldInits members)
-    let perInstance := fields.filterMap fun ((static, k), init) => if static then none else some (k, init)
+    let perInstance :=
+      fields.filterMap fun ((static, k), init) => if static then none else some (k, init)
     apply (reachFrame_constructorCode away c hc (.closure ctor closed perInstance) safeClosed).bind
     intro _ _
     apply (reachFrame_initSelf away localEnv self name (.obj c) hlocal (safeVal_obj.2 hc)).bind
     intro _ _
-    have staticEnv := Env.nodes_setHome (Env.nodes_setThis hlocal (safeVal_obj.2 hc)) (some c) (by simpa)
+    have staticEnv :=
+      Env.nodes_setHome (Env.nodes_setThis hlocal (safeVal_obj.2 hc)) (some c) (by simpa)
     apply (reachFrame_staticInitializers away _ (fun e => eval _ e staticEnv) c hc _).bind
     intro _ _
     exact reachFrame_pure r R cells A (Val.obj c) (safeVal_obj.2 hc)
   · simpa [Obj.nodes] using objectRoot
 
 private theorem reachFrame_classParentsNonNull {r R cells A} (away : Away r R A) (call : Call W)
-    (framed : CallFramed r R cells A call) (root : A (.obj objectProto))
-    (base : Val) (safe : SafeVal A base) :
-    ReachFrame r R cells A (fun p => A (.obj p.1) ∧ ∀ a ∈ p.2, A (.obj a)) (classParentsNonNull call base) := by
+    (framed : CallFramed r R cells A call) (root : A (.obj objectProto)) (base : Val)
+    (safe : SafeVal A base) :
+    ReachFrame r R cells A (fun p => A (.obj p.1) ∧ ∀ a ∈ p.2, A (.obj a))
+      (classParentsNonNull call base) := by
   unfold classParentsNonNull
   apply (reachFrame_isConstructor away base safe).bind
   intro succeeds _
@@ -329,7 +380,11 @@ private theorem reachFrame_classParentsNonNull {r R cells A} (away : Away r R A)
     have parent : ReachFrame r R cells A (fun p => ∀ a ∈ p, A (.obj a)) (coerceParent proto) := by
       cases proto
       case null => exact reachFrame_pure r R cells A none (fun _ hn => by cases hn)
-      case obj a => exact reachFrame_pure r R cells A (some a) (fun _ hm => by cases hm; exact safeVal_obj.1 hproto)
+      case obj a =>
+        exact
+          reachFrame_pure r R cells A (some a)
+            (fun _ hm => by
+              cases hm; exact safeVal_obj.1 hproto)
       case host name => exact reachFrame_unknown r R cells A _ _
       all_goals exact reachFrame_typeError _
     let finish (pp : Option Addr) : M W (Addr × Option Addr) :=
@@ -337,21 +392,23 @@ private theorem reachFrame_classParentsNonNull {r R cells A} (away : Away r R A)
       | .obj a => pure (a, pp)
       | _ => unknown "host superclass"
     have finishFrame (pp : Option Addr) (hp : ∀ a ∈ pp, A (.obj a)) :
-        ReachFrame r R cells A (fun p => A (.obj p.1) ∧ ∀ a ∈ p.2, A (.obj a)) (finish pp) := by
+      ReachFrame r R cells A (fun p => A (.obj p.1) ∧ ∀ a ∈ p.2, A (.obj a)) (finish pp) := by
       cases base
       case obj a => exact reachFrame_pure r R cells A (a, pp) ⟨safeVal_obj.1 safe, hp⟩
       all_goals exact reachFrame_unknown r R cells A _ _
     cases proto <;> cases base <;> exact parent.bind finishFrame
 
 private theorem reachFrame_classParents {r R cells A} (away : Away r R A) (call : Call W)
-    (framed : CallFramed r R cells A call) (objectRoot : A (.obj objectProto)) (functionRoot : A (.obj functionProto))
-    (base : Val) (safe : SafeVal A base) :
-    ReachFrame r R cells A (fun p => A (.obj p.1) ∧ ∀ a ∈ p.2, A (.obj a)) (classParents call base) := by
+    (framed : CallFramed r R cells A call) (objectRoot : A (.obj objectProto))
+    (functionRoot : A (.obj functionProto)) (base : Val) (safe : SafeVal A base) :
+    ReachFrame r R cells A (fun p => A (.obj p.1) ∧ ∀ a ∈ p.2, A (.obj a))
+      (classParents call base) := by
   have nonNull := reachFrame_classParentsNonNull away call framed objectRoot base safe
   cases base
   case null =>
-    exact reachFrame_pure r R cells A (functionProto, (none : Option Addr))
-      ⟨functionRoot, fun _ h => by cases h⟩
+    exact
+      reachFrame_pure r R cells A (functionProto, (none : Option Addr))
+        ⟨functionRoot, fun _ h => by cases h⟩
   all_goals exact nonNull
 
 private theorem derivedCtorCode_safe {A : HeapNode → Prop} {env : Env}
@@ -368,17 +425,20 @@ private theorem derivedCtorCode_safe {A : HeapNode → Prop} {env : Env}
     exact Env.nodes_capture safe _
 
 private theorem reachFrame_finishDerived {r R cells A} (away : Away r R A)
-    (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (env : Env) (safe : ∀ node ∈ env.nodes, A node)
-    (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
-    (ctor : Option (List Stmt × SuperCall × Func))
+    (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (env : Env)
+    (safe : ∀ node ∈ env.nodes, A node) (name : Name) (self : Bool) (members : List ClassMember)
+    (parents : Addr × Option Addr) (ctor : Option (List Stmt × SuperCall × Func))
     (guard : A (.obj parents.1) ∧ ∀ a ∈ parents.2, A (.obj a))
     (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
-    (framed : ∀ proto c, A (.obj proto) → A (.obj c) →
-      ReachFrame r R cells A (fun _ => True) (runMembers env proto c members))
+    (framed :
+      ∀ proto c,
+        A (.obj proto) →
+          A (.obj c) → ReachFrame r R cells A (fun _ => True) (runMembers env proto c members))
     (initStatic : Addr → List (Bool × PropertyKey) → M W Unit)
-    (staticFramed : ∀ c keys, A (.obj c) →
-      ReachFrame r R cells A (fun _ => True) (initStatic c keys)) :
-    ReachFrame r R cells A (SafeVal A) (finishDerived runMembers env name self members parents ctor initStatic) := by
+    (staticFramed :
+      ∀ c keys, A (.obj c) → ReachFrame r R cells A (fun _ => True) (initStatic c keys)) :
+    ReachFrame r R cells A (SafeVal A)
+      (finishDerived runMembers env name self members parents ctor initStatic) := by
   unfold finishDerived
   apply (reachFrame_alloc _ ?_ objects).bind
   · intro proto hp
@@ -390,11 +450,16 @@ private theorem reachFrame_finishDerived {r R cells A} (away : Away r R A)
       apply (framed proto c hp hc).bind
       intro keys _
       dsimp only
-      have done := (reachFrame_initSelf (W := W) away env self name (.obj c) safe (safeVal_obj.2 hc)).bind fun _ _ =>
-        (staticFramed c keys hc).bind fun _ _ => reachFrame_pure r R cells A (Val.obj c) (safeVal_obj.2 hc)
+      have done :=
+        (reachFrame_initSelf (W := W) away env self name (.obj c) safe (safeVal_obj.2 hc)).bind
+          fun _ _ =>
+          (staticFramed c keys hc).bind fun _ _ =>
+            reachFrame_pure r R cells A (Val.obj c) (safeVal_obj.2 hc)
       split
       · exact done
-      · exact (reachFrame_constructorCode away c hc _ (derivedCtorCode_safe ctorSafe ctor _)).bind fun _ _ => done
+      · exact
+          (reachFrame_constructorCode away c hc _ (derivedCtorCode_safe ctorSafe ctor _)).bind
+            fun _ _ => done
     · intro node h
       simp [Obj.nodes, Property.nodes, Val.nodes] at h
       rcases h with rfl | rfl | capture
@@ -407,16 +472,23 @@ private theorem reachFrame_finishDerived {r R cells A} (away : Away r R A)
     exact guard.2 p hp
 
 theorem evalDerived_reachFrame_step {r R cells A n} (away : Away r R A)
-    (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (bindings : ∀ a : Addr, a.region ≠ r → A (.cell a))
-    (objectRoot : A (.obj objectProto)) (functionRoot : A (.obj functionProto))
-    (env : Env) (safe : ∀ node ∈ env.nodes, A node)
+    (objects : ∀ a : Addr, a.region ≠ r → A (.obj a))
+    (bindings : ∀ a : Addr, a.region ≠ r → A (.cell a)) (objectRoot : A (.obj objectProto))
+    (functionRoot : A (.obj functionProto)) (env : Env) (safe : ∀ node ∈ env.nodes, A node)
     (call : CallFramed r R cells A (callFn n : Call W))
-    (eval : ∀ e exp, (∀ node ∈ Env.nodes e, A node) →
-      ReachFrame r R cells A (SafeVal A) (evalExpr n e exp : M W Val))
-    (evalMemberList : ∀ e proto c ms, (∀ node ∈ Env.nodes e, A node) → A (.obj proto) → A (.obj c) →
-      ReachFrame r R cells A (fun _ => True) (evalMembers n e proto c ms : M W _))
-    (name : Name) (self : Bool) (base : Expr) (members : List ClassMember) (ctor : Option (List Stmt × SuperCall × Func)) :
-    ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.derived name self base members ctor) : M W Val) := by
+    (eval :
+      ∀ e exp,
+        (∀ node ∈ Env.nodes e, A node) →
+          ReachFrame r R cells A (SafeVal A) (evalExpr n e exp : M W Val))
+    (evalMemberList :
+      ∀ e proto c ms,
+        (∀ node ∈ Env.nodes e, A node) →
+          A (.obj proto) →
+          A (.obj c) → ReachFrame r R cells A (fun _ => True) (evalMembers n e proto c ms : M W _))
+    (name : Name) (self : Bool) (base : Expr) (members : List ClassMember)
+    (ctor : Option (List Stmt × SuperCall × Func)) :
+    ReachFrame r R cells A (SafeVal A)
+      (evalExpr (n + 1) env (.derived name self base members ctor) : M W Val) := by
   simp only [evalExpr]
   apply (reachFrame_selfScope away bindings env self name safe).bind
   intro localEnv hlocal
@@ -424,10 +496,12 @@ theorem evalDerived_reachFrame_step {r R cells A n} (away : Away r R A)
   intro proto hp
   apply (reachFrame_classParents away (callFn n) call objectRoot functionRoot proto hp).bind
   intro parents guard
-  refine reachFrame_finishDerived away objects localEnv hlocal name self members parents ctor guard (evalMembers n)
-    (fun a b ha hb => evalMemberList localEnv a b members hlocal ha hb) _ ?_
+  refine
+    reachFrame_finishDerived away objects localEnv hlocal name self members parents ctor guard
+      (evalMembers n) (fun a b ha hb => evalMemberList localEnv a b members hlocal ha hb) _ ?_
   intro c keys hc
-  have staticEnv := Env.nodes_setHome (Env.nodes_setThis hlocal (safeVal_obj.2 hc)) (some c) (by simpa)
+  have staticEnv :=
+    Env.nodes_setHome (Env.nodes_setThis hlocal (safeVal_obj.2 hc)) (some c) (by simpa)
   exact reachFrame_staticInitializers away _ (fun e => eval _ e staticEnv) c hc _
 
 end CoreJS

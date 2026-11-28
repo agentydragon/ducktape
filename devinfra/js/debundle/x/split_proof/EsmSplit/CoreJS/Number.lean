@@ -9,8 +9,11 @@ There is no `**`: the specification leaves its result to the implementation, and
 
 namespace CoreJS.Num
 
-def nan : Float := 0.0 / 0.0
-def inf : Float := 1.0 / 0.0
+def nan : Float :=
+  0.0 / 0.0
+
+def inf : Float :=
+  1.0 / 0.0
 
 /-- The nearest double to `n / d`, ties to even, with the given sign. -/
 def ofRatio (neg : Bool) (n d : Nat) : Float :=
@@ -38,21 +41,26 @@ def decompose (x : Float) : Bool × Nat × Int :=
   let bits := x.toBits.toNat
   let ex := (bits >>> 52) % 2048
   let frac := bits % 2 ^ 52
-  (bits >>> 63 == 1, if ex == 0 then frac else frac + 2 ^ 52, ((if ex == 0 then 1 else ex : Nat) : Int) - 1075)
+  (bits >>> 63 == 1, if ex == 0 then frac else frac + 2 ^ 52,
+    ((if ex == 0 then 1 else ex : Nat) : Int) - 1075)
 
-def isNegZero (x : Float) : Bool := x == 0.0 && (decompose x).1
+def isNegZero (x : Float) : Bool :=
+  x == 0.0 && (decompose x).1
 
 /-- A double with its fraction dropped, or 0 for NaN and infinities, as needed by fixed-width integer conversions. -/
 def truncInt (x : Float) : Int :=
-  if x.isNaN || x.isInf then 0 else
-  let (neg, m, e) := decompose x
-  let a : Nat := if e ≥ 0 then m <<< e.toNat else m >>> (-e).toNat
-  if neg then -(a : Int) else a
+  if x.isNaN || x.isInf then 0
+  else
+    let (neg, m, e) := decompose x
+    let a : Nat := if e ≥ 0 then m <<< e.toNat else m >>> (-e).toNat
+    if neg then -(a : Int) else a
 
-def toUint32 (x : Float) : Nat := (Int.emod (truncInt x) (2 ^ 32)).toNat
+def toUint32 (x : Float) : Nat :=
+  (Int.emod (truncInt x) (2 ^ 32)).toNat
 
 /-- The Number step of ECMAScript's `ToUint8`, after value-to-number coercion. -/
-def toUint8 (x : Float) : UInt8 := UInt8.ofNat (Int.emod (truncInt x) (2 ^ 8)).toNat
+def toUint8 (x : Float) : UInt8 :=
+  UInt8.ofNat (Int.emod (truncInt x) (2 ^ 8)).toNat
 
 def toInt32 (x : Float) : Int :=
   let u := toUint32 x
@@ -61,13 +69,14 @@ def toInt32 (x : Float) : Int :=
 /-- `a % b`: the remainder has the sign of `a` (C's `fmod`). -/
 def fmod (a b : Float) : Float :=
   if a.isNaN || b.isNaN || a.isInf || b == 0.0 then nan
-  else if b.isInf || a == 0.0 then a
   else
-    let (neg, ma, ea) := decompose a
-    let (_, mb, eb) := decompose b
-    let e := min ea eb
-    let r := (ma <<< (ea - e).toNat) % (mb <<< (eb - e).toNat)
-    if e ≥ 0 then ofRatio neg (r <<< e.toNat) 1 else ofRatio neg r (1 <<< (-e).toNat)
+    if b.isInf || a == 0.0 then a
+    else
+      let (neg, ma, ea) := decompose a
+      let (_, mb, eb) := decompose b
+      let e := min ea eb
+      let r := (ma <<< (ea - e).toNat) % (mb <<< (eb - e).toNat)
+      if e ≥ 0 then ofRatio neg (r <<< e.toNat) 1 else ofRatio neg r (1 <<< (-e).toNat)
 
 /--
 The shortest decimal digits `ds` and the exponent `n` with `x = 0.ds × 10^n`, for a finite `x > 0`: the fewest digits
@@ -86,12 +95,14 @@ def shortest (x : Float) : List Char × Int :=
   let atLeast (p : Int) : Bool := if p ≥ 0 then v ≥ d * 10 ^ p.toNat else v * 10 ^ (-p).toNat ≥ d
   -- `n`: the least `p` with `x < 10^p`; the estimate from the bit lengths is within 2 of it
   let start : Int := Int.fdiv (((v.log2 : Int) - (d.log2 : Int)) * 30103) 100000 - 2
-  let n : Int := start + (((List.range 8).find? fun (i : Nat) => !atLeast (start + (i : Int))).getD 0 : Nat)
+  let n : Int :=
+    start + (((List.range 8).find? fun (i : Nat) => !atLeast (start + (i : Int))).getD 0 : Nat)
   let pick (k : Nat) : Option (Nat × Nat) :=
     let a := (k - n).toNat
     let u := d * 10 ^ (n - k).toNat
     let (v, lo, hi) := (v * 10 ^ a, lo * 10 ^ a, hi * 10 ^ a)
-    let inside (s : Nat) : Bool := if m % 2 == 0 then lo ≤ s * u && s * u ≤ hi else lo < s * u && s * u < hi
+    let inside (s : Nat) : Bool :=
+      if m % 2 == 0 then lo ≤ s * u && s * u ≤ hi else lo < s * u && s * u < hi
     let s := v / u
     let lower := v - s * u
     let upper := (s + 1) * u - v
@@ -107,67 +118,86 @@ def shortest (x : Float) : List Char × Int :=
 /-- `Number::toString` in radix 10. -/
 def toString (x : Float) : String :=
   if x.isNaN then "NaN"
-  else if x == 0.0 then "0"
-  else if x.isInf then (if x < 0.0 then "-Infinity" else "Infinity")
   else
-    let (ds, n) := shortest (if x < 0.0 then -x else x)
-    let k : Int := ds.length
-    let zeros (c : Int) : List Char := List.replicate c.toNat '0'
-    let body : List Char :=
-      if k ≤ n && n ≤ 21 then ds ++ zeros (n - k)
-      else if 0 < n && n ≤ 21 then ds.take n.toNat ++ '.' :: ds.drop n.toNat
-      else if -6 < n && n ≤ 0 then '0' :: '.' :: zeros (-n) ++ ds
+    if x == 0.0 then "0"
+    else
+      if x.isInf then (if x < 0.0 then "-Infinity" else "Infinity")
       else
-        let mantissa := if ds.length == 1 then ds else ds.take 1 ++ '.' :: ds.drop 1
-        mantissa ++ 'e' :: (if n - 1 < 0 then '-' else '+') :: (Nat.repr (n - 1).natAbs).toList
-    String.ofList (if x < 0.0 then '-' :: body else body)
+        let (ds, n) := shortest (if x < 0.0 then -x else x)
+        let k : Int := ds.length
+        let zeros (c : Int) : List Char := List.replicate c.toNat '0'
+        let body : List Char :=
+          if k ≤ n && n ≤ 21 then ds ++ zeros (n - k)
+          else
+            if 0 < n && n ≤ 21 then ds.take n.toNat ++ '.' :: ds.drop n.toNat
+            else
+              if -6 < n && n ≤ 0 then '0' :: '.' :: zeros (-n) ++ ds
+              else
+                let mantissa := if ds.length == 1 then ds else ds.take 1 ++ '.' :: ds.drop 1
+                mantissa ++
+                  'e' :: (if n - 1 < 0 then '-' else '+') :: (Nat.repr (n - 1).natAbs).toList
+        String.ofList (if x < 0.0 then '-' :: body else body)
 
 /-- White space and line terminators that `StringToNumber` strips. -/
 def isSpace (c : Char) : Bool :=
   let u := c.toNat
-  (9 ≤ u && u ≤ 13) || u == 0x20 || u == 0xA0 || u == 0x1680 || (0x2000 ≤ u && u ≤ 0x200A) || u == 0x2028 ||
-    u == 0x2029 || u == 0x202F || u == 0x205F || u == 0x3000 || u == 0xFEFF
+  (9 ≤ u && u ≤ 13) || u == 0x20 || u == 0xA0 || u == 0x1680 || (0x2000 ≤ u && u ≤ 0x200A) ||
+    u == 0x2028 ||
+    u == 0x2029 ||
+    u == 0x202F ||
+    u == 0x205F ||
+    u == 0x3000 ||
+    u == 0xFEFF
 
 def digitValue (c : Char) : Option Nat :=
   if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
-  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
-  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
-  else none
+  else
+    if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+    else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10) else none
 
 /-- The value of a nonempty run of digits of `base`. -/
 def natOf (base : Nat) (cs : List Char) : Option Nat :=
   if cs.isEmpty then none
-  else cs.foldlM (fun acc c => (digitValue c).bind fun v => if v < base then some (acc * base + v) else none) 0
+  else
+    cs.foldlM
+      (fun acc c => (digitValue c).bind fun v => if v < base then some (acc * base + v) else none) 0
 
 /-- A decimal literal without a sign: digits, a fraction, an exponent. -/
 def ofDecimal (neg : Bool) (cs : List Char) : Float :=
   let (whole, rest) := cs.span Char.isDigit
-  let (fraction, rest) := match rest with
+  let (fraction, rest) :=
+    match rest with
     | '.' :: more => more.span Char.isDigit
     | _ => ([], rest)
-  let exponent : Option Int := match rest with
+  let exponent : Option Int :=
+    match rest with
     | [] => some 0
     | c :: more =>
-      if c != 'e' && c != 'E' then none else
-      match more with
-      | '-' :: ds => (natOf 10 ds).map fun v => -(v : Int)
-      | '+' :: ds => (natOf 10 ds).map fun v => (v : Int)
-      | ds => (natOf 10 ds).map fun v => (v : Int)
+      if c != 'e' && c != 'E' then none
+      else
+        match more with
+        | '-' :: ds => (natOf 10 ds).map fun v => -(v : Int)
+        | '+' :: ds => (natOf 10 ds).map fun v => (v : Int)
+        | ds => (natOf 10 ds).map fun v => (v : Int)
   match natOf 10 (whole ++ fraction), exponent with
   | some mantissa, some ex =>
     let ex := ex - fraction.length
     -- beyond these bounds the value is an infinity or a zero; the powers of ten are not computed
     if mantissa == 0 then ofRatio neg 0 1
-    else if ex > 400 then (if neg then -inf else inf)
-    else if ex < -400 - (whole.length + fraction.length : Nat) then ofRatio neg 0 1
-    else if ex ≥ 0 then ofRatio neg (mantissa * 10 ^ ex.toNat) 1
-    else ofRatio neg mantissa (10 ^ (-ex).toNat)
+    else
+      if ex > 400 then (if neg then -inf else inf)
+      else
+        if ex < -400 - (whole.length + fraction.length : Nat) then ofRatio neg 0 1
+        else
+          if ex ≥ 0 then ofRatio neg (mantissa * 10 ^ ex.toNat) 1
+          else ofRatio neg mantissa (10 ^ (-ex).toNat)
   | _, _ => nan
 
 /-- `StringToNumber`. -/
 def ofString (s : String) : Float :=
   let cs := ((s.toList.dropWhile isSpace).reverse.dropWhile isSpace).reverse
-  let radix (base : Nat) (ds : List Char) : Float := ((natOf base ds).map fun v => ofRatio false v 1).getD nan
+  let radix (base : Nat) (ds : List Char) : Float :=
+    ((natOf base ds).map fun v => ofRatio false v 1).getD nan
   match cs with
   | [] => 0.0
   | '0' :: 'x' :: ds | '0' :: 'X' :: ds => radix 16 ds

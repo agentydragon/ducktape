@@ -37,11 +37,13 @@ theorem planned_scopes (ss : List Stmt) (bundle : EsmSplit.Bundle) (spec : EsmSp
 /-- For any frames with the original bindings, the two actual graphs resolve
 their scopes and agree in the identity order used to initialize hoists. -/
 def HoistScopesAgree (source candidate : Program) : Prop :=
-  ∀ frames, FramesOf source.tops frames → ∃ before after,
-    source.scopes frames source.loaded = .ok before ∧
-    candidate.scopes frames candidate.loaded = .ok after ∧
-    SameUnits ((unitsOf before).mergeSort fun a b => decide (a.id ≤ b.id))
-      ((unitsOf after).mergeSort fun a b => decide (a.id ≤ b.id))
+  ∀ frames,
+    FramesOf source.tops frames →
+      ∃ before after,
+        source.scopes frames source.loaded = .ok before ∧
+          candidate.scopes frames candidate.loaded = .ok after ∧
+          SameUnits ((unitsOf before).mergeSort fun a b => decide (a.id ≤ b.id))
+            ((unitsOf after).mergeSort fun a b => decide (a.id ≤ b.id))
 
 /-- Transport a successful source link through declaration and hoist
 initialization. The two scope equations use the same allocation frames.
@@ -49,28 +51,33 @@ Modules may have different eager evaluation orders. -/
 theorem matching_hoist_link_with_frames {source candidate : Program} {w : World}
     (regions : source.regions = candidate.regions) (tops : source.tops = candidate.tops)
     (scopes : HoistScopesAgree source candidate) (before : CheckedLink source w) :
-    ∃ (start : State w) (frames : List (Nat × List (Name × Addr))) (allocated : State w)
-        (after : CheckedLink candidate w),
+    ∃ (start : State w) (frames : List (Nat × List (Name × Addr))) (allocated : State w) (after :
+      CheckedLink candidate w),
       checkIdentities source.tops (initialState w source.regions) = .ok () start ∧
-      declareTops source.tops start = .ok frames allocated ∧
-      source.scopes frames source.loaded = .ok before.linked ∧
-      candidate.scopes frames candidate.loaded = .ok after.linked ∧
-      before.ready = after.ready := by
-  have linked : ((do
-      checkIdentities source.tops
-      let frames ← declareTops source.tops
-      let linked ← lift (source.scopes frames source.loaded)
-      initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))
-      pure linked) : M w _) (initialState w source.regions) = .ok before.linked before.ready := by
+        declareTops source.tops start = .ok frames allocated ∧
+        source.scopes frames source.loaded = .ok before.linked ∧
+        candidate.scopes frames candidate.loaded = .ok after.linked ∧
+        before.ready = after.ready := by
+  have linked :
+    ((do
+            checkIdentities source.tops
+            let frames ← declareTops source.tops
+            let linked ← lift (source.scopes frames source.loaded)
+            initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))
+            pure linked) :
+          M w _)
+        (initialState w source.regions) =
+      .ok before.linked before.ready := by
     simpa [link, linkUsingScopes] using before.equation
   obtain ⟨checked, afterCheck, check, linked⟩ := bind_ok linked
   cases checked
   obtain ⟨frames, afterDeclare, declared, linked⟩ := bind_ok linked
-  obtain ⟨L, L', sourceScope, candidateScope, same⟩ :=
-    scopes frames (declareTops_names _ declared)
+  obtain ⟨L, L', sourceScope, candidateScope, same⟩ := scopes frames (declareTops_names _ declared)
   rw [sourceScope] at linked
-  change (initFunctions ((unitsOf L).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => pure L)
-    afterDeclare = .ok before.linked before.ready at linked
+  change
+    (initFunctions ((unitsOf L).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => pure L)
+        afterDeclare =
+      .ok before.linked before.ready at linked
   obtain ⟨ignored, final, initialized, returned⟩ := bind_ok linked
   cases ignored
   change Res.ok L final = .ok before.linked before.ready at returned
@@ -82,12 +89,17 @@ theorem matching_hoist_link_with_frames {source candidate : Program} {w : World}
     unfold link linkUsingScopes
     rw [← tops]
     simp only [M.bind_apply, check, declared, candidateScope, lift, pure]
-    change ((initFunctions ((unitsOf L').mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => pure L') : M w _)
-      afterDeclare = .ok L' before.ready
+    change
+      ((initFunctions ((unitsOf L').mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => pure L') :
+            M w _)
+          afterDeclare =
+        .ok L' before.ready
     rw [M.bind_apply, initialized, sameState]
     rfl
   let after : CheckedLink candidate w := ⟨L', before.ready, afterLink⟩
-  exact ⟨afterCheck, frames, afterDeclare, after, check, declared, sourceLinked ▸ sourceScope, candidateScope, rfl⟩
+  exact
+    ⟨afterCheck, frames, afterDeclare, after, check, declared, sourceLinked ▸ sourceScope,
+      candidateScope, rfl⟩
 
 #print axioms matching_hoist_link_with_frames
 
@@ -96,19 +108,20 @@ caller can use them to prove that public names resolve to the same cells. -/
 theorem matching_link_with_frames {source candidate : Program} {w : World}
     (regions : source.regions = candidate.regions) (tops : source.tops = candidate.tops)
     (scopes : ScopesAgree source candidate) (before : CheckedLink source w) :
-    ∃ (start : State w) (frames : List (Nat × List (Name × Addr))) (allocated : State w)
-        (after : CheckedLink candidate w),
+    ∃ (start : State w) (frames : List (Nat × List (Name × Addr))) (allocated : State w) (after :
+      CheckedLink candidate w),
       declareTops source.tops start = .ok frames allocated ∧
-      source.scopes frames source.loaded = .ok before.linked ∧
-      candidate.scopes frames candidate.loaded = .ok after.linked ∧
-      before.ready = after.ready ∧
-      SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
-      captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked) := by
+        source.scopes frames source.loaded = .ok before.linked ∧
+        candidate.scopes frames candidate.loaded = .ok after.linked ∧
+        before.ready = after.ready ∧
+        SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
+        captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked) := by
   have hoists : HoistScopesAgree source candidate := by
     intro frames bindings
     obtain ⟨L, L', sourceScope, candidateScope, same, sorted⟩ := scopes frames bindings
     have sorted' : (unitsOf L').Pairwise fun a b => a.id ≤ b.id := by
-      have ids := (List.pairwise_map (f := fun u : LinkedUnit => u.id) (R := fun a b => a ≤ b)).2 sorted
+      have ids :=
+        (List.pairwise_map (f := fun u : LinkedUnit => u.id) (R := fun a b => a ≤ b)).2 sorted
       rw [sameUnit_ids same] at ids
       exact List.pairwise_map.1 ids
     exact ⟨L, L', sourceScope, candidateScope, by rwa [sorted_units sorted, sorted_units sorted']⟩
@@ -118,16 +131,19 @@ theorem matching_link_with_frames {source candidate : Program} {w : World}
   have originalLinked := Except.ok.inj (originalScope.symm.trans sourceScope)
   have splitLinked := Except.ok.inj (splitScope.symm.trans candidateScope)
   rw [originalLinked, splitLinked] at same
-  exact ⟨start, frames, allocated, after, declared, sourceScope, candidateScope, ready, same, sameUnits_capture same⟩
+  exact
+    ⟨start, frames, allocated, after, declared, sourceScope, candidateScope, ready, same,
+      sameUnits_capture same⟩
 
 /-- Given the real source link, scope agreement constructs the real split link
 with exactly the same state after hoisting and the same captured schedule. -/
 theorem matching_link {source candidate : Program} {w : World}
     (regions : source.regions = candidate.regions) (tops : source.tops = candidate.tops)
     (scopes : ScopesAgree source candidate) (before : CheckedLink source w) :
-    ∃ after : CheckedLink candidate w, before.ready = after.ready ∧
-      SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
-      captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked) := by
+    ∃ after : CheckedLink candidate w,
+      before.ready = after.ready ∧
+        SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
+        captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked) := by
   obtain ⟨_, _, _, after, _, _, _, ready, same, captured⟩ :=
     matching_link_with_frames regions tops scopes before
   exact ⟨after, ready, same, captured⟩
@@ -143,15 +159,18 @@ theorem planned_link (ss : List Stmt) (bundle : EsmSplit.Bundle) (spec : EsmSpli
     (before : CheckedLink (Program.single ss) w) :
     ∃ after : CheckedLink (splitProgram ss bundle (EsmSplit.mkPlan bundle spec)) w,
       before.ready = after.ready ∧
-      SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
-      captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked) ∧
-      ∀ fuel, runProgram w fuel (Program.single ss) =
-        runProgram w fuel (splitProgram ss bundle (EsmSplit.mkPlan bundle spec)) := by
-  obtain ⟨after, ready, same, schedule⟩ := matching_link
-    (split_holds_statements (orderKept_perm ordered)).1
-    (split_holds_statements (orderKept_perm ordered)).2
-    (planned_scopes ss bundle spec valid footprints ordered) before
-  exact ⟨after, ready, same, schedule, fun fuel => run_eq_of_ordered_links fuel before after ready schedule⟩
+        SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
+        captureUnits (unitsOf before.linked) = captureUnits (unitsOf after.linked) ∧
+        ∀ fuel,
+          runProgram w fuel (Program.single ss) =
+            runProgram w fuel (splitProgram ss bundle (EsmSplit.mkPlan bundle spec)) := by
+  obtain ⟨after, ready, same, schedule⟩ :=
+    matching_link (split_holds_statements (orderKept_perm ordered)).1
+      (split_holds_statements (orderKept_perm ordered)).2
+      (planned_scopes ss bundle spec valid footprints ordered) before
+  exact
+    ⟨after, ready, same, schedule, fun fuel =>
+      run_eq_of_ordered_links fuel before after ready schedule⟩
 
 /-- Full bounded modeled outcomes, without running or comparing a candidate.
 The only hypotheses are source footprints and the actual authored plan's
@@ -178,6 +197,5 @@ theorem planned_runs_with_exports (ss : List Stmt) (bundle : EsmSplit.Bundle) (s
       runProgram w fuel (splitProgram ss bundle (EsmSplit.mkPlan bundle spec)) := by
   rw [runProgram_singleModuleMetadata _ (zip_range_sorted ss) name exports w fuel]
   exact planned_runs ss bundle spec valid footprints ordered w fuel
-
 
 end CoreJS.OrderedRegion

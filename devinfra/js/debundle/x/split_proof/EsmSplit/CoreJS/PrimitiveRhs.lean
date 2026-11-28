@@ -18,10 +18,18 @@ inductive Rhs (allows : Name → Bool) : Expr → Prop where
   | num (n : Float) : Rhs allows (.num n)
   | str (s : String) : Rhs allows (.str s)
   | read (name : Name) : allows name = true → Rhs allows (.var name)
-  | unary {op : UnOp} {arg : Expr} : sourceUnary op = true → Rhs allows arg → Rhs allows (.unary op arg)
-  | binary {op : BinOp} {left right : Expr} : Rhs allows left → Rhs allows right → Rhs allows (.binary op left right)
-  | logical {op : LogOp} {left right : Expr} : Rhs allows left → Rhs allows right → Rhs allows (.logical op left right)
-  | cond {test yes no : Expr} : Rhs allows test → Rhs allows yes → Rhs allows no → Rhs allows (.cond test yes no)
+  |
+  unary {op : UnOp} {arg : Expr} :
+    sourceUnary op = true → Rhs allows arg → Rhs allows (.unary op arg)
+  |
+  binary {op : BinOp} {left right : Expr} :
+    Rhs allows left → Rhs allows right → Rhs allows (.binary op left right)
+  |
+  logical {op : LogOp} {left right : Expr} :
+    Rhs allows left → Rhs allows right → Rhs allows (.logical op left right)
+  |
+  cond {test yes no : Expr} :
+    Rhs allows test → Rhs allows yes → Rhs allows no → Rhs allows (.cond test yes no)
 
 /-- Check syntax and the supplied binding policy in one traversal. -/
 def check (allows : Name → Bool) : (expr : Expr) → Option (PLift (Rhs allows expr))
@@ -35,7 +43,8 @@ def check (allows : Name → Bool) : (expr : Expr) → Option (PLift (Rhs allows
     if h : sourceUnary op = true then
       let ⟨argument⟩ ← check allows arg
       return ⟨.unary h argument⟩
-    else none
+    else
+      none
   | .binary _op left right => do
     let ⟨lhs⟩ ← check allows left
     let ⟨rhs⟩ ← check allows right
@@ -55,10 +64,15 @@ def check (allows : Name → Bool) : (expr : Expr) → Option (PLift (Rhs allows
 theorem free_allowed {allows : Name → Bool} {expr : Expr} (rhs : Rhs allows expr) :
     ∀ name ∈ expr.free, allows name = true := by
   induction rhs with
-  | undef | null | bool _ | num _ | str _ => simp [Expr.free]
+  | undef
+  | null
+  | bool _
+  | num _
+  | str _ => simp [Expr.free]
   | read name member => simpa [Expr.free] using member
   | unary _ _ ih => simpa [Expr.free] using ih
-  | binary _ _ left right | logical _ _ left right =>
+  | binary _ _ left right
+  | logical _ _ left right =>
     intro name member
     simp only [Expr.free, List.mem_append] at member
     exact member.elim (left name) (right name)
@@ -97,8 +111,12 @@ theorem restrict {allows : Name → Bool} {expr : Expr} (rhs : Rhs (fun _ => tru
   | str s => exact .str s
   | read name _ => exact .read name (closed name (by simp [Expr.free]))
   | unary op arg ih => exact .unary op (ih (by simpa [Expr.free] using closed))
-  | binary left right ihl ihr | logical left right ihl ihr =>
-    first | refine .binary (ihl ?_) (ihr ?_) | refine .logical (ihl ?_) (ihr ?_)
+  | binary left right ihl ihr
+  | logical left right ihl
+    ihr =>
+    first
+    | refine .binary (ihl ?_) (ihr ?_)
+    | refine .logical (ihl ?_) (ihr ?_)
     · intro name member
       apply closed name
       simp only [Expr.free, List.mem_append]
@@ -132,14 +150,20 @@ theorem policy_iff {allows : Name → Bool} {expr : Expr} :
 
 -- The shared syntax accepts logical expressions, while the caller's policy
 -- still applies to the syntactically present right operand even if skipped.
-example : (check (["earlier"] : List Name).contains
-    (.logical .and (.bool true) (.var "earlier"))).isSome = true := by decide
+example :
+    (check (["earlier"] : List Name).contains
+          (.logical .and (.bool true) (.var "earlier"))).isSome =
+      true := by
+  decide
 
-example : (check ([] : List Name).contains
-    (.logical .or (.bool true) (.var "later"))).isSome = false := by decide
+example :
+    (check ([] : List Name).contains (.logical .or (.bool true) (.var "later"))).isSome =
+      false := by
+  decide
 
-example : (check (["later"] : List Name).contains
-    (.logical .nullish .null (.var "later"))).isSome = true := by decide
-
+example :
+    (check (["later"] : List Name).contains (.logical .nullish .null (.var "later"))).isSome =
+      true := by
+  decide
 
 end CoreJS.PrimitiveRhs

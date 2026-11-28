@@ -1,10 +1,14 @@
 import EsmSplit.CoreJS.Request.Frame
 
 namespace CoreJS
+
 namespace ReachabilityExamples
 
-private def external : Addr := ⟨0, 0⟩
-private def protectedAddr : Addr := ⟨1, 0⟩
+private def external : Addr :=
+  ⟨0, 0⟩
+
+private def protectedAddr : Addr :=
+  ⟨1, 0⟩
 
 private def objectState (o : Obj) : State readOnceWorld where
   heap := #[#[o], #[]]
@@ -17,16 +21,28 @@ private theorem fromHanded (o : Obj) (node : HeapNode) (h : node ∈ o.nodes) :
     Reachable (objectState o) [] node :=
   .edge (.handed (a := external) (by simp [objectState])) (.obj rfl h)
 
-private def prototypeObject : Obj := { proto := some protectedAddr, props := [] }
+private def prototypeObject : Obj :=
+  { proto := some protectedAddr, props := [] }
+
 private def accessorObject : Obj :=
   { proto := none, props := [("get", .accessor (.obj protectedAddr) .undef true true)] }
+
 private def capturedObject : Obj :=
   { proto := none, props := [],
-    code := some (.closure (.mk "callback" .arrow false [] []) { vars := [("x", protectedAddr)], this := .undef } []) }
+    code :=
+      some
+        (.closure (.mk "callback" .arrow false [] [])
+          { vars := [("x", protectedAddr)], this := .undef } []) }
+
 private def capturedThisObject : Obj :=
   { proto := none, props := [],
-    code := some (.closure (.mk "callback" .arrow false [] []) { vars := [], this := .obj protectedAddr } []) }
-private def opaqueObject : Obj := { proto := none, props := [], code := some (.opaque 0 1 [some protectedAddr] false) }
+    code :=
+      some
+        (.closure (.mk "callback" .arrow false [] []) { vars := [], this := .obj protectedAddr }
+          []) }
+
+private def opaqueObject : Obj :=
+  { proto := none, props := [], code := some (.opaque 0 1 [some protectedAddr] false) }
 
 /-- Prototype edges count even if no property has yet been read. -/
 theorem prototype_reachable : Reachable (objectState prototypeObject) [] (.obj protectedAddr) :=
@@ -39,23 +55,27 @@ theorem accessor_reachable : Reachable (objectState accessorObject) [] (.obj pro
 theorem closure_cell_reachable : Reachable (objectState capturedObject) [] (.cell protectedAddr) :=
   fromHanded _ _ (by simp [capturedObject, Obj.nodes, Code.nodes, Env.nodes, Val.nodes])
 
-theorem closure_this_reachable : Reachable (objectState capturedThisObject) [] (.obj protectedAddr) :=
+theorem closure_this_reachable :
+    Reachable (objectState capturedThisObject) [] (.obj protectedAddr) :=
   fromHanded _ _ (by simp [capturedThisObject, Obj.nodes, Code.nodes, Env.nodes, Val.nodes])
 
 theorem opaque_cell_reachable : Reachable (objectState opaqueObject) [] (.cell protectedAddr) :=
   fromHanded _ _ (by simp [opaqueObject, Obj.nodes, Code.nodes])
 
 /-- Hidden closure capture prevents separation even though the request's supplied-cell list is empty. -/
-theorem hidden_capture_not_away : ¬ Away 1 (fun _ => False) (Reachable (objectState capturedObject) []) := by
+theorem hidden_capture_not_away :
+    ¬Away 1 (fun _ => False) (Reachable (objectState capturedObject) []) := by
   intro h
   exact h.region _ closure_cell_reachable rfl
 
-private def hoistedProgram (kind : OpaqueHoistKind) (free : List Name) : Program := Program.single [
-  .decl .var "pivot" .undef, .opaque 17 [] [("callback", 0, kind)] free .world]
+private def hoistedProgram (kind : OpaqueHoistKind) (free : List Name) : Program :=
+  Program.single [.decl .var "pivot" .undef, .opaque 17 [] [("callback", 0, kind)] free .world]
 
-private def outsidePivot (node : HeapNode) : Bool := node.addr.region != 1
+private def outsidePivot (node : HeapNode) : Bool :=
+  node.addr.region != 1
 
-private def linkedHoistCheck (W : World) (kind : OpaqueHoistKind) (free : List Name) : Option Bool :=
+private def linkedHoistCheck (W : World) (kind : OpaqueHoistKind) (free : List Name) :
+    Option Bool :=
   let p := hoistedProgram kind free
   match link p (initialState W p.regions) with
   | .ok _ s => some (accessOk s [] outsidePivot)
@@ -64,12 +84,14 @@ private def linkedHoistCheck (W : World) (kind : OpaqueHoistKind) (free : List N
 /-- The actual linker creates a constructible opaque callback in its own region,
 including its prototype cycle. Adding a capture of the pivot binding breaks separation. -/
 theorem hoisted_capture_check (W : World) :
-    linkedHoistCheck W (.ordinary true) [] = some true ∧ linkedHoistCheck W (.ordinary true) ["pivot"] = some false := by
+    linkedHoistCheck W (.ordinary true) [] = some true ∧
+      linkedHoistCheck W (.ordinary true) ["pivot"] = some false := by
   constructor <;> cbv <;> rfl
 
 /-- Async hoists also retain actual capture cells before any top-level body executes. -/
 theorem async_hoisted_capture_check (W : World) :
-    linkedHoistCheck W .asyncFn [] = some true ∧ linkedHoistCheck W .asyncFn ["pivot"] = some false := by
+    linkedHoistCheck W .asyncFn [] = some true ∧
+      linkedHoistCheck W .asyncFn ["pivot"] = some false := by
   constructor <;> cbv <;> rfl
 
 private def bindingState (value : Option Val) (mutable : Bool) : State readOnceWorld where
@@ -79,9 +101,11 @@ private def bindingState (value : Option Val) (mutable : Bool) : State readOnceW
   out := #[]
   world := { state := false, handed := #[] }
 
-private def onlyBinding (node : HeapNode) : Prop := node = .cell external
+private def onlyBinding (node : HeapNode) : Prop :=
+  node = .cell external
 
-private theorem bindingAccess : Access [some external] onlyBinding (bindingState (some (.bool false)) true) := by
+private theorem bindingAccess :
+    Access [some external] onlyBinding (bindingState (some (.bool false)) true) := by
   constructor
   · intro a ha; simp [bindingState] at ha
   · intro a ha
@@ -91,8 +115,10 @@ private theorem bindingAccess : Access [some external] onlyBinding (bindingState
     change node = .cell external at hn
     subst node
     cases he with
-    | cell hb hm =>
-      have hb' : ({ value := some (.bool false), mutable := true } : Binding) = _ := Option.some.inj hb
+    | cell hb
+      hm =>
+      have hb' : ({ value := some (.bool false), mutable := true } : Binding) = _ :=
+        Option.some.inj hb
       subst hb'
       simp [Binding.nodes, Val.nodes] at hm
 
@@ -102,52 +128,69 @@ private theorem bindingAway : Away 1 (fun a => a.region = 1) onlyBinding := by
   · intro a h; change HeapNode.cell a = .cell external at h; cases h; decide
 
 /-- Object and binding nodes with the same numeric address are distinct; supplying a binding grants no object. -/
-theorem same_address_not_object : ¬ Reachable (bindingState (some (.bool false)) true) [some external] (.obj external) := by
+theorem same_address_not_object :
+    ¬Reachable (bindingState (some (.bool false)) true) [some external] (.obj external) := by
   intro h
   have ha := bindingAccess.reachable h
   cases ha
 
 /-- Region separation alone is insufficient: a supplied binding may be one the initializer reads. -/
 theorem initializer_read_not_away :
-    ¬ Away 1 (fun a => a = external) (Reachable (bindingState none true) [some external]) := by
+    ¬Away 1 (fun a => a = external) (Reachable (bindingState none true) [some external]) := by
   intro h
   exact h.reads external (.supplied (by simp)) rfl
 
 /-- This concrete separated state is covered by the actual request theorem, including mutation and returned handles. -/
 theorem separated_request (req : Request) (hreq : req.bindingOrKeys = true) :
-    (perform (callFn 0) (construct 0) 0 [some external] req (bindingState (some (.bool false)) true)).Accessible
+    (perform (callFn 0) (construct 0) 0 [some external] req
+          (bindingState (some (.bool false)) true)).Accessible
       [some external] onlyBinding (fun _ => True) :=
-  (perform_bindingOrKeys bindingAway (callFn 0) (construct 0) 0 req hreq).accessible _ bindingAccess (by decide)
+  (perform_bindingOrKeys bindingAway (callFn 0) (construct 0) 0 req hreq).accessible _ bindingAccess
+    (by decide)
 
 theorem mutable_write :
     perform (callFn 0) (construct 0) 0 [some external] (.writeVar 0 (.prim (.bool true)))
-      (bindingState (some (.bool false)) true) =
-      .ok (.value (.prim .undef)) (bindingState (some (.bool true)) true) := rfl
+        (bindingState (some (.bool false)) true) =
+      .ok (.value (.prim .undef)) (bindingState (some (.bool true)) true) :=
+  rfl
 
 theorem immutable_write :
     perform (callFn 0) (construct 0) 0 [some external] (.writeVar 0 (.prim (.bool true)))
-      (bindingState (some (.bool false)) false) =
-      .throw (.error .type "assignment to constant variable") (bindingState (some (.bool false)) false) := rfl
+        (bindingState (some (.bool false)) false) =
+      .throw (.error .type "assignment to constant variable")
+        (bindingState (some (.bool false)) false) :=
+  rfl
 
 theorem initialize_tdz :
     perform (callFn 0) (construct 0) 0 [some external] (.initVar 0 (.prim (.bool true)))
-      (bindingState none false) = .ok (.value (.prim .undef)) (bindingState (some (.bool true)) false) := rfl
+        (bindingState none false) =
+      .ok (.value (.prim .undef)) (bindingState (some (.bool true)) false) :=
+  rfl
 
 theorem tdz_read_caught :
-    attempt (perform (callFn 0) (construct 0) 0 [some external] (.readVar 0)) (bindingState none false) =
-      .ok (.error (.error .reference "cannot access a binding before initialization")) (bindingState none false) := rfl
+    attempt (perform (callFn 0) (construct 0) 0 [some external] (.readVar 0))
+        (bindingState none false) =
+      .ok (.error (.error .reference "cannot access a binding before initialization"))
+        (bindingState none false) :=
+  rfl
 
 theorem forged_handle :
-    perform (callFn 0) (construct 0) 0 [some external] (.initVar 0 (.handle 0)) (bindingState none true) =
-      .unknown "the world names an object it was not handed" (bindingState none true) := rfl
+    perform (callFn 0) (construct 0) 0 [some external] (.initVar 0 (.handle 0))
+        (bindingState none true) =
+      .unknown "the world names an object it was not handed" (bindingState none true) :=
+  rfl
 
 theorem missing_binding :
     perform (callFn 0) (construct 0) 0 [some external] (.readVar 1) (bindingState none true) =
-      .unknown "the world names a binding the code was not handed" (bindingState none true) := rfl
+      .unknown "the world names a binding the code was not handed" (bindingState none true) :=
+  rfl
 
 private def keysObject : Obj :=
-  { proto := none, props := [("z", .data .undef true true true),
-      ("accessor", .accessor (.host "must not run") .undef true true), ("a", .data .null true true true)] }
+  { proto := none,
+    props :=
+      [("z", .data .undef true true true),
+        ("accessor", .accessor (.host "must not run") .undef true true),
+        ("a", .data .null true true true)] }
 
 /-- Own-key enumeration returns keys in order without executing a getter. -/
 theorem keys_without_callback :
@@ -161,25 +204,33 @@ theorem keys_without_callback :
     simp [arrayIndex?, String.toNat?, String.Slice.toNat?, String.Slice.isNat]
   have hkeys : ownPropertyKeys keysObject.props = [.str "z", .str "accessor", .str "a"] := by
     simp [ownPropertyKeys, keysObject, PropertyKey.string?, hz, haccessor, ha]
-  have get : fromW (.handle 0) (objectState keysObject) = .ok (.obj external) (objectState keysObject) := rfl
-  have own : ownKeys (.obj external) (objectState keysObject) =
-      .ok (ownPropertyKeys keysObject.props) (objectState keysObject) := rfl
+  have get :
+    fromW (.handle 0) (objectState keysObject) = .ok (.obj external) (objectState keysObject) := rfl
+  have own :
+    ownKeys (.obj external) (objectState keysObject) =
+      .ok (ownPropertyKeys keysObject.props) (objectState keysObject) :=
+    rfl
   simp only [perform, M.bind_apply, get, own, hkeys] <;> rfl
 
 private def aliasState (initialized : Bool) : State readOnceWorld where
   heap := #[#[{ proto := none, props := [] }], #[]]
-  cells := #[#[{ value := some (.obj external), mutable := false },
-    { value := if initialized then some (.obj external) else none, mutable := false }], #[]]
+  cells :=
+    #[#[{ value := some (.obj external), mutable := false },
+        { value := if initialized then some (.obj external) else none, mutable := false }],
+      #[]]
   region := 0
   out := #[]
   world := { state := false, handed := if initialized then #[external] else #[] }
 
 /-- A reachable object is still not a valid world handle until the interpreter has actually handed it out. -/
 theorem forged_existing_object :
-    perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.initVar 1 (.handle 0)) (aliasState false) =
-      .unknown "the world names an object it was not handed" (aliasState false) := rfl
+    perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.initVar 1 (.handle 0))
+        (aliasState false) =
+      .unknown "the world names an object it was not handed" (aliasState false) :=
+  rfl
 
-private def outside (node : HeapNode) : Prop := node.addr.region = 0
+private def outside (node : HeapNode) : Prop :=
+  node.addr.region = 0
 
 private theorem aliasAccess : Access [some external, some ⟨0, 1⟩] outside (aliasState false) := by
   constructor
@@ -205,10 +256,11 @@ private theorem aliasAccess : Access [some external, some ⟨0, 1⟩] outside (a
       subst region
       cases index with
       | zero =>
-        have heq : ({ value := some (.obj external), mutable := false } : Binding) = b := Option.some.inj hb
+        have heq : ({ value := some (.obj external), mutable := false } : Binding) = b :=
+          Option.some.inj hb
         subst b
-        simp only [Binding.nodes, Val.nodes, Option.toList_some, List.flatMap_cons, List.flatMap_nil,
-          List.append_nil, List.mem_singleton] at hm
+        simp only [Binding.nodes, Val.nodes, Option.toList_some, List.flatMap_cons,
+          List.flatMap_nil, List.append_nil, List.mem_singleton] at hm
         subst target
         rfl
       | succ index =>
@@ -227,29 +279,42 @@ private theorem outsideAway : Away 1 (fun a => a.region = 1) outside := by
 /-- The alias-publication example starts in a separated closed envelope and retains it after all three requests. -/
 theorem publish_alias_accessible :
     ((do
-      let _ ← perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 0)
-      let _ ← perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.initVar 1 (.handle 0))
-      perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 1)) (aliasState false)).Accessible
-        [some external, some ⟨0, 1⟩] outside (fun _ => True) :=
-  (publish_alias_frame outsideAway (callFn 0) (construct 0) 0 0 1 0).accessible _ aliasAccess (by decide)
+            let _ ← perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 0)
+            let _ ←
+              perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩]
+                  (.initVar 1 (.handle 0))
+            perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 1))
+          (aliasState false)).Accessible
+      [some external, some ⟨0, 1⟩] outside (fun _ => True) :=
+  (publish_alias_frame outsideAway (callFn 0) (construct 0) 0 0 1 0).accessible _ aliasAccess
+    (by decide)
 
 /-- The composed actual requests publish one handle, store its alias, and reuse that handle on the final read. -/
 theorem publish_alias :
     (do
-      let _ ← perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 0)
-      let _ ← perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.initVar 1 (.handle 0))
-      perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 1)) (aliasState false) =
-        .ok (.value (.handle 0)) (aliasState true) := by
-  let handed : State readOnceWorld := { aliasState false with world := { state := false, handed := #[external] } }
-  have hread : perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 0) (aliasState false) =
+          let _ ← perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 0)
+          let _ ←
+            perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.initVar 1 (.handle 0))
+          perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 1))
+        (aliasState false) =
+      .ok (.value (.handle 0)) (aliasState true) := by
+  let handed : State readOnceWorld :=
+    { aliasState false with world := { state := false, handed := #[external] } }
+  have hread :
+    perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 0)
+        (aliasState false) =
       .ok (.value (.handle 0)) handed := by
     change (toW (.obj external) >>= fun w => pure (Told.value w)) (aliasState false) = _
     rw [M.bind_apply]
     simp only [toW, aliasState, Bool.false_eq_true, ↓reduceIte, Array.findIdx?_empty]
     rfl
-  have hinit : perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.initVar 1 (.handle 0)) handed =
-      .ok (.value (.prim .undef)) (aliasState true) := rfl
-  have halias : perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 1) (aliasState true) =
+  have hinit :
+    perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.initVar 1 (.handle 0))
+        handed =
+      .ok (.value (.prim .undef)) (aliasState true) :=
+    rfl
+  have halias :
+    perform (callFn 0) (construct 0) 0 [some external, some ⟨0, 1⟩] (.readVar 1) (aliasState true) =
       .ok (.value (.handle 0)) (aliasState true) := by
     change (toW (.obj external) >>= fun w => pure (Told.value w)) (aliasState true) = _
     rw [M.bind_apply]
@@ -273,4 +338,5 @@ theorem readOnce_conversation {r R cells A} (away : Away r R A) (n code : Nat) (
     exact reachFrame_unknown r R cells A _ _
 
 end ReachabilityExamples
+
 end CoreJS

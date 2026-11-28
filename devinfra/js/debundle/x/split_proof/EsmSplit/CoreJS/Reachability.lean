@@ -44,10 +44,12 @@ def PromiseSlot.nodes : PromiseSlot → List HeapNode
   | .fulfilled value | .rejected value => value.nodes
 
 def Obj.nodes (o : Obj) : List HeapNode :=
-  o.proto.toList.map HeapNode.obj ++ o.props.flatMap (fun p => p.2.nodes) ++ o.code.toList.flatMap Code.nodes ++
+  o.proto.toList.map HeapNode.obj ++ o.props.flatMap (fun p => p.2.nodes) ++
+    o.code.toList.flatMap Code.nodes ++
     o.promise.toList.flatMap PromiseSlot.nodes
 
-def Binding.nodes (b : Binding) : List HeapNode := b.value.toList.flatMap Val.nodes
+def Binding.nodes (b : Binding) : List HeapNode :=
+  b.value.toList.flatMap Val.nodes
 
 inductive Edge (s : State W) : HeapNode → HeapNode → Prop where
   | obj {a o node} : s.objAt a = some o → node ∈ o.nodes → Edge s (.obj a) node
@@ -68,8 +70,8 @@ structure Access (cells : List (Option Addr)) (A : HeapNode → Prop) (s : State
 /-- Enumerate the allocated records by their real addresses, so protected sources can be skipped. -/
 private def rowsClosed (rows : Array (Array α)) (node : Addr → HeapNode) (edges : α → List HeapNode)
     (allowed : HeapNode → Bool) : Bool :=
-  rows.zipIdx.all fun (row, region) => row.zipIdx.all fun (item, index) =>
-    !allowed (node ⟨region, index⟩) || (edges item).all allowed
+  rows.zipIdx.all fun (row, region) =>
+    row.zipIdx.all fun (item, index) => !allowed (node ⟨region, index⟩) || (edges item).all allowed
 
 private theorem rowsClosed_edges {rows : Array (Array α)} {node edges allowed}
     (ok : rowsClosed rows node edges allowed = true) {a : Addr} {item : α}
@@ -78,12 +80,16 @@ private theorem rowsClosed_edges {rows : Array (Array α)} {node edges allowed}
   obtain ⟨row, hr, hi⟩ := Option.bind_eq_some_iff.mp found
   have allRows := Array.all_eq_true_iff_forall_mem.mp ok
   have allItems := allRows (row, a.region) (Array.mem_zipIdx_iff_getElem?.2 hr)
-  have entry := Array.all_eq_true_iff_forall_mem.mp allItems (item, a.index) (Array.mem_zipIdx_iff_getElem?.2 hi)
+  have entry :=
+    Array.all_eq_true_iff_forall_mem.mp allItems (item, a.index)
+      (Array.mem_zipIdx_iff_getElem?.2 hi)
   simpa [src, List.all_eq_true] using entry
 
 private theorem rowsClosed_of_edges {rows : Array (Array α)} {node edges allowed}
-    (closed : ∀ (a : Addr) item, (rows[a.region]?).bind (·[a.index]?) = some item →
-      allowed (node a) = true → ∀ n ∈ edges item, allowed n = true) :
+    (closed :
+      ∀ (a : Addr) item,
+        (rows[a.region]?).bind (·[a.index]?) = some item →
+          allowed (node a) = true → ∀ n ∈ edges item, allowed n = true) :
     rowsClosed rows node edges allowed = true := by
   apply Array.all_eq_true_iff_forall_mem.mpr
   intro (row, region) hrow
@@ -102,7 +108,8 @@ The world's private state is never inspected, so the same check works on a linke
 def accessOk (s : State W) (cells : List (Option Addr)) (allowed : HeapNode → Bool) : Bool :=
   s.world.handed.all (fun a => allowed (.obj a)) &&
     cells.all (fun cell => cell.all (fun a => allowed (.cell a))) &&
-    rowsClosed s.heap .obj Obj.nodes allowed && rowsClosed s.cells .cell Binding.nodes allowed
+    rowsClosed s.heap .obj Obj.nodes allowed &&
+    rowsClosed s.cells .cell Binding.nodes allowed
 
 theorem accessOk_sound {s : State W} {cells allowed} (ok : accessOk s cells allowed = true) :
     Access cells (fun n => allowed n = true) s := by
@@ -120,7 +127,8 @@ theorem accessOk_iff {s : State W} {cells allowed} :
   refine ⟨accessOk_sound, fun hs => ?_⟩
   simp only [accessOk, Bool.and_eq_true]
   refine ⟨⟨⟨Array.all_eq_true_iff_forall_mem.mpr hs.handed, List.all_eq_true.mpr ?_⟩, ?_⟩, ?_⟩
-  · intro cell hc; cases cell with
+  · intro cell hc;
+    cases cell with
     | none => rfl
     | some a => exact hs.supplied a hc
   · exact rowsClosed_of_edges fun _ _ ho ha _ hm => hs.closed _ _ ha (.obj ho hm)
@@ -131,7 +139,8 @@ structure Away (r : Nat) (R : Addr → Prop) (A : HeapNode → Prop) : Prop wher
   region : ∀ node, A node → node.addr.region ≠ r
   reads : ∀ a, A (.cell a) → ¬R a
 
-def SafeVal (A : HeapNode → Prop) (v : Val) : Prop := ∀ node ∈ v.nodes, A node
+def SafeVal (A : HeapNode → Prop) (v : Val) : Prop :=
+  ∀ node ∈ v.nodes, A node
 
 theorem safeVal_obj {A : HeapNode → Prop} {a : Addr} : SafeVal A (.obj a) ↔ A (.obj a) := by
   simp [SafeVal, Val.nodes]
@@ -143,7 +152,8 @@ theorem Access.reachable {cells : List (Option Addr)} {A : HeapNode → Prop} {s
   | supplied ha => exact h.supplied _ ha
   | edge _ he ih => exact h.closed _ _ ih he
 
-theorem access_reachable (s : State W) (cells : List (Option Addr)) : Access cells (Reachable s cells) s :=
+theorem access_reachable (s : State W) (cells : List (Option Addr)) :
+    Access cells (Reachable s cells) s :=
   ⟨fun _ h => .handed h, fun _ h => .supplied h, fun _ _ h e => .edge h e⟩
 
 theorem Access.value {cells : List (Option Addr)} {A : HeapNode → Prop} {s : State W}
@@ -152,12 +162,13 @@ theorem Access.value {cells : List (Option Addr)} {A : HeapNode → Prop} {s : S
   intro node hn
   apply h.closed (.cell a) node ha
   apply Edge.cell hb
-  simpa only [Binding.nodes, hv, Option.toList_some, List.flatMap_cons, List.flatMap_nil, List.append_nil] using hn
+  simpa only [Binding.nodes, hv, Option.toList_some, List.flatMap_cons, List.flatMap_nil,
+    List.append_nil] using hn
 
 /-- Replacing an unreachable region does not introduce new reachable nodes. -/
-theorem Access.put {cells : List (Option Addr)} {A : HeapNode → Prop} {s : State W} {r : Nat} {R : Addr → Prop}
-    (h : Access cells A s) (away : Away r R A) (H : Array Obj) (C : Array Binding) :
-    Access cells A (s.put r H C) := by
+theorem Access.put {cells : List (Option Addr)} {A : HeapNode → Prop} {s : State W} {r : Nat}
+    {R : Addr → Prop} (h : Access cells A s) (away : Away r R A) (H : Array Obj)
+    (C : Array Binding) : Access cells A (s.put r H C) := by
   refine ⟨h.handed, h.supplied, fun a b ha he => h.closed a b ha ?_⟩
   cases he with
   | obj ho hn =>
@@ -190,11 +201,13 @@ theorem State.cellAt_assign_self (s : State W) (a : Addr) (v : Val) :
   cases s.cells[a.region]? <;> simp [Array.getElem?_modify]
 
 theorem State.cellAt_assign_other (s : State W) (a : Addr) (v : Val) (c : Addr) (hne : c ≠ a) :
-    (s.assign a v).cellAt c = s.cellAt c := cellAt_modify s a _ c hne
+    (s.assign a v).cellAt c = s.cellAt c :=
+  cellAt_modify s a _ c hne
 
 /-- Writing a reachable value into a reachable binding keeps the same closed envelope. -/
 theorem Access.assign {cells : List (Option Addr)} {A : HeapNode → Prop} {s : State W}
-    (h : Access cells A s) (a : Addr) (v : Val) (hv : SafeVal A v) : Access cells A (s.assign a v) := by
+    (h : Access cells A s) (a : Addr) (v : Val) (hv : SafeVal A v) :
+    Access cells A (s.assign a v) := by
   refine ⟨h.handed, h.supplied, fun node target hn he => ?_⟩
   cases he with
   | obj ho hm => exact h.closed _ _ hn (.obj ho hm)
@@ -212,9 +225,8 @@ theorem Access.assign {cells : List (Option Addr)} {A : HeapNode → Prop} {s : 
       exact h.closed _ _ hn (.cell hb hm)
 
 /-- The store update frames every other region and each separately protected read binding. -/
-theorem State.assign_preserves {r : Nat} {R : Addr → Prop} {A : HeapNode → Prop}
-    (away : Away r R A) {a : Addr} (ha : A (.cell a)) (s : State W) (v : Val) :
-    Preserves r R s (s.assign a v) := by
+theorem State.assign_preserves {r : Nat} {R : Addr → Prop} {A : HeapNode → Prop} (away : Away r R A)
+    {a : Addr} (ha : A (.cell a)) (s : State W) (v : Val) : Preserves r R s (s.assign a v) := by
   have har : a.region ≠ r := away.region _ ha
   refine ⟨rfl, ?_, fun c hc => ?_, rfl⟩
   · simp [State.assign, Array.getElem?_modify, har]
@@ -224,12 +236,12 @@ theorem State.assign_preserves {r : Nat} {R : Addr → Prop} {A : HeapNode → P
 
 /-- An update outside a replaced region commutes with that replacement. -/
 theorem State.assign_put {r : Nat} (s : State W) (a : Addr) (v : Val) (ha : a.region ≠ r)
-    (H : Array Obj) (C : Array Binding) :
-    (s.put r H C).assign a v = (s.assign a v).put r H C := by
-  have hh : (s.cells.set! r C)[a.region]? = s.cells[a.region]? := by
-    simp [Ne.symm ha]
-  have he : (s.cells.set! r C).modify a.region (·.modify a.index fun b => { b with value := some v }) =
-      (s.cells.modify a.region (·.modify a.index fun b => { b with value := some v })).set! r C := by
+    (H : Array Obj) (C : Array Binding) : (s.put r H C).assign a v = (s.assign a v).put r H C := by
+  have hh : (s.cells.set! r C)[a.region]? = s.cells[a.region]? := by simp [Ne.symm ha]
+  have he :
+    (s.cells.set! r C).modify a.region (·.modify a.index fun b => { b with value := some v }) =
+      (s.cells.modify a.region (·.modify a.index fun b => { b with value := some v })).set! r
+        C := by
     rw [modify_eq_set! _ _ _ #[], modify_eq_set! _ _ _ #[], hh, set!_comm _ (Ne.symm ha)]
   simp only [State.assign, State.put]
   rw [he]

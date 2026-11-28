@@ -47,24 +47,23 @@ private def liftCompletion (jobs : List Job) : Res W Val → Result W Val
 
 private def suspend (promise : Addr) (operand : Val) (env : Env) (body : List Stmt)
     (turn : Turn W) : Result W Val :=
-  if !isPrimitive operand then
-    .unknown "await operand requires thenable semantics" turn
-  else if !isPending turn.state promise then
-    .unknown "model: await requires a pending promise" turn
+  if !isPrimitive operand then .unknown "await operand requires thenable semantics" turn
   else
-    let job : Job := ⟨promise, turn.state.region, env, body⟩
-    .ok (.obj promise) { turn with jobs := turn.jobs ++ [job.capture] }
+    if !isPending turn.state promise then .unknown "model: await requires a pending promise" turn
+    else
+      let job : Job := ⟨promise, turn.state.region, env, body⟩
+      .ok (.obj promise) { turn with jobs := turn.jobs ++ [job.capture] }
 
 /-- Allocate once, then run the prefix at smaller fuel. A synchronous throw
 rejects the returned Promise and does not enqueue a continuation. -/
-def launch (prototype : Addr) (prefixStep : Nat → M W Prefix) :
-    Nat → Turn W → Result W Val
+def launch (prototype : Addr) (prefixStep : Nat → M W Prefix) : Nat → Turn W → Result W Val
   | 0, _ => .fuel
   | fuel + 1, turn =>
     match AsyncPrefix.allocate prototype turn.state with
     | .ok promise s =>
       match prefixStep fuel s with
-      | .ok (.completed value) t => liftCompletion turn.jobs (AsyncPrefix.finish promise (.ok value t))
+      | .ok (.completed value) t =>
+        liftCompletion turn.jobs (AsyncPrefix.finish promise (.ok value t))
       | .ok (.suspended operand env body) t => suspend promise operand env body ⟨t, turn.jobs⟩
       | .throw reason t => liftCompletion turn.jobs (AsyncPrefix.finish promise (.throw reason t))
       | .unknown why t => .unknown why ⟨t, turn.jobs⟩
@@ -75,23 +74,25 @@ def launch (prototype : Addr) (prefixStep : Nat → M W Prefix) :
 
 /-- Launch a prefix that may already have updated the turn. In particular,
 suspension appends to the queue returned by the operand, not the entry queue. -/
-def launchTurn (prototype : Addr) (prefixStep : Nat → TurnM W Prefix) :
-    Nat → Turn W → Result W Val
+def launchTurn (prototype : Addr) (prefixStep : Nat → TurnM W Prefix) : Nat → Turn W → Result W Val
   | 0, _ => .fuel
   | fuel + 1, turn =>
     match AsyncPrefix.allocate prototype turn.state with
     | .ok promise s =>
       match prefixStep fuel { turn with state := s } with
-      | .ok (.completed value) t => liftCompletion t.jobs (AsyncPrefix.finish promise (.ok value t.state))
+      | .ok (.completed value) t =>
+        liftCompletion t.jobs (AsyncPrefix.finish promise (.ok value t.state))
       | .ok (.suspended operand env body) t => suspend promise operand env body t
-      | .throw reason t => liftCompletion t.jobs (AsyncPrefix.finish promise (.throw reason t.state))
+      | .throw reason t =>
+        liftCompletion t.jobs (AsyncPrefix.finish promise (.throw reason t.state))
       | .unknown why t => .unknown why t
       | .fuel => .fuel
     | .unknown why s => .unknown why ⟨s, turn.jobs⟩
     | .throw _ s => .unknown "model: promise allocation threw" ⟨s, turn.jobs⟩
     | .fuel => .fuel
 
-theorem launchTurn_lift (prototype : Addr) (runPrefix : Nat → M W Prefix) (fuel : Nat) (turn : Turn W) :
+theorem launchTurn_lift (prototype : Addr) (runPrefix : Nat → M W Prefix) (fuel : Nat)
+    (turn : Turn W) :
     launchTurn prototype (fun n => TurnM.lift (runPrefix n)) fuel turn =
       launch prototype runPrefix fuel turn := by
   cases fuel with
@@ -112,7 +113,9 @@ theorem launchTurn_suspends {prototype promise : Addr} {run : Nat → TurnM W Pr
     (reached : run fuel { turn with state := allocated } = .ok (.suspended operand env body) post)
     (primitive : isPrimitive operand = true) (pending : isPending post.state promise = true) :
     launchTurn prototype run (fuel + 1) turn =
-      .ok (.obj promise) { post with jobs := post.jobs ++ [(Job.mk promise post.state.region env body).capture] } := by
+      .ok (.obj promise)
+        { post with
+          jobs := post.jobs ++ [(Job.mk promise post.state.region env body).capture] } := by
   simp [launchTurn, fresh, reached, suspend, primitive, pending]
 
 /-- Resume with the current state and the original activation's region.
@@ -139,8 +142,10 @@ def runJobWith (job : Job) (body : TurnM W Val) (turn : Turn W) : Result W Unit 
   if isPending turn.state job.promise then
     match resumeTurn job body { turn with state := { turn.state with region := job.region } } with
     | .ok _ next => .ok () { next with state := { next.state with region := turn.state.region } }
-    | .unknown why next => .unknown why { next with state := { next.state with region := turn.state.region } }
-    | .throw _ next => .unknown "model: promise settlement threw"
+    | .unknown why next =>
+      .unknown why { next with state := { next.state with region := turn.state.region } }
+    | .throw _ next =>
+      .unknown "model: promise settlement threw"
         { next with state := { next.state with region := turn.state.region } }
     | .fuel => .fuel
   else .unknown "model: queued continuation requires a pending promise" turn
@@ -155,11 +160,11 @@ def runJob (job : Job) (fuel : Nat) (s : State W) (rest : List Job) : Result W U
 /-- Rejection uses the state and FIFO the body actually returned, including
 effects before the throw. It only restores the scheduler's region. -/
 theorem runJobWith_throw {job : Job} {body : TurnM W Val} {turn post : Turn W} {why : Val}
-    {settled : State W} {value : Val}
-    (pending : isPending turn.state job.promise = true)
+    {settled : State W} {value : Val} (pending : isPending turn.state job.promise = true)
     (threw : body { turn with state := { turn.state with region := job.region } } = .throw why post)
     (settlement : AsyncPrefix.complete job.promise (.error why) post.state = .ok value settled) :
-    runJobWith job body turn = .ok () ⟨{ settled with region := turn.state.region }, post.jobs⟩ := by
+    runJobWith job body turn =
+      .ok () ⟨{ settled with region := turn.state.region }, post.jobs⟩ := by
   simp [runJobWith, pending, resumeTurn, TurnM.bind_apply, TurnM.attempt, threw, TurnM.lift,
     settlement, TurnResult.withJobs]
 
@@ -173,9 +178,12 @@ theorem runJob_sync (job : Job) (fuel : Nat) (s : State W) (rest : List Job) :
   simp only [TurnM.bind_apply, TurnM.attempt, TurnM.lift]
   split
   · rename_i h
-    generalize execution : (do
-      let flow ← execStmts fuel job.env job.body
-      Flow.functionResult flow : M W Val) { s with region := job.region } = out
+    generalize execution :
+      (do
+          let flow ← execStmts fuel job.env job.body
+          Flow.functionResult flow : M W Val)
+        { s with region := job.region } =
+      out
     cases out
     · rename_i result after
       simp only [TurnResult.withJobs, AsyncPrefix.finish]
@@ -204,8 +212,10 @@ def drain (fuel : Nat) : Nat → Turn W → Result W Drained
     | .unknown why next => .unknown why next
     | .fuel => .fuel
 
-@[simp] theorem launch_zero (prototype : Addr) (run : Nat → M W Prefix) (turn : Turn W) :
-    launch prototype run 0 turn = .fuel := rfl
+@[simp]
+theorem launch_zero (prototype : Addr) (run : Nat → M W Prefix) (turn : Turn W) :
+    launch prototype run 0 turn = .fuel :=
+  rfl
 
 /-- Successful suspension hands the unchanged post-prefix state to the caller.
 In particular, it cannot run the new job or modify the pending Promise. -/
@@ -219,14 +229,16 @@ theorem launch_suspends {prototype promise : Addr} {run : Nat → M W Prefix} {f
   simp [launch, fresh, reached, suspend, primitive, pending]
 
 theorem drain_paused (fuel : Nat) (s : State W) (job : Job) (rest : List Job) :
-    drain fuel 0 ⟨s, job :: rest⟩ = .ok .paused ⟨s, job :: rest⟩ := rfl
+    drain fuel 0 ⟨s, job :: rest⟩ = .ok .paused ⟨s, job :: rest⟩ :=
+  rfl
 
 theorem drain_head (fuel quota : Nat) (s : State W) (job : Job) (rest : List Job) :
     drain fuel (quota + 1) ⟨s, job :: rest⟩ =
       match runJob job fuel s rest with
       | .ok () next => drain fuel quota next
       | .unknown why next => .unknown why next
-      | .fuel => .fuel := rfl
+      | .fuel => .fuel :=
+  rfl
 
 /-- A successful job contributes exactly the resumed computation's state, with
 only the allocation region restored. It never restores the old heap or world. -/

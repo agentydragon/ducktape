@@ -42,15 +42,18 @@ structure Frames (r : Nat) (R : Addr → Prop) (m : M W α) : Prop where
 theorem Preserves.refl (r : Nat) (R : Addr → Prop) (s : State W) : Preserves r R s s :=
   ⟨rfl, rfl, fun _ _ => rfl, rfl⟩
 
-theorem Preserves.trans {r : Nat} {R : Addr → Prop} {s t u : State W}
-    (h : Preserves r R s t) (h' : Preserves r R t u) : Preserves r R s u :=
+theorem Preserves.trans {r : Nat} {R : Addr → Prop} {s t u : State W} (h : Preserves r R s t)
+    (h' : Preserves r R t u) : Preserves r R s u :=
   ⟨h'.heap.trans h.heap, h'.cells.trans h.cells, fun c hc => (h'.reads c hc).trans (h.reads c hc),
     h'.region.trans h.region⟩
 
 theorem Res.Preserves.trans {r : Nat} {R : Addr → Prop} {s t : State W} {result : Res W α}
     (h : CoreJS.Preserves r R s t) (h' : result.Preserves r R t) : result.Preserves r R s := by
   cases result <;> simp only [Res.Preserves] at *
-  all_goals first | exact h.trans h' | trivial
+  all_goals
+    first
+    | exact h.trans h'
+    | trivial
 
 theorem frames_pure (r : Nat) (R : Addr → Prop) (a : α) : Frames r R (pure a : M W α) :=
   ⟨fun _ _ _ _ => rfl, fun s _ => Preserves.refl r R s⟩
@@ -58,15 +61,16 @@ theorem frames_pure (r : Nat) (R : Addr → Prop) (a : α) : Frames r R (pure a 
 theorem frames_throwVal (r : Nat) (R : Addr → Prop) (v : Val) : Frames r R (throwVal v : M W α) :=
   ⟨fun _ _ _ _ => rfl, fun s _ => Preserves.refl r R s⟩
 
-theorem frames_unknown (r : Nat) (R : Addr → Prop) (why : String) : Frames r R (unknown why : M W α) :=
+theorem frames_unknown (r : Nat) (R : Addr → Prop) (why : String) :
+    Frames r R (unknown why : M W α) :=
   ⟨fun _ _ _ _ => rfl, fun s _ => Preserves.refl r R s⟩
 
 theorem frames_outOfFuel (r : Nat) (R : Addr → Prop) : Frames r R (outOfFuel : M W α) :=
   ⟨fun _ _ _ _ => rfl, fun _ _ => trivial⟩
 
-theorem Frames.bind {r : Nat} {R : Addr → Prop} {m : M W α} {f : α → M W β}
-    (hm : Frames r R m)
-    (hf : ∀ a, (∃ s t, s.region ≠ r ∧ m s = .ok a t) → Frames r R (f a)) : Frames r R (m >>= f) := by
+theorem Frames.bind {r : Nat} {R : Addr → Prop} {m : M W α} {f : α → M W β} (hm : Frames r R m)
+    (hf : ∀ a, (∃ s t, s.region ≠ r ∧ m s = .ok a t) → Frames r R (f a)) :
+    Frames r R (m >>= f) := by
   constructor
   · intro s H C hr
     rw [M.bind_apply, M.bind_apply, hm.replace s H C hr]
@@ -89,8 +93,8 @@ theorem Frames.bind {r : Nat} {R : Addr → Prop} {m : M W α} {f : α → M W �
     | unknown why t => simpa only [h, Res.Preserves] using hp
     | fuel => trivial
 
-theorem Frames.bind' {r : Nat} {R : Addr → Prop} {m : M W α} {f : α → M W β}
-    (hm : Frames r R m) (hf : ∀ a, Frames r R (f a)) : Frames r R (m >>= f) :=
+theorem Frames.bind' {r : Nat} {R : Addr → Prop} {m : M W α} {f : α → M W β} (hm : Frames r R m)
+    (hf : ∀ a, Frames r R (f a)) : Frames r R (m >>= f) :=
   hm.bind fun a _ => hf a
 
 theorem Frames.attempt {r : Nat} {R : Addr → Prop} {m : M W α} (hm : Frames r R m) :
@@ -109,11 +113,16 @@ theorem Frames.attempt {r : Nat} {R : Addr → Prop} {m : M W α} (hm : Frames r
     | unknown why t => simpa only [h, Res.Preserves] using hp
     | fuel => trivial
 
-theorem frames_talk (r : Nat) (R : Addr → Prop) (told : Told) : Frames r R (talk told : M W Request) :=
+theorem frames_talk (r : Nat) (R : Addr → Prop) (told : Told) :
+    Frames r R (talk told : M W Request) :=
   ⟨fun _ _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, fun _ _ => rfl, rfl⟩⟩
 
 theorem frames_toW (r : Nat) (R : Addr → Prop) (v : Val) : Frames r R (toW v : M W WVal) := by
-  cases v <;> try first | exact frames_pure r R _ | exact frames_unknown r R _
+  cases v <;>
+    try
+      first
+      | exact frames_pure r R _
+      | exact frames_unknown r R _
   case obj a =>
     constructor
     · intro s H C hr
@@ -149,7 +158,8 @@ theorem frames_readCell (r : Nat) (R : Addr → Prop) (a : Addr) (ha : a.region 
     Frames r R (readCell a : M W Val) := by
   constructor
   · intro s H C hr
-    have hc : (s.put r H C).cellAt a = s.cellAt a := by rw [State.cellAt_put]; simp [ha]
+    have hc : (s.put r H C).cellAt a = s.cellAt a := by
+      rw [State.cellAt_put]; simp [ha]
     simp only [readCell, M.bind_apply, getState]
     rw [hc]
     cases s.cellAt a with
@@ -167,9 +177,13 @@ theorem frames_readCell (r : Nat) (R : Addr → Prop) (a : Addr) (ha : a.region 
 
 /-- The actual interpreter conversation frames `r` when each request the world can choose frames it, including callbacks executed by
 `callFn` and `construct`. The private state and choices need not be fixed; every possible request must meet the premise. -/
-theorem converse_frames (r : Nat) (R : Addr → Prop) (code : Nat) (cells : List (Option Addr)) (n : Nat)
-    (hrequests : ∀ k < n, ∀ req, (∃ told state, (W.talk told state).1 = req) →
-      Frames r R (perform (callFn k) (construct k) code cells req : M W Told))
+theorem converse_frames (r : Nat) (R : Addr → Prop) (code : Nat) (cells : List (Option Addr))
+    (n : Nat)
+    (hrequests :
+      ∀ k < n,
+        ∀ req,
+          (∃ told state, (W.talk told state).1 = req) →
+            Frames r R (perform (callFn k) (construct k) code cells req : M W Told))
     (told : Told) : Frames r R (converse n code cells told : M W Val) := by
   induction n generalizing told with
   | zero => exact frames_outOfFuel r R
@@ -178,32 +192,43 @@ theorem converse_frames (r : Nat) (R : Addr → Prop) (code : Nat) (cells : List
     refine (frames_talk r R told).bind fun req ⟨s, t, _, htalk⟩ => ?_
     have possible : ∃ told state, (W.talk told state).1 = req := by
       unfold talk at htalk
-      exact ⟨told, s.world.state, by cases htalk; rfl⟩
+      exact
+        ⟨told, s.world.state, by
+          cases htalk; rfl⟩
     cases req with
     | done v => exact frames_fromW r R v
     | throw v => exact (frames_fromW r R v).bind' fun v => frames_throwVal r R v
     | unknown why => exact frames_unknown r R why
     | _ =>
-      exact (hrequests n (by omega) _ possible).attempt.bind' fun result =>
-        (frames_toldOf r R result).bind' fun next => ih (fun k hk req hp => hrequests k (by omega) req hp) next
+      exact
+        (hrequests n (by omega) _ possible).attempt.bind' fun result =>
+          (frames_toldOf r R result).bind' fun next =>
+            ih (fun k hk req hp => hrequests k (by omega) req hp) next
 
 /-- A whole `.world` statement inherits the request premise of its conversation. -/
 theorem opaque_world_frames (r : Nat) (R : Addr → Prop) (n : Nat) (env : Env) (code : Nat)
     (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name)
-    (hrequests : ∀ k < n, ∀ req, (∃ told state, (W.talk told state).1 = req) →
-      Frames r R (perform (callFn k) (construct k) code (opaqueCells env decls funs free) req : M W Told)) :
+    (hrequests :
+      ∀ k < n,
+        ∀ req,
+          (∃ told state, (W.talk told state).1 = req) →
+            Frames r R
+              (perform (callFn k) (construct k) code (opaqueCells env decls funs free) req :
+                M W Told)) :
     Frames r R (execStmt n env (.opaque code decls funs free .world) : M W Flow) := by
   cases n with
   | zero => exact frames_outOfFuel r R
   | succ n =>
     unfold execStmt
-    exact (frames_toW r R env.this).bind' fun this =>
-      (converse_frames r R code _ n (fun k hk req hp => hrequests k (by omega) req hp)
-        (.run code 0 (.prim .undef) this [] false)).bind' fun _ => frames_pure r R Flow.normal
+    exact
+      (frames_toW r R env.this).bind' fun this =>
+        (converse_frames r R code _ n (fun k hk req hp => hrequests k (by omega) req hp)
+              (.run code 0 (.prim .undef) this [] false)).bind'
+          fun _ => frames_pure r R Flow.normal
 
 /-- Equal replacements transfer to another array where the replaced index has the same validity. -/
-theorem set!_congr_view {α : Type} {xs ys : Array α} {r : Nat} {a b : α}
-    (hv : xs[r]? = ys[r]?) (he : xs.set! r a = xs.set! r b) : ys.set! r a = ys.set! r b := by
+theorem set!_congr_view {α : Type} {xs ys : Array α} {r : Nat} {a b : α} (hv : xs[r]? = ys[r]?)
+    (he : xs.set! r a = xs.set! r b) : ys.set! r a = ys.set! r b := by
   by_cases hr : r < xs.size
   · have hab : a = b := by
       have h := congrArg (fun zs => zs[r]?) he
@@ -224,7 +249,8 @@ theorem State.put_congr_view {s t : State W} {r : Nat} {H H' : Array Obj} {C C' 
   rw [hH, hC]
 
 theorem inRegion_result (id : Nat) (m : M W α) (s : State W) :
-    inRegion id m s = match m { s with region := id + 1 } with
+    inRegion id m s =
+      match m { s with region := id + 1 } with
       | .ok a t => .ok a { t with region := 0 }
       | .throw v t => .throw v t
       | .unknown why t => .unknown why t
@@ -238,21 +264,23 @@ structure FramesAt (r : Nat) (R : Addr → Prop) (m : M W α) (s : State W) : Pr
   preserves : (m s).Preserves r R s
 
 theorem Frames.atState {r R} {m : M W α} (hf : Frames r R m) (s : State W) (hr : s.region ≠ r) :
-    FramesAt r R m s := ⟨fun H C => hf.replace s H C hr, hf.preserves s hr⟩
+    FramesAt r R m s :=
+  ⟨fun H C => hf.replace s H C hr, hf.preserves s hr⟩
 
 /-- Running a framed unit ignores a replacement of the protected region at its starting state. -/
-private theorem FramesAt.runUnit_replace {r j n : Nat} {R : Addr → Prop} {env : Env} {st : Stmt} {s : State W}
-    (hf : FramesAt r R (execStmt n env st) { s with region := j + 1 }) (H : Array Obj) (C : Array Binding) :
-    runUnit n env j st (s.put r H C) = (runUnit n env j st s).put r H C := by
+private theorem FramesAt.runUnit_replace {r j n : Nat} {R : Addr → Prop} {env : Env} {st : Stmt}
+    {s : State W} (hf : FramesAt r R (execStmt n env st) { s with region := j + 1 }) (H : Array Obj)
+    (C : Array Binding) : runUnit n env j st (s.put r H C) = (runUnit n env j st s).put r H C := by
   simp only [runUnit, inRegion_result]
-  have hs : ({ s.put r H C with region := j + 1 } : State W) = { s with region := j + 1 }.put r H C := rfl
+  have hs :
+    ({ s.put r H C with region := j + 1 } : State W) = { s with region := j + 1 }.put r H C := rfl
   rw [hs, hf.replace H C]
   cases execStmt n env st { s with region := j + 1 } <;> rfl
 
 /-- Running the framed unit preserves the view needed to replay a local unit. -/
-private theorem FramesAt.runUnit_sees {r j n : Nat} {R : Addr → Prop} {env : Env} {st : Stmt} {s : State W}
-    (hf : FramesAt r R (execStmt n env st) { s with region := j + 1 })
-    {t : State W} {f : Flow} (h : runUnit n env j st s = .ok f t) :
+private theorem FramesAt.runUnit_sees {r j n : Nat} {R : Addr → Prop} {env : Env} {st : Stmt}
+    {s : State W} (hf : FramesAt r R (execStmt n env st) { s with region := j + 1 }) {t : State W}
+    {f : Flow} (h : runUnit n env j st s = .ok f t) :
     Sees r R { s with region := r } { t with region := r } := by
   obtain ⟨u, hu, rfl⟩ := runUnit_ok h
   have hp := hf.preserves
@@ -279,15 +307,20 @@ theorem local_frame_units_commuteOn {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt}
     cases hb'
     have hs := hf.runUnit_sees ht
     obtain ⟨H', C', he, ha'⟩ := hl _ _ a _ hs hu0
-    have hp : t.put (i + 1) H C = t.put (i + 1) H' C' :=
-      State.put_congr_view hs.heap hs.cells he
+    have hp : t.put (i + 1) H C = t.put (i + 1) H' C' := State.put_congr_view hs.heap hs.cells he
     refine ⟨t, rfl, ?_⟩
     have hrun := runUnit_of ha'
-    exact hrun.trans (congrArg (Res.ok a) ((congrArg (fun t : State W => { t with region := 0 }) hp.symm).trans
-      (congrArg (fun t : State W => t.put (i + 1) H C) (runUnit_region_zero ht)).symm))
-  | throw val t => rw [ht] at hb'; cases hb'
-  | unknown why t => rw [ht] at hb'; cases hb'
-  | fuel => rw [ht] at hb'; cases hb'
+    exact
+      hrun.trans
+        (congrArg (Res.ok a)
+          ((congrArg (fun t : State W => { t with region := 0 }) hp.symm).trans
+            (congrArg (fun t : State W => t.put (i + 1) H C) (runUnit_region_zero ht)).symm))
+  | throw val t =>
+    rw [ht] at hb'; cases hb'
+  | unknown why t =>
+    rw [ht] at hb'; cases hb'
+  | fuel =>
+    rw [ht] at hb'; cases hb'
 
 /-- The reverse direction: a framed unit can move after the local allocating unit. -/
 theorem frame_local_units_commuteOn {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
@@ -300,20 +333,23 @@ theorem frame_local_units_commuteOn {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt}
   obtain ⟨v0, hv0, rfl⟩ := runUnit_ok ha
   obtain ⟨H, C, rfl, ha'⟩ := hl _ _ a v0 hs.symm hv0
   refine ⟨_, runUnit_of ha', ?_⟩
-  rw [runUnit_region, FramesAt.runUnit_replace (s := { s with region := i + 1 }) hf, runUnit_region, hb]
+  rw [runUnit_region, FramesAt.runUnit_replace (s := { s with region := i + 1 }) hf, runUnit_region,
+    hb]
   exact congrArg (fun t : State W => Res.ok b (t.put (i + 1) H C)) (runUnit_region_zero hb)
 
 theorem local_frame_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
     (hij : i ≠ j) (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow))
     (hf : Frames (i + 1) R (execStmt n e2 st2 : M W Flow)) :
-    Commute (runUnit n e1 i st1 : M W Flow) (runUnit n e2 j st2) :=
-  fun s => local_frame_units_commuteOn (P := fun _ => True) hl (fun t _ => hf.atState _ (show j + 1 ≠ i + 1 by omega)) s trivial
+    Commute (runUnit n e1 i st1 : M W Flow) (runUnit n e2 j st2) := fun s =>
+  local_frame_units_commuteOn (P := fun _ => True) hl
+    (fun t _ => hf.atState _ (show j + 1 ≠ i + 1 by omega)) s trivial
 
 theorem frame_local_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R : Addr → Prop}
     (hij : i ≠ j) (hl : Local (i + 1) R (execStmt n e1 st1 : M W Flow))
     (hf : Frames (i + 1) R (execStmt n e2 st2 : M W Flow)) :
-    Commute (runUnit n e2 j st2 : M W Flow) (runUnit n e1 i st1) :=
-  fun s => frame_local_units_commuteOn (P := fun _ => True) hl (fun t _ => hf.atState _ (show j + 1 ≠ i + 1 by omega)) s trivial
+    Commute (runUnit n e2 j st2 : M W Flow) (runUnit n e1 i st1) := fun s =>
+  frame_local_units_commuteOn (P := fun _ => True) hl
+    (fun t _ => hf.atState _ (show j + 1 ≠ i + 1 by omega)) s trivial
 
 /-- An allocation-only declaration and opaque world statement commute in both directions when the actual world's
 requests frame the declaration's region and read cells. This is a semantic premise, not a syntax-only verdict. -/
@@ -321,12 +357,17 @@ theorem decl_opaque_world_commute {n i j : Nat} {env : Env} {e : Expr} {R : Addr
     (hij : i ≠ j) (kind : DeclKind) (x : Name) (he : e.allocOnly = true)
     (hw : Within (i + 1) R env e.readsNow) (hx : ∀ c, env.vars.lookup x = some c → c.region = i + 1)
     (code : Nat) (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name)
-    (hrequests : ∀ k < n, ∀ req, (∃ told state, (W.talk told state).1 = req) →
-      Frames (i + 1) R (perform (callFn k) (construct k) code (opaqueCells env decls funs free) req : M W Told)) :
+    (hrequests :
+      ∀ k < n,
+        ∀ req,
+          (∃ told state, (W.talk told state).1 = req) →
+            Frames (i + 1) R
+              (perform (callFn k) (construct k) code (opaqueCells env decls funs free) req :
+                M W Told)) :
     Commute (runUnit n env i (.decl kind x e) : M W Flow)
-      (runUnit n env j (.opaque code decls funs free .world)) ∧
-    Commute (runUnit n env j (.opaque code decls funs free .world) : M W Flow)
-      (runUnit n env i (.decl kind x e)) := by
+        (runUnit n env j (.opaque code decls funs free .world)) ∧
+      Commute (runUnit n env j (.opaque code decls funs free .world) : M W Flow)
+        (runUnit n env i (.decl kind x e)) := by
   have hl := decl_local (W := W) he n env kind x hw hx
   have hf := opaque_world_frames (i + 1) R n env code decls funs free hrequests
   exact ⟨local_frame_units_commute hij hl hf, frame_local_units_commute hij hl hf⟩
@@ -340,36 +381,45 @@ def readOnceWorld : World where
 
 /-- Every request this world can issue frames a different region, even when the read throws. -/
 theorem readOnceWorld_request_frames (r : Nat) (R : Addr → Prop) (a : Addr) (ha : a.region ≠ r)
-    (k : Nat) (req : Request) (possible : ∃ message seen, (readOnceWorld.talk message seen).1 = req) :
+    (k : Nat) (req : Request)
+    (possible : ∃ message seen, (readOnceWorld.talk message seen).1 = req) :
     Frames r R (perform (callFn k) (construct k) 0 [some a] req : M readOnceWorld Told) := by
   obtain ⟨message, seen, heq⟩ := possible
   cases seen
   · have hreq : req = .readVar 0 := heq.symm
     subst req
-    change Frames r R (pure a >>= fun c => readCell c >>= fun v => toW v >>= fun w => pure (Told.value w))
-    exact (frames_pure r R a).bind (fun a' ⟨s, t, _, h⟩ => by
-      have heq : a' = a := by cases h; rfl
-      subst a'
-      exact (frames_readCell r R a ha).bind' fun v =>
-        (frames_toW r R v).bind' fun w => frames_pure r R (Told.value w))
+    change
+      Frames r R
+        (pure a >>= fun c => readCell c >>= fun v => toW v >>= fun w => pure (Told.value w))
+    exact
+      (frames_pure r R a).bind
+        (fun a' ⟨s, t, _, h⟩ => by
+          have heq : a' = a := by
+            cases h; rfl
+          subst a'
+          exact
+            (frames_readCell r R a ha).bind' fun v =>
+              (frames_toW r R v).bind' fun w => frames_pure r R (Told.value w))
   · have hreq : req = .done (.prim .undef) := heq.symm
     subst req
     exact frames_unknown r R _
 
 /-- The request premise is inhabited: this actual world can read an external binding at every fuel bound. -/
-theorem readOnceWorld_frames (r : Nat) (R : Addr → Prop) (a : Addr) (ha : a.region ≠ r) (n : Nat) (told : Told) :
-    Frames r R (converse n 0 [some a] told : M readOnceWorld Val) :=
-  converse_frames r R 0 [some a] n (fun k _ req hp => readOnceWorld_request_frames r R a ha k req hp) told
+theorem readOnceWorld_frames (r : Nat) (R : Addr → Prop) (a : Addr) (ha : a.region ≠ r) (n : Nat)
+    (told : Told) : Frames r R (converse n 0 [some a] told : M readOnceWorld Val) :=
+  converse_frames r R 0 [some a] n
+    (fun k _ req hp => readOnceWorld_request_frames r R a ha k req hp) told
 
-private def readOnceEnv : Env := { vars := [("x", ⟨1, 0⟩), ("y", ⟨2, 0⟩)], this := .undef }
+private def readOnceEnv : Env :=
+  { vars := [("x", ⟨1, 0⟩), ("y", ⟨2, 0⟩)], this := .undef }
 
 /-- The final commutation theorem has a concrete instance: initialize `x`, and let opaque code read `y`.
 This remains valid for every input state, including the state where `y` is in its temporal dead zone. -/
 theorem readOnceWorld_commutes (n : Nat) :
     Commute (runUnit n readOnceEnv 0 (.decl .const "x" (.bool true)) : M readOnceWorld Flow)
-      (runUnit n readOnceEnv 1 (.opaque 0 [] [] ["y"] .world)) ∧
-    Commute (runUnit n readOnceEnv 1 (.opaque 0 [] [] ["y"] .world) : M readOnceWorld Flow)
-      (runUnit n readOnceEnv 0 (.decl .const "x" (.bool true))) := by
+        (runUnit n readOnceEnv 1 (.opaque 0 [] [] ["y"] .world)) ∧
+      Commute (runUnit n readOnceEnv 1 (.opaque 0 [] [] ["y"] .world) : M readOnceWorld Flow)
+        (runUnit n readOnceEnv 0 (.decl .const "x" (.bool true))) := by
   apply decl_opaque_world_commute (R := fun _ => False) (by decide) .const "x" rfl
   · intro z hz
     simp [Expr.readsNow] at hz
@@ -389,11 +439,14 @@ private def readOnceState (value : Option Val) : State readOnceWorld where
 /-- The example really executes a request and updates the world, rather than exhausting its fuel. -/
 theorem readOnceWorld_initialized :
     converse 3 0 [some ⟨1, 0⟩] (.value (.prim .undef)) (readOnceState (some (.bool true))) =
-      .ok .undef { readOnceState (some (.bool true)) with world := { state := true, handed := #[] } } := rfl
+      .ok .undef
+        { readOnceState (some (.bool true)) with world := { state := true, handed := #[] } } :=
+  rfl
 
 /-- A thrown temporal-dead-zone read is caught by the conversation and also ends normally. -/
 theorem readOnceWorld_caught :
     converse 3 0 [some ⟨1, 0⟩] (.value (.prim .undef)) (readOnceState none) =
-      .ok .undef { readOnceState none with world := { state := true, handed := #[] } } := rfl
+      .ok .undef { readOnceState none with world := { state := true, handed := #[] } } :=
+  rfl
 
 end CoreJS
