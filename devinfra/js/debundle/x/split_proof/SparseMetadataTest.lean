@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.LinkedPivotCertificate
 import EsmSplit.CoreJS.DeploymentPlacement
+import EsmSplit.CoreJS.LinkedPivotCertificate
 
 /-! Proof-only examples of one omitted metadata ordinal. The modeled programs
 are explicit CoreJS fixtures; this file does not add a decoder or a move rule. -/
@@ -11,23 +11,39 @@ namespace SparseMetadataExamples
 set_option maxRecDepth 16000
 set_option maxHeartbeats 4000000
 
-private def declaration : Nat × Stmt := (0, .decl .var "x" (.bool true))
-private def printX : Nat × Stmt := (2, .expr (.prim .log [.var "x"]))
-private def sourceModule : Module := ⟨"main.mjs", [], [declaration, printX], [("visible", "x")]⟩
-private def chunk : Module := ⟨"chunk.mjs", [], [declaration], [("x", "x")]⟩
+private def declaration : Nat × Stmt :=
+  (0, .decl .var "x" (.bool true))
+
+private def printX : Nat × Stmt :=
+  (2, .expr (.prim .log [.var "x"]))
+
+private def sourceModule : Module :=
+  ⟨"main.mjs", [], [declaration, printX], [("visible", "x")]⟩
+
+private def chunk : Module :=
+  ⟨"chunk.mjs", [], [declaration], [("x", "x")]⟩
+
 private def entry : Module :=
   ⟨"main.mjs", [⟨"chunk.mjs", [("x", "x")]⟩], [printX], [("visible", "x")]⟩
 
-def source : Program := ⟨"main.mjs", [sourceModule]⟩
-def ordered : Program := ⟨"main.mjs", [chunk, entry]⟩
-def reversed : Program := ⟨"main.mjs", [{ sourceModule with body := [printX, declaration] }]⟩
+def source : Program :=
+  ⟨"main.mjs", [sourceModule]⟩
 
-private def scope : Env := ⟨[("x", ⟨1, 0⟩)], .undef, none⟩
+def ordered : Program :=
+  ⟨"main.mjs", [chunk, entry]⟩
+
+def reversed : Program :=
+  ⟨"main.mjs", [{ sourceModule with body := [printX, declaration] }]⟩
+
+private def scope : Env :=
+  ⟨[("x", ⟨1, 0⟩)], .undef, none⟩
+
 private def ready (w : World) : State w :=
   { initialState w 3 with cells := #[#[], #[⟨some .undef, true⟩], #[], #[]] }
 
 private def sourceLink (w : World) : CheckedLink source w :=
   ⟨[(sourceModule, scope)], ready w, by cbv⟩
+
 private def orderedLink (w : World) : CheckedLink ordered w :=
   ⟨[(chunk, scope), (entry, scope)], ready w, by cbv⟩
 
@@ -62,9 +78,11 @@ theorem sparse_placement : Places [(0, "chunk.mjs"), (2, "main.mjs")] source ord
   constructor
   · decide
   · constructor
-    · conv => lhs; cbv
+    · conv =>
+        lhs; cbv
       exact List.Perm.refl _
-    · conv => lhs; cbv
+    · conv =>
+        lhs; cbv
 
 private def output (r : Res World.probe Unit) : Array String :=
   match r with
@@ -74,31 +92,36 @@ private def output (r : Res World.probe Unit) : Array String :=
 /-- Reordering the read before the write changes the host-visible trace. -/
 theorem wrong_order_observed :
     output (runProgram World.probe 32 source) = #["true"] ∧
-    output (runProgram World.probe 32 reversed) = #["undefined"] := by
+      output (runProgram World.probe 32 reversed) = #["undefined"] := by
   constructor <;> cbv
 
 /-- A terminal metadata ordinal is omitted from the sparse body. The padded
 variant instead executes an empty block at that ordinal. -/
-def terminalSparse : Program := ⟨"main.mjs", [⟨"main.mjs", [], [(0, .varDecl "x")], [("x", "x")]⟩]⟩
-def terminalPadded : Program := ⟨"main.mjs", [⟨"main.mjs", [], [(0, .varDecl "x"), (1, .block [])], [("x", "x")]⟩]⟩
+def terminalSparse : Program :=
+  ⟨"main.mjs", [⟨"main.mjs", [], [(0, .varDecl "x")], [("x", "x")]⟩]⟩
+
+def terminalPadded : Program :=
+  ⟨"main.mjs", [⟨"main.mjs", [], [(0, .varDecl "x"), (1, .block [])], [("x", "x")]⟩]⟩
 
 /-- The same public export aliases the same cell despite the full-state mismatch. -/
 theorem terminal_exports (w : World) :
     exports w terminalSparse = some [("x", ⟨1, 0⟩)] ∧
-    exports w terminalPadded = some [("x", ⟨1, 0⟩)] := by
+      exports w terminalPadded = some [("x", ⟨1, 0⟩)] := by
   constructor <;> cbv
 
 private def terminalState (regions : Nat) : State World.probe :=
   { initialState World.probe regions with
-    cells := if regions == 1 then #[#[], #[⟨some .undef, true⟩]] else #[#[], #[⟨some .undef, true⟩], #[]] }
+    cells :=
+      if regions == 1 then #[#[], #[⟨some .undef, true⟩]] else #[#[], #[⟨some .undef, true⟩], #[]] }
 
 /-- Padding the final ordinal changes heap and cell region counts even though
 it declares nothing and the surviving x cell keeps its original address. -/
 theorem terminal_region_counterexample :
     runProgram World.probe 8 terminalSparse = .ok () (terminalState 1) ∧
-    runProgram World.probe 8 terminalPadded = .ok () (terminalState 2) ∧
-    (terminalState 1).heap.size = 2 ∧ (terminalState 2).heap.size = 3 ∧
-    (terminalState 1).cellAt ⟨1, 0⟩ = (terminalState 2).cellAt ⟨1, 0⟩ := by
+      runProgram World.probe 8 terminalPadded = .ok () (terminalState 2) ∧
+      (terminalState 1).heap.size = 2 ∧
+      (terminalState 2).heap.size = 3 ∧
+      (terminalState 1).cellAt ⟨1, 0⟩ = (terminalState 2).cellAt ⟨1, 0⟩ := by
   constructor
   · cbv
   · constructor
@@ -110,28 +133,34 @@ theorem terminal_region_counterexample :
 /-- The actual normal-completion relation used by the move theorem cannot
 transfer unchanged between these programs: its final state is the full state. -/
 theorem terminal_normal_transfer_fails :
-    ¬ (∀ final : State World.probe,
-      Ends World.probe terminalSparse (.ok () final) ↔ Ends World.probe terminalPadded (.ok () final)) := by
+    ¬(∀ final : State World.probe,
+        Ends World.probe terminalSparse (.ok () final) ↔
+          Ends World.probe terminalPadded (.ok () final)) := by
   intro transfer
   have left : Ends World.probe terminalSparse (.ok () (terminalState 1)) :=
     ⟨8, terminal_region_counterexample.1, by simp⟩
   have right : Ends World.probe terminalPadded (.ok () (terminalState 2)) :=
     ⟨8, terminal_region_counterexample.2.1, by simp⟩
   have both := Ends.unique ((transfer (terminalState 1)).mp left) right
-  have sizes := congrArg (fun r : Res World.probe Unit => match r with
-    | .ok _ state => state.heap.size
-    | _ => 0) both
+  have sizes :=
+    congrArg
+      (fun r : Res World.probe Unit =>
+        match r with
+        | .ok _ state => state.heap.size
+        | _ => 0)
+      both
   simp [terminalState, initialState] at sizes
 
 /-- Exact fuel is also not invariant: an empty block needs more than one step. -/
 theorem terminal_fuel_counterexample :
     runProgram World.probe 1 terminalSparse = .ok () (terminalState 1) ∧
-    runProgram World.probe 1 terminalPadded = .fuel := by
+      runProgram World.probe 1 terminalPadded = .fuel := by
   constructor <;> cbv
 
 private def hoisted (padded : Bool) : Program :=
   let f := Stmt.funDecl (.mk "f" .arrow false [] [.ret (.var "f")])
-  ⟨"main.mjs", [⟨"main.mjs", [], if padded then [(0, f), (1, .block [])] else [(0, f)], [("f", "f")]⟩]⟩
+  ⟨"main.mjs",
+    [⟨"main.mjs", [], if padded then [(0, f), (1, .block [])] else [(0, f)], [("f", "f")]⟩]⟩
 
 private def hoistedShape (r : Res World.probe Unit) : Option (Nat × Nat × Nat × Option Addr) := do
   let .ok () s := r | none
@@ -143,13 +172,15 @@ private def hoistedShape (r : Res World.probe Unit) : Option (Nat × Nat × Nat 
 and object addresses, while the trailing padding still adds a region. -/
 theorem hoisted_region_counterexample :
     hoistedShape (runProgram World.probe 8 (hoisted false)) = some (2, 1, 0, some ⟨1, 0⟩) ∧
-    hoistedShape (runProgram World.probe 8 (hoisted true)) = some (3, 1, 0, some ⟨1, 0⟩) := by
+      hoistedShape (runProgram World.probe 8 (hoisted true)) = some (3, 1, 0, some ⟨1, 0⟩) := by
   constructor <;> cbv
 
 private def opaqueProgram (padded : Bool) : Program :=
-  ⟨"main.mjs", [⟨"main.mjs", [],
-    if padded then [(0, .opaque 0 [] [] [] .world), (1, .block [])]
-    else [(0, .opaque 0 [] [] [] .world)], []⟩]⟩
+  ⟨"main.mjs",
+    [⟨"main.mjs", [],
+        if padded then [(0, .opaque 0 [] [] [] .world), (1, .block [])]
+        else [(0, .opaque 0 [] [] [] .world)],
+        []⟩]⟩
 
 private def throwingWorld : World where
   σ := Nat
@@ -171,14 +202,13 @@ private def throwShape (r : Res throwingWorld Unit) : Option (Nat × Nat × Nat)
 region layout, including the host's state after a throwing request. -/
 theorem abrupt_region_counterexamples :
     unknownShape (runProgram World.probe 16 (opaqueProgram false)) = some (2, 1) ∧
-    unknownShape (runProgram World.probe 16 (opaqueProgram true)) = some (3, 1) ∧
-    throwShape (runProgram throwingWorld 16 (opaqueProgram false)) = some (2, 1, 1) ∧
-    throwShape (runProgram throwingWorld 16 (opaqueProgram true)) = some (3, 1, 1) := by
+      unknownShape (runProgram World.probe 16 (opaqueProgram true)) = some (3, 1) ∧
+      throwShape (runProgram throwingWorld 16 (opaqueProgram false)) = some (2, 1, 1) ∧
+      throwShape (runProgram throwingWorld 16 (opaqueProgram true)) = some (3, 1, 1) := by
   constructor
   · cbv
   · constructor
     · cbv
     · constructor <;> cbv
-
 
 end SparseMetadataExamples
