@@ -24,6 +24,8 @@ func runCompactJournal(ctx context.Context, args []string) error {
 	fromFirstLegacy := flags.Bool("from-first-legacy-block", false, "skip the current-format prefix when resuming a block migration")
 	maxBlocks := flags.Int("max-blocks-per-txn", sessionstore.DefaultJournalBlocksPerTxn, "maximum output blocks per journal replacement transaction")
 	batchDelay := flags.Duration("batch-delay", 50*time.Millisecond, "minimum delay between completed batches")
+	lockWait := flags.Duration("lock-wait", sessionstore.DefaultJournalLockWait, "PostgreSQL lock acquisition timeout per batch")
+	lockHold := flags.Duration("lock-hold", sessionstore.DefaultJournalLockHold, "maximum time to hold the Session lock per batch")
 	pauseFile := flags.String("pause-file", "", "pause at batch boundaries while this file exists")
 	busyRetries := flags.Int("busy-retries", 3, "retries for Session lock contention or changed inputs")
 	retryDelay := flags.Duration("retry-delay", 250*time.Millisecond, "delay between contention retries")
@@ -42,6 +44,10 @@ func runCompactJournal(ctx context.Context, args []string) error {
 	}
 	if *batchDelay < 0 || *batchDelay > time.Minute || *busyRetries < 0 || *busyRetries > 10 || *retryDelay < 0 || *retryDelay > time.Minute {
 		return errors.New("batch delay or contention retry settings are outside supported bounds")
+	}
+	budget := sessionstore.JournalLockBudget{Wait: *lockWait, Hold: *lockHold}
+	if err := budget.Validate(); err != nil {
+		return err
 	}
 	profile := eventblock.Profile{TargetBytes: *targetBytes, TargetEntries: *targetEntries, Level: *level}
 	if _, err := eventblock.NewPacker(profile); err != nil {
@@ -62,7 +68,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 		EventBlockProfile: profile,
 	})
 	options := sessionstore.JournalCompactionOptions{
-		FromFirstLegacyBlock: *fromFirstLegacy, MaxBlocksPerTxn: *maxBlocks, BatchDelay: *batchDelay, PauseFile: *pauseFile,
+		LockBudget: budget, FromFirstLegacyBlock: *fromFirstLegacy, MaxBlocksPerTxn: *maxBlocks, BatchDelay: *batchDelay, PauseFile: *pauseFile,
 		ContentionRetries: *busyRetries, RetryDelay: *retryDelay, WaitForIdle: !*all,
 	}
 	run := func(id string) error {
@@ -73,7 +79,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 		}
 		level(ctx, "sampler journal repack", "session_id", id, "apply", *apply,
 			"profile_target_bytes", profile.TargetBytes, "profile_target_entries", profile.TargetEntries, "profile_level", profile.Level,
-			"opening_cursor", result.OpeningCursor, "skipped_through", result.SkippedThrough, "completed", result.Completed, "batches", result.Batches, "max_blocks_per_txn", *maxBlocks,
+			"lock_wait", budget.Wait, "lock_hold", budget.Hold, "opening_cursor", result.OpeningCursor, "skipped_through", result.SkippedThrough, "completed", result.Completed, "batches", result.Batches, "max_blocks_per_txn", *maxBlocks,
 			"events", result.Events, "blocks", result.Blocks, "stored_bytes", result.StoredBytes,
 			"output_bytes", result.OutputBytes, "retained_legacy_blocks", result.RetainedLegacyBlocks,
 			"packed_bytes", result.PackedBytes, "lock_hold_total_ms", result.LockHoldTotal.Milliseconds(),

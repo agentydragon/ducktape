@@ -47,7 +47,7 @@ func (c *repackController) beforeBatch(ctx context.Context, sourceBytes int64) e
 			slog.WarnContext(ctx, "History repack paused by operator guard", "reason", reason)
 			c.paused = reason
 		}
-		timer := time.NewTimer(5 * time.Second)
+		timer := time.NewTimer(c.options.guardInterval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -136,7 +136,7 @@ func runCompactHistory(ctx context.Context, args []string) error {
 		return err
 	}
 	defer db.Close()
-	history := storage.NewStore(db, storage.Options{EventPackers: packers, RepackBlocksPerTxn: options.maxBlocksPerTxn, RepackBatchBudget: options.batchBudget})
+	history := storage.NewStore(db, storage.Options{EventPackers: packers, RepackBlocksPerTxn: options.maxBlocksPerTxn, RepackLockWait: options.lockWait, RepackBatchBudget: options.batchBudget})
 	controller := newRepackController(options)
 	var result storage.CompactionResult
 	if options.all {

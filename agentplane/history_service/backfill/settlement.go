@@ -21,6 +21,8 @@ var (
 	ErrProjectionBusy  = errors.New("Session projection lease held; retry after the fold releases it")
 )
 
+const DefaultLockWait = time.Second
+
 // Result counts eligible raw delta entries and their logical protobuf bytes, excluding indexes and rows.
 type Result struct {
 	Items              int
@@ -71,7 +73,10 @@ func scanSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID) (scan, er
 // RunSession uses bounded reads and one write transaction per eligible completion. Dry runs use
 // read-only transactions. Apply fences ingress and the projector, and refuses a changed raw prefix.
 // Restarting skips recorded settlements; no source journal entries or provider calls are replayed.
-func RunSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID, apply bool) (Result, error) {
+func RunSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID, apply bool, lockWait time.Duration) (Result, error) {
+	if err := postgres.ValidateMaintenanceLockDuration(lockWait); err != nil {
+		return Result{}, err
+	}
 	found, err := scanSession(ctx, db, sessionID)
 	if err != nil {
 		return Result{}, err
@@ -79,10 +84,10 @@ func RunSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID, apply bool
 	var total Result
 	for _, cursor := range found.completions {
 		itemCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		result, err := settleCompletion(itemCtx, db, sessionID, cursor, found, false)
+		result, err := settleCompletion(itemCtx, db, sessionID, cursor, found, false, lockWait)
 		if err == nil && apply && result.Items != 0 {
 			// Recheck under the write fences: eligibility may change after this read-only check.
-			result, err = settleCompletion(itemCtx, db, sessionID, cursor, found, true)
+			result, err = settleCompletion(itemCtx, db, sessionID, cursor, found, true, lockWait)
 		}
 		cancel()
 		if err != nil {
@@ -99,7 +104,7 @@ func RunSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID, apply bool
 	return total, nil
 }
 
-func settleCompletion(ctx context.Context, db *sql.DB, sessionID uuid.UUID, cursor uint64, found scan, apply bool) (Result, error) {
+func settleCompletion(ctx context.Context, db *sql.DB, sessionID uuid.UUID, cursor uint64, found scan, apply bool, lockWait time.Duration) (Result, error) {
 	var result Result
 	options := sql.TxOptions{ReadOnly: !apply, Isolation: sql.LevelRepeatableRead}
 	if apply {
@@ -109,7 +114,7 @@ func settleCompletion(ctx context.Context, db *sql.DB, sessionID uuid.UUID, curs
 		var held *projection.Lease
 		var err error
 		if apply {
-			if _, err := tx.ExecContext(ctx, "SET LOCAL lock_timeout = '1s'"); err != nil {
+			if _, err := tx.ExecContext(ctx, `SELECT set_config('lock_timeout',$1,true)`, fmt.Sprintf("%dms", lockWait.Milliseconds())); err != nil {
 				return err
 			}
 			// A projector can fetch a page before taking its write fence. Taking over its expired

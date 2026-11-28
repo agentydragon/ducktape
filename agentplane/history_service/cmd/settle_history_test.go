@@ -42,6 +42,10 @@ func TestHistoryMaintenanceRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 		t.Fatal("settle-history accepted an unrelated repack option")
 	}
 	for _, args := range [][]string{
+		{"--all", "--apply", "--lock-wait=0s"},
+		{"--all", "--apply", "--lock-wait=100us"},
+		{"--all", "--apply", "--lock-wait=61s"},
+		{"--all", "--apply", "--guard-check-interval=0s"},
 		{"--all", "--apply", "--bytes-per-second", "0"},
 		{"--all", "--apply", "--batch-transaction-budget", "0s"},
 		{"--all", "--apply", "--max-replica-lag-bytes", "1"},
@@ -55,10 +59,10 @@ func TestHistoryMaintenanceRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 	guarded, err := parseHistoryMaintenanceOptions("compact-history", []string{
 		"--all", "--apply", "--guard-file", "/tmp/history-guard.json", "--max-replica-lag-bytes", "4096",
 		"--min-free-bytes", "8192", "--pause-file", "/tmp/pause", "--bytes-per-second", "1024",
-		"--batch-transaction-budget", "3s",
+		"--batch-transaction-budget", "3s", "--guard-check-interval=2s", "--lock-wait=1500ms",
 	})
 	if err != nil || guarded.maxReplicaLagBytes != 4096 || guarded.minFreeBytes != 8192 ||
-		guarded.pauseFile != "/tmp/pause" || guarded.bytesPerSecond != 1024 || guarded.batchBudget != 3*time.Second {
+		guarded.pauseFile != "/tmp/pause" || guarded.bytesPerSecond != 1024 || guarded.batchBudget != 3*time.Second || guarded.guardInterval != 2*time.Second || guarded.lockWait != 1500*time.Millisecond {
 		t.Fatalf("guarded options: %+v %v", guarded, err)
 	}
 }

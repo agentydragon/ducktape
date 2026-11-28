@@ -204,8 +204,8 @@ batch commits. The repacker prepares frames and compresses them outside the Sess
 the lock, it matches the exact source rows and payloads before replacing them in one transaction.
 By default each transaction installs at most four APB blocks. Set `--max-blocks-per-txn=1`
 to commit one output block at a time. The existing entry and byte limits still apply.
-PostgreSQL limits lock waits to 100 ms. The repacker requests cancellation after 250 ms holding
-the lock. On restart, it scans from the beginning and skips batches whose stored bytes already
+Set `--lock-wait` (default 5s) for acquisition and `--lock-hold` (default 250ms) for work after acquisition.
+Both accept whole milliseconds from 1ms to 1m. On restart, it scans from the beginning and skips batches whose stored bytes already
 match the profile. After the short `--busy-retries` are exhausted, a single-Session command waits
 5 seconds and retries from its last committed batch. Consecutive waits double up to 5 minutes.
 `--all` finishes its keyset scan before revisiting only the busy Sessions in rounds with the same

@@ -13,6 +13,15 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// ValidateMaintenanceLockDuration rejects durations that would turn off PostgreSQL's
+// millisecond timeout or keep an online maintenance lock busy for over a minute.
+func ValidateMaintenanceLockDuration(d time.Duration) error {
+	if d < time.Millisecond || d > time.Minute || d%time.Millisecond != 0 {
+		return fmt.Errorf("maintenance lock duration %s must be whole milliseconds in [1ms, 1m]", d)
+	}
+	return nil
+}
+
 // DriverURL translates SQLAlchemy's asyncpg scheme for lib/pq.
 func DriverURL(dsn string) string {
 	if rest, ok := strings.CutPrefix(dsn, "postgresql+asyncpg://"); ok {
