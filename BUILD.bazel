@@ -283,3 +283,10 @@ py_wheel(
     visibility = ["//visibility:public"],
     deps = [":ducktape_git_hooks_pkg"],
 )
+
+# The splitter baseline reads the published bytes from the existing root lock.
+alias(
+    name = "pinned_retrier_package",
+    actual = ":.aspect_rules_js/node_modules/@humanwhocodes+retry@0.4.3/dir",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+)
