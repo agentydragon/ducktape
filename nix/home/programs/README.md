@@ -1,41 +1,10 @@
-# Generic Home-Manager Modules
+# Home Manager program modules
 
-This directory contains **generic home-manager-style modules** that follow upstream conventions and could potentially be contributed to nixpkgs.
+Generic modules expose options; personal integrations select their values.
+The [Gemini CLI module](gemini-cli.nix) extends Home Manager’s former Gemini module
+with policy TOML files and shared skills. Its `policies` option includes an example;
+[the personal integration](../gemini_cli.nix) turns the shared command lists into rules.
+Home Manager itself owned the CLI package and settings file.
 
-## Design Principles
-
-- **No personal configuration embedded** - modules expose options, personal integrations provide values
-- **Upstream-compatible conventions** - follow nixpkgs `programs.*` patterns
-- **Declarative configuration** - handle settings files, policy generation, and deployment
-- **Well-documented options** - clear descriptions, examples, and type definitions
-
-## Current Modules
-
-- **`gemini-cli.nix`**: Declarative configuration for Gemini CLI
-  - Deploys `settings.json` (JSON)
-  - Generates policy files (TOML)
-  - Deploys shared skills to `~/.gemini/skills/`
-
-## Usage Pattern
-
-Generic modules are consumed by personal integration files (e.g., `../gemini_cli.nix`):
-
-```nix
-# Personal integration (../gemini_cli.nix)
-{
-  programs.gemini-cli = {
-    enable = true;
-    settings = {
-      general.defaultApprovalMode = "default";
-      ui.theme = "dark";
-    };
-    policies = {
-      allowed-commands = [
-        { toolName = "run_shell_command"; commandPrefix = "git status"; decision = "allow"; priority = 300; }
-      ];
-    };
-  };
-}
-```
-
-The generic module handles all the deployment mechanics (file generation, path management, etc.).
+Both imports are disabled. See [home.nix](../home.nix) for the upstream rename
+and what to check before enabling the integration again.
