@@ -127,6 +127,7 @@ function translate(spec, chunk, statements, placement) {
   const surface = (i) => statements[i].node.type === "ExportNamedDeclaration" && !statements[i].node.declaration;
   const swept = statements.flatMap((s, i) => (owner[i] === null && !surface(i) && s.declares ? [i] : []));
   let sinkFile = null;
+  let implicitSink = null;
   if (kind === "catchall_file") {
     // The resolver projects out owners with no claims. Only the catchall can
     // need reinsertion. Read its slot in the full authored priority, folding
@@ -146,6 +147,7 @@ function translate(spec, chunk, statements, placement) {
         files.set(target, fileName(target));
       }
       sinkFile = files.get(target);
+      if (mode.target == null) implicitSink = target;
     }
   }
   if (new Set([entry, ...files.values()]).size !== files.size + 1) throw new Unsupported("module filenames collide");
@@ -166,7 +168,15 @@ function translate(spec, chunk, statements, placement) {
     else home = onlyModule || i < lastInSink ? sinkFile : entry;
     modules[home].push(`#${i}`);
   });
-  return { entry, modules, order: priority.map((m) => files.get(m)) };
+  const plan = { entry, modules, order: priority.map((m) => files.get(m)) };
+  const targetDir = spec.materialize_logical_modules?.target_dir ?? "modules";
+  const moduleRoutes = new Map();
+  for (const [owner, synthetic] of files) {
+    const authored = `${chunk}/${targetDir}/${owner === implicitSink ? "residual/unhandled" : owner}.js`;
+    if (moduleRoutes.has(authored)) throw new Unsupported("authored module routes collide", authored);
+    moduleRoutes.set(authored, synthetic);
+  }
+  return { plan, moduleRoutes };
 }
 
 // ---------------------------------------------------------------- running
@@ -274,7 +284,7 @@ function runCase(dir, specName, expected, id) {
       return unsupported("input does not parse as a module", error.message);
     }
     const spec = parseYaml(readFileSync(path.join(dir, specName), "utf8"));
-    let plan, placement;
+    let plan, placement, moduleRoutes;
     try {
       // Corpus specs omit the fixture input paths; preserve explicit overrides.
       mkdirSync(path.join(stage, ".fixture"), { recursive: true });
@@ -298,7 +308,7 @@ function runCase(dir, specName, expected, id) {
       if (placement.chunk_id !== chunk || placement.source_sha256 !== createHash("sha256").update(code).digest("hex")) {
         throw new Error("resolved placement does not identify the checker input");
       }
-      plan = translate(spec, chunk, analysis.statements, placement);
+      ({ plan, moduleRoutes } = translate(spec, chunk, analysis.statements, placement));
     } catch (error) {
       if (error instanceof Unsupported) return unsupported(error.cause, error.detail);
       throw error;
@@ -325,11 +335,12 @@ function runCase(dir, specName, expected, id) {
           run,
         });
       }
-      const result = certify({
+      const { moduleOutputs, ...result } = certify({
         stage,
         chunkFile,
         plan,
         resolvedUnits: placement.units,
+        moduleRoutes,
         want: expected.accept.stdout,
         originalWant: wanted(expected),
         providers: Object.values(expected.accept.runtime_files ?? {}),
@@ -344,6 +355,7 @@ function runCase(dir, specName, expected, id) {
           chunkFile,
           output: path.join(stage, "certified"),
           entry: result.entry,
+          moduleOutputs,
           run,
           nodeRun,
         });
