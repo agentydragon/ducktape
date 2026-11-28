@@ -83,3 +83,47 @@ or exercises its lazy dependency graph.
    then change reads through the other. Accepting a callee by spelling would
    also accept a replacement constructor that observes or changes the crossed
    binding. This diagnostic adds no host premise or proof rule.
+
+## Exact wrapper boundary
+
+`scroll_slice` writes `wrapper-boundary.json` from the same pinned editor
+and provider bytes. The editor's `#5` resolves `Ve` through the named import
+at `#4` to export `b` of `./chunk-BLPUKQJE.js`. That export resolves to
+local `n` at provider ordinal `#7` (counting each declarator separately).
+The scope analysis finds one definition and no subsequent source writes to
+`n`. The callback at `#5` captures no enclosing lexical binding. The factory
+captures none either, but the returned arrow closes over the factory's two
+parameter cells:
+
+```js
+var n = (a, b) => () => (b || a((b = { exports: {} }).exports, b), b.exports);
+```
+
+The call at `#5` creates the callback and loader and initializes the loader's
+private parameter cells; it does not evaluate the loader body. The runtime
+control on the exact export supplies a synthetic callback that writes to
+`exports`, reenters the loader and throws. Reentry sees the same partially
+populated object, and the next call returns that object without rerunning the
+callback. This rules out modeling a load as a fresh invocation, caching only
+on success, or hiding the callback's effects.
+
+The selected crossing is `[#5, #1337]`: `#5` stays in
+`chunk-PN7KOLDJ.js`; `#1337` moves to
+`packages/excalidraw/scene/scroll.mjs`; provider `#7` stays in
+`chunk-BLPUKQJE.js`. The single and pair editor placements still have 259 and
+518 structural conflicts. This audit discharges zero placement conflicts and
+publishes no split, so there is no staged split to recheck.
+
+The exact provider fails authenticated classification at `#0` (`Object.create`),
+before it reaches `#7`. A proof for the four-unit crossing still needs a
+linked prefix that preserves the provider's effects and abrupt outcomes in
+both schedules, then establishes that `Ve` resolves to the initialized
+factory cell when `#5` runs. Knowing the definition site alone does not
+establish that state: even an `Object.create` getter could throw before
+`#7`. With that prefix accounted for, the allocation swap must preserve the
+original allocation identities and captured cells, prove equality at equal
+fuel, and carry the same loader body and cache cells into the arbitrary
+continuation. `WrapperLinked.normal_iff` supplies the successful-run
+commutation for the modeled shape, but does not establish this provider
+prefix, all outcomes, or correspondence to the actual staged files. The
+provider cannot be dropped or assumed to evaluate under pristine globals.
