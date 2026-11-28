@@ -27,21 +27,23 @@ open Lean (Json)
 namespace CoreJS.LinkedPrimitiveAwait
 
 open PrimitiveAwait
-
 variable {W : World}
 
-abbrev Input := TurnProgram
+abbrev Input :=
+  TurnProgram
 
 private def registerCuts (source : LinkedInput.DecodedSource) : List (Nat × DeferredAwait) :=
   source.nodes.toList.zipIdx.filterMap fun (node, id) => do
     let parts ← (FromESTree.primitiveAwaitParts node).toOption
     let some (.funDecl f) := source.source.body.lookup id | none
     let some (unit, _, free, some _) := f.opaqueBody | none
-    guard (unit == id && f.kind == .asyncFn && f.name == parts.scope.name &&
-      parts.scope.closes.all free.contains)
+    guard
+        (unit == id && f.kind == .asyncFn && f.name == parts.scope.name &&
+          parts.scope.closes.all free.contains)
     return (id, ⟨f, ⟨parts.scope, parts.before, parts.operand, parts.after⟩⟩)
 
-private def decodeSource (source : Json) (entry : String) : Except String LinkedInput.DecodedSource := do
+private def decodeSource (source : Json) (entry : String) :
+    Except String LinkedInput.DecodedSource := do
   let decoded ← LinkedInput.decodeSingletonSourceNodes (← ESTreeUnits.nodes source) entry
   unless decoded.source.imports.isEmpty && !decoded.hasTemplates do
     throw "await model requires an import-free original without templates"
@@ -63,9 +65,11 @@ def decodePlacedChecked (source files : Json) (plan : EsmSplit.Plan) : Except St
   let (before, after) ← LinkedInput.decodePair source (Json.mkObj []) files plan
   let cuts := registerCuts original
   for (id, cut) in cuts do
-    let some owner := after.modules.find? (fun m => (m.body.lookup id).isSome) |
-      throw s!"missing placed async declaration {id}"
-    let some (.funDecl actual) := owner.body.lookup id | throw s!"missing placed async declaration {id}"
+    let some owner :=
+      after.modules.find?
+        (fun m => (m.body.lookup id).isSome) | throw s!"missing placed async declaration {id}"
+    let some (.funDecl actual) :=
+      owner.body.lookup id | throw s!"missing placed async declaration {id}"
     unless (SyntaxMatch.funcEq actual cut.deferred).isSome do
       throw s!"placed deferred closure differs at original ordinal {id}"
     let imports := owner.imports.flatMap fun i => i.names.map Prod.snd
@@ -79,7 +83,8 @@ def decodePlacedChecked (source files : Json) (plan : EsmSplit.Plan) : Except St
 def decodePlaced (source files : Json) (plan : EsmSplit.Plan) : Except String (Input × Input) :=
   (decodePlacedChecked source files plan).map fun p => (p.before, p.after)
 
-abbrev Immediate := TurnResult
+abbrev Immediate :=
+  TurnResult
 
 def Immediate.shared (outcome : Immediate W α) : Res W Unit :=
   outcome.observed.erase
@@ -88,7 +93,8 @@ def Immediate.pending : Immediate W α → Option (List Job)
   | .ok _ turn | .throw _ turn | .unknown _ turn => some turn.jobs
   | .fuel => none
 
-abbrev entryEnv := TurnUnits.entryEnv
+abbrev entryEnv :=
+  TurnUnits.entryEnv
 
 open TurnUnits
 
@@ -116,18 +122,18 @@ theorem runImmediate_eq_programTurn {input : Input} {linked : List (Module × En
   | some _ =>
     rw [observed_map]
     cases runLinked fuel input.cuts (unitsOf linked) (⟨ready, []⟩ : Turn W) with
-    | ok value turn => cases value; rfl
+    | ok value turn =>
+      cases value; rfl
     | _ => rfl
 
 /-- Holding the shared link state, cut table and ordered free-name bindings
 fixed makes all module outcomes and the full pending queue equal. -/
 theorem runImmediate_same {W : World} {a b : Input} {left right : List (Module × Env)}
-    {ready : State W}
-    (aLink : link a.program (initialState W a.program.regions) = .ok left ready)
+    {ready : State W} (aLink : link a.program (initialState W a.program.regions) = .ok left ready)
     (bLink : link b.program (initialState W b.program.regions) = .ok right ready)
     (aEntry : (entryEnv a.program.entry left).isSome = true)
-    (bEntry : (entryEnv b.program.entry right).isSome = true)
-    (cuts : a.cuts = b.cuts) (units : SameUnits (unitsOf left) (unitsOf right)) (fuel : Nat) :
+    (bEntry : (entryEnv b.program.entry right).isSome = true) (cuts : a.cuts = b.cuts)
+    (units : SameUnits (unitsOf left) (unitsOf right)) (fuel : Nat) :
     (runImmediate W fuel a).observed = (runImmediate W fuel b).observed := by
   simp only [runImmediate, withLinkedTurn, TurnResult.andThen, aLink, bLink]
   cases ha : entryEnv a.program.entry left with
@@ -144,7 +150,8 @@ theorem noCuts_turn {input : Input} {linked : List (Module × Env)} {ready : Sta
     (cuts : input.cuts = [])
     (linkedOk : link input.program (initialState W input.program.regions) = .ok linked ready)
     (entry : entryEnv input.program.entry linked = some env) (fuel : Nat) :
-    (runImmediate W fuel input).observed = TurnResult.withJobs [] (runProgram W fuel input.program) := by
+    (runImmediate W fuel input).observed =
+      TurnResult.withJobs [] (runProgram W fuel input.program) := by
   simp only [runImmediate, withLinkedTurn, runProgram, M.bind_apply, TurnResult.andThen, runLinked,
     linkedOk, entry, cuts, observed_map]
   cases runUnits fuel (unitsOf linked) ready <;> rfl
@@ -159,8 +166,12 @@ theorem noCuts_agree {W : World} {input : Input} {mod : Module} {env : Env} {rea
     let immediate := runImmediate W fuel input
     let shared := runProgram W fuel input.program
     immediate.shared = shared ∧
-      immediate.pending = (match shared with | .fuel => none | _ => some []) := by
-  simp only [runImmediate, withLinkedTurn, runProgram, M.bind_apply, TurnResult.andThen, entryEnv, runLinked, linked, cuts]
+      immediate.pending =
+        (match shared with
+        | .fuel => none
+        | _ => some []) := by
+  simp only [runImmediate, withLinkedTurn, runProgram, M.bind_apply, TurnResult.andThen, entryEnv,
+    runLinked, linked, cuts]
   cases runUnits fuel (unitsOf [(mod, env)]) ready <;> exact ⟨rfl, rfl⟩
 
 end CoreJS.LinkedPrimitiveAwait

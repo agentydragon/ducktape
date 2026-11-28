@@ -8,24 +8,30 @@ namespace CoreJS.LexicalFunctionSource
 set_option maxRecDepth 16000
 set_option maxHeartbeats 4000000
 
-def writer (name param : Name) (body : List Stmt) : Func := .mk name .normal false [param] body
-def reader (name : Name) (body : List Stmt) : Func := .mk name .normal false [] body
+def writer (name param : Name) (body : List Stmt) : Func :=
+  .mk name .normal false [param] body
 
-def sourceModule (cell writeName readName initial param : Name) (writeBody readBody : List Stmt) (init : Expr)
-    (exports : List (Name × Name)) : Module :=
-  ⟨"entry.mjs", [], [(0, .decl .let_ cell .undef),
-    (1, .funDecl (writer writeName param writeBody)), (2, .funDecl (reader readName readBody)),
-    (3, .decl .const initial init)], exports⟩
+def reader (name : Name) (body : List Stmt) : Func :=
+  .mk name .normal false [] body
 
-def source (cell writeName readName initial param : Name) (writeBody readBody : List Stmt) (init : Expr)
-    (exports : List (Name × Name)) : Program :=
-  ⟨"entry.mjs", [sourceModule cell writeName readName initial param writeBody readBody init exports]⟩
+def sourceModule (cell writeName readName initial param : Name) (writeBody readBody : List Stmt)
+    (init : Expr) (exports : List (Name × Name)) : Module :=
+  ⟨"entry.mjs", [],
+    [(0, .decl .let_ cell .undef), (1, .funDecl (writer writeName param writeBody)),
+      (2, .funDecl (reader readName readBody)), (3, .decl .const initial init)],
+    exports⟩
+
+def source (cell writeName readName initial param : Name) (writeBody readBody : List Stmt)
+    (init : Expr) (exports : List (Name × Name)) : Program :=
+  ⟨"entry.mjs",
+    [sourceModule cell writeName readName initial param writeBody readBody init exports]⟩
 
 /-- Link the original source before running any statement, for every host world. -/
 def sourceLink (w : World) (cell writeName readName initial param : Name)
     (writeBody readBody : List Stmt) (init : Expr) (exports : List (Name × Name))
     (cw : cell ≠ writeName) (cr : cell ≠ readName) (wr : writeName ≠ readName) :
-    LinkedBehavior.CheckedLink (source cell writeName readName initial param writeBody readBody init exports) w := by
+    LinkedBehavior.CheckedLink
+      (source cell writeName readName initial param writeBody readBody init exports) w := by
   have wc : writeName ≠ cell := Ne.symm cw
   have rc : readName ≠ cell := Ne.symm cr
   have rw : readName ≠ writeName := Ne.symm wr
@@ -44,17 +50,24 @@ def sourceLink (w : World) (cell writeName readName initial param : Name)
 theorem lexical_uninitialized (w : World) (cell writeName readName initial param : Name)
     (writeBody readBody : List Stmt) (init : Expr) (exports : List (Name × Name))
     (cw : cell ≠ writeName) (cr : cell ≠ readName) (wr : writeName ≠ readName) :
-    (sourceLink w cell writeName readName initial param writeBody readBody init exports cw cr wr).ready.cellAt ⟨1, 0⟩ =
+    (sourceLink w cell writeName readName initial param writeBody readBody init exports cw cr
+            wr).ready.cellAt
+        ⟨1, 0⟩ =
       some ⟨none, true⟩ := by
   rfl
 
 /-- Running an initializer-free `let` writes `undefined` to its original
 cell. The previous link-time state is not modified until this step executes. -/
-theorem execute_let_undefined (w : World) (fuel : Nat) (env : Env) (name : Name)
-    (addr : Addr) (s : State w) (lookup : env.vars.lookup name = some addr) :
+theorem execute_let_undefined (w : World) (fuel : Nat) (env : Env) (name : Name) (addr : Addr)
+    (s : State w) (lookup : env.vars.lookup name = some addr) :
     execStmt (fuel + 2) env (.decl .let_ name .undef) s =
-      .ok .normal { s with cells := (s.cells.modify addr.region
-        (fun bs => bs.modify addr.index (fun binding => { binding with value := some .undef }))) } := by
+      .ok .normal
+        { s with
+          cells :=
+            (s.cells.modify addr.region
+              (fun bs =>
+                bs.modify addr.index
+                  (fun binding => { binding with value := some .undef }))) } := by
   simpa [State.assign] using
     execute_lexical (fuel + 1) env .let_ (Or.inl rfl) name .undef addr lookup s s .undef rfl
 
@@ -78,37 +91,51 @@ structure Checked (original : Program) where
 
 def check (original : Program) : Except String (Checked original) := do
   match shape : original with
-  | ⟨entry, [⟨moduleName, [], [(0, .decl .let_ cell .undef),
-      (1, .funDecl (.mk writeName .normal false [param] writeBody)),
-      (2, .funDecl (.mk readName .normal false [] readBody)),
-      (3, .decl .const initial init)], exports⟩]⟩ =>
-    if names : entry = "entry.mjs" ∧ moduleName = "entry.mjs" ∧
-        cell ≠ writeName ∧ cell ≠ readName ∧ writeName ≠ readName then
-      have eq : (⟨entry, [⟨moduleName, [], [(0, .decl .let_ cell .undef),
-          (1, .funDecl (.mk writeName .normal false [param] writeBody)),
-          (2, .funDecl (.mk readName .normal false [] readBody)),
-          (3, .decl .const initial init)], exports⟩]⟩ : Program) =
+  |
+  ⟨entry,
+      [⟨moduleName, [],
+          [(0, .decl .let_ cell .undef),
+            (1, .funDecl (.mk writeName .normal false [param] writeBody)),
+            (2, .funDecl (.mk readName .normal false [] readBody)), (3, .decl .const initial init)],
+          exports⟩]⟩ =>
+    if names :
+        entry = "entry.mjs" ∧
+          moduleName = "entry.mjs" ∧ cell ≠ writeName ∧ cell ≠ readName ∧ writeName ≠ readName then
+      have eq :
+        (⟨entry,
+              [⟨moduleName, [],
+                  [(0, .decl .let_ cell .undef),
+                    (1, .funDecl (.mk writeName .normal false [param] writeBody)),
+                    (2, .funDecl (.mk readName .normal false [] readBody)),
+                    (3, .decl .const initial init)],
+                  exports⟩]⟩ :
+            Program) =
           source cell writeName readName initial param writeBody readBody init exports := by
         simp [source, sourceModule, writer, reader, names.1, names.2.1]
       return ⟨cell, writeName, readName, initial, param, writeBody, readBody, init, exports,
-        shape.trans eq, names.2.2.1, names.2.2.2.1, names.2.2.2.2⟩
-    else throw "source module path or declaration names are unsupported"
-  | _ => throw "expected a lexical declaration and two ordinary function declarations"
+          shape.trans eq, names.2.2.1, names.2.2.2.1, names.2.2.2.2⟩
+    else
+      throw "source module path or declaration names are unsupported"
+  | _ =>
+    throw "expected a lexical declaration and two ordinary function declarations"
 
 /-- The link is derived from the checked source, rather than supplied by a caller. -/
 def Checked.link {original : Program} (c : Checked original) (w : World) :
     LinkedBehavior.CheckedLink original w := by
   rw [c.sourceEq]
-  exact sourceLink w c.cell c.writeName c.readName c.initial c.param c.writeBody c.readBody c.init c.exports
-    c.cellWrite c.cellRead c.writeRead
+  exact
+    sourceLink w c.cell c.writeName c.readName c.initial c.param c.writeBody c.readBody c.init
+      c.exports c.cellWrite c.cellRead c.writeRead
 
 /-- The checked original's lexical cell is uninitialized after its real link. -/
 theorem Checked.lexical_uninitialized {original : Program} (c : Checked original) (w : World) :
     (c.link w).ready.cellAt ⟨1, 0⟩ = some ⟨none, true⟩ := by
   cases c with
-  | mk cell writeName readName initial param writeBody readBody init exports sourceEq cw cr wr =>
+  | mk cell writeName readName initial param writeBody readBody init exports sourceEq cw cr
+    wr =>
     cases sourceEq
-    exact CoreJS.LexicalFunctionSource.lexical_uninitialized w cell writeName readName initial param writeBody readBody init exports cw cr wr
-
+    exact
+      CoreJS.LexicalFunctionSource.lexical_uninitialized w cell writeName readName initial param
+        writeBody readBody init exports cw cr wr
 
 end CoreJS.LexicalFunctionSource

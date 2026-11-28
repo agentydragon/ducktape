@@ -28,37 +28,49 @@ private def lexicalPrefix (earlier : List Name) : List (Nat × Stmt) → Option 
 /-- The entry calls one nonescaping, nullary helper. The helper may read earlier
 lexical seeds, which are initialized before the call in the source schedule. -/
 private def checkNullary (source : Module) : Except String (Nat × Nat) := do
-  let (callId, .decl .const result (.call (.var callee) [])) ::
-      (helperId, .funDecl (.mk name .normal false [] [.ret value])) :: revSeeds := source.body.reverse |
-    throw "expected lexical seeds, a nullary return helper and one const call"
+  let
+    (callId, .decl .const result (.call (.var callee) [])) ::
+      (helperId, .funDecl (.mk name .normal false [] [.ret value])) :: revSeeds :=
+    source.body.reverse | throw "expected lexical seeds, a nullary return helper and one const call"
   let some seeds := lexicalPrefix [] revSeeds.reverse | throw "expected primitive lexical seeds"
   unless callee == name && !seeds.contains name && !seeds.contains result && name != result do
     throw "expected a direct call to the declared helper"
   unless (PrimitiveRhs.check seeds.contains value).isSome do
     throw "helper return must use only primitives and earlier lexical seeds"
-  unless source.exports == [(result, result)] do throw "only the caller's result may be public"
+  unless source.exports == [(result, result)] do
+    throw "only the caller's result may be public"
   return (helperId, callId)
 
 /-- A single call with a dense literal array and a fresh one-field record.
 The flat parameter initializer and the two body statements cannot call
 ambient code. The write targets the record's own writable data property. -/
 private def checkArrayParameter (source : Module) : Except String (Nat × Nat) := do
-  let [(helperId, .funDecl (.mk name .normal false [argSlot, recordSlot] body)),
-       (_, .decl .const record (.obj [.init (.str key) initial])),
-       (callId, .decl .const result (.call (.var callee) [.arr values, .var argument]))] := source.body |
-    throw "expected an array-parameter helper, a literal record and one const call"
-  let [.bind .var (.array elements none) (.var input),
-       .expr (.assign (.member (.var receiver) (.str field)) (.var written)),
-       .ret (.var returned)] := body |
-    throw "expected a flat array binding, a record write and a bound return"
-  let bound ← elements.filterMap id |>.mapM fun
-    | .name x => pure x
-    | _ => throw "expected only identifier bindings in the array parameter"
-  unless ([argSlot, recordSlot] ++ bound).Nodup && [name, record, result].Nodup &&
-      callee == name && argument == record && input == argSlot && receiver == recordSlot &&
-      key != "__proto__" && field == key && bound.contains written && bound.contains returned do
+  let
+    [(helperId, .funDecl (.mk name .normal false [argSlot, recordSlot] body)),
+      (_, .decl .const record (.obj [.init (.str key) initial])),
+      (callId, .decl .const result (.call (.var callee) [.arr values, .var argument]))] :=
+    source.body | throw "expected an array-parameter helper, a literal record and one const call"
+  let
+    [.bind .var (.array elements none) (.var input),
+      .expr (.assign (.member (.var receiver) (.str field)) (.var written)),
+      .ret (.var returned)] :=
+    body | throw "expected a flat array binding, a record write and a bound return"
+  let bound ←
+    elements.filterMap id |>.mapM fun
+        | .name x => pure x
+        | _ => throw "expected only identifier bindings in the array parameter"
+  unless
+    ([argSlot, recordSlot] ++ bound).Nodup && [name, record, result].Nodup && callee == name &&
+      argument == record &&
+      input == argSlot &&
+      receiver == recordSlot &&
+      key != "__proto__" &&
+      field == key &&
+      bound.contains written &&
+      bound.contains returned do
     throw "the write must target the supplied record field using an array binding"
-  unless (LiteralSwapCheck.literal initial).isSome &&
+  unless
+    (LiteralSwapCheck.literal initial).isSome &&
       values.all (fun value => (LiteralSwapCheck.literal value).isSome) do
     throw "expected primitive literals in the array and record"
   unless source.exports.Perm [(record, record), (result, result)] do
@@ -70,7 +82,8 @@ private def checkFamily (source : Module) : Except String (Nat × Nat) :=
   | (_, .funDecl (.mk _ .normal false [_, _] _)) :: _ => checkArrayParameter source
   | _ => checkNullary source
 
-structure Construction (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec) where
+structure Construction (decoded : IndexedSource) (B : EsmSplit.Bundle)
+    (request : EsmSplit.Spec) where
   schedule : IndexedSourceSchedule.Evidence decoded B request
   program : Program
   constructed : program = splitProgramIndexed decoded.source.body B schedule.plan
@@ -83,11 +96,13 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
     Except String (Construction decoded B request) := do
   let [helperOwner] := request.order | throw "expected one authored helper module"
   let (helperId, callId) ← checkFamily decoded.source
-  unless request.sequential && !request.privateEntryBody && helperOwner != request.entry &&
+  unless
+    request.sequential && !request.privateEntryBody && helperOwner != request.entry &&
       request.modules.all (fun module => module.1.endsWith ".mjs") do
     throw "expected two .mjs modules in authored order with a public entry"
-  unless B.length == decoded.nodes.size &&
-      request.claimants B helperId == [helperOwner] && request.claimants B callId == [request.entry] do
+  unless
+    B.length == decoded.nodes.size && request.claimants B helperId == [helperOwner] &&
+      request.claimants B callId == [request.entry] do
     throw "helper or caller does not have the required authored owner"
   unless decide (IndexedInlineConstructor.SelectorsOnce decoded.source.body B request) do
     throw "each original unit must be selected exactly once"
@@ -95,14 +110,18 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
     throw "expected only inline exports without template objects"
   let source := decoded.source
   let original := decoded.program
-  let .isTrue imports := (inferInstance : Decidable (source.imports = [])) | throw "expected no source imports"
-  let .isTrue sourceEntry := (inferInstance : Decidable (original.entry = source.name)) | throw "wrong source entry"
+  let .isTrue imports :=
+    (inferInstance : Decidable (source.imports = [])) | throw "expected no source imports"
+  let .isTrue sourceEntry :=
+    (inferInstance : Decidable (original.entry = source.name)) | throw "wrong source entry"
   have found : original.find original.entry = some source := by
     change decoded.program.find decoded.program.entry = some decoded.source
     change decoded.program.entry = decoded.source.name at sourceEntry
     simp [Program.find, decoded.singleton, sourceEntry]
-  let .isTrue sorted := (inferInstance : Decidable (source.body.Pairwise fun a b => a.1 ≤ b.1)) |
-    throw "unexpected source ordinal order"
+  let .isTrue sorted :=
+    (inferInstance :
+      Decidable
+        (source.body.Pairwise fun a b => a.1 ≤ b.1)) | throw "unexpected source ordinal order"
   let schedule ← IndexedSourceSchedule.check decoded B request
   let P := schedule.plan
   have kept : SparseProjectedOrder.OrderKept source.body P := by
@@ -110,26 +129,44 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
     rw [← schedule.sequence.sourceEq]
     exact schedule.executableOrder
   let program := splitProgramIndexed source.body B P
-  let .isTrue ordered := (inferInstance : Decidable (program.evalOrder = request.order ++ [request.entry])) |
-    throw "constructed modules do not follow the authored order"
-  let .isTrue fp := (inferInstance : Decidable (IndexedInputChecks.FootprintChecks source.body B)) |
-    throw "source and planner footprints differ"
-  let .isTrue defs := (inferInstance : Decidable (IndexedInputChecks.DefinitionChecks source.body B)) |
-    throw "planner definitions lack source rows"
-  let ⟨entry, ⟨planEntry⟩⟩ ← (show Except String (Σ m, PLift (P.find P.entry = some m)) from
-    match P.find P.entry with
-    | none => .error "missing plan entry"
-    | some m => .ok ⟨m, ⟨rfl⟩⟩)
-  let .isTrue owned := (inferInstance : Decidable (IndexedReorder.InlineExportsOwned source B entry)) |
-    throw "inline export is not owned by the entry"
-  let .isTrue table := (inferInstance : Decidable ((moduleOfIndexed source.body B P entry).exports = source.exports)) |
-    throw "entry export table differs from the source"
+  let .isTrue ordered :=
+    (inferInstance :
+      Decidable
+        (program.evalOrder =
+          request.order ++
+            [request.entry])) | throw "constructed modules do not follow the authored order"
+  let .isTrue fp :=
+    (inferInstance :
+      Decidable
+        (IndexedInputChecks.FootprintChecks source.body
+          B)) | throw "source and planner footprints differ"
+  let .isTrue defs :=
+    (inferInstance :
+      Decidable
+        (IndexedInputChecks.DefinitionChecks source.body
+          B)) | throw "planner definitions lack source rows"
+  let ⟨entry, ⟨planEntry⟩⟩ ←
+    (show Except String (Σ m, PLift (P.find P.entry = some m)) from
+        match P.find P.entry with
+        | none => .error "missing plan entry"
+        | some m => .ok ⟨m, ⟨rfl⟩⟩)
+  let .isTrue owned :=
+    (inferInstance :
+      Decidable
+        (IndexedReorder.InlineExportsOwned source B
+          entry)) | throw "inline export is not owned by the entry"
+  let .isTrue table :=
+    (inferInstance :
+      Decidable
+        ((moduleOfIndexed source.body B P entry).exports =
+          source.exports)) | throw "entry export table differs from the source"
   let ⟨places⟩ ← checkPlaces (PlanPlacement.assignments P) original program
   let before ← checkLink original
   have footprint := IndexedInputChecks.checked_footprints fp
-  have linked (w : World) := IndexedReorder.inline_links_of_order_kept schedule.valid decoded.singleton
-    imports found footprint.1 footprint.2 (IndexedInputChecks.checked_definitions defs)
-    sorted kept planEntry owned table (before.forWorld w)
+  have linked (w : World) :=
+    IndexedReorder.inline_links_of_order_kept schedule.valid decoded.singleton imports found
+      footprint.1 footprint.2 (IndexedInputChecks.checked_definitions defs) sorted kept planEntry
+      owned table (before.forWorld w)
   have sameExports : SameExports original program := by
     intro w
     obtain ⟨after, _, _, exports, left, right⟩ := linked w
@@ -145,7 +182,8 @@ def construct (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSpli
   have outcomes : ∀ w fuel, runProgram w fuel original = runProgram w fuel program := by
     intro w fuel
     obtain ⟨after, ready, same, _⟩ := linked w
-    rw [run_after_link fuel (before.forWorld w), run_after_link fuel after, ready, runUnits_same fuel same]
+    rw [run_after_link fuel (before.forWorld w), run_after_link fuel after, ready,
+      runUnits_same fuel same]
   return ⟨schedule, program, rfl, ordered, places, sameExports, outcomes⟩
 
 theorem Construction.authoredOwner {decoded B request} (built : Construction decoded B request)
@@ -158,8 +196,8 @@ and fuel, without relying on a successful evaluation of the helper. -/
 theorem Construction.readbackGuarantees {decoded B request} (built : Construction decoded B request)
     {observed : Program} (same : observed = built.program) :
     Places (PlanPlacement.assignments built.schedule.plan) decoded.program observed ∧
-    SameExports decoded.program observed ∧
-    ∀ w fuel, runProgram w fuel decoded.program = runProgram w fuel observed := by
+      SameExports decoded.program observed ∧
+      ∀ w fuel, runProgram w fuel decoded.program = runProgram w fuel observed := by
   subst observed
   exact ⟨built.places, built.sameExports, built.allOutcomes⟩
 
