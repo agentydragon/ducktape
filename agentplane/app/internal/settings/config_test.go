@@ -114,6 +114,8 @@ func validTestConfig() Config {
 		SessionDispatcherRequestTimeoutSecs: 20,
 		HistoryServiceTokenFile:             "/var/run/history/token",
 		HistoryServiceRequestTimeoutSeconds: 20,
+		SystemStatusTimeoutSeconds:          5,
+		HTTPReadHeaderTimeoutSeconds:        10,
 		DatabaseURL:                         "postgresql://app@postgres/agentplane",
 		EgressAdminURL:                      "http://egress:8080",
 		ConnectionServiceURL:                "http://connection:8080",
@@ -366,6 +368,16 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 			t.Fatalf("missing config path error = %v", err)
 		}
 	})
+	t.Run("server timeout overrides", func(t *testing.T) {
+		writeConfig(t, validSettingsYAML+"system_status_timeout_s: 2\nhttp_read_header_timeout_s: 7\n")
+		c, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.SystemStatusTimeoutSeconds != 2 || c.HTTPReadHeaderTimeoutSeconds != 7 {
+			t.Fatalf("status/header timeouts = %d/%d", c.SystemStatusTimeoutSeconds, c.HTTPReadHeaderTimeoutSeconds)
+		}
+	})
 	t.Run("valid file and runtime secret", func(t *testing.T) {
 		writeConfig(t, validSettingsYAML)
 		t.Setenv("AGENTPLANE_LISTEN_ADDRESS", "127.0.0.1:9999")
@@ -375,6 +387,9 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 		}
 		if c.ListenAddress != "0.0.0.0:8080" {
 			t.Fatalf("static environment override was applied: %q", c.ListenAddress)
+		}
+		if c.SystemStatusTimeoutSeconds != 5 || c.HTTPReadHeaderTimeoutSeconds != 10 {
+			t.Fatalf("omitted status/header timeouts = %d/%d", c.SystemStatusTimeoutSeconds, c.HTTPReadHeaderTimeoutSeconds)
 		}
 		if c.DatabaseURL != "postgresql://app@postgres/agentplane" {
 			t.Fatalf("database Secret input = %q", c.DatabaseURL)
@@ -397,6 +412,8 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 		yaml string
 		want string
 	}{
+		{name: "zero header timeout", yaml: validSettingsYAML + "http_read_header_timeout_s: 0\n", want: "http_read_header_timeout_s"},
+		{name: "excessive status timeout", yaml: validSettingsYAML + "system_status_timeout_s: 61\n", want: "system_status_timeout_s"},
 		{name: "unknown key", yaml: validSettingsYAML + "unknown_setting: true\n", want: "unknown_setting"},
 		{name: "retired subjects", yaml: validSettingsYAML + "token_subjects: []\n", want: "token_subjects"},
 		{name: "retired audience", yaml: validSettingsYAML + "token_audience: agentplane\n", want: "token_audience"},

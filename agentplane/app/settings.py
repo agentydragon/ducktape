@@ -196,6 +196,9 @@ class Settings(BaseModel):
     )
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
 
+    system_status_timeout_s: int | None = Field(default=None, ge=1, le=60, exclude_if=lambda value: value is None)
+    http_read_header_timeout_s: int | None = Field(default=None, ge=1, le=60, exclude_if=lambda value: value is None)
+
     log_levels: LogLevels = Field(default_factory=dict)
     listen_address: str = Field(
         default="127.0.0.1:8080", min_length=1, description="HTTP TCP bind address or inherited listening socket fd:N."

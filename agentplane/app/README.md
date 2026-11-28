@@ -468,6 +468,14 @@ During startup, including message-triggered wake, the hint identifies the Sandbo
 the countdown waits for readiness. Stale inventory shows timing as unavailable. These facts use the
 existing heartbeat, Lease and Sandbox watches; browser countdown ticks send no requests.
 
+## Server timeouts
+
+The mounted App YAML accepts `system_status_timeout_s` (default 5) for status probes and
+`http_read_header_timeout_s` (default 10) for reading an incoming request's headers.
+Both accept whole seconds from 1 through 60. The header deadline does not limit the length
+of a streaming response. Deploy an App image that accepts the keys before adding them to
+a ConfigMap; old images reject unknown settings.
+
 ## Shutdown
 
 SIGTERM or SIGINT begins the Go server's drain. `/readyz` answers 503 while `/healthz` remains a

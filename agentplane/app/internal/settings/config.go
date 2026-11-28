@@ -54,6 +54,8 @@ type Config struct {
 	SessionDispatcherTokenFile          string                     `mapstructure:"session_dispatcher_token_file"`
 	SessionDispatcherRequestTimeoutSecs float64                    `mapstructure:"session_dispatcher_request_timeout_s"`
 	HistoryServiceTokenFile             string                     `mapstructure:"history_service_token_file"`
+	SystemStatusTimeoutSeconds          int                        `mapstructure:"system_status_timeout_s"`
+	HTTPReadHeaderTimeoutSeconds        int                        `mapstructure:"http_read_header_timeout_s"`
 	HistoryServiceRequestTimeoutSeconds float64                    `mapstructure:"history_service_request_timeout_s"`
 	LogLevels                           map[string]string          `mapstructure:"log_levels"`
 	ListenAddress                       string                     `mapstructure:"listen_address"`
@@ -156,6 +158,8 @@ func defaultConfig() Config {
 		NotificationsRequestTimeoutSeconds:  5,
 		SessionDispatcherRequestTimeoutSecs: 20,
 		HistoryServiceRequestTimeoutSeconds: 20,
+		SystemStatusTimeoutSeconds:          5,
+		HTTPReadHeaderTimeoutSeconds:        10,
 		LogLevels:                           map[string]string{},
 		ListenAddress:                       "127.0.0.1:8080",
 		EgressAdminTimeoutSeconds:           5,
@@ -371,6 +375,14 @@ func (c Config) validate() error {
 	}
 	if seconds := c.NewSandboxDefaults.IdleSuspendAfterSeconds; seconds != nil && *seconds < 60 {
 		return errors.New("new_sandbox_defaults.idle_suspend_after_seconds must be at least 60")
+	}
+	for name, seconds := range map[string]int{
+		"system_status_timeout_s":    c.SystemStatusTimeoutSeconds,
+		"http_read_header_timeout_s": c.HTTPReadHeaderTimeoutSeconds,
+	} {
+		if seconds < 1 || seconds > 60 {
+			return fmt.Errorf("%s must be between 1 and 60 seconds", name)
+		}
 	}
 	for name, value := range map[string]float64{
 		"notifications_request_timeout_s":      c.NotificationsRequestTimeoutSeconds,

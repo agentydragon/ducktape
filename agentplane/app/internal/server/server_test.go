@@ -37,8 +37,9 @@ func TestSystemStatusUsesConnectionServiceAppSVID(t *testing.T) {
 
 	appCertificate := ca.Issue(t, peertls.AppURI)
 	config := settings.Config{
-		RunnerGatewayTarget:  plainTarget,
-		HistoryServiceTarget: plainTarget,
+		SystemStatusTimeoutSeconds: 5,
+		RunnerGatewayTarget:        plainTarget,
+		HistoryServiceTarget:       plainTarget,
 		ActionFederation: settings.ActionFederationConfig{
 			ServiceURL: "http://" + plainTarget,
 		},
