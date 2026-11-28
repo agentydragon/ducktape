@@ -1,38 +1,14 @@
 import EsmSplit.LowerSplit.Input
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.LinkedSuffix
 import EsmSplit.CoreJS.SyntaxMatch
 import SplitDeclaratorSchedule
 
 open Lean EsmSplit
 open EsmSplit.LowerSplit EsmSplit.SplitFiles
 
-private structure PrefixInput where
-  declarations : CoreJS.Program
-  retainedOrdinal : Nat
-  retainedOperation : CoreJS.Stmt
-
-/-- Drop only an explicitly retained, non-binding final operation, preserving
-the full module graph and the export tables. A retained unit anywhere before
-the cut, or one that would change allocation, cannot form a prefix here. -/
-private def declarationPrefix (program : CoreJS.Program) (cut : Nat) : Except String PrefixInput := do
-  let scheduled := program.loaded.flatMap (·.body)
-  let [(ordinal, operation)] := scheduled.drop cut | throw "expected one retained final operation"
-  unless ordinal == cut do throw "the retained operation moved across the declaration prefix"
-  match operation with
-  | .opaque id [] [] _ .world =>
-    unless id == cut do throw "the retained operation does not carry its original identity"
-  | _ => throw "the retained operation must not declare bindings"
-  for (id, stmt) in scheduled.take cut do
-    unless id < cut do throw "a non-prefix unit appears among the declarations"
-    match stmt with
-    | .decl .const _ _ => pure ()
-    | _ => throw "the prefix contains a non-const declaration"
-  let declarations := { program with modules := program.modules.map fun m =>
-    { m with body := m.body.filter (fun row => row.1 < cut) } }
-  return ⟨declarations, ordinal, operation⟩
-
 private def check (sourceName : String) (source outputRoot : System.FilePath)
-    (request : Spec) (work : System.FilePath) : IO (PrefixInput × PrefixInput) := do
+    (request : Spec) (work : System.FilePath) : IO (CoreJS.Program × CoreJS.Program) := do
   let original ← readBundle source work true false
   let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes original.program original.source)
   let cut := (nodes.toList.takeWhile fun n => Lower.typ n == "VariableDeclaration").length
@@ -64,23 +40,38 @@ private def check (sourceName : String) (source outputRoot : System.FilePath)
   let [sourceModule] := decoded.before.modules | throw (IO.userError "expected an import-free source")
   let originalGraph : CoreJS.Program :=
     { entry := sourceName, modules := [{ sourceModule with name := sourceName }] }
-  return (← IO.ofExcept (declarationPrefix originalGraph cut),
-    ← IO.ofExcept (declarationPrefix decoded.after cut))
+  return (originalGraph, decoded.after)
 
-/-- This is a regression binding the parsed and reread inputs to the existing
-fixture theorem, not a CLI rule for admitting a new shape. -/
+/-- Bind the full parsed and reread programs to the theorem. Structural
+readback checks the retained syntax and glue before this modeled proof. -/
 private def useProof (before after : CoreJS.Program) : Except String
     (PLift ((∀ w fuel, CoreJS.runProgram w fuel before = CoreJS.runProgram w fuel after) ∧
       CoreJS.LinkedBehavior.SameExports before after)) := do
-  let some ⟨original⟩ := CoreJS.SyntaxMatch.programEq before CoreJS.SplitDeclaratorSchedule.originalPrefix |
-    throw "the parsed source does not match the declaration proof inputs"
-  let some ⟨reread⟩ := CoreJS.SyntaxMatch.programEq after CoreJS.SplitDeclaratorSchedule.splitPrefix |
-    throw "the reread output does not match the declaration proof inputs"
+  let some ⟨original⟩ := CoreJS.SyntaxMatch.programEq before CoreJS.SplitDeclaratorSchedule.originalWithTail |
+    throw "the parsed source does not match the retained-operation proof input"
+  let some ⟨reread⟩ := CoreJS.SyntaxMatch.programEq after CoreJS.SplitDeclaratorSchedule.splitWithTail |
+    throw "the reread output does not match the retained-operation proof input"
   return ⟨by
     rw [original, reread]
-    exact ⟨CoreJS.SplitDeclaratorSchedule.prefix_outcomes, fun w =>
-      ⟨_, _, (CoreJS.SplitDeclaratorSchedule.terminal_exports w).1,
-        (CoreJS.SplitDeclaratorSchedule.terminal_exports w).2, List.Perm.refl _⟩⟩⟩
+    exact ⟨CoreJS.SplitDeclaratorSchedule.retained_outcomes,
+      CoreJS.SplitDeclaratorSchedule.retained_same_exports⟩⟩
+
+private def checkTail (before after : CoreJS.Program) : Except String Unit := do
+  let w := CoreJS.World.probe
+  let .ok left _ := CoreJS.link before (CoreJS.initialState w before.regions) |
+    throw "cannot link the original readback input"
+  let .ok right _ := CoreJS.link after (CoreJS.initialState w after.regions) |
+    throw "cannot link the emitted readback input"
+  let beforeUnits := CoreJS.unitsOf left
+  let afterUnits := CoreJS.unitsOf right
+  let cut := 4
+  unless (CoreJS.LinkedSuffix.check cut beforeUnits afterUnits).isSome do
+    throw "retained tail does not have the same linked captures"
+  let [(id, stmt, env)] := afterUnits.drop cut | throw "expected the saved one-unit tail"
+  let some wrong := env.vars.lookup "z" | throw "negative control requires the real z cell"
+  let tampered := afterUnits.take cut ++ [(id, stmt, { env with vars := ("c", wrong) :: env.vars })]
+  unless (CoreJS.LinkedSuffix.check cut beforeUnits tampered).isNone do
+    throw "suffix checker accepted a retargeted live cell"
 
 def main (args : List String) : IO UInt32 := do
   try
@@ -89,11 +80,9 @@ def main (args : List String) : IO UInt32 := do
     let request ← loadAuthoredSpec requestFile
     IO.FS.withTempDir fun work => do
       let (before, after) ← check sourceName sourceFile output request work
-      let _ ← IO.ofExcept (useProof before.declarations after.declarations)
-      let sameOperation := CoreJS.SyntaxMatch.stmtEq before.retainedOperation after.retainedOperation
-      unless sameOperation.isSome && before.retainedOrdinal == after.retainedOrdinal do
-        throw (IO.userError "the retained operation differs on readback")
-      IO.println s!"declaration-prefix checked; semantics of retained unit {before.retainedOrdinal} unresolved"
+      let _ ← IO.ofExcept (useProof before after)
+      IO.ofExcept (checkTail before after)
+      IO.println "modeled prefix and retained suffix checked; same live export cells"
     return 0
   catch error =>
     IO.eprintln error.toString
