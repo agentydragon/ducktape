@@ -19,12 +19,12 @@ theorem execStmts_append (fuel : Nat) (env : Env) (first rest : List Stmt) :
     (execStmts fuel env (first ++ rest) : M w Flow) =
       continueBody (execStmts fuel env first) (execStmts (fuel - first.length) env rest) := by
   induction first generalizing fuel with
-  | nil =>
-    cases fuel <;> rfl
+  | nil => cases fuel <;> rfl
   | cons head tail ih =>
     cases fuel with
     | zero => rfl
-    | succ n =>
+    | succ
+      n =>
       simp only [List.cons_append, List.length_cons, Nat.succ_sub_succ_eq_sub, execStmts]
       rw [ih, continue_assoc]
 

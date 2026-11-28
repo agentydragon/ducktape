@@ -29,7 +29,11 @@ structure Addr where
   deriving DecidableEq, Hashable, Repr
 
 inductive ErrorKind where
-  | type | reference | syntax | range | uri
+  | type
+  | reference
+  | syntax
+  | range
+  | uri
   deriving DecidableEq, Repr
 
 inductive Val where
@@ -52,9 +56,11 @@ inductive PropertyKey where
   | symbol (identity : Addr)
   deriving DecidableEq, Hashable, Repr
 
-instance : Coe String PropertyKey := ⟨.str⟩
+instance : Coe String PropertyKey :=
+  ⟨.str⟩
 
-@[simp] theorem PropertyKey.str_beq (a b : String) : (PropertyKey.str a == .str b) = (a == b) := by
+@[simp]
+theorem PropertyKey.str_beq (a b : String) : (PropertyKey.str a == .str b) = (a == b) := by
   rw [Bool.eq_iff_iff]
   simp only [beq_iff_eq, PropertyKey.str.injEq]
 
@@ -109,8 +115,9 @@ inductive Code where
   /-- An implicit derived constructor with public instance fields initialized on the superclass result. -/
   | derivedFields (closed : Env) (fields : List (PropertyKey × Expr))
   /-- Execute the prefix, call super, initialize fields, then run the remaining body. -/
-  | derivedBody (before : List Stmt) (superArgs : SuperCall) (body : Func) (closed : Env)
-      (fields : List (PropertyKey × Expr))
+  |
+  derivedBody (before : List Stmt) (superArgs : SuperCall) (body : Func) (closed : Env)
+    (fields : List (PropertyKey × Expr))
   | closure (f : Func) (env : Env) (fields : List (PropertyKey × Expr))
   | host (name : String)
   /-- Part of the code the world runs with the supplied cells. The constructor capability is
@@ -278,7 +285,8 @@ inductive Res (W : World) (α : Type) where
   | unknown (why : String) (s : State W)
   | fuel
 
-def M (W : World) (α : Type) : Type := State W → Res W α
+def M (W : World) (α : Type) : Type :=
+  State W → Res W α
 
 variable {W : World}
 
@@ -292,10 +300,16 @@ instance : Monad (M W) where
     | .fuel => .fuel
 
 def getState : M W (State W) := fun s => .ok s s
+
 def modifyState (f : State W → State W) : M W Unit := fun s => .ok () (f s)
+
 def throwVal {α : Type} (v : Val) : M W α := fun s => .throw v s
-def throwErr {α : Type} (kind : ErrorKind) (msg : String) : M W α := throwVal (.error kind msg)
+
+def throwErr {α : Type} (kind : ErrorKind) (msg : String) : M W α :=
+  throwVal (.error kind msg)
+
 def unknown {α : Type} (why : String) : M W α := fun s => .unknown why s
+
 def outOfFuel {α : Type} : M W α := fun _ => .fuel
 
 /-- Why an operation on values does not give a value. -/
@@ -311,8 +325,11 @@ def lift {α : Type} : Except Abort α → M W α
 
 /-! ## The heap and the bindings -/
 
-def State.objAt (s : State W) (a : Addr) : Option Obj := (s.heap[a.region]?).bind (·[a.index]?)
-def State.cellAt (s : State W) (a : Addr) : Option Binding := (s.cells[a.region]?).bind (·[a.index]?)
+def State.objAt (s : State W) (a : Addr) : Option Obj :=
+  (s.heap[a.region]?).bind (·[a.index]?)
+
+def State.cellAt (s : State W) (a : Addr) : Option Binding :=
+  (s.cells[a.region]?).bind (·[a.index]?)
 
 /-- An address that is in use names an object; `model:` marks a state the rules cannot reach. -/
 def getObj (a : Addr) : M W Obj := fun s =>
@@ -334,7 +351,9 @@ def newCell (b : Binding) : M W Addr := fun s =>
   | none => .unknown "model: no such region" s
 
 def setCell (a : Addr) (v : Val) : M W Unit := fun s =>
-  .ok () { s with cells := s.cells.modify a.region (·.modify a.index fun b => { b with value := some v }) }
+  .ok ()
+    { s with
+      cells := s.cells.modify a.region (·.modify a.index fun b => { b with value := some v }) }
 
 /-- New bindings, in order: each name with where its binding is. -/
 def newCells : List (Name × Binding) → M W (List (Name × Addr))
@@ -351,21 +370,28 @@ def declare (env : Env) (bs : List (Name × Binding)) : M W Env := do
 
 def readVar (env : Env) (x : Name) : M W Val := do
   match env.vars.lookup x with
-  | none => throwErr .reference s!"{x} is not defined"
+  | none =>
+    throwErr .reference s!"{x} is not defined"
   | some a =>
     match (← getState).cellAt a with
-    | some { value := some v, .. } => pure v
-    | _ => throwErr .reference s!"cannot access '{x}' before initialization"
+    | some { value := some v, .. } =>
+      pure v
+    | _ =>
+      throwErr .reference s!"cannot access '{x}' before initialization"
 
 /-- An assignment to a name. In strict code one that does not resolve throws. -/
 def writeVar (env : Env) (x : Name) (v : Val) : M W Unit := do
   match env.vars.lookup x with
-  | none => throwErr .reference s!"{x} is not defined"
+  | none =>
+    throwErr .reference s!"{x} is not defined"
   | some a =>
     match (← getState).cellAt a with
-    | some { value := some _, mutable := true } => setCell a v
-    | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
-    | _ => throwErr .reference s!"cannot access '{x}' before initialization"
+    | some { value := some _, mutable := true } =>
+      setCell a v
+    | some { value := some _, mutable := false } =>
+      throwErr .type "assignment to constant variable"
+    | _ =>
+      throwErr .reference s!"cannot access '{x}' before initialization"
 
 /-- The declaration of a name gives it its first value. -/
 def initVar (env : Env) (x : Name) (v : Val) : M W Unit :=
@@ -375,17 +401,38 @@ def initVar (env : Env) (x : Name) (v : Val) : M W Unit :=
 
 /-! ## The objects of the host that every program reaches -/
 
-def objectProto : Addr := ⟨0, 0⟩
-def functionProto : Addr := ⟨0, 1⟩
-def arrayProto : Addr := ⟨0, 2⟩
-def asyncFunctionProto : Addr := ⟨0, 3⟩
-def iteratorProto : Addr := ⟨0, 4⟩
-def generatorProto : Addr := ⟨0, 5⟩
-def generatorFunctionProto : Addr := ⟨0, 6⟩
-def asyncIteratorProto : Addr := ⟨0, 7⟩
-def asyncGeneratorProto : Addr := ⟨0, 8⟩
-def asyncGeneratorFunctionProto : Addr := ⟨0, 9⟩
-def regexpProto : Addr := ⟨0, 10⟩
+def objectProto : Addr :=
+  ⟨0, 0⟩
+
+def functionProto : Addr :=
+  ⟨0, 1⟩
+
+def arrayProto : Addr :=
+  ⟨0, 2⟩
+
+def asyncFunctionProto : Addr :=
+  ⟨0, 3⟩
+
+def iteratorProto : Addr :=
+  ⟨0, 4⟩
+
+def generatorProto : Addr :=
+  ⟨0, 5⟩
+
+def generatorFunctionProto : Addr :=
+  ⟨0, 6⟩
+
+def asyncIteratorProto : Addr :=
+  ⟨0, 7⟩
+
+def asyncGeneratorProto : Addr :=
+  ⟨0, 8⟩
+
+def asyncGeneratorFunctionProto : Addr :=
+  ⟨0, 9⟩
+
+def regexpProto : Addr :=
+  ⟨0, 10⟩
 
 def FuncKind.hasOwnPrototype : FuncKind → Bool
   | .normal | .generator | .asyncGenerator => true
@@ -398,22 +445,25 @@ def FuncKind.instanceProto : FuncKind → Addr
 
 def Func.intrinsicProto (f : Func) : Addr :=
   if f.kind == .asyncFn then asyncFunctionProto
-  else if f.kind == .asyncGenerator then asyncGeneratorFunctionProto
-  else if f.kind == .generator then generatorFunctionProto
-  else functionProto
+  else
+    if f.kind == .asyncGenerator then asyncGeneratorFunctionProto
+    else if f.kind == .generator then generatorFunctionProto else functionProto
 
 /-- The string-keyed members of `Object.prototype`. A program reads one from any object that has no property of that name. -/
 def objectProtoNames : List String :=
-  ["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty", "__lookupGetter__", "__lookupSetter__",
-    "isPrototypeOf", "propertyIsEnumerable", "toString", "valueOf", "toLocaleString"]
+  ["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty", "__lookupGetter__",
+    "__lookupSetter__", "isPrototypeOf", "propertyIsEnumerable", "toString", "valueOf",
+    "toLocaleString"]
 
-def functionProtoNames : List String := ["apply", "bind", "call", "constructor", "toString"]
+def functionProtoNames : List String :=
+  ["apply", "bind", "call", "constructor", "toString"]
 
 def arrayProtoNames : List String :=
-  ["constructor", "at", "concat", "copyWithin", "fill", "find", "findIndex", "findLast", "findLastIndex", "lastIndexOf",
-    "pop", "push", "reverse", "shift", "unshift", "slice", "sort", "splice", "includes", "indexOf", "join", "keys",
-    "entries", "values", "forEach", "filter", "flat", "flatMap", "map", "every", "some", "reduce", "reduceRight",
-    "toReversed", "toSorted", "toSpliced", "with", "toLocaleString", "toString"]
+  ["constructor", "at", "concat", "copyWithin", "fill", "find", "findIndex", "findLast",
+    "findLastIndex", "lastIndexOf", "pop", "push", "reverse", "shift", "unshift", "slice", "sort",
+    "splice", "includes", "indexOf", "join", "keys", "entries", "values", "forEach", "filter",
+    "flat", "flatMap", "map", "every", "some", "reduce", "reduceRight", "toReversed", "toSorted",
+    "toSpliced", "with", "toLocaleString", "toString"]
 
 private def hostMembers (owner : String) (names : List String) : List (PropertyKey × Property) :=
   names.map fun k => (.str k, .data (.host s!"{owner}.{k}") true false true)
@@ -429,8 +479,9 @@ private def stringTag (name : String) : PropertyKey × Property :=
 
 /-- Own properties of %AsyncFunction.prototype%. -/
 def asyncFunctionPrototype : Obj :=
-  { proto := some functionProto, props := [("constructor", .data (.host "AsyncFunction") false false true),
-      stringTag "AsyncFunction"] }
+  { proto := some functionProto,
+    props :=
+      [("constructor", .data (.host "AsyncFunction") false false true), stringTag "AsyncFunction"] }
 
 private def hostTagAccessor : PropertyKey × Property :=
   (.wellKnownSymbol .toStringTag,
@@ -439,92 +490,130 @@ private def hostTagAccessor : PropertyKey × Property :=
 
 /-- The modeled properties on the synchronous generator prototype chain. -/
 def iteratorPrototype : Obj :=
-  { proto := some objectProto, props := [hostAccessor "Iterator.prototype" "constructor"] ++
-      hostMembers "Iterator.prototype" ["reduce", "toArray", "forEach", "some", "every", "find", "map",
-        "filter", "take", "drop", "flatMap"] ++
-      [hostIterator "Iterator.prototype[Symbol.iterator]", hostTagAccessor] }
+  { proto := some objectProto,
+    props :=
+      [hostAccessor "Iterator.prototype" "constructor"] ++
+        hostMembers "Iterator.prototype"
+          ["reduce", "toArray", "forEach", "some", "every", "find", "map", "filter", "take", "drop",
+            "flatMap"] ++
+        [hostIterator "Iterator.prototype[Symbol.iterator]", hostTagAccessor] }
 
 private def generatorBase (parent fn : Addr) (brand : String) : Obj :=
   { proto := some parent,
-    props := [(PropertyKey.str "constructor", Property.data (.obj fn) false false true)] ++
-      hostMembers (brand ++ ".prototype") ["next", "return", "throw"] ++ [stringTag brand] }
+    props :=
+      [(PropertyKey.str "constructor", Property.data (.obj fn) false false true)] ++
+        hostMembers (brand ++ ".prototype") ["next", "return", "throw"] ++
+        [stringTag brand] }
 
 private def generatorFunctionBase (parent : Addr) (name : String) : Obj :=
-  { proto := some functionProto, props := [("prototype", .data (.obj parent) false false true),
-      ("constructor", .data (.host name) false false true), stringTag name] }
+  { proto := some functionProto,
+    props :=
+      [("prototype", .data (.obj parent) false false true),
+        ("constructor", .data (.host name) false false true), stringTag name] }
 
-def generatorPrototype := generatorBase iteratorProto generatorFunctionProto "Generator"
-def generatorFunctionPrototype := generatorFunctionBase generatorProto "GeneratorFunction"
-def asyncIteratorPrototype : Obj := { proto := some objectProto, props := [] }
-def asyncGeneratorPrototype := generatorBase asyncIteratorProto asyncGeneratorFunctionProto "AsyncGenerator"
-def asyncGeneratorFunctionPrototype := generatorFunctionBase asyncGeneratorProto "AsyncGeneratorFunction"
+def generatorPrototype :=
+  generatorBase iteratorProto generatorFunctionProto "Generator"
+
+def generatorFunctionPrototype :=
+  generatorFunctionBase generatorProto "GeneratorFunction"
+
+def asyncIteratorPrototype : Obj :=
+  { proto := some objectProto, props := [] }
+
+def asyncGeneratorPrototype :=
+  generatorBase asyncIteratorProto asyncGeneratorFunctionProto "AsyncGenerator"
+
+def asyncGeneratorFunctionPrototype :=
+  generatorFunctionBase asyncGeneratorProto "AsyncGeneratorFunction"
 
 /-- Getters in the string-key order of the modeled realm. Their function objects
 follow %RegExp.prototype% in the intrinsic heap. -/
-def regexpGetters : List (String × RegExpGetter) := [
-  ("dotAll", .flag 's'), ("flags", .flags), ("global", .flag 'g'), ("hasIndices", .flag 'd'),
-  ("ignoreCase", .flag 'i'), ("multiline", .flag 'm'), ("source", .source), ("sticky", .flag 'y'),
-  ("unicode", .flag 'u'), ("unicodeSets", .flag 'v')]
+def regexpGetters : List (String × RegExpGetter) :=
+  [("dotAll", .flag 's'), ("flags", .flags), ("global", .flag 'g'), ("hasIndices", .flag 'd'),
+    ("ignoreCase", .flag 'i'), ("multiline", .flag 'm'), ("source", .source), ("sticky", .flag 'y'),
+    ("unicode", .flag 'u'), ("unicodeSets", .flag 'v')]
 
-def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
+def arrayIteratorProto : Addr :=
+  ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
 
 /-- Slots reserved after the existing prototype objects. The global object is host-owned. -/
 inductive RealmSlot where
-  | errorPrototype | errorConstructor | globalObject | promisePrototype
+  | errorPrototype
+  | errorConstructor
+  | globalObject
+  | promisePrototype
   deriving DecidableEq, BEq, Repr
 
 /-- The same ordered list determines addresses and materializes the corresponding objects. -/
-def realmSlots : List RealmSlot := [.errorPrototype, .errorConstructor, .globalObject, .promisePrototype]
+def realmSlots : List RealmSlot :=
+  [.errorPrototype, .errorConstructor, .globalObject, .promisePrototype]
 
 def realmSlotAddr (slot : RealmSlot) (_present : realmSlots.contains slot = true) : Addr :=
   ⟨0, arrayIteratorProto.index + 1 + realmSlots.idxOf slot⟩
 
-def errorProto : Addr := realmSlotAddr .errorPrototype (by decide)
-def errorConstructor : Addr := realmSlotAddr .errorConstructor (by decide)
+def errorProto : Addr :=
+  realmSlotAddr .errorPrototype (by decide)
+
+def errorConstructor : Addr :=
+  realmSlotAddr .errorConstructor (by decide)
+
 /-- An empty synthetic global object. Hosts must supply a complete snapshot before use. -/
-def globalObject : Addr := realmSlotAddr .globalObject (by decide)
-def promiseProto : Addr := realmSlotAddr .promisePrototype (by decide)
+def globalObject : Addr :=
+  realmSlotAddr .globalObject (by decide)
+
+def promiseProto : Addr :=
+  realmSlotAddr .promisePrototype (by decide)
 
 def arrayIteratorPrototype : Obj :=
-  { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }
+  { proto := some iteratorProto,
+    props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }
 
 def regexpPrototype : Obj :=
-  let getters := regexpGetters.zipIdx.map fun ((name, _), i) =>
-    (PropertyKey.str name, Property.accessor (.obj ⟨0, regexpProto.index + 1 + i⟩) .undef false true)
-  { proto := some objectProto, props := hostMembers "RegExp.prototype" ["constructor", "exec"] ++ getters ++
-      hostMembers "RegExp.prototype" ["compile", "toString", "test"] }
+  let getters :=
+    regexpGetters.zipIdx.map fun ((name, _), i) =>
+      (PropertyKey.str name,
+        Property.accessor (.obj ⟨0, regexpProto.index + 1 + i⟩) .undef false true)
+  { proto := some objectProto,
+    props :=
+      hostMembers "RegExp.prototype" ["constructor", "exec"] ++ getters ++
+        hostMembers "RegExp.prototype" ["compile", "toString", "test"] }
 
 private def regexpGetterObject (name : String) (getter : RegExpGetter) : Obj :=
   let label := "get " ++ name
   let f := Func.mk label .method false [] [.ret (.prim (.regExpGet getter) [.this])]
   { proto := some functionProto, code := some (.closure f ⟨[], .undef, none⟩ []),
-    props := [("length", .data (.num 0) false false true), ("name", .data (.str label) false false true)] }
+    props :=
+      [("length", .data (.num 0) false false true), ("name", .data (.str label) false false true)] }
 
 def regexpObject (data : RegExpData) : Obj :=
-  { proto := some regexpProto, regexp := some data, props := [("lastIndex", .data (.num 0) true false false)] }
+  { proto := some regexpProto, regexp := some data,
+    props := [("lastIndex", .data (.num 0) true false false)] }
 
 /-- The standard own properties of %Error.prototype%. `toString` is still opaque.
 The host must supply any additional properties of its actual realm. -/
 def errorPrototype : Obj :=
-  { proto := some objectProto, props := [
-    ("constructor", .data (.obj errorConstructor) true false true),
-    ("name", .data (.str "Error") true false true),
-    ("message", .data (.str "") true false true),
-    ("toString", .data (.host "Error.prototype.toString") true false true)] }
+  { proto := some objectProto,
+    props :=
+      [("constructor", .data (.obj errorConstructor) true false true),
+        ("name", .data (.str "Error") true false true),
+        ("message", .data (.str "") true false true),
+        ("toString", .data (.host "Error.prototype.toString") true false true)] }
 
 /-- Until Error construction is modeled, a call or construct ends in unknown.
 The host must supply any nonstandard own properties before exposing this object. -/
 def errorConstructorObject : Obj :=
-  { proto := some functionProto, code := some (.host "%Error%"), props := [
-    ("length", .data (.num 1) false false true),
-    ("name", .data (.str "Error") false false true),
-    ("prototype", .data (.obj errorProto) false false false)] }
+  { proto := some functionProto, code := some (.host "%Error%"),
+    props :=
+      [("length", .data (.num 1) false false true), ("name", .data (.str "Error") false false true),
+        ("prototype", .data (.obj errorProto) false false false)] }
 
 /-- The intrinsic prototype exists even without a global Promise binding.
 Its methods cannot run until the Promise jobs are modeled. -/
 def promisePrototype : Obj :=
-  { proto := some objectProto, props := (PropertyKey.str "constructor", Property.data (.host "%Promise%") true false true) ::
-      (hostMembers "Promise.prototype" ["then", "catch", "finally"] ++ [stringTag "Promise"]) }
+  { proto := some objectProto,
+    props :=
+      (PropertyKey.str "constructor", Property.data (.host "%Promise%") true false true) ::
+        (hostMembers "Promise.prototype" ["then", "catch", "finally"] ++ [stringTag "Promise"]) }
 
 /-- Materialize the reserved slots in the same order used by `realmSlotAddr`. -/
 def realmSlotObject : RealmSlot → Obj
@@ -534,48 +623,68 @@ def realmSlotObject : RealmSlot → Obj
   | .promisePrototype => promisePrototype
 
 /-- The intrinsic prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
-def builtins : Array Obj := #[
-  { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
-  { proto := some objectProto, code := some (.host "Function.prototype"),
-    props := [(PropertyKey.str "length", Property.data (.num 0) false false true), ("name", .data (.str "") false false true),
-      (.wellKnownSymbol .hasInstance, .data (.host "Function.prototype[Symbol.hasInstance]") false false false),
-      hostAccessor "Function.prototype" "arguments", hostAccessor "Function.prototype" "caller"] ++
-      hostMembers "Function.prototype" functionProtoNames },
-  { proto := some objectProto, array := true,
-    props := ("length", .data (.num 0) true false false) ::
-      (hostMembers "Array.prototype" arrayProtoNames ++ [hostIterator "Array.prototype.values"]) },
-  asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype,
-  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype] ++ (realmSlots.map realmSlotObject).toArray
+def builtins : Array Obj :=
+  #[{ proto := none,
+      props :=
+        hostMembers "Object.prototype" objectProtoNames ++
+          [hostAccessor "Object.prototype" "__proto__"] },
+      { proto := some objectProto, code := some (.host "Function.prototype"),
+        props :=
+          [(PropertyKey.str "length", Property.data (.num 0) false false true),
+              ("name", .data (.str "") false false true),
+              (.wellKnownSymbol .hasInstance,
+                .data (.host "Function.prototype[Symbol.hasInstance]") false false false),
+              hostAccessor "Function.prototype" "arguments",
+              hostAccessor "Function.prototype" "caller"] ++
+            hostMembers "Function.prototype" functionProtoNames },
+      { proto := some objectProto, array := true,
+        props :=
+          ("length", .data (.num 0) true false false) ::
+            (hostMembers "Array.prototype" arrayProtoNames ++
+              [hostIterator "Array.prototype.values"]) },
+      asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype,
+      asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype,
+      regexpPrototype] ++
+    (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++
+    #[arrayIteratorPrototype] ++
+    (realmSlots.map realmSlotObject).toArray
 
 #guard builtins.size == arrayIteratorProto.index + 1 + realmSlots.length
+
 #guard realmSlots.eraseDups.length == realmSlots.length
-#guard errorProto != errorConstructor && errorProto != globalObject && errorConstructor != globalObject
+
+#guard
+  errorProto != errorConstructor && errorProto != globalObject && errorConstructor != globalObject
 
 /-! ## The host functions the world answers for -/
 
 /-- The string-keyed members of `String.prototype`. A property of a string that is none of them is looked up on
 `Object.prototype`, which the program can change. -/
 def stringProtoNames : List String :=
-  ["length", "constructor", "anchor", "at", "big", "blink", "bold", "charAt", "charCodeAt", "codePointAt", "concat",
-    "endsWith", "fontcolor", "fontsize", "fixed", "includes", "indexOf", "isWellFormed", "italics", "lastIndexOf",
-    "link", "localeCompare", "match", "matchAll", "normalize", "padEnd", "padStart", "repeat", "replace", "replaceAll",
-    "search", "slice", "small", "split", "strike", "sub", "substr", "substring", "sup", "startsWith", "toString",
-    "toWellFormed", "trim", "trimStart", "trimLeft", "trimEnd", "trimRight", "toLocaleLowerCase", "toLocaleUpperCase",
-    "toLowerCase", "toUpperCase", "valueOf"]
+  ["length", "constructor", "anchor", "at", "big", "blink", "bold", "charAt", "charCodeAt",
+    "codePointAt", "concat", "endsWith", "fontcolor", "fontsize", "fixed", "includes", "indexOf",
+    "isWellFormed", "italics", "lastIndexOf", "link", "localeCompare", "match", "matchAll",
+    "normalize", "padEnd", "padStart", "repeat", "replace", "replaceAll", "search", "slice",
+    "small", "split", "strike", "sub", "substr", "substring", "sup", "startsWith", "toString",
+    "toWellFormed", "trim", "trimStart", "trimLeft", "trimEnd", "trimRight", "toLocaleLowerCase",
+    "toLocaleUpperCase", "toLowerCase", "toUpperCase", "valueOf"]
 
 def numberProtoNames : List String :=
-  ["constructor", "toExponential", "toFixed", "toPrecision", "toString", "valueOf", "toLocaleString"]
+  ["constructor", "toExponential", "toFixed", "toPrecision", "toString", "valueOf",
+    "toLocaleString"]
 
-def booleanProtoNames : List String := ["constructor", "toString", "valueOf"]
+def booleanProtoNames : List String :=
+  ["constructor", "toString", "valueOf"]
 
 /-- The methods the world answers for, by prototype. Left out: `match`, `matchAll` and `split`, which return objects;
 the methods that depend on the locale of the host beyond `localeCompare`; the ones that write HTML. -/
 def worldMethodNames : List (String × List String) :=
   [("String.prototype",
-      ["at", "charAt", "charCodeAt", "codePointAt", "concat", "endsWith", "includes", "indexOf", "isWellFormed",
-        "lastIndexOf", "localeCompare", "normalize", "padEnd", "padStart", "repeat", "replace", "replaceAll", "search",
-        "slice", "startsWith", "substr", "substring", "toLowerCase", "toString", "toUpperCase", "toWellFormed", "trim",
-        "trimEnd", "trimLeft", "trimRight", "trimStart", "valueOf"]),
+      ["at", "charAt", "charCodeAt", "codePointAt", "concat", "endsWith", "includes", "indexOf",
+        "isWellFormed", "lastIndexOf", "localeCompare", "normalize", "padEnd", "padStart", "repeat",
+        "replace", "replaceAll", "search", "slice", "startsWith", "substr", "substring",
+        "toLowerCase", "toString", "toUpperCase", "toWellFormed", "trim", "trimEnd", "trimLeft",
+        "trimRight", "trimStart", "valueOf"]),
     ("Number.prototype", ["toExponential", "toFixed", "toPrecision", "toString", "valueOf"]),
     ("Boolean.prototype", ["toString", "valueOf"])]
 
@@ -583,14 +692,16 @@ def worldMethodNames : List (String × List String) :=
 gives the function: a program that had replaced it would have ended as `unknown` at the write. -/
 def hostNamespaces : List (String × List String) :=
   [("Math",
-      ["abs", "acos", "acosh", "asin", "asinh", "atan", "atanh", "atan2", "ceil", "cbrt", "expm1", "clz32", "cos",
-        "cosh", "exp", "floor", "fround", "hypot", "imul", "log", "log1p", "log2", "log10", "max", "min", "pow",
-        "random", "round", "sign", "sin", "sinh", "sqrt", "tan", "tanh", "trunc"]),
+      ["abs", "acos", "acosh", "asin", "asinh", "atan", "atanh", "atan2", "ceil", "cbrt", "expm1",
+        "clz32", "cos", "cosh", "exp", "floor", "fround", "hypot", "imul", "log", "log1p", "log2",
+        "log10", "max", "min", "pow", "random", "round", "sign", "sin", "sinh", "sqrt", "tan",
+        "tanh", "trunc"]),
     ("Number", ["isFinite", "isInteger", "isNaN", "isSafeInteger", "parseFloat", "parseInt"]),
     ("String", ["fromCharCode", "fromCodePoint"])]
 
 /-- The globals of the host that the world answers for when they are called. -/
-def hostFunctions : List String := ["Boolean", "Number", "isFinite", "isNaN", "parseFloat", "parseInt"]
+def hostFunctions : List String :=
+  ["Boolean", "Number", "isFinite", "isNaN", "parseFloat", "parseInt"]
 
 def qualified (table : List (String × List String)) : List String :=
   table.flatMap fun (owner, members) => members.map fun k => s!"{owner}.{k}"
@@ -598,14 +709,20 @@ def qualified (table : List (String × List String)) : List String :=
 /-- Does the world answer for the host function `name`? `some true`: a method, which also takes its receiver. -/
 def worldFunction (name : String) : Option Bool :=
   if (qualified worldMethodNames).contains name then some true
-  else if hostFunctions.contains name || (qualified hostNamespaces).contains name then some false
-  else none
+  else
+    if hostFunctions.contains name || (qualified hostNamespaces).contains name then some false
+    else none
 
 /-- The receiver and the arguments the world gets, if it answers for `name` and all of them are primitives. A function
 that is not a method gets no receiver. -/
-def worldArgs (name : String) (this : Val) (args : List Val) : Option (Primitive × List Primitive) := do
+def worldArgs (name : String) (this : Val) (args : List Val) :
+    Option (Primitive × List Primitive) := do
   let method ← worldFunction name
-  let this ← if method then this.primitive? else some .undef
+  let this ←
+    if method then
+      this.primitive?
+    else
+      some .undef
   pure (this, ← args.mapM Val.primitive?)
 
 /-- What the world gave back, as the model's result. -/
@@ -617,17 +734,21 @@ def fromWorld (s : State W) : HostResult → Res W Val
 
 /-- A call of the host function `name`: the world's step, if the world answers for it. -/
 def hostCall (name : String) (this : Val) (args : List Val) : M W Val :=
-  if name == "%ThrowTypeError%" then throwErr .type "strict arguments callee" else
-  match worldArgs name this args with
-  | none => unknown s!"host function {name} is called"
-  | some (this, args) => fun s =>
-    let (result, state) := W.step name this args s.world.state
-    fromWorld { s with world := { s.world with state } } result
+  if name == "%ThrowTypeError%" then throwErr .type "strict arguments callee"
+  else
+    match worldArgs name this args with
+    | none => unknown s!"host function {name} is called"
+    | some (this, args) => fun s =>
+      let (result, state) := W.step name this args s.world.state
+      fromWorld { s with world := { s.world with state } } result
 
 /-! ## Conversions and operators -/
 
-def needsPrimitive {α : Type} : Except Abort α := .error (.unknown "an object is converted to a primitive")
-def inspectsHost {α : Type} (name : String) : Except Abort α := .error (.unknown s!"host value {name} is inspected")
+def needsPrimitive {α : Type} : Except Abort α :=
+  .error (.unknown "an object is converted to a primitive")
+
+def inspectsHost {α : Type} (name : String) : Except Abort α :=
+  .error (.unknown s!"host value {name} is inspected")
 
 def toBoolean : Val → Except Abort Bool
   | .undef | .null => pure false
@@ -687,7 +808,8 @@ def strictEq : Val → Val → Except Abort Bool
 
 /-- `SameValue`: as `===`, but a NaN is itself and the two zeros differ. -/
 def sameValue : Val → Val → Except Abort Bool
-  | .num a, .num b => pure (if a.isNaN then b.isNaN else a == b && Num.isNegZero a == Num.isNegZero b)
+  | .num a, .num b =>
+    pure (if a.isNaN then b.isNaN else a == b && Num.isNegZero a == Num.isNegZero b)
   | a, b => strictEq a b
 
 def isNullish : Val → Bool
@@ -704,34 +826,42 @@ def looseEq (a b : Val) : Except Abort Bool :=
   | .wellKnownSymbol a, .wellKnownSymbol b => pure (a == b)
   | .symbol x, .symbol y => pure (x == y)
   | _, _ =>
-    if isNullish a || isNullish b then pure (isNullish a && isNullish b) else
-    match a, b with
-    | .obj _, .error .. | .error .., .obj _ => pure false
-    | .obj _, _ | _, .obj _ | .error .., _ | _, .error .. => needsPrimitive
-    | .wellKnownSymbol _, _ | _, .wellKnownSymbol _ | .symbol _, _ | _, .symbol _ => pure false
-    | _, _ => do pure ((← toNumber a) == (← toNumber b))
+    if isNullish a || isNullish b then pure (isNullish a && isNullish b)
+    else
+      match a, b with
+      | .obj _, .error .. | .error .., .obj _ => pure false
+      | .obj _, _ | _, .obj _ | .error .., _ | _, .error .. => needsPrimitive
+      | .wellKnownSymbol _, _ | _, .wellKnownSymbol _ | .symbol _, _ | _, .symbol _ => pure false
+      | _, _ => do
+        pure ((← toNumber a) == (← toNumber b))
 
 private def utf16CodeUnits (s : String) : List Nat :=
   s.toList.flatMap fun c =>
     let code := c.toNat
-    if code ≤ 0xffff then [code] else
-    let offset := code - 0x10000
-    [0xd800 + offset / 0x400, 0xdc00 + offset % 0x400]
+    if code ≤ 0xffff then [code]
+    else
+      let offset := code - 0x10000
+      [0xd800 + offset / 0x400, 0xdc00 + offset % 0x400]
 
 /-- The relational operators compare two strings by UTF-16 code unit and convert other
 primitive operands to numbers. IEEE comparisons all return false for an unordered pair. -/
 def relational (num : Float → Float → Bool) (str : Ordering → Bool) : Val → Val → Except Abort Bool
   | .str a, .str b => pure (str (compare (utf16CodeUnits a) (utf16CodeUnits b)))
-  | .wellKnownSymbol _, .obj _ | .wellKnownSymbol _, .error ..
-  | .symbol _, .obj _ | .symbol _, .error .. => needsPrimitive
+  | .wellKnownSymbol _, .obj _ | .wellKnownSymbol _, .error .. | .symbol _, .obj _ | .symbol _,
+    .error .. => needsPrimitive
   | .wellKnownSymbol _, .host name | .symbol _, .host name => inspectsHost name
-  | a, b => do pure (num (← toNumber a) (← toNumber b))
+  | a, b => do
+    pure (num (← toNumber a) (← toNumber b))
 
 /-- An int32 as its 32 bits, and back. -/
-def bits32 (i : Int) : Nat := (Int.emod i (2 ^ 32)).toNat
-def int32Of (u : Nat) : Int := if u % 2 ^ 32 ≥ 2 ^ 31 then ((u % 2 ^ 32 : Nat) : Int) - 2 ^ 32 else ((u % 2 ^ 32 : Nat) : Int)
+def bits32 (i : Int) : Nat :=
+  (Int.emod i (2 ^ 32)).toNat
 
-def ofInt32 (i : Int) : Val := .num (Float.ofInt i)
+def int32Of (u : Nat) : Int :=
+  if u % 2 ^ 32 ≥ 2 ^ 31 then ((u % 2 ^ 32 : Nat) : Int) - 2 ^ 32 else ((u % 2 ^ 32 : Nat) : Int)
+
+def ofInt32 (i : Int) : Val :=
+  .num (Float.ofInt i)
 
 def binop (op : BinOp) (a b : Val) : Except Abort Val :=
   let arith (f : Float → Float → Float) : Except Abort Val := do
@@ -745,8 +875,10 @@ def binop (op : BinOp) (a b : Val) : Except Abort Val :=
     match a, b with
     | .obj _, _ | _, .obj _ | .error .., _ | _, .error .. => needsPrimitive
     | .wellKnownSymbol _, .host name | .symbol _, .host name => inspectsHost name
-    | .str x, _ => do pure (.str (x ++ (← toStr b)))
-    | _, .str y => do pure (.str ((← toStr a) ++ y))
+    | .str x, _ => do
+      pure (.str (x ++ (← toStr b)))
+    | _, .str y => do
+      pure (.str ((← toStr a) ++ y))
     | _, _ => arith (· + ·)
   | .sub => arith (· - ·)
   | .mul => arith (· * ·)
@@ -774,8 +906,8 @@ def binop (op : BinOp) (a b : Val) : Except Abort Val :=
   | .ge => .bool <$> relational (fun x y => decide (x ≥ y)) (· != .lt) a b
 
 /-- String operands of loose inequality compare their contents without coercion. -/
-theorem binop_ne_strings (a b : String) :
-    binop .ne (.str a) (.str b) = .ok (.bool (!(a == b))) := rfl
+theorem binop_ne_strings (a b : String) : binop .ne (.str a) (.str b) = .ok (.bool (!(a == b))) :=
+  rfl
 
 def unop (s : State W) (op : UnOp) (v : Val) : Except Abort Val :=
   match op with
@@ -798,8 +930,10 @@ def shortCircuits (op : LogOp) (v : Val) : Except Abort Bool :=
 
 /-! ## Properties -/
 
-def setOwn (props : List (PropertyKey × Property)) (k : PropertyKey) (p : Property) : List (PropertyKey × Property) :=
-  if props.any (·.1 == k) then props.map fun (k', p') => if k' == k then (k', p) else (k', p') else props ++ [(k, p)]
+def setOwn (props : List (PropertyKey × Property)) (k : PropertyKey) (p : Property) :
+    List (PropertyKey × Property) :=
+  if props.any (·.1 == k) then props.map fun (k', p') => if k' == k then (k', p) else (k', p')
+  else props ++ [(k, p)]
 
 /-- The first property named `k` on `a` and its prototypes. `steps` bounds the walk: a chain has no cycle, so the count of objects is enough. -/
 def findProp (s : State W) : Nat → Addr → PropertyKey → Option Property
@@ -812,7 +946,8 @@ def findProp (s : State W) : Nat → Addr → PropertyKey → Option Property
       | some p => some p
       | none => o.proto.bind fun parent => findProp s steps parent k
 
-def State.objectCount (s : State W) : Nat := s.heap.foldl (· + ·.size) 0
+def State.objectCount (s : State W) : Nat :=
+  s.heap.foldl (· + ·.size) 0
 
 def lookupProp (a : Addr) (k : PropertyKey) : M W (Option Property) := do
   let s ← getState
@@ -820,7 +955,8 @@ def lookupProp (a : Addr) (k : PropertyKey) : M W (Option Property) := do
 
 /-- Preserve symbol identities. Other supported keys use `ToString`. -/
 def toKey (k : Val) : M W PropertyKey :=
-  lift (match k with
+  lift
+    (match k with
     | .wellKnownSymbol sym => .ok (.wellKnownSymbol sym)
     | .symbol identity => .ok (.symbol identity)
     | k => .str <$> toStr k)
@@ -844,29 +980,48 @@ def applyDesc (current : Option Property) (d : Desc) : Except Abort (Option Prop
     | none => pure false
   match current with
   | none =>
-    pure <| some <|
-      if isAccessor then .accessor (d.get.getD .undef) (d.set.getD .undef) (d.enumerable.getD false) (d.configurable.getD false)
-      else .data (d.value.getD .undef) (d.writable.getD false) (d.enumerable.getD false) (d.configurable.getD false)
+    pure <|
+        some <|
+        if isAccessor then
+          .accessor (d.get.getD .undef) (d.set.getD .undef) (d.enumerable.getD false)
+            (d.configurable.getD false)
+        else
+          .data (d.value.getD .undef) (d.writable.getD false) (d.enumerable.getD false)
+            (d.configurable.getD false)
   | some cur =>
     let e := d.enumerable.getD cur.enumerable
     let c := d.configurable.getD cur.configurable
-    if !cur.configurable && (d.configurable == some true || e != cur.enumerable) then pure none else
-    match cur with
-    | .data v w _ _ =>
-      if isAccessor then
-        pure (if cur.configurable then some (.accessor (d.get.getD .undef) (d.set.getD .undef) e c) else none)
-      else if !cur.configurable && !w && (d.writable == some true || (← differs d.value v)) then pure none
-      else pure (some (.data (d.value.getD v) (d.writable.getD w) e c))
-    | .accessor g st _ _ =>
-      if isData then
-        pure (if cur.configurable then some (.data (d.value.getD .undef) (d.writable.getD false) e c) else none)
-      else if !cur.configurable && ((← differs d.get g) || (← differs d.set st)) then pure none
-      else pure (some (.accessor (d.get.getD g) (d.set.getD st) e c))
+    if !cur.configurable && (d.configurable == some true || e != cur.enumerable) then
+      pure none
+    else
+      match cur with
+      | .data v w _ _ =>
+        if isAccessor then
+          pure
+              (if cur.configurable then some (.accessor (d.get.getD .undef) (d.set.getD .undef) e c)
+              else none)
+        else if !cur.configurable && !w && (d.writable == some true || (← differs d.value v)) then
+          pure none
+        else
+          pure (some (.data (d.value.getD v) (d.writable.getD w) e c))
+      | .accessor g st _ _ =>
+        if isData then
+          pure
+              (if cur.configurable then
+                some (.data (d.value.getD .undef) (d.writable.getD false) e c)
+              else none)
+        else if !cur.configurable && ((← differs d.get g) || (← differs d.set st)) then
+          pure none
+        else
+          pure (some (.accessor (d.get.getD g) (d.set.getD st) e c))
 
 /-- An ECMAScript array-index property name: canonical decimal spelling, excluding `2^32 - 1`. -/
 def arrayIndex? (key : String) : Option Nat := do
   let index ← key.toNat?
-  if index < 4294967295 ∧ toString index = key then some index else none
+  if index < 4294967295 ∧ toString index = key then
+    some index
+  else
+    none
 
 /-- An existing index can be redefined in place. A new index must be
 exactly at a writable length; writes that create or fill holes and changes
@@ -875,10 +1030,14 @@ def arrayIndexWrite (o : Obj) (k : PropertyKey) : Option (Option Nat) := do
   let i ← k.string? >>= arrayIndex?
   let .data (.num n) writable false false ← o.props.lookup (.str "length") | none
   let len := (Num.truncInt n).toNat
-  if n != Float.ofNat len || len > 4294967295 then none
-  else if i < len && (o.props.lookup k).isSome then some none
-  else if i == len && writable && (o.props.lookup k).isNone then some (some (len + 1))
-  else none
+  if n != Float.ofNat len || len > 4294967295 then
+    none
+  else if i < len && (o.props.lookup k).isSome then
+    some none
+  else if i == len && writable && (o.props.lookup k).isNone then
+    some (some (len + 1))
+  else
+    none
 
 /-- Only a successful indexed append also replaces the length property. -/
 def defineOwnProps (growth : Option Nat) (o : Obj) (k : PropertyKey) (p : Property) :
@@ -895,39 +1054,53 @@ def ownIndexWrite (o : Obj) (k : PropertyKey) : Option (Option Nat) :=
 /-- `DefinePropertyOrThrow` on the object at `a`. -/
 def defineOwn (a : Addr) (k : PropertyKey) (d : Desc) : M W Unit := do
   let original ← getObj a
-  if original.frozen && (original.props.lookup k).isNone then throwErr .type "cannot add property to a frozen object" else
-  if (ownIndexWrite original k).isNone then unknown "a property is defined on an array" else
-  match ← lift (applyDesc (original.props.lookup k) d) with
-  | some p => modifyObj a fun o => { o with props := defineOwnProps ((ownIndexWrite original k).getD none) o k p }
-  | none => throwErr .type s!"cannot redefine property: {k}"
+  if original.frozen && (original.props.lookup k).isNone then
+    throwErr .type "cannot add property to a frozen object"
+  else
+    if (ownIndexWrite original k).isNone then
+      unknown "a property is defined on an array"
+    else
+      match ← lift (applyDesc (original.props.lookup k) d) with
+      | some p =>
+        modifyObj a fun o =>
+            { o with props := defineOwnProps ((ownIndexWrite original k).getD none) o k p }
+      | none =>
+        throwErr .type s!"cannot redefine property: {k}"
 
 /-- `CreateDataPropertyOrThrow`. -/
 def createData (a : Addr) (k : PropertyKey) (v : Val) : M W Unit :=
-  defineOwn a k { value := some v, writable := some true, enumerable := some true, configurable := some true }
+  defineOwn a k
+    { value := some v, writable := some true, enumerable := some true, configurable := some true }
 
 /-- What a call does: the callee, `this`, the arguments. The operations below take it as a parameter. -/
-abbrev Call (W : World) := Val → Val → List Val → M W Val
+abbrev Call (W : World) :=
+  Val → Val → List Val → M W Val
 
 /-- String own properties are `length` and canonical indices into its UTF-16 code units.
 An indexed property exists even when its value is an isolated surrogate. -/
 def stringOwn (s : String) : PropertyKey → Option (Except Abort Val)
   | .wellKnownSymbol _ | .symbol _ => none
   | .str k =>
-    if k == "length" then some (.ok (.num (Float.ofNat (utf16CodeUnits s).length))) else do
+    if k == "length" then some (.ok (.num (Float.ofNat (utf16CodeUnits s).length)))
+    else do
       let i ← k.toNat?.filter (toString · == k)
       let unit ← (utf16CodeUnits s)[i]?
       return if 0xd800 ≤ unit ∧ unit ≤ 0xdfff then
-        .error (.unknown "string index reads an isolated UTF-16 surrogate")
-      else .ok (.str (String.singleton (Char.ofNat unit)))
+          .error (.unknown "string index reads an isolated UTF-16 surrogate")
+        else .ok (.str (String.singleton (Char.ofNat unit)))
 
 /-- Look up the property once; an inherited getter receives the original base. -/
 abbrev getFromWith {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
     (call : Val → Val → List Val → m Val) (a : Addr) (base : Val) (k : PropertyKey) : m Val := do
   match ← sync (lookupProp a k) with
-  | none => pure .undef
-  | some (.data v ..) => pure v
-  | some (.accessor .undef ..) => pure .undef
-  | some (.accessor getter ..) => call getter base []
+  | none =>
+    pure .undef
+  | some (.data v ..) =>
+    pure v
+  | some (.accessor .undef ..) =>
+    pure .undef
+  | some (.accessor getter ..) =>
+    call getter base []
 
 /-- State-only instantiation of the shared read rule. -/
 def getFrom (call : Call W) (a : Addr) (base : Val) (k : PropertyKey) : M W Val :=
@@ -937,21 +1110,25 @@ def getFrom (call : Call W) (a : Addr) (base : Val) (k : PropertyKey) : M W Val 
 abbrev protoPropWith {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
     (call : Val → Val → List Val → m Val) (owner : String) (names : List String) (base : Val) :
     PropertyKey → m Val
-  | .str k => if names.contains k then pure (.host s!"{owner}.{k}") else getFromWith sync call objectProto base (.str k)
+  | .str k =>
+    if names.contains k then pure (.host s!"{owner}.{k}")
+    else getFromWith sync call objectProto base (.str k)
   | .wellKnownSymbol sym =>
     if sym == .iterator && owner == "String.prototype" then
       sync (unknown "String.prototype[Symbol.iterator] is a host method")
     else getFromWith sync call objectProto base (.wellKnownSymbol sym)
   | .symbol identity => getFromWith sync call objectProto base (.symbol identity)
 
-def protoProp (call : Call W) (owner : String) (names : List String) (base : Val) (key : PropertyKey) : M W Val :=
+def protoProp (call : Call W) (owner : String) (names : List String) (base : Val)
+    (key : PropertyKey) : M W Val :=
   protoPropWith (fun x => x) call owner names base key
 
 def readHostRef (ref : HostRef) : M W Val := fun s =>
   match W.hostRef ref s.world.state with
   | some (value, state) => .ok value.val { s with world := { s.world with state } }
   | none =>
-    let name := match ref with
+    let name :=
+      match ref with
       | .binding n => n
       | .property receiver key => s!"{receiver}.{key}"
     .unknown s!"unsupported host reference {name}" s
@@ -959,35 +1136,46 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
 /-- Receivers whose property lookup can be answered by a host observation.
 The portable Object contract exposes only the saved method reference. -/
 def observedHostProperty (owner key : String) : Bool :=
-  owner == "window" || owner.startsWith "window." || owner == "intrinsic.Array" || (owner == "intrinsic.Object" && key == "defineProperty")
+  owner == "window" || owner.startsWith "window." || owner == "intrinsic.Array" ||
+    (owner == "intrinsic.Object" && key == "defineProperty")
 
 /-- A member of a global of the host: a function the world answers for. -/
 def hostMember (name k : String) : M W Val :=
   if ((hostNamespaces.lookup name).getD []).contains k then pure (.host s!"{name}.{k}")
-  else if observedHostProperty name k then
-    readHostRef (.property name k)
-  else unknown s!"a property of host value {name}"
+  else
+    if observedHostProperty name k then readHostRef (.property name k)
+    else unknown s!"a property of host value {name}"
 
 /-- `base[key]` in the caller's effect. Only the actual accessor invocation
 can re-enter the evaluator; its result flows out with that effect intact. -/
 abbrev getPropWith {m : Type → Type} [Monad m] (sync : {α : Type} → M W α → m α)
     (call : Val → Val → List Val → m Val) (base key : Val) : m Val := do
   match base with
-  | .undef | .null => sync (throwErr .type "cannot read properties of undefined or null")
-  | .obj a => getFromWith sync call a base (← sync (toKey key))
+  | .undef | .null =>
+    sync (throwErr .type "cannot read properties of undefined or null")
+  | .obj a =>
+    getFromWith sync call a base (← sync (toKey key))
   | .str s =>
     let k ← sync (toKey key)
     match stringOwn s k with
-    | some v => sync (lift v)
-    | none => protoPropWith sync call "String.prototype" stringProtoNames base k
-  | .num _ => protoPropWith sync call "Number.prototype" numberProtoNames base (← sync (toKey key))
-  | .bool _ => protoPropWith sync call "Boolean.prototype" booleanProtoNames base (← sync (toKey key))
-  | .wellKnownSymbol _ | .symbol _ => sync (unknown "a property of a symbol primitive")
-  | .error .. => sync (unknown "a property of an engine error")
+    | some v =>
+      sync (lift v)
+    | none =>
+      protoPropWith sync call "String.prototype" stringProtoNames base k
+  | .num _ =>
+    protoPropWith sync call "Number.prototype" numberProtoNames base (← sync (toKey key))
+  | .bool _ =>
+    protoPropWith sync call "Boolean.prototype" booleanProtoNames base (← sync (toKey key))
+  | .wellKnownSymbol _ | .symbol _ =>
+    sync (unknown "a property of a symbol primitive")
+  | .error .. =>
+    sync (unknown "a property of an engine error")
   | .host name =>
     match ← sync (toKey key) with
-    | .str k => sync (hostMember name k)
-    | .wellKnownSymbol _ | .symbol _ => sync (unknown s!"a symbol property of host value {name}")
+    | .str k =>
+      sync (hostMember name k)
+    | .wellKnownSymbol _ | .symbol _ =>
+      sync (unknown s!"a symbol property of host value {name}")
 
 /-- State-only instantiation for existing callers. -/
 def getProp (call : Call W) (base key : Val) : M W Val :=
@@ -996,53 +1184,77 @@ def getProp (call : Call W) (base key : Val) : M W Val :=
 /-- `base[key] = v` in strict code. A setter runs with `base` as `this`. -/
 def setProp (call : Call W) (base key v : Val) : M W Unit := do
   match base with
-  | .undef | .null => throwErr .type "cannot set properties of undefined or null"
+  | .undef | .null =>
+    throwErr .type "cannot set properties of undefined or null"
   | .obj a =>
     let k ← toKey key
     match ← lookupProp a k with
-    | some (.accessor _ .undef ..) => throwErr .type s!"cannot set property {k}, which has only a getter"
-    | some (.accessor _ setter ..) => discard (call setter base [v])
-    | some (.data _ false ..) => throwErr .type s!"cannot assign to read only property {k}"
+    | some (.accessor _ .undef ..) =>
+      throwErr .type s!"cannot set property {k}, which has only a getter"
+    | some (.accessor _ setter ..) =>
+      discard (call setter base [v])
+    | some (.data _ false ..) =>
+      throwErr .type s!"cannot assign to read only property {k}"
     | _ =>
       -- an own writable data property keeps its attributes; an inherited or a missing one makes a new own property
-      defineOwn a k (if ((← getObj a).props.lookup k).isSome then { value := some v } else
-        { value := some v, writable := some true, enumerable := some true, configurable := some true })
+      defineOwn a k
+          (if ((← getObj a).props.lookup k).isSome then { value := some v }
+          else
+            { value := some v, writable := some true, enumerable := some true,
+              configurable := some true })
   | .str s =>
     let k ← toKey key
-    if (stringOwn s k).isSome then throwErr .type s!"cannot assign to read only property {k}"
-    else unknown "a property is set on a primitive"
-  | .num _ | .bool _ | .wellKnownSymbol _ | .symbol _ => unknown "a property is set on a primitive"
-  | .error .. => unknown "a property of an engine error"
-  | .host name => unknown s!"a property of host value {name}"
+    if (stringOwn s k).isSome then
+      throwErr .type s!"cannot assign to read only property {k}"
+    else
+      unknown "a property is set on a primitive"
+  | .num _ | .bool _ | .wellKnownSymbol _ | .symbol _ =>
+    unknown "a property is set on a primitive"
+  | .error .. =>
+    unknown "a property of an engine error"
+  | .host name =>
+    unknown s!"a property of host value {name}"
 
 /-- `delete base[key]` in strict code. -/
 def deleteProp (base key : Val) : M W Val := do
   match base with
-  | .undef | .null => throwErr .type "cannot convert undefined or null to object"
+  | .undef | .null =>
+    throwErr .type "cannot convert undefined or null to object"
   | .obj a =>
     let k ← toKey key
     match (← getObj a).props.lookup k with
-    | none => pure (.bool true)
+    | none =>
+      pure (.bool true)
     | some p =>
       if p.configurable then
         modifyObj a fun o => { o with props := o.props.filter (·.1 != k) }
         pure (.bool true)
-      else throwErr .type s!"cannot delete property {k}"
+      else
+        throwErr .type s!"cannot delete property {k}"
   | .str s =>
     let k ← toKey key
-    if (stringOwn s k).isSome then throwErr .type s!"cannot delete property {k}"
-    else pure (.bool true)
-  | .num _ | .bool _ | .wellKnownSymbol _ | .symbol _ => unknown "a property of a primitive is deleted"
-  | .error .. => unknown "a property of an engine error"
-  | .host name => unknown s!"a property of host value {name}"
+    if (stringOwn s k).isSome then
+      throwErr .type s!"cannot delete property {k}"
+    else
+      pure (.bool true)
+  | .num _ | .bool _ | .wellKnownSymbol _ | .symbol _ =>
+    unknown "a property of a primitive is deleted"
+  | .error .. =>
+    unknown "a property of an engine error"
+  | .host name =>
+    unknown s!"a property of host value {name}"
 
 /-- `key in base`. -/
 def hasProp (key base : Val) : M W Val := do
   match base with
-  | .obj a => pure (.bool (← lookupProp a (← toKey key)).isSome)
-  | .error .. => unknown "a property of an engine error"
-  | .host name => unknown s!"a property of host value {name}"
-  | _ => throwErr .type "cannot use 'in' to search in a primitive"
+  | .obj a =>
+    pure (.bool (← lookupProp a (← toKey key)).isSome)
+  | .error .. =>
+    unknown "a property of an engine error"
+  | .host name =>
+    unknown s!"a property of host value {name}"
+  | _ =>
+    throwErr .type "cannot use 'in' to search in a primitive"
 
 /-- The object a value is, for a standard function that takes one. -/
 def requireObj (what : String) : Val → M W Addr
@@ -1055,17 +1267,29 @@ def requireObj (what : String) : Val → M W Addr
 def toDesc (call : Call W) (v : Val) : M W Desc := do
   let a ← requireObj "property description" v
   let field (k : String) : M W (Option Val) := do
-    if (← lookupProp a k).isSome then some <$> getProp call v (.str k) else pure none
+    if (← lookupProp a k).isSome then
+      some <$> getProp call v (.str k)
+    else
+      pure none
   let flag (k : String) : M W (Option Bool) := do
     match ← field k with
-    | some x => some <$> lift (toBoolean x)
-    | none => pure none
+    | some x =>
+      some <$> lift (toBoolean x)
+    | none =>
+      pure none
   let callable (k : String) : M W (Option Val) := do
     match ← field k with
-    | some (.host name) => unknown s!"host value {name} is inspected"
-    | some .undef => pure (some .undef)
-    | some f => if isCallable (← getState) f then pure (some f) else throwErr .type s!"{k}ter must be a function"
-    | none => pure none
+    | some (.host name) =>
+      unknown s!"host value {name} is inspected"
+    | some .undef =>
+      pure (some .undef)
+    | some f =>
+      if isCallable (← getState) f then
+        pure (some f)
+      else
+        throwErr .type s!"{k}ter must be a function"
+    | none =>
+      pure none
   let enumerable ← flag "enumerable"
   let configurable ← flag "configurable"
   let value ← field "value"
@@ -1074,7 +1298,8 @@ def toDesc (call : Call W) (v : Val) : M W Desc := do
   let set ← callable "set"
   if (get.isSome || set.isSome) && (value.isSome || writable.isSome) then
     throwErr .type "a property descriptor has both accessors and a value"
-  else pure { value, writable, get, set, enumerable, configurable }
+  else
+    pure { value, writable, get, set, enumerable, configurable }
 
 /-- How `console.log` writes a primitive. An object is written by the host. -/
 def logArg : Val → Except Abort String
@@ -1104,8 +1329,10 @@ def ordinaryInstance (call : Call W) (value ctor : Val) : M W Val := do
     let target ← requireObj "constructor prototype" proto
     let o ← getObj a
     return .bool (← chainContains target o.proto)
-  | .error .. | .host _ => unknown "instanceof on an unmodeled object"
-  | _ => pure (.bool false)
+  | .error .. | .host _ =>
+    unknown "instanceof on an unmodeled object"
+  | _ =>
+    pure (.bool false)
 
 /-- InstanceofOperator reads @@hasInstance before testing callability. A
 custom method receives the RHS as its receiver and the LHS as its argument. -/
@@ -1113,11 +1340,21 @@ def instanceOf (call : Call W) (value ctor : Val) : M W Val := do
   let _ ← requireObj "right-hand side of instanceof" ctor
   let method ← getProp call ctor (.wellKnownSymbol .hasInstance)
   if method == .host "Function.prototype[Symbol.hasInstance]" then
-    if ← (do pure (isCallable (← getState) ctor) : M W Bool) then ordinaryInstance call value ctor
-    else pure (.bool false)
+    if
+        ←
+          (do
+              pure (isCallable (← getState) ctor) : M W Bool) then
+      ordinaryInstance call value ctor
+    else
+      pure (.bool false)
   else if method == .null || method == .undef then
-    if ← (do pure (isCallable (← getState) ctor) : M W Bool) then ordinaryInstance call value ctor
-    else throwErr .type "right-hand side of instanceof is not callable"
+    if
+        ←
+          (do
+              pure (isCallable (← getState) ctor) : M W Bool) then
+      ordinaryInstance call value ctor
+    else
+      throwErr .type "right-hand side of instanceof is not callable"
   else
     let result ← call method ctor [value]
     return .bool (← lift (toBoolean result))
@@ -1128,9 +1365,9 @@ def observeGlobalTypeof (name : String) : M W Val := fun s =>
   | none => .unknown s!"unsupported host typeof {name}" s
 
 /-- The generic flags getter performs observable property reads in ECMAScript order. -/
-def regexpFlagOrder : List (String × String) := [
-  ("hasIndices", "d"), ("global", "g"), ("ignoreCase", "i"), ("multiline", "m"),
-  ("dotAll", "s"), ("unicode", "u"), ("unicodeSets", "v"), ("sticky", "y")]
+def regexpFlagOrder : List (String × String) :=
+  [("hasIndices", "d"), ("global", "g"), ("ignoreCase", "i"), ("multiline", "m"), ("dotAll", "s"),
+    ("unicode", "u"), ("unicodeSets", "v"), ("sticky", "y")]
 
 def regexpFlags (call : Call W) (receiver : Val) : List (String × String) → M W String
   | [] => pure ""
@@ -1151,17 +1388,21 @@ def regexpSlot (a : Addr) (data : Option RegExpData) (letter : Option Char) : M 
 def readRegExp (call : Call W) (getter : RegExpGetter) (receiver : Val) : M W Val := do
   let a ← requireObj "RegExp getter receiver" receiver
   match getter with
-  | .source => regexpSlot a (← getObj a).regexp none
-  | .flag c => regexpSlot a (← getObj a).regexp (some c)
-  | .flags => .str <$> regexpFlags call receiver regexpFlagOrder
+  | .source =>
+    regexpSlot a (← getObj a).regexp none
+  | .flag c =>
+    regexpSlot a (← getObj a).regexp (some c)
+  | .flags =>
+    .str <$> regexpFlags call receiver regexpFlagOrder
 
 /-- Own keys in order: array indices numerically, other strings in insertion order, then symbols. -/
 def ownPropertyKeys (props : List (PropertyKey × Property)) : List PropertyKey :=
-  let indexed : List (Nat × PropertyKey) := props.filterMap fun (key, _) =>
-    (key.string? >>= arrayIndex?).map (·, key)
+  let indexed : List (Nat × PropertyKey) :=
+    props.filterMap fun (key, _) => (key.string? >>= arrayIndex?).map (·, key)
   (indexed.mergeSort fun a b => decide (a.1 ≤ b.1)).map (·.2) ++
-    props.filterMap (fun (key, _) =>
-      if key.string?.any (fun name => (arrayIndex? name).isNone) then some key else none) ++
+    props.filterMap
+      (fun (key, _) =>
+        if key.string?.any (fun name => (arrayIndex? name).isNone) then some key else none) ++
     props.filterMap fun (key, _) => if key.string?.isNone then some key else none
 
 private def ordinaryForIn (o : Obj) : Bool :=
@@ -1172,30 +1413,42 @@ def forInLevels : Nat → Addr → M W (List (Addr × List (String × Bool)))
   | 0, _ => unknown "for-in prototype chain exceeds the supported depth"
   | n + 1, a => do
     let obj ← getObj a
-    if !ordinaryForIn obj then unknown "for-in requires an ordinary object and prototype chain" else do
-      let keys := (ownPropertyKeys obj.props).filterMap fun k => do
-        let name ← k.string?
-        let property ← obj.props.lookup k
-        return (name, property.enumerable)
-      let tail ← match obj.proto with
-        | some parent => forInLevels n parent
-        | none => pure []
-      pure ((a, keys) :: tail)
+    if !ordinaryForIn obj then
+      unknown "for-in requires an ordinary object and prototype chain"
+    else
+      do
+        let keys :=
+          (ownPropertyKeys obj.props).filterMap fun k => do
+            let name ← k.string?
+            let property ← obj.props.lookup k
+            return (name, property.enumerable)
+        let tail ←
+          match obj.proto with
+          | some parent =>
+            forInLevels n parent
+          | none =>
+            pure []
+        pure ((a, keys) :: tail)
 
-private def enumerableNames (levels : List (Addr × List (String × Bool))) : List String := Id.run do
-  let mut visited := []
-  let mut names := []
-  for (_, keys) in levels do
-    for (name, enumerable) in keys do
-      unless visited.contains name do
-        visited := name :: visited
-        if enumerable then names := name :: names
-  return names.reverse
+private def enumerableNames (levels : List (Addr × List (String × Bool))) : List String :=
+  Id.run do
+    let mut visited := []
+    let mut names := []
+    for (_, keys) in levels do
+      for (name, enumerable) in keys do
+        unless visited.contains name do
+          visited := name :: visited
+          if enumerable then
+            names := name :: names
+    return names.reverse
 
 /-- A private table for the generated loop. Its numeric entries and length are own data. -/
 def forInKeyTable (names : List String) : Obj :=
-  { proto := none, props := ("length", .data (.num (Float.ofNat names.length)) false false false) ::
-      names.zipIdx.map (fun (name, index) => (toString index, .data (.str name) false false false)) }
+  { proto := none,
+    props :=
+      ("length", .data (.num (Float.ofNat names.length)) false false false) ::
+        names.zipIdx.map
+          (fun (name, index) => (toString index, .data (.str name) false false false)) }
 
 def forInBaseLevels : Val → M W (List (Addr × List (String × Bool)))
   | .undef | .null => pure []
@@ -1213,12 +1466,16 @@ def checkForInWrite (base target key : Val) : M W Val := do
   let .obj source := base | unknown "unsupported for-in write source"
   let .obj destination := target | unknown "for-in write requires an ordinary object"
   let levels ← forInLevels 32 source
-  if levels.any (fun level => level.1 == destination) then unknown "for-in body writes to an enumerated object" else do
-    let _ ← forInLevels 32 destination
-    let property ← lookupProp destination (← toKey key)
-    if property.any (fun p => p matches .accessor ..) then
-      unknown "for-in body writes through an accessor"
-    else pure .undef
+  if levels.any (fun level => level.1 == destination) then
+    unknown "for-in body writes to an enumerated object"
+  else
+    do
+      let _ ← forInLevels 32 destination
+      let property ← lookupProp destination (← toKey key)
+      if property.any (fun p => p matches .accessor ..) then
+        unknown "for-in body writes through an accessor"
+      else
+        pure .undef
 
 /-- Each private name owns a fresh, unreachable null-prototype table. Keys encode
 heap receiver identity; the associated descriptor distinguishes writable fields
@@ -1229,119 +1486,181 @@ def privateSlot (op : PrivateOp) (table receiver value : Val) : M W Val := do
   let key := PropertyKey.symbol receiver
   let present ← lookupProp table key
   match op, present with
-  | .get, some (.data v ..) => pure v
+  | .get, some (.data v ..) =>
+    pure v
   | .set, some (.data _ true ..) =>
     defineOwn table key { value := some value }
     pure value
-  | .set, some (.data _ false ..) => throwErr .type "cannot assign to a private method"
+  | .set, some (.data _ false ..) =>
+    throwErr .type "cannot assign to a private method"
   | .addField, none | .addMethod, none =>
     defineOwn table key { value := some value, writable := some (op == .addField) }
     pure value
-  | .addField, some _ | .addMethod, some _ => throwErr .type "duplicate private element"
-  | _, _ => throwErr .type "receiver does not have this private element"
+  | .addField, some _ | .addMethod, some _ =>
+    throwErr .type "duplicate private element"
+  | _, _ =>
+    throwErr .type "receiver does not have this private element"
 
 /-- The raw and cooked objects have Array.prototype, frozen own indices and frozen length.
 The cooked object's non-enumerable raw property points to the separately frozen raw array. -/
 def templateArrayObject (values : List Val) (raw : Option Val) : Obj :=
-  let items := values.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v false true false)
-  let length := (PropertyKey.str "length", Property.data (.num (Float.ofNat values.length)) false false false)
+  let items :=
+    values.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v false true false)
+  let length :=
+    (PropertyKey.str "length", Property.data (.num (Float.ofNat values.length)) false false false)
   let extra := raw.toList.map fun v => (PropertyKey.str "raw", Property.data v false false false)
   { proto := some arrayProto, array := true, frozen := true, props := items ++ [length] ++ extra }
 
 /-- Array elisions increase length without defining the corresponding index. -/
 def sparseArrayObject (holes : List Nat) (values : List Val) : Obj :=
-  let items := (values.zipIdx.filter fun (_, i) => !(holes.contains i)).map fun (v, i) =>
-    (PropertyKey.str (toString i), Property.data v true true true)
+  let items :=
+    (values.zipIdx.filter fun (_, i) => !(holes.contains i)).map fun (v, i) =>
+      (PropertyKey.str (toString i), Property.data v true true true)
   { proto := some arrayProto, array := true,
-    props := items ++ [(PropertyKey.str "length", Property.data (.num (Float.ofNat values.length)) true false false)] }
+    props :=
+      items ++
+        [(PropertyKey.str "length",
+            Property.data (.num (Float.ofNat values.length)) true false false)] }
 
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
-  | .regExpGet getter => readRegExp call getter (arg 0)
-  | .globalTypeof name => observeGlobalTypeof name
-  | .globalRef name => readHostRef (.binding name)
+  | .regExpGet getter =>
+    readRegExp call getter (arg 0)
+  | .globalTypeof name =>
+    observeGlobalTypeof name
+  | .globalRef name =>
+    readHostRef (.binding name)
   | .wellKnownSymbol sym =>
     let value ← readHostRef (.property "Symbol" sym.member)
-    if value == .host sym.description then pure (.wellKnownSymbol sym)
-    else unknown s!"ambient {sym.description} has an unsupported identity"
+    if value == .host sym.description then
+      pure (.wellKnownSymbol sym)
+    else
+      unknown s!"ambient {sym.description} has an unsupported identity"
   | .freshSymbol =>
     match ← readHostRef (.binding "Symbol") with
     | .host "intrinsic.Symbol" =>
       match args with
-      | [] | [.str _] => .symbol <$> alloc { proto := none, props := [] }
-      | _ => unknown "unsupported Symbol description"
-    | _ => unknown "ambient Symbol has an unsupported identity"
-  | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"
-  | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
-  | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
-  | .instanceOf => instanceOf call (arg 0) (arg 1)
-  | .privateSlot op => privateSlot op (arg 0) (arg 1) (arg 2)
-  | .callWithReceiver => call (arg 0) (arg 1) (args.drop 2)
+      | [] | [.str _] =>
+        .symbol <$> alloc { proto := none, props := [] }
+      | _ =>
+        unknown "unsupported Symbol description"
+    | _ =>
+      unknown "ambient Symbol has an unsupported identity"
+  | .opaqueAmbientRef name =>
+    unknown s!"ambient binding {name} is reached"
+  | .opaqueConstructorRef name =>
+    unknown s!"ambient constructor {name} is reached"
+  | .opaqueAmbientMemberRef receiver member =>
+    unknown s!"ambient member {receiver}.{member} is reached"
+  | .instanceOf =>
+    instanceOf call (arg 0) (arg 1)
+  | .privateSlot op =>
+    privateSlot op (arg 0) (arg 1) (arg 2)
+  | .callWithReceiver =>
+    call (arg 0) (arg 1) (args.drop 2)
   | .checkArrayFrom =>
-    let .host "intrinsic.Array" ← readHostRef (.binding "Array")
-      | unknown "Array.from requires the intrinsic Array constructor"
-    let .host "intrinsic.Array.from" ← readHostRef (.property "intrinsic.Array" "from")
-      | unknown "Array.from requires the intrinsic method"
+    let .host "intrinsic.Array" ←
+      readHostRef (.binding "Array") | unknown "Array.from requires the intrinsic Array constructor"
+    let .host "intrinsic.Array.from" ←
+      readHostRef
+          (.property "intrinsic.Array" "from") | unknown "Array.from requires the intrinsic method"
     pure .undef
   | .templateIterable =>
     let v := arg 0
     let .obj a := v | unknown "Array.from source needs a modeled iterable"
     let o ← getObj a
-    if !(o.array && o.frozen) then unknown "Array.from source is not a template array" else
-    match ← lookupProp a (.wellKnownSymbol .iterator) with
-    | some (.data (.host "Array.prototype.values") ..) => pure v
-    | _ => unknown "template Array.from requires the intrinsic array iterator"
+    if !(o.array && o.frozen) then
+      unknown "Array.from source is not a template array"
+    else
+      match ← lookupProp a (.wellKnownSymbol .iterator) with
+      | some (.data (.host "Array.prototype.values") ..) =>
+        pure v
+      | _ =>
+        unknown "template Array.from requires the intrinsic array iterator"
   | .templateArray cooked =>
     let values := if cooked then args.drop 1 else args
     let raw := if cooked then args.head? else none
     return .obj (← alloc (templateArrayObject values raw))
-  | .sparseArray holes => .obj <$> alloc (sparseArrayObject holes args)
-  | .forInKeys => forInKeys (arg 0)
-  | .checkForInWrite => checkForInWrite (arg 0) (arg 1) (arg 2)
+  | .sparseArray holes =>
+    .obj <$> alloc (sparseArrayObject holes args)
+  | .forInKeys =>
+    forInKeys (arg 0)
+  | .checkForInWrite =>
+    checkForInWrite (arg 0) (arg 1) (arg 2)
   | .log =>
     match args with
-    | .str format :: _ :: _ => if format.contains '%' then unknown "console.log with a format string" else pure ()
-    | _ => pure ()
+    | .str format :: _ :: _ =>
+      if format.contains '%' then
+        unknown "console.log with a format string"
+      else
+        pure ()
+    | _ =>
+      pure ()
     let line ← lift (args.mapM logArg)
     modifyState fun s => { s with out := s.out.push (" ".intercalate line) }
     pure .undef
   | .create =>
-    let parent ← match arg 0 with
-      | .null => pure none
-      | v => some <$> requireObj "object prototype" v
-    if (arg 1) matches .undef then .obj <$> alloc { proto := parent, props := [] }
-    else unknown "Object.create with properties"
+    let parent ←
+      match arg 0 with
+      | .null =>
+        pure none
+      | v =>
+        some <$> requireObj "object prototype" v
+    if (arg 1) matches .undef then
+      .obj <$> alloc { proto := parent, props := [] }
+    else
+      unknown "Object.create with properties"
   | .getPrototypeOf =>
     match arg 0 with
-    | .undef | .null => throwErr .type "cannot convert undefined or null to object"
-    | .obj a => do pure (match (← getObj a).proto with | some p => .obj p | none => .null)
-    | _ => unknown "the prototype of a primitive or a host value"
-  | .setPrototypeOf => do
-    match arg 0 with
-    | .undef | .null => throwErr .type "Object.setPrototypeOf called on null or undefined"
-    | _ => pure ()
-    let parent ← match arg 1 with
-      | .null => pure none
-      | v => some <$> requireObj "object prototype" v
-    match arg 0 with
+    | .undef | .null =>
+      throwErr .type "cannot convert undefined or null to object"
     | .obj a =>
-      let s ← getState
-      let object ← getObj a
-      if object.proto == parent then pure (arg 0)
-      else if object.frozen || reaches s a s.objectCount parent then
-        throwErr .type (if object.frozen then "cannot change the prototype of a frozen object" else "cyclic __proto__ value")
-      else
-        modifyObj a fun o => { o with proto := parent }
-        pure (arg 0)
-    | .host name => unknown s!"host value {name} is inspected"
-    | .error .. => unknown "an engine error is inspected"
-    | v => pure v
-  | .defineProperty => do
-    let a ← requireObj "Object.defineProperty target" (arg 0)
-    let k ← toKey (arg 1)
-    defineOwn a k (← toDesc call (arg 2))
-    pure (arg 0)
+      do
+        pure
+            (match (← getObj a).proto with
+            | some p => .obj p
+            | none => .null)
+    | _ =>
+      unknown "the prototype of a primitive or a host value"
+  | .setPrototypeOf =>
+    do
+      match arg 0 with
+      | .undef | .null =>
+        throwErr .type "Object.setPrototypeOf called on null or undefined"
+      | _ =>
+        pure ()
+      let parent ←
+        match arg 1 with
+        | .null =>
+          pure none
+        | v =>
+          some <$> requireObj "object prototype" v
+      match arg 0 with
+      | .obj a =>
+        let s ← getState
+        let object ← getObj a
+        if object.proto == parent then
+          pure (arg 0)
+        else if object.frozen || reaches s a s.objectCount parent then
+          throwErr .type
+              (if object.frozen then "cannot change the prototype of a frozen object"
+              else "cyclic __proto__ value")
+        else
+          modifyObj a fun o => { o with proto := parent }
+          pure (arg 0)
+      | .host name =>
+        unknown s!"host value {name} is inspected"
+      | .error .. =>
+        unknown "an engine error is inspected"
+      | v =>
+        pure v
+  | .defineProperty =>
+    do
+      let a ← requireObj "Object.defineProperty target" (arg 0)
+      let k ← toKey (arg 1)
+      defineOwn a k (← toDesc call (arg 2))
+      pure (arg 0)
 
 /-! ## The world, stage two: opaque code
 
@@ -1357,7 +1676,9 @@ def toW (v : Val) : M W WVal :=
   | .obj a => fun s =>
     match s.world.handed.findIdx? (· == a) with
     | some k => .ok (.handle k) s
-    | none => .ok (.handle s.world.handed.size) { s with world := { s.world with handed := s.world.handed.push a } }
+    | none =>
+      .ok (.handle s.world.handed.size)
+        { s with world := { s.world with handed := s.world.handed.push a } }
   | .error kind msg => pure (.error kind msg)
   | .host name => pure (.host name)
   | .undef => pure (.prim .undef)
@@ -1402,19 +1723,25 @@ def opaqueCell (cells : List (Option Addr)) (i : Nat) : M W Addr :=
 
 def readCell (a : Addr) : M W Val := do
   match (← getState).cellAt a with
-  | some { value := some v, .. } => pure v
-  | _ => throwErr .reference "cannot access a binding before initialization"
+  | some { value := some v, .. } =>
+    pure v
+  | _ =>
+    throwErr .reference "cannot access a binding before initialization"
 
 def writeCell (a : Addr) (v : Val) : M W Unit := do
   match (← getState).cellAt a with
-  | some { value := some _, mutable := true } => setCell a v
-  | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
-  | _ => throwErr .reference "cannot access a binding before initialization"
+  | some { value := some _, mutable := true } =>
+    setCell a v
+  | some { value := some _, mutable := false } =>
+    throwErr .type "assignment to constant variable"
+  | _ =>
+    throwErr .reference "cannot access a binding before initialization"
 
 /-- The names of the own properties of an object, in ECMAScript enumeration order. -/
 def ownKeys (v : Val) : M W (List PropertyKey) :=
   match v with
-  | .obj a => do pure (ownPropertyKeys (← getObj a).props)
+  | .obj a => do
+    pure (ownPropertyKeys (← getObj a).props)
   | _ => unknown "the own keys of a value that is not an object of the program"
 
 /-- Copy enumerable own properties in key order. A getter can delete or redefine later keys,

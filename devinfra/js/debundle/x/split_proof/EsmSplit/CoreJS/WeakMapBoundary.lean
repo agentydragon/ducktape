@@ -17,8 +17,10 @@ theorem stableRead_newEmpty {w : World} {identity : String}
     funext s
     simp only [readHostRef, h]
     rfl
-  change (readHostRef (.binding "WeakMap") >>= fun ctor =>
-    constructTarget (n + 2) ctor ctor [] : M w Val) = _
+  change
+    (readHostRef (.binding "WeakMap") >>= fun ctor => constructTarget (n + 2) ctor ctor [] :
+        M w Val) =
+      _
   rw [binding, M.pure_bind]
   rfl
 
@@ -26,16 +28,16 @@ theorem stableRead_newEmpty {w : World} {identity : String}
 These describe both a new native weak map and an ordinary lookalike, even if
 both prototypes have been changed to null. -/
 private def PlainShape (proto : Option Addr) (o : Obj) : Prop :=
-  o.proto = proto ∧ o.props = [] ∧ o.code = none ∧ o.array = false ∧ o.frozen = false ∧
-    o.regexp = none ∧ o.promise = none
+  o.proto = proto ∧
+    o.props = [] ∧
+    o.code = none ∧ o.array = false ∧ o.frozen = false ∧ o.regexp = none ∧ o.promise = none
 
 /-- No brand observation based on these object records alone can accept the
 native receiver while rejecting the ordinary one. This is a statement about
 the present representation, not about an evaluator with another internal slot
 or an address-indexed table. -/
-theorem sameShape_sameObservation (p : Option Addr) (a b : Obj)
-    (ha : PlainShape p a) (hb : PlainShape p b) (observe : Obj → Bool) :
-    observe a = observe b := by
+theorem sameShape_sameObservation (p : Option Addr) (a b : Obj) (ha : PlainShape p a)
+    (hb : PlainShape p b) (observe : Obj → Bool) : observe a = observe b := by
   cases a
   cases b
   simp_all [PlainShape]

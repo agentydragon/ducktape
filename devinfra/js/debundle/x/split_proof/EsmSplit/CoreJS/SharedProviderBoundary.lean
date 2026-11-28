@@ -10,8 +10,11 @@ variable {w : World}
 
 /-- The provider loads first, exactly once, and its actual units are the prefix. -/
 def ProviderPrefix (name : String) (linked : List (Module × Env)) (pre : List LinkedUnit) : Prop :=
-  ∃ m env, linked.head? = some (m, env) ∧ m.name = name ∧ m.imports = [] ∧
-    linked.filter (fun pair => pair.1.name == name) = [(m, env)] ∧ unitsOf [(m, env)] = pre
+  ∃ m env,
+    linked.head? = some (m, env) ∧
+      m.name = name ∧
+      m.imports = [] ∧
+      linked.filter (fun pair => pair.1.name == name) = [(m, env)] ∧ unitsOf [(m, env)] = pre
 
 /-- The two real links share a ready state, related provider prefixes and their live cells.
 The importer continuations are supplied separately and their ordered units are checked below. -/
@@ -48,8 +51,10 @@ The checked links put the provider first and once, so the suffix may rely on fac
 by its initializer. A provider throw, unknown result or fuel exhaustion skips both suffixes. -/
 theorem SharedProvider.run_eq_after_prefix {source candidate : Program}
     (boundary : SharedProvider source candidate w) (fuel : Nat)
-    (suffix : ∀ state, runUnits fuel boundary.sourcePre boundary.before.ready = .ok () state →
-      runUnits fuel boundary.sourceTail state = runUnits fuel boundary.candidateTail state) :
+    (suffix :
+      ∀ state,
+        runUnits fuel boundary.sourcePre boundary.before.ready = .ok () state →
+          runUnits fuel boundary.sourceTail state = runUnits fuel boundary.candidateTail state) :
     runProgram w fuel source = runProgram w fuel candidate := by
   rw [run_after_link fuel boundary.before, run_after_link fuel boundary.after,
     boundary.sourceSchedule, boundary.candidateSchedule, runUnits_append, runUnits_append]
@@ -58,11 +63,14 @@ theorem SharedProvider.run_eq_after_prefix {source candidate : Program}
   | ok value state =>
     cases value
     exact suffix state outcome
-  | throw | unknown | fuel => rfl
+  | throw
+  | unknown
+  | fuel => rfl
 
 /-- Preserve a consumer suffix whose units and their scopes agree in order. -/
-theorem SharedProvider.run_eq {source candidate : Program} (boundary : SharedProvider source candidate w)
-    (fuel : Nat) (suffix : SameUnits boundary.sourceTail boundary.candidateTail) :
+theorem SharedProvider.run_eq {source candidate : Program}
+    (boundary : SharedProvider source candidate w) (fuel : Nat)
+    (suffix : SameUnits boundary.sourceTail boundary.candidateTail) :
     runProgram w fuel source = runProgram w fuel candidate :=
   boundary.run_eq_after_prefix fuel fun state _ => congrFun (runUnits_same fuel suffix) state
 
@@ -70,7 +78,7 @@ theorem SharedProvider.run_eq {source candidate : Program} (boundary : SharedPro
 theorem SharedProvider.providerOccursOnce {source candidate : Program}
     (boundary : SharedProvider source candidate w) :
     (boundary.before.linked.filter (fun pair => pair.1.name == boundary.name)).length = 1 ∧
-    (boundary.after.linked.filter (fun pair => pair.1.name == boundary.name)).length = 1 := by
+      (boundary.after.linked.filter (fun pair => pair.1.name == boundary.name)).length = 1 := by
   obtain ⟨left, leftEnv, _, _, _, leftOnly, _⟩ := boundary.sourceProvider
   obtain ⟨right, rightEnv, _, _, _, rightOnly, _⟩ := boundary.candidateProvider
   constructor
@@ -84,6 +92,5 @@ theorem SharedProvider.sameExports {source candidate : Program}
   intro w
   rw [exportsMatch_from_checked (boundary w).before (boundary w).after]
   exact (boundary w).entryCells
-
 
 end CoreJS.LinkedBehavior

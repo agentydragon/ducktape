@@ -4,10 +4,10 @@ namespace CoreJS.SyntaxMatch
 
 -- Lean cannot derive DecidableEq for nested mutual inductives. Compare the constructors
 -- produced by LinkedInput; every successful branch returns equality, including deferred code.
-abbrev MatchEq (α : Type) := (a b : α) → Option (PLift (a = b))
+abbrev MatchEq (α : Type) :=
+  (a b : α) → Option (PLift (a = b))
 
-def scalarEq [DecidableEq α] : MatchEq α := fun a b =>
-  if h : a = b then some ⟨h⟩ else none
+def scalarEq [DecidableEq α] : MatchEq α := fun a b => if h : a = b then some ⟨h⟩ else none
 
 def listEq (item : MatchEq α) : MatchEq (List α)
   | [], [] => some ⟨rfl⟩
@@ -118,7 +118,8 @@ partial def exprEq : MatchEq Expr
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
-    let property : Option (PLift (p = p')) := match p, p' with
+    let property : Option (PLift (p = p')) :=
+      match p, p' with
       | none, none => some ⟨rfl⟩
       | some prop, some prop' => (exprEq prop prop').map fun h => ⟨congrArg some h.down⟩
       | _, _ => none
@@ -147,7 +148,6 @@ partial def exprEq : MatchEq Expr
     return ⟨callee ▸ arguments ▸ rfl⟩
   | .func a, .func b => (funcEq a b).map fun h => ⟨congrArg Expr.func h.down⟩
   | _, _ => none
-
 private partial def targetEq : MatchEq Target
   | .var x, .var x' => (scalarEq x x').map fun h => ⟨congrArg Target.var h.down⟩
   | .frozen x, .frozen x' => (scalarEq x x').map fun h => ⟨congrArg Target.frozen h.down⟩
@@ -156,17 +156,16 @@ private partial def targetEq : MatchEq Target
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
   | _, _ => none
-
 partial def superCallEq : MatchEq SuperCall
   | .forward, .forward => some ⟨rfl⟩
-  | .explicit args, .explicit args' => (listEq exprEq args args').map fun h => ⟨congrArg SuperCall.explicit h.down⟩
+  | .explicit args, .explicit args' =>
+    (listEq exprEq args args').map fun h => ⟨congrArg SuperCall.explicit h.down⟩
   | .conditional choice yes no, .conditional choice' yes' no' => do
     let ⟨c⟩ ← scalarEq choice choice'
     let ⟨y⟩ ← listEq exprEq yes yes'
     let ⟨n⟩ ← listEq exprEq no no'
     return ⟨c ▸ y ▸ n ▸ rfl⟩
   | _, _ => none
-
 private partial def derivedCtorEq : MatchEq (Option (List Stmt × SuperCall × Func))
   | none, none => some ⟨rfl⟩
   | some (before, args, f), some (before', args', g) => do
@@ -175,7 +174,6 @@ private partial def derivedCtorEq : MatchEq (Option (List Stmt × SuperCall × F
     let ⟨b⟩ ← funcEq f g
     return ⟨p ▸ a ▸ b ▸ rfl⟩
   | _, _ => none
-
 partial def funcEq : MatchEq Func
   | .mk name kind self params body, .mk name' kind' self' params' body' => do
     let ⟨n⟩ ← scalarEq name name'
@@ -184,7 +182,8 @@ partial def funcEq : MatchEq Func
     let ⟨p⟩ ← scalarEq params params'
     let ⟨b⟩ ← listEq stmtEq body body'
     return ⟨n ▸ k ▸ s ▸ p ▸ b ▸ rfl⟩
-  | .withDefaults name kind self params arity body, .withDefaults name' kind' self' params' arity' body' => do
+  | .withDefaults name kind self params arity body,
+    .withDefaults name' kind' self' params' arity' body' => do
     let ⟨n⟩ ← scalarEq name name'
     let ⟨k⟩ ← scalarEq kind kind'
     let ⟨s⟩ ← scalarEq self self'
@@ -201,7 +200,7 @@ partial def funcEq : MatchEq Func
     let ⟨b⟩ ← listEq stmtEq body body'
     return ⟨n ▸ k ▸ s ▸ p ▸ r ▸ b ▸ rfl⟩
   | .opaque name kind self arity code part free refusal,
-      .opaque name' kind' self' arity' code' part' free' refusal' => do
+    .opaque name' kind' self' arity' code' part' free' refusal' => do
     let ⟨n⟩ ← scalarEq name name'
     let ⟨k⟩ ← scalarEq kind kind'
     let ⟨s⟩ ← scalarEq self self'
@@ -212,7 +211,6 @@ partial def funcEq : MatchEq Func
     let ⟨r⟩ ← scalarEq refusal refusal'
     return ⟨n ▸ k ▸ s ▸ a ▸ c ▸ p ▸ f ▸ r ▸ rfl⟩
   | _, _ => none
-
 private partial def classMemberEq : MatchEq ClassMember
   | .staticBlock body, .staticBlock body' => do
     let ⟨eq⟩ ← funcEq body body'
@@ -238,7 +236,6 @@ private partial def classMemberEq : MatchEq ClassMember
     let ⟨value⟩ ← funcEq v v'
     return ⟨st ▸ key ▸ value ▸ rfl⟩
   | _, _ => none
-
 private partial def propEq : MatchEq PropDef
   | .init k v, .init k' v' => do
     let ⟨key⟩ ← exprEq k k'
@@ -262,13 +259,11 @@ private partial def propEq : MatchEq PropDef
     let ⟨excluded⟩ ← scalarEq keys keys'
     return ⟨source ▸ excluded ▸ rfl⟩
   | _, _ => none
-
 private partial def objectBindingEq : MatchEq (Expr × BindingPattern)
   | (k, p), (k', p') => do
     let ⟨key⟩ ← exprEq k k'
     let ⟨pattern⟩ ← patternEq p p'
     return ⟨key ▸ pattern ▸ rfl⟩
-
 private partial def patternEq : MatchEq BindingPattern
   | .name a, .name b => (scalarEq a b).map fun h => ⟨congrArg BindingPattern.name h.down⟩
   | .object a, .object b =>
@@ -282,7 +277,6 @@ private partial def patternEq : MatchEq BindingPattern
     let ⟨fallback⟩ ← exprEq e e'
     return ⟨pattern ▸ fallback ▸ rfl⟩
   | _, _ => none
-
 /-- A match returns a proof of statement equality. -/
 partial def stmtEq : MatchEq Stmt
   | .funDecl a, .funDecl b => (funcEq a b).map fun h => ⟨congrArg Stmt.funDecl h.down⟩
@@ -305,7 +299,6 @@ partial def stmtEq : MatchEq Stmt
     let ⟨p⟩ ← scalarEq postTest postTest'
     return ⟨i ▸ t ▸ u ▸ b ▸ p ▸ rfl⟩
   | .breakScope a, .breakScope b => (stmtEq a b).map fun h => ⟨congrArg Stmt.breakScope h.down⟩
-
   | .forOf kind pattern source body, .forOf kind' pattern' source' body' => do
     let ⟨k⟩ ← scalarEq kind kind'
     let ⟨p⟩ ← patternEq pattern pattern'

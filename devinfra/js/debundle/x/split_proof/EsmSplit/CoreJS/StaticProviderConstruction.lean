@@ -37,37 +37,43 @@ executable CoreJS units, but the authored plan still selects an owner for each
 one and the module lowering requires them to remain in the entry. -/
 def metadataOrdinals (nodes : Array Json) : List Nat :=
   nodes.toList.zipIdx.filterMap fun (node, ordinal) =>
-    if ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration"].contains
-        ((node.getObjValAs? String "type").toOption.getD "") then some ordinal else none
+    if
+        ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration"].contains
+          ((node.getObjValAs? String "type").toOption.getD "") then
+      some ordinal
+    else none
 
 /-- The writer path publishes only the small primitive synchronous subset. It
 has no callable values, calls, member observations, or explicit throws whose
 source locations or function metadata could be observed after placement. -/
 private def ordinaryNodeTypes : List String :=
-  ["Program", "ImportDeclaration", "ImportSpecifier", "ExportNamedDeclaration",
-    "ExportSpecifier", "VariableDeclaration", "VariableDeclarator", "Identifier",
-    "Literal", "BinaryExpression", "ConditionalExpression"]
+  ["Program", "ImportDeclaration", "ImportSpecifier", "ExportNamedDeclaration", "ExportSpecifier",
+    "VariableDeclaration", "VariableDeclarator", "Identifier", "Literal", "BinaryExpression",
+    "ConditionalExpression"]
 
 partial def ordinarySynchronousSyntax : Json → Bool
   | .obj fields =>
     let nodeType := fields.get? "type"
-    let nodeAllowed := match nodeType with
+    let nodeAllowed :=
+      match nodeType with
       | none => true
       | some (.str kind) => ordinaryNodeTypes.contains kind
       | some _ => false
-    let operatorAllowed := match nodeType, fields.get? "operator" with
+    let operatorAllowed :=
+      match nodeType, fields.get? "operator" with
       | some (.str "BinaryExpression"), some (.str operator) => ["===", "!=="].contains operator
       | some (.str "BinaryExpression"), _ => false
       | _, _ => true
-    let literalAllowed := match nodeType with
+    let literalAllowed :=
+      match nodeType with
       | some (.str "Literal") => (fields.get? "regex").isNone && (fields.get? "bigint").isNone
       | _ => true
-    let declarationAllowed := match nodeType with
+    let declarationAllowed :=
+      match nodeType with
       | some (.str "VariableDeclaration") => fields.get? "kind" == some (.str "const")
       | _ => true
     nodeAllowed && operatorAllowed && literalAllowed && declarationAllowed &&
-      fields.toList.all fun (key, value) =>
-        key == "type" || ordinarySynchronousSyntax value
+      fields.toList.all fun (key, value) => key == "type" || ordinarySynchronousSyntax value
   | .arr values => values.all ordinarySynchronousSyntax
   | _ => true
 
@@ -77,31 +83,35 @@ unmodeled JavaScript exception. -/
 def ordinaryModuleGraph (program : Program) : Bool :=
   program.modules.all fun module =>
     let imports := module.imports.flatMap fun request => request.names.map Prod.snd
-    let (_, safe) := module.body.foldl (fun (known, safe) (_, statement) =>
-      match statement with
-      | .decl .const name initializer =>
-        (known ++ [name], safe && initializer.free.all (fun read => known.contains read))
-      | _ => (known, false)) (imports, true)
+    let (_, safe) :=
+      module.body.foldl
+        (fun (known, safe) (_, statement) =>
+          match statement with
+          | .decl .const name initializer =>
+            (known ++ [name], safe && initializer.free.all (fun read => known.contains read))
+          | _ => (known, false))
+        (imports, true)
     safe
 
 /-- Preserve original provider imports in the entry. A split consumer gets the
 named imports used by its actual source units, in their source order. -/
-private def externalImports (sourceEntry : Module) (entry : String)
-    (module : EsmSplit.Module) (body : List (Nat × Stmt)) : List Import :=
-  if module.name == entry then sourceEntry.imports else
+private def externalImports (sourceEntry : Module) (entry : String) (module : EsmSplit.Module)
+    (body : List (Nat × Stmt)) : List Import :=
+  if module.name == entry then sourceEntry.imports
+  else
     let used := body.flatMap fun unit => unit.2.free
     sourceEntry.imports.filterMap fun request =>
       let names := request.names.filter fun (_, localName) => used.contains localName
       if names.isEmpty then none else some { request with names }
 
-def outputModule (sourceEntry : Module) (plan : EsmSplit.Plan)
-    (module : EsmSplit.Module) : Module :=
+def outputModule (sourceEntry : Module) (plan : EsmSplit.Plan) (module : EsmSplit.Module) :
+    Module :=
   let body := coreUnits sourceEntry module
   { name := module.name
-    imports := externalImports sourceEntry plan.entry module body ++ glueImports sourceEntry plan module
+    imports :=
+      externalImports sourceEntry plan.entry module body ++ glueImports sourceEntry plan module
     body
     exports := module.exports ++ (if module.name == plan.entry then sourceEntry.exports else []) }
-
 
 /-- The normalized source may import one provider cell under several local
 names. The caller uses this route to read the provider beside the raw entry. -/
@@ -113,7 +123,8 @@ def providerRequest (source : LinkedInput.DecodedSource) : Except String Import 
   let (exported, _) :: _ := names | throw "expected a named provider import"
   unless names.all (fun (name, _) => name == exported) do
     throw "expected imports of one provider export"
-  unless EsmSplit.safeModulePath request.source && request.source.endsWith ".mjs" &&
+  unless
+    EsmSplit.safeModulePath request.source && request.source.endsWith ".mjs" &&
       request.source != source.source.name do
     throw "expected a distinct relative .mjs provider"
   return { request with names }
@@ -121,31 +132,36 @@ def providerRequest (source : LinkedInput.DecodedSource) : Except String Import 
 /-- Import metadata has no executable ID, but like an export row it must still
 account for its own original ordinal. No other omitted source items are allowed. -/
 def completeSource (source : LinkedInput.DecodedSource) : Bool :=
-  let imports := (metadataOrdinals source.nodes).filter fun id =>
-    (source.nodes[id]?.bind fun node => (node.getObjValAs? String "type").toOption) ==
-      some "ImportDeclaration"
-  decide ((source.source.body.map Prod.fst ++ source.localExports.map (·.ordinal) ++ imports).Perm
-    (List.range source.nodes.size))
+  let imports :=
+    (metadataOrdinals source.nodes).filter fun id =>
+      (source.nodes[id]?.bind fun node => (node.getObjValAs? String "type").toOption) ==
+        some "ImportDeclaration"
+  decide
+    ((source.source.body.map Prod.fst ++ source.localExports.map (·.ordinal) ++ imports).Perm
+      (List.range source.nodes.size))
 
 private def bundleFor (source : LinkedInput.DecodedSource) : EsmSplit.Bundle :=
   EsmSplit.LowerSplit.sourceBundle source.nodes
 
 /-- Keep the provider's original statement identities out of the consumer
 ordinal space. The same numbered module is shared by both programs. -/
-def original (source : LinkedInput.DecodedSource) (provider : AuthenticatedSource.IndexedSource) : Program :=
-  let fixed := { provider.source with body := provider.source.body.map fun (id, stmt) =>
-    (source.nodes.size + id, stmt) }
+def original (source : LinkedInput.DecodedSource) (provider : AuthenticatedSource.IndexedSource) :
+    Program :=
+  let fixed :=
+    { provider.source with
+      body := provider.source.body.map fun (id, stmt) => (source.nodes.size + id, stmt) }
   { entry := source.source.name, modules := [source.source, fixed] }
 
-structure Construction (source : LinkedInput.DecodedSource) (provider : AuthenticatedSource.IndexedSource)
-    (request : EsmSplit.Spec) where
+structure Construction (source : LinkedInput.DecodedSource)
+    (provider : AuthenticatedSource.IndexedSource) (request : EsmSplit.Spec) where
   plan : EsmSplit.Plan
   planned : plan = EsmSplit.mkPlan (bundleFor source) request
   valid : EsmSplit.Valid (bundleFor source) request plan
   covered : (PlanPlacement.assignments plan |>.map Prod.fst).Perm (List.range source.nodes.size)
-  metadataOwners : ∀ ordinal ∈ metadataOrdinals source.nodes,
-    (PlanPlacement.assignments plan).filter (fun placement => placement.1 == ordinal) =
-      [(ordinal, plan.entry)]
+  metadataOwners :
+    ∀ ordinal ∈ metadataOrdinals source.nodes,
+      (PlanPlacement.assignments plan).filter (fun placement => placement.1 == ordinal) =
+        [(ordinal, plan.entry)]
   program : Program
   ordered : program.evalOrder = provider.source.name :: (request.order ++ [request.entry])
   assignment : List UnitPlacement
@@ -168,30 +184,48 @@ def construct (source : LinkedInput.DecodedSource) (provider : AuthenticatedSour
     throw "expected a sequential authored placement with a public entry"
   unless !source.hasTemplates && !provider.hasTemplates && completeSource source do
     throw "provider split does not cover every original source ordinal"
-  unless source.nodes.all ordinarySynchronousSyntax && provider.nodes.all ordinarySynchronousSyntax do
+  unless
+    source.nodes.all ordinarySynchronousSyntax && provider.nodes.all ordinarySynchronousSyntax do
     throw "static provider construction accepts only primitive synchronous module syntax"
   unless request.modules.all (fun row => row.1.endsWith ".mjs" && row.1 != imported.source) do
     throw "expected .mjs output paths disjoint from the provider"
   EsmSplit.validateModulePaths (imported.source :: request.modules.map Prod.fst)
   let B := bundleFor source
-  unless (List.range source.nodes.size).all (fun id =>
-      (request.modules.flatMap fun row => row.2.filter fun selector => selector.claims B id).length == 1) do
+  unless
+    (List.range source.nodes.size).all
+      (fun id =>
+        (request.modules.flatMap fun row =>
+              row.2.filter fun selector => selector.claims B id).length ==
+          1) do
     throw "each original source ordinal must be selected exactly once"
   let plan := EsmSplit.mkPlan B request
-  let .isTrue valid := (inferInstance : Decidable (EsmSplit.Valid B request plan)) |
-    throw "authored source placement is invalid"
+  let .isTrue valid :=
+    (inferInstance :
+      Decidable (EsmSplit.Valid B request plan)) | throw "authored source placement is invalid"
   let picks := PlanPlacement.assignments plan
-  let .isTrue covered := (inferInstance : Decidable ((picks.map Prod.fst).Perm (List.range source.nodes.size))) |
-    throw "authored placement does not cover the source ordinals"
-  let .isTrue metadataOwners := (inferInstance : Decidable (∀ ordinal ∈ metadataOrdinals source.nodes,
-      picks.filter (fun placement => placement.1 == ordinal) = [(ordinal, plan.entry)])) |
-    throw "import and export metadata must stay in the entry"
+  let .isTrue covered :=
+    (inferInstance :
+      Decidable
+        ((picks.map Prod.fst).Perm
+          (List.range
+            source.nodes.size))) | throw "authored placement does not cover the source ordinals"
+  let .isTrue metadataOwners :=
+    (inferInstance :
+      Decidable
+        (∀ ordinal ∈ metadataOrdinals source.nodes,
+          picks.filter (fun placement => placement.1 == ordinal) =
+            [(ordinal, plan.entry)])) | throw "import and export metadata must stay in the entry"
   let before := original source provider
   let [_, fixed] := before.modules | throw "expected one provider and one source module"
-  let after : Program := { entry := plan.entry, modules := plan.mods.map (outputModule source.source plan) ++ [fixed] }
-  let .isTrue ordered := (inferInstance : Decidable (after.evalOrder =
-      provider.source.name :: (request.order ++ [request.entry]))) |
-    throw "provider and consumers do not follow the authored order"
+  let after : Program :=
+    { entry := plan.entry, modules := plan.mods.map (outputModule source.source plan) ++ [fixed] }
+  let .isTrue ordered :=
+    (inferInstance :
+      Decidable
+        (after.evalOrder =
+          provider.source.name ::
+            (request.order ++
+              [request.entry]))) | throw "provider and consumers do not follow the authored order"
   unless ordinaryModuleGraph before && ordinaryModuleGraph after do
     throw "static provider construction reads only imports and earlier const declarations"
   let ids := source.source.body.map Prod.fst
@@ -199,31 +233,37 @@ def construct (source : LinkedInput.DecodedSource) (provider : AuthenticatedSour
   let ⟨places⟩ ← checkPlaces assignment before after
   let pair ← checkProbePair before after
   let link ← StaticProviderLinking.certify before after pair imported.source exported
-  let some ⟨suffix⟩ := link.tailSameUnits? |
-    throw "consumer schedule changes ordered source execution"
+  let some ⟨suffix⟩ :=
+    link.tailSameUnits? | throw "consumer schedule changes ordered source execution"
   -- Check both link tables, not the values produced by evaluating either file.
-  match hBefore : EntryExports.resolve link.providerName link.before.linked,
-        hAfter : EntryExports.resolve link.providerName link.after.linked with
+  match hBefore : EntryExports.resolve link.providerName link.before.linked, hAfter :
+    EntryExports.resolve link.providerName link.after.linked with
   | .ok sourceCells, .ok candidateCells =>
-    let .isTrue sameCells := (inferInstance : Decidable (sourceCells = candidateCells)) |
-      throw "provider exports resolve to different live cells"
-    return ⟨plan, rfl, valid, covered, metadataOwners, after, ordered, assignment, places,
-      link, sourceCells, hBefore, by simpa [sameCells] using hAfter, suffix⟩
-  | _, _ => throw "could not resolve provider exports"
+    let .isTrue sameCells :=
+      (inferInstance :
+        Decidable
+          (sourceCells = candidateCells)) | throw "provider exports resolve to different live cells"
+    return ⟨plan, rfl, valid, covered, metadataOwners, after, ordered, assignment, places, link,
+        sourceCells, hBefore, by simpa [sameCells] using hAfter, suffix⟩
+  | _, _ =>
+    throw "could not resolve provider exports"
 
 /-- Preserve the original AST rows and their checked owners. The writer
 re-bases external imports; only consumers are printed, since the provider
 is copied unchanged and byte-checked by the publication gate. -/
-def printerPlan {source provider request} (built : Construction source provider request) : EsmSplit.Plan :=
+def printerPlan {source provider request} (built : Construction source provider request) :
+    EsmSplit.Plan :=
   let consumers := built.plan.mods.map (·.name)
-  { built.plan with mods := built.plan.mods.map fun module =>
-    { module with imports := module.imports.filter (fun req => consumers.contains req.1) } }
+  { built.plan with
+    mods :=
+      built.plan.mods.map fun module =>
+        { module with imports := module.imports.filter (fun req => consumers.contains req.1) } }
 
-def Construction.sharedBoundary {source provider request} (built : Construction source provider request)
-    (w : World) : SharedProvider (original source provider) built.program w :=
+def Construction.sharedBoundary {source provider request}
+    (built : Construction source provider request) (w : World) :
+    SharedProvider (original source provider) built.program w :=
   let link := built.link
-  {
-    before := link.before.forWorld w
+  { before := link.before.forWorld w
     after := link.after.forWorld w
     name := link.providerName
     sourcePre := unitsOf [(link.provider, link.beforeProviderEnv)]
@@ -234,34 +274,39 @@ def Construction.sharedBoundary {source provider request} (built : Construction 
     providerPrefixSame := link.providerPrefixSame
     sourceSchedule := link.beforeSchedule
     candidateSchedule := link.afterSchedule
-    sourceProvider := ⟨link.provider, link.beforeProviderEnv, link.beforeHead,
-      link.providerNamed, link.providerClosed, link.beforeUnique, rfl⟩
-    candidateProvider := ⟨link.provider, link.afterProviderEnv, link.afterHead,
-      link.providerNamed, link.providerClosed, link.afterUnique, rfl⟩
+    sourceProvider :=
+      ⟨link.provider, link.beforeProviderEnv, link.beforeHead, link.providerNamed,
+        link.providerClosed, link.beforeUnique, rfl⟩
+    candidateProvider :=
+      ⟨link.provider, link.afterProviderEnv, link.afterHead, link.providerNamed,
+        link.providerClosed, link.afterUnique, rfl⟩
     cells := built.cells
     sourceCells := built.sourceCells
     candidateCells := built.candidateCells
-    entryCells := link.entryCellsMatch
-  }
+    entryCells := link.entryCellsMatch }
 
-theorem Construction.authoredOwner {source provider request} (built : Construction source provider request)
-    {id owner} (member : (id, owner) ∈ PlanPlacement.assignments built.plan) :
+theorem Construction.authoredOwner {source provider request}
+    (built : Construction source provider request) {id owner}
+    (member : (id, owner) ∈ PlanPlacement.assignments built.plan) :
     request.claimants (bundleFor source) id = [owner] :=
   PlanPlacement.authored_owner built.valid.2.2.1 member
 
-theorem Construction.guarantees {source provider request} (built : Construction source provider request) :
+theorem Construction.guarantees {source provider request}
+    (built : Construction source provider request) :
     (∀ w fuel, runProgram w fuel (original source provider) = runProgram w fuel built.program) ∧
-    SameExports (original source provider) built.program ∧
-    Places built.assignment (original source provider) built.program :=
-  ⟨fun w fuel => (built.sharedBoundary w).run_eq fuel built.suffix, built.link.sameExports, built.places⟩
+      SameExports (original source provider) built.program ∧
+      Places built.assignment (original source provider) built.program :=
+  ⟨fun w fuel => (built.sharedBoundary w).run_eq fuel built.suffix, built.link.sameExports,
+    built.places⟩
 
 /-- This premise comes from exact comparison to the independently read
 program after checking provider bytes and all output paths. -/
 theorem Construction.readbackGuarantees {source provider request}
-    (built : Construction source provider request) {observed : Program} (same : observed = built.program) :
+    (built : Construction source provider request) {observed : Program}
+    (same : observed = built.program) :
     (∀ w fuel, runProgram w fuel (original source provider) = runProgram w fuel observed) ∧
-    SameExports (original source provider) observed ∧
-    Places built.assignment (original source provider) observed :=
+      SameExports (original source provider) observed ∧
+      Places built.assignment (original source provider) observed :=
   same ▸ built.guarantees
 
 end CoreJS.StaticProviderConstruction

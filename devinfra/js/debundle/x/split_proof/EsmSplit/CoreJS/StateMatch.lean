@@ -42,7 +42,8 @@ private def codeMatch : MatchEq Code
   | _, _ => none
 
 private def objMatch : MatchEq Obj
-  | ⟨proto, props, code, array, rx, frozen, promise⟩, ⟨proto', props', code', array', rx', frozen', promise'⟩ => do
+  | ⟨proto, props, code, array, rx, frozen, promise⟩,
+    ⟨proto', props', code', array', rx', frozen', promise'⟩ => do
     let ⟨p⟩ ← scalarEq proto proto'
     let ⟨ps⟩ ← scalarEq props props'
     let ⟨c⟩ ← optionEq codeMatch code code'

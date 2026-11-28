@@ -21,8 +21,10 @@ theorem binding_before_initializer (name : Name) (init : Expr) :
   simp [Stmt.bindings, varNamesOf, Stmt.varNames, lexDecls] <;> rfl
 
 theorem execute_initializer {w : World} (fuel : Nat) (env : Env) (name : Name) (init : Expr) :
-    execStmt (W := w) (fuel + 1) env (.decl .var name init) = (do
-      writeVar env name (← evalExpr fuel env init)
-      pure .normal) := rfl
+    execStmt (W := w) (fuel + 1) env (.decl .var name init) =
+      (do
+        writeVar env name (← evalExpr fuel env init)
+        pure .normal) :=
+  rfl
 
 end CoreJS.VarInitializer

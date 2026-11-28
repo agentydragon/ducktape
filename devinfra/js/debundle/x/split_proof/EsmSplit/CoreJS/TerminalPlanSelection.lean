@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.TerminalPlanOwnership
 import EsmSplit.CoreJS.TerminalExportPlacement
+import EsmSplit.CoreJS.TerminalPlanOwnership
 
 /-! Connect the original selector resolver to the unchanged full-bundle plan.
 The executable check compares the two independently produced assignments;
@@ -9,7 +9,8 @@ namespace CoreJS.TerminalPlanSelection
 
 /-- Every resolved original-unit label agrees with the authored claimants on
 the same full bundle that the actual planner uses. -/
-def ClaimantsMatch (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (selected : List UnitPlacement) : Prop :=
+def ClaimantsMatch (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (selected : List UnitPlacement) :
+    Prop :=
   ∀ label ∈ selected, S.claimants B label.1 = [label.2]
 
 instance (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (selected : List UnitPlacement) :
@@ -23,20 +24,22 @@ actual entry; the resolver's separate uniqueness and coverage proofs still
 reject repeated or missing selector occurrences. -/
 theorem selected_owners {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     (row : EsmSplit.LocalExportUnit) (terminal : row.ordinal = ss.length)
-    (allUnits : B.length = row.ordinal + 1)
-    (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S)) (entry : EsmSplit.Module)
+    (allUnits : B.length = row.ordinal + 1) (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S))
+    (entry : EsmSplit.Module)
     (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
-    (owned : row.ordinal ∈ entry.stmts)
-    (source : TerminalExportPlacement.TerminalSource)
+    (owned : row.ordinal ∈ entry.stmts) (source : TerminalExportPlacement.TerminalSource)
     (sourceOrdinal : source.exportOrdinal = row.ordinal)
     (sourceIds : source.module.body.map Prod.fst = List.range ss.length)
     (selection : TerminalExportPlacement.Selection source S)
     (matching : ClaimantsMatch B S selection.selected) :
-    (∀ m ∈ (EsmSplit.mkPlan B S).mods, ∀ i (hi : i < ss.length),
-      (i, ss[i]) ∈ (moduleOf ss B (EsmSplit.mkPlan B S) m).body ↔ (i, m.name) ∈ selection.selected) ∧
-    (row.ordinal, entry.name) ∈ selection.selected ∧
-    (∀ owner, (row.ordinal, owner) ∈ selection.selected → owner = entry.name) := by
-  have owners := TerminalPlanOwnership.all_original_owners row terminal allUnits valid entry found owned
+    (∀ m ∈ (EsmSplit.mkPlan B S).mods,
+        ∀ i (hi : i < ss.length),
+          (i, ss[i]) ∈ (moduleOf ss B (EsmSplit.mkPlan B S) m).body ↔
+            (i, m.name) ∈ selection.selected) ∧
+      (row.ordinal, entry.name) ∈ selection.selected ∧
+      (∀ owner, (row.ordinal, owner) ∈ selection.selected → owner = entry.name) := by
+  have owners :=
+    TerminalPlanOwnership.all_original_owners row terminal allUnits valid entry found owned
   have selectedId : ∀ i, i < ss.length → ∃ owner, (i, owner) ∈ selection.selected := by
     intro i hi
     have hin : i ∈ source.exportOrdinal :: source.module.body.map Prod.fst := by
@@ -69,6 +72,5 @@ theorem selected_owners {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spe
     have h := matching (row.ordinal, owner) member
     rw [owners.2.2.2.1] at h
     exact (by simpa using h : entry.name = owner).symm
-
 
 end CoreJS.TerminalPlanSelection

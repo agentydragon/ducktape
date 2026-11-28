@@ -10,27 +10,24 @@ printing are trusted boundaries and are not part of these theorems. -/
 namespace CoreJS.TerminalReaderConstruction
 
 open CoreJS.LinkedBehavior
-
 set_option maxRecDepth 16000
 set_option maxHeartbeats 4000000
 
-def statements (value : String) : List Stmt := [
-  .decl .const "x" (.str value),
-  .decl .const "y" (.var "x")]
+def statements (value : String) : List Stmt :=
+  [.decl .const "x" (.str value), .decl .const "y" (.var "x")]
 
 def source (value : String) : Program :=
   ⟨"entry.mjs", [⟨"entry.mjs", [], (List.range 2).zip (statements value), [("y", "y")]⟩]⟩
 
-def bundle : EsmSplit.Bundle := [
-  { src := "", defs := ["x"] },
-  { src := "", defs := ["y"], eager := ["x"], exports := [("y", some "y")] }]
+def bundle : EsmSplit.Bundle :=
+  [{ src := "", defs := ["x"] },
+    { src := "", defs := ["y"], eager := ["x"], exports := [("y", some "y")] }]
 
-def request : EsmSplit.Spec := {
-  entry := "entry.mjs"
-  modules := [("entry.mjs", [.stmt 1]), ("provider.mjs", [.stmt 0])]
-  order := ["provider.mjs"]
-  sequential := true
-}
+def request : EsmSplit.Spec :=
+  { entry := "entry.mjs"
+    modules := [("entry.mjs", [.stmt 1]), ("provider.mjs", [.stmt 0])]
+    order := ["provider.mjs"]
+    sequential := true }
 
 /-- The actual planner and splitter receive the two original CoreJS units. -/
 def planned (value : String) : Program :=
@@ -43,16 +40,18 @@ theorem placement (value : String) :
   constructor
   · decide
   · constructor
-    · conv => lhs; cbv
+    · conv =>
+        lhs; cbv
       exact List.Perm.refl _
-    · conv => lhs; cbv
+    · conv =>
+        lhs; cbv
       decide
 
 /-- The public reader denotes the identical original live cell, not merely an
 initialized value that happens to be equal. -/
 theorem exact_cell (value : String) (w : World) :
     LinkedBehavior.exports w (source value) = some [("y", ⟨2, 0⟩)] ∧
-    LinkedBehavior.exports w (planned value) = some [("y", ⟨2, 0⟩)] := by
+      LinkedBehavior.exports w (planned value) = some [("y", ⟨2, 0⟩)] := by
   constructor <;> cbv
 
 theorem same_exports (value : String) : SameExports (source value) (planned value) := by
@@ -63,6 +62,5 @@ theorem same_exports (value : String) : SameExports (source value) (planned valu
 /-- Dependency-first evaluation follows the authored module order. -/
 theorem authored_order (value : String) :
     (planned value).evalOrder = request.order ++ [request.entry] := by cbv
-
 
 end CoreJS.TerminalReaderConstruction
