@@ -20,6 +20,27 @@ _SOURCE_AST_DATA = [
 _LOWERSPLIT_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"}
 
 js_test(
+    name = "identity_baseline",
+    size = "medium",
+    data = [
+        "//devinfra/js/debundle/excalidraw:bundle",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:prepare",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:zod_package",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "identity_baseline.mjs",
+    env = dict(
+        _LOWERSPLIT_ENV,
+        EXCALIDRAW_OUTPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
+        LIBRARY_PREPARE = "$(rootpath //devinfra/js/debundle/x/split_proof/integration/library_splits:prepare)",
+        ZOD_PACKAGE = "$(rootpath //devinfra/js/debundle/x/split_proof/integration/library_splits:zod_package)",
+    ),
+)
+
+js_test(
     name = "lowering_census",
     data = [
         "//devinfra/js/debundle/e2e:corpus_files",

@@ -10,6 +10,10 @@ The goal is a runnable, Lean-certified split of the pinned bundle that recovers 
 | [236-unit scroll proposal](proposals/scroll/README.md)                                        | Additional upstream groups passed emit, disk and Chromium checks with the recorded Lean order. The same owners were refused with the authored priority. The proposal and its order are separate from the checked-in smoke selection. |
 | [Full authored editor and main replay](#building-and-replaying-the-authored-excalidraw-specs) | Compares placement and execution order with the Rust reports and records refusals. It does not establish a certificate for the full split.                                                                                           |
 
+The [unchanged-artifact baseline](identity_baseline.md) compares the original
+Excalidraw and library files byte for byte, and records what the ordinary
+CLI does with identity requests.
+
 ## Diagnostic census
 
 Run the experimental Lean checker against the public, pinned Excalidraw bundle:
