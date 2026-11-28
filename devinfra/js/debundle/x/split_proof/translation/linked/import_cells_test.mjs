@@ -56,17 +56,40 @@ function assertProviderConstruction(fixture, localFile = "local.mjs") {
   assert.deepEqual(observe(path.join(fixture.out, spec.entry), ["result", "live"]), { result: "ok", live: 31 });
   const reread = fixture.run({ checkOutput: true });
   assert.equal(reread.status, "certified", reread.log);
-  assert.deepEqual(reread.verdict, result.verdict);
+  const { receipt } = result.verdict;
+  assert.equal(receipt.operation, "published");
+  assert.equal(receipt.graph.public_entry.route, spec.entry);
+  assert.deepEqual(receipt.graph.public_entry.exports, ["result", "live"]);
+  assert.equal(receipt.graph.public_entry.live_cells, "same-linked-cells");
+  assert.deepEqual(receipt.graph.source.evaluation_order, ["provider.mjs", "entry.mjs"]);
+  assert.deepEqual(receipt.graph.output.evaluation_order, ["provider.mjs", localFile, "entry.mjs"]);
+  assert.equal(receipt.client.coverage, "unchecked");
+  assert.equal(receipt.deployment.claim, "none");
+  assert.deepEqual(receipt.deployment.fixed_files, ["provider.mjs"]);
+  assert.deepEqual(reread.verdict, { ...result.verdict, receipt: { ...receipt, operation: "checked-output" } });
 }
 
 function assertRefused(fixture, message, options) {
   const refusal = fixture.run(options);
   assert.equal(refusal.status, "refused", refusal.log);
   assert.match(refusal.reason, message);
+  assert.equal(refusal.verdict.receipt, undefined);
 }
 
 const oneProvider = primitiveFixture("one-static-provider");
 assertProviderConstruction(oneProvider);
+// Moving the public initializer ahead of its local input would make an
+// ordinary client of the entry encounter the uninitialized binding.
+const wrongOrder = path.join(oneProvider.dir, "wrong-order.json");
+writeFileSync(
+  wrongOrder,
+  JSON.stringify({ ...spec, modules: { "entry.mjs": ["#0", "#1", "#3"], "local.mjs": ["#2"] } })
+);
+assertRefused(oneProvider, /static provider:/, {
+  spec: wrongOrder,
+  out: path.join(oneProvider.dir, "wrong-order"),
+});
+assertRefused(oneProvider, /static provider:/, { spec: wrongOrder, allowExistingOut: true });
 const stagedProvider = path.join(oneProvider.out, "provider.mjs");
 writeFileSync(stagedProvider, primitiveProvider + "\n// changed bytes, same syntax\n");
 assertRefused(oneProvider, /provider provider\.mjs differs/, { checkOutput: true });

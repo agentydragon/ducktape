@@ -252,8 +252,21 @@ assert.equal(certified.guarantee, "all-outcomes");
 assert.equal(certified.verdict.every_ending_matches, true);
 assert.equal(certified.verdict.proof_scope, "linked-entry-provider");
 assert.equal(certified.verdict.caller_context, "default-import-snapshot");
+assert.deepEqual(certified.verdict.receipt.graph.public_entry, {
+  route: entry,
+  exports: ["default"],
+  live_cells: "same-linked-cells",
+});
+assert.equal(certified.verdict.receipt.client.coverage, "default-import-snapshot");
+assert.equal(certified.verdict.receipt.client.checked_route, caller);
+assert.equal(certified.verdict.receipt.deployment.claim, "none");
+assert(certified.verdict.receipt.deployment.checked.includes("explicit-node-esm-manifest"));
+assert.deepEqual(certified.verdict.receipt.deployment.fixed_files, ["package.json", "eq.js", caller]);
 assert.deepEqual(certified.files, [entry, "eq.js", "package.json", "sorted-uniq.mjs", "sortedUniq.js"]);
-assert.deepEqual(split({ ...cli, checkOutput: true }).verdict, certified.verdict);
+assert.deepEqual(split({ ...cli, checkOutput: true }).verdict, {
+  ...certified.verdict,
+  receipt: { ...certified.verdict.receipt, operation: "checked-output" },
+});
 for (const [file, text] of Object.entries({ ...withPackage, [caller]: aliasText })) {
   assert.deepEqual(readFileSync(path.join(cli.out, file)), Buffer.from(text));
 }
@@ -391,7 +404,10 @@ for (const [file, tamper, reason] of [
   writeFileSync(dest, after);
   expectRefusal({ out, checkOutput: true }, reason);
 }
-assert.deepEqual(split({ ...cli, checkOutput: true }).verdict, certified.verdict);
+assert.deepEqual(split({ ...cli, checkOutput: true }).verdict, {
+  ...certified.verdict,
+  receipt: { ...certified.verdict.receipt, operation: "checked-output" },
+});
 
 console.log(
   JSON.stringify({
