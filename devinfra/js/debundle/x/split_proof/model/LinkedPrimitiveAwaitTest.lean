@@ -1,7 +1,4 @@
-import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.LinkedPrimitiveAwait
-import EsmSplit.CoreJS.PrimitiveAwait
-import Lean.Data.Json
 
 open CoreJS Lean
 open CoreJS.PrimitiveAwait

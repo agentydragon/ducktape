@@ -234,8 +234,9 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
     intro skip _
     cases skip
     · exact undef
-    · exact (eval k).bind fun key _ => (get base key hb).bind fun value hv =>
-        (eval property).bind fun key _ => get value key hv
+    · exact
+        (eval k).bind fun key _ =>
+          (get base key hb).bind fun value hv => (eval property).bind fun key _ => get value key hv
   | hasProp k o =>
     exact
       (eval k).bind fun key _ => (eval o).bind fun base hb => reachFrame_hasProp away key base hb

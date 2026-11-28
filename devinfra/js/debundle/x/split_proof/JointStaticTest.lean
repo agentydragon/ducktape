@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.JointStatic
 import EsmSplit.Cli
+import EsmSplit.CoreJS.JointStatic
 import EsmSplit.LowerSplit.Input
 
 open Lean (Json)

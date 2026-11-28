@@ -119,17 +119,21 @@ theorem prefix_outcomes (w : World) (fuel : Nat) :
 
 /-- The saved tail gives the host code the linked cell of c. This is the
 retained original unit, not a semantic interpretation of JavaScript console. -/
-private def tail : Nat × Stmt := (4, .opaque 4 [] [] ["c"] .world)
+private def tail : Nat × Stmt :=
+  (4, .opaque 4 [] [] ["c"] .world)
 
-private def retainTail (entry : Module) : Module := { entry with body := entry.body ++ [tail] }
+private def retainTail (entry : Module) : Module :=
+  { entry with body := entry.body ++ [tail] }
 
-def originalWithTail : Program := ⟨originalModule.name, [retainTail originalModule]⟩
+def originalWithTail : Program :=
+  ⟨originalModule.name, [retainTail originalModule]⟩
 
 def splitWithTail : Program :=
   ⟨entryPath, [retainTail entryModule, xModule, residualModule]⟩
 
 private def readyWithTail (w : World) : State w :=
-  { ready w with heap := (ready w).heap.push #[], cells := (ready w).cells.push #[] }
+  { ready w with
+    heap := (ready w).heap.push #[], cells := (ready w).cells.push #[] }
 
 private def originalTailLink (w : World) : LinkedBehavior.CheckedLink originalWithTail w :=
   ⟨[(retainTail originalModule, originalEnv)], readyWithTail w, by cbv⟩
@@ -142,7 +146,7 @@ private def splitTailLink (w : World) : LinkedBehavior.CheckedLink splitWithTail
 the final operation's additional, empty region is present on both sides. -/
 private theorem fullPrefix (w : World) (fuel : Nat) :
     runUnits fuel ((unitsOf (originalTailLink w).linked).take 4) (originalTailLink w).ready =
-    runUnits fuel ((unitsOf (splitTailLink w).linked).take 4) (splitTailLink w).ready := by
+      runUnits fuel ((unitsOf (splitTailLink w).linked).take 4) (splitTailLink w).ready := by
   cases fuel with
   | zero => rfl
   | succ n =>

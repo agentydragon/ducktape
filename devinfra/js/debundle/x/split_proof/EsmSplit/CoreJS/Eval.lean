@@ -1164,8 +1164,8 @@ theorem evalExpr_cond (n : Nat) (env : Env) (test yes no : Expr) (s : State W) :
 
 /-- A guarded access stops before either key, retaining the state left by the
 receiver. An abrupt receiver is already propagated by the evaluator's bind. -/
-theorem evalExpr_getOptionalThen_skip (n : Nat) (env : Env) (o k property : Expr)
-    {s post : State W} {base : Val} (receiver : evalExpr n env o s = .ok base post)
+theorem evalExpr_getOptionalThen_skip (n : Nat) (env : Env) (o k property : Expr) {s post : State W}
+    {base : Val} (receiver : evalExpr n env o s = .ok base post)
     (skips : shortCircuits .nullish base = .ok false) :
     evalExpr (n + 1) env (.getOptionalThen o k property) s = .ok .undef post := by
   simp [evalExpr, bind, pure, receiver, skips, lift]

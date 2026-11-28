@@ -72,11 +72,15 @@ with the single prototype write that uses it. Fixed providers are executable
 CoreJS, not opaque retained files. -/
 private def prototypeWrite (ctor : Name) (imports : List Name) : Stmt → Bool
   | .expr (.assign (.member (.var receiver) (.str "prototype")) (.obj fields)) =>
-    receiver == ctor && !fields.isEmpty && fields.all (fun
-      | .init (.str name) (.var imported) => name != "__proto__" && imports.contains imported
-      | .init (.str name) (.func method) => name != "__proto__" &&
-        IndexedExportedFunction.concreteRetainedStatement (.funDecl method) (switchBody := true)
-      | _ => false)
+    receiver == ctor && !fields.isEmpty &&
+      fields.all
+        (fun
+          | .init (.str name) (.var imported) => name != "__proto__" && imports.contains imported
+          | .init (.str name) (.func method) =>
+            name != "__proto__" &&
+              IndexedExportedFunction.concreteRetainedStatement (.funDecl method) (switchBody :=
+                true)
+          | _ => false)
   | _ => false
 
 private def concreteHoist (f : Func) : Bool :=
@@ -85,8 +89,8 @@ private def concreteHoist (f : Func) : Bool :=
 private def checkPrototype (source : LinkedInput.DecodedSource) (fixed : List Module)
     (request : EsmSplit.Spec) (B : EsmSplit.Bundle) (helper : String) : Except String Unit := do
   let original := source.source
-  let [⟨left, [(exportedLeft, localLeft)]⟩, ⟨right, [(exportedRight, localRight)]⟩] := original.imports |
-    throw "expected two single-binding imports from the fixed providers"
+  let [⟨left, [(exportedLeft, localLeft)]⟩, ⟨right, [(exportedRight, localRight)]⟩] :=
+    original.imports | throw "expected two single-binding imports from the fixed providers"
   unless left != right && (exportedLeft == "default") != (exportedRight == "default") do
     throw "expected a default and a named import from different fixed providers"
   let defaultProvider := if exportedLeft == "default" then left else right
@@ -96,23 +100,30 @@ private def checkPrototype (source : LinkedInput.DecodedSource) (fixed : List Mo
   let some provider := fixed.find? (·.name == namedProvider) | throw "missing named provider"
   unless fixed.length == 2 && fixed.all (fun m => m.imports.isEmpty) do
     throw "expected exactly two closed fixed providers"
-  let [(_, .funDecl (.mk name .normal _ [] []))] := leaf.body |
-    throw "expected an empty hoisted function in the default provider"
-  unless leaf.exports == [("default", name)] do throw "expected the default provider's own function"
-  let [(_, .funDecl supplied), (_, .funDecl ctor), (_, write), (_, .funDecl factory)] := provider.body |
-    throw "expected two declarations, a prototype write and a default factory in the named provider"
-  unless provider.exports == [(supplied.name, supplied.name), (ctor.name, ctor.name), ("default", factory.name)] &&
-      supplied.name == namedExport && [supplied, ctor, factory].all concreteHoist &&
+  let [(_, .funDecl (.mk name .normal _ [] []))] :=
+    leaf.body | throw "expected an empty hoisted function in the default provider"
+  unless leaf.exports == [("default", name)] do
+    throw "expected the default provider's own function"
+  let [(_, .funDecl supplied), (_, .funDecl ctor), (_, write), (_, .funDecl factory)] :=
+    provider.body | throw "expected two declarations, a prototype write and a default factory in the named provider"
+  unless
+    provider.exports ==
+        [(supplied.name, supplied.name), (ctor.name, ctor.name), ("default", factory.name)] &&
+      supplied.name == namedExport &&
+      [supplied, ctor, factory].all concreteHoist &&
       prototypeWrite ctor.name [] write do
     throw "named provider's function and prototype must lower concretely"
-  let [(ctorId, .funDecl ctor), (writeId, write), (factoryId, .funDecl factory)] := original.body |
-    throw "expected a hoisted constructor, a prototype write and the default factory"
-  unless original.exports == [("default", factory.name)] && [ctor, factory].all concreteHoist &&
+  let [(ctorId, .funDecl ctor), (writeId, write), (factoryId, .funDecl factory)] :=
+    original.body | throw "expected a hoisted constructor, a prototype write and the default factory"
+  unless
+    original.exports == [("default", factory.name)] && [ctor, factory].all concreteHoist &&
       prototypeWrite ctor.name [localLeft, localRight] write do
     throw "expected a private constructor with a concrete prototype and a public default factory"
-  unless request.claimants B ctorId == [helper] && request.claimants B writeId == [helper] &&
+  unless
+    request.claimants B ctorId == [helper] && request.claimants B writeId == [helper] &&
       request.claimants B factoryId == [request.entry] do
-    throw "the private constructor and prototype must move together; moving the write alone exposes the constructor"
+    throw
+        "the private constructor and prototype must move together; moving the write alone exposes the constructor"
 
 inductive Family where
   | primitive

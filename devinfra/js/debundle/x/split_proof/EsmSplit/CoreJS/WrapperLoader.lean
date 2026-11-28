@@ -6,20 +6,24 @@ The provider's earlier initializers are a separate obligation. -/
 
 namespace CoreJS.WrapperLoader
 
-private def key : Expr := .str "exports"
+private def key : Expr :=
+  .str "exports"
 
-private def record : Expr := .obj [.init key (.obj [])]
+private def record : Expr :=
+  .obj [.init key (.obj [])]
 
 private def arguments (cache : Name) : List Expr :=
   [.get (.assign (.var cache) record) key, .var cache]
 
-private def result (cache : Name) : Expr := .get (.var cache) key
+private def result (cache : Name) : Expr :=
+  .get (.var cache) key
 
 private def body (callback cache : Name) : Expr :=
   .seq (.logical .or (.var cache) (.call (.var callback) (arguments cache))) (result cache)
 
 /-- The actual returned arrow, including its live cache and callback references. -/
-def loader (callback cache : Name) : Func := .mk "" .arrow false [] [.ret (body callback cache)]
+def loader (callback cache : Name) : Func :=
+  .mk "" .arrow false [] [.ret (body callback cache)]
 
 /-- The provider unit checked by the pinned source probe. -/
 def factory (binding callback cache : Name) : Stmt :=
@@ -28,7 +32,8 @@ def factory (binding callback cache : Name) : Stmt :=
 private def exportsGet {W : World} (fuel : Nat) (receiver : Val) : M W Val :=
   getProp (callFn fuel) receiver (.str "exports")
 
-private def emptyObject : Obj := { proto := some objectProto, props := [] }
+private def emptyObject : Obj :=
+  { proto := some objectProto, props := [] }
 
 private def moduleObject (exports : Addr) : Obj :=
   { emptyObject with props := [(.str "exports", .data (.obj exports) true true true)] }
@@ -46,9 +51,9 @@ def prepareArgs {W : World} (fuel : Nat) (env : Env) (cache : Name) : M W (List 
 
 private theorem args_eq {W : World} (n : Nat) (env : Env) (cache : Name) :
     (evalArgs (n + 8) env (arguments cache) : M W (List Val)) = prepareArgs (n + 6) env cache := by
-  simp only [arguments, record, key, prepareArgs, exportsGet, evalArgs, evalExpr,
-    emptyObject, Expr.argument, evalTarget, putRef, evalProps, readProperty, Bool.false_eq_true,
-    ↓reduceIte, List.cons_append, List.nil_append, toKey, toStr, lift, M.bind_assoc, M.pure_bind]
+  simp only [arguments, record, key, prepareArgs, exportsGet, evalArgs, evalExpr, emptyObject,
+    Expr.argument, evalTarget, putRef, evalProps, readProperty, Bool.false_eq_true, ↓reduceIte,
+    List.cons_append, List.nil_append, toKey, toStr, lift, M.bind_assoc, M.pure_bind]
   rfl
 
 private theorem own_exports {W : World} {s t : State W} {moduleObj exportsObj : Addr}
@@ -58,20 +63,27 @@ private theorem own_exports {W : World} {s t : State W} {moduleObj exportsObj : 
   have read : getObj moduleObj s = .ok emptyObject s := by simp [getObj, empty]
   unfold createData defineOwn at write
   rw [bind_of_ok read] at write
-  change modifyObj moduleObj (fun o =>
-    { o with props := setOwn o.props (.str "exports") (.data (.obj exportsObj) true true true) }) s = .ok () t at write
+  change
+    modifyObj moduleObj
+        (fun o =>
+          { o with
+            props := setOwn o.props (.str "exports") (.data (.obj exportsObj) true true true) })
+        s =
+      .ok () t at write
   simpa [emptyObject, moduleObject, setOwn] using modifyObj_self empty write
 
 /-- At callback dispatch the cache is already initialized, and both arguments
 name distinct fresh objects. The first property read is an own data read,
 regardless of the state of Object.prototype. -/
-theorem prepareArgs_origin {W : World} {n : Nat} {env : Env} {cache : Name}
-    {s t : State W} {args : List Val} (run : prepareArgs n env cache s = .ok args t) :
+theorem prepareArgs_origin {W : World} {n : Nat} {env : Env} {cache : Name} {s t : State W}
+    {args : List Val} (run : prepareArgs n env cache s = .ok args t) :
     ∃ cell moduleObj exportsObj,
-      env.vars.lookup cache = some cell ∧ t.cellAt cell = some ⟨some (.obj moduleObj), true⟩ ∧
-      args = [.obj exportsObj, .obj moduleObj] ∧ moduleObj ≠ exportsObj ∧
-      s.objAt moduleObj = none ∧ s.objAt exportsObj = none ∧
-      t.objAt moduleObj = some (moduleObject exportsObj) := by
+      env.vars.lookup cache = some cell ∧
+        t.cellAt cell = some ⟨some (.obj moduleObj), true⟩ ∧
+        args = [.obj exportsObj, .obj moduleObj] ∧
+        moduleObj ≠ exportsObj ∧
+        s.objAt moduleObj = none ∧
+        s.objAt exportsObj = none ∧ t.objAt moduleObj = some (moduleObject exportsObj) := by
   unfold prepareArgs at run
   obtain ⟨moduleObj, s1, hm, run⟩ := bind_ok run
   obtain ⟨exportsObj, s2, he, run⟩ := bind_ok run
@@ -107,14 +119,17 @@ final property read keep their own original budgets. In particular a throw,
 model refusal or fuel exhaustion from dispatch skips the final read and is
 propagated by the evaluator's original bind. -/
 theorem eval_body {W : World} (n : Nat) (env : Env) (callback cache : Name) :
-    (evalExpr (n + 11) env (body callback cache) : M W Val) = (do
-      let cached ← readVar env cache
-      let skip ← lift (shortCircuits .or cached)
-      let _ ← (if skip then pure cached else do
-        let callee ← readVar env callback
-        let args ← prepareArgs (n + 6) env cache
-        callFn (n + 8) callee .undef args)
-      exportsGet (n + 9) (← readVar env cache)) := by
+    (evalExpr (n + 11) env (body callback cache) : M W Val) =
+      (do
+        let cached ← readVar env cache
+        let skip ← lift (shortCircuits .or cached)
+        let _ ←
+          (if skip then pure cached
+            else do
+              let callee ← readVar env callback
+              let args ← prepareArgs (n + 6) env cache
+              callFn (n + 8) callee .undef args)
+        exportsGet (n + 9) (← readVar env cache)) := by
   simp only [body, result, key, evalExpr, readProperty, directExprCall, args_eq, exportsGet,
     M.bind_assoc, M.pure_bind]
 
@@ -133,8 +148,8 @@ new cache cell or a simplified callback. Applies at every fuel, including the
 syntax steps before `eval_body` is applicable. -/
 theorem call_from_object {W : World} (fuel : Nat) (s : State W) (addr : Addr)
     (callback cache : Name) (closed : Env) (o : Obj) (ho : s.objAt addr = some o)
-    (code : o.code = some (.closure (loader callback cache) closed []))
-    (this : Val) (args : List Val) :
+    (code : o.code = some (.closure (loader callback cache) closed [])) (this : Val)
+    (args : List Val) :
     callFn (fuel + 1) (.obj addr) this args s =
       runLocalCall (execStmts fuel) (loader callback cache) closed this args s := by
   have read : getObj addr s = .ok o s := by simp [getObj, ho]
@@ -144,19 +159,22 @@ theorem call_from_object {W : World} (fuel : Nat) (s : State W) (addr : Addr)
 /-- Read the loader through a linked binding, call it, and continue from the
 exact result. After a shared prefix, any alias of that same checked cell
 has this same suffix, at every fuel. -/
-theorem linked_suffix {W : World} {α : Type} (fuel : Nat) (s : State W)
-    (env : Env) (alias callback cache : Name) (cell addr : Addr) (closed : Env) (o : Obj)
+theorem linked_suffix {W : World} {α : Type} (fuel : Nat) (s : State W) (env : Env)
+    (alias callback cache : Name) (cell addr : Addr) (closed : Env) (o : Obj)
     (lookup : env.vars.lookup alias = some cell) (mutable : Bool)
-    (binding : s.cellAt cell = some ⟨some (.obj addr), mutable⟩)
-    (object : s.objAt addr = some o) (code : o.code = some (.closure (loader callback cache) closed []))
+    (binding : s.cellAt cell = some ⟨some (.obj addr), mutable⟩) (object : s.objAt addr = some o)
+    (code : o.code = some (.closure (loader callback cache) closed []))
     (continuation : Val → M W α) :
     (do
-      let load ← readVar env alias
-      let exports ← callFn fuel load .undef []
-      continuation exports) s =
-    (match fuel with
-    | 0 => .fuel
-    | n + 1 => (runLocalCall (execStmts n) (loader callback cache) closed .undef [] >>= continuation) s) := by
+          let load ← readVar env alias
+          let exports ← callFn fuel load .undef []
+          continuation exports)
+        s =
+      (match fuel with
+      | 0 => .fuel
+      | n + 1 =>
+        (runLocalCall (execStmts n) (loader callback cache) closed .undef [] >>= continuation)
+          s) := by
   have read : readVar env alias s = .ok (.obj addr) s := by
     simp only [readVar, lookup, M.bind_apply, getState, binding]
     rfl

@@ -79,11 +79,14 @@ def readDeploymentManifest (path : System.FilePath) (allowOwnedPackage : Bool :=
         let provider ← IO.ofExcept (pkg.getObjValAs? String "provider")
         let caller ← IO.ofExcept (pkg.getObjValAs? String "caller")
         return ⟨root, entry, provider, caller⟩
-  let nodeEsmRoot ← (fields.get? "node_esm_root").mapM fun value => do
-    let root : System.FilePath := ⟨← IO.ofExcept value.getStr?⟩
-    unless root.isAbsolute do throw (IO.userError "node_esm_root requires an absolute source root")
-    unless ownedNodePackage.isNone do throw (IO.userError "supply only one Node format premise")
-    pure root
+  let nodeEsmRoot ←
+    (fields.get? "node_esm_root").mapM fun value => do
+        let root : System.FilePath := ⟨← IO.ofExcept value.getStr?⟩
+        unless root.isAbsolute do
+          throw (IO.userError "node_esm_root requires an absolute source root")
+        unless ownedNodePackage.isNone do
+          throw (IO.userError "supply only one Node format premise")
+        pure root
   let chunks ←
     (← IO.ofExcept (json.getObjValAs? (List Json) "chunks")).mapM fun chunk => do
         let route ← IO.ofExcept (chunk.getObjValAs? String "path")
