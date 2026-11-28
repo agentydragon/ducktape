@@ -5,11 +5,12 @@ import EsmSplit.CoreJS.IndexedInputChecks
 import EsmSplit.CoreJS.IndexedReorder
 import EsmSplit.CoreJS.IndexedSourceSchedule
 import EsmSplit.CoreJS.LinkWorld
+import EsmSplit.CoreJS.LiteralSwapCheck
 import EsmSplit.CoreJS.PlanPlacement
 import EsmSplit.CoreJS.PrimitiveRhs
 
 /-! Construct an order-preserving split that calls one hoisted ordinary helper.
-The syntax gate confines execution to a direct call and a primitive return.
+The syntax gate confines execution to a direct call in a checked fragment.
 The indexed link proof establishes the hoisted state and the exact live cells. -/
 
 namespace CoreJS.IndexedHelperConstructor
@@ -26,7 +27,7 @@ private def lexicalPrefix (earlier : List Name) : List (Nat × Stmt) → Option 
 
 /-- The entry calls one nonescaping, nullary helper. The helper may read earlier
 lexical seeds, which are initialized before the call in the source schedule. -/
-private def checkFamily (source : Module) : Except String (Nat × Nat) := do
+private def checkNullary (source : Module) : Except String (Nat × Nat) := do
   let (callId, .decl .const result (.call (.var callee) [])) ::
       (helperId, .funDecl (.mk name .normal false [] [.ret value])) :: revSeeds := source.body.reverse |
     throw "expected lexical seeds, a nullary return helper and one const call"
@@ -37,6 +38,37 @@ private def checkFamily (source : Module) : Except String (Nat × Nat) := do
     throw "helper return must use only primitives and earlier lexical seeds"
   unless source.exports == [(result, result)] do throw "only the caller's result may be public"
   return (helperId, callId)
+
+/-- A single call with a dense literal array and a fresh one-field record.
+The flat parameter initializer and the two body statements cannot call
+ambient code. The write targets the record's own writable data property. -/
+private def checkArrayParameter (source : Module) : Except String (Nat × Nat) := do
+  let [(helperId, .funDecl (.mk name .normal false [argSlot, recordSlot] body)),
+       (_, .decl .const record (.obj [.init (.str key) initial])),
+       (callId, .decl .const result (.call (.var callee) [.arr values, .var argument]))] := source.body |
+    throw "expected an array-parameter helper, a literal record and one const call"
+  let [.bind .var (.array elements none) (.var input),
+       .expr (.assign (.member (.var receiver) (.str field)) (.var written)),
+       .ret (.var returned)] := body |
+    throw "expected a flat array binding, a record write and a bound return"
+  let bound ← elements.filterMap id |>.mapM fun
+    | .name x => pure x
+    | _ => throw "expected only identifier bindings in the array parameter"
+  unless ([argSlot, recordSlot] ++ bound).Nodup && [name, record, result].Nodup &&
+      callee == name && argument == record && input == argSlot && receiver == recordSlot &&
+      key != "__proto__" && field == key && bound.contains written && bound.contains returned do
+    throw "the write must target the supplied record field using an array binding"
+  unless (LiteralSwapCheck.literal initial).isSome &&
+      values.all (fun value => (LiteralSwapCheck.literal value).isSome) do
+    throw "expected primitive literals in the array and record"
+  unless source.exports.Perm [(record, record), (result, result)] do
+    throw "only the caller's record and result may be public"
+  return (helperId, callId)
+
+private def checkFamily (source : Module) : Except String (Nat × Nat) :=
+  match source.body with
+  | (_, .funDecl (.mk _ .normal false [_, _] _)) :: _ => checkArrayParameter source
+  | _ => checkNullary source
 
 structure Construction (decoded : IndexedSource) (B : EsmSplit.Bundle) (request : EsmSplit.Spec) where
   schedule : IndexedSourceSchedule.Evidence decoded B request

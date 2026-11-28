@@ -198,3 +198,28 @@ const parameterEmission = split({ ...parameterRequest, out: path.join(root, "par
 assert.equal(parameterEmission.reasonCode, "no_constructed_rule", parameterEmission.log);
 const parameterReadback = split({ ...parameterRequest, out: parameterOutput, checkOutput: true });
 assert.equal(parameterReadback.reasonCode, "no_constructed_rule", parameterReadback.log);
+
+// Ordinary lookup of the computed iterator key can throw before pick starts.
+// Compare both actual module layouts without using the recorded host model.
+const throwingSymbol = `
+const original = Object.getOwnPropertyDescriptor(globalThis, "Symbol");
+let reads = 0;
+Object.defineProperty(globalThis, "Symbol", {
+  configurable: true,
+  get() { reads += 1; throw "ambient Symbol getter"; },
+});
+let thrown;
+try { await import(process.argv[1]); } catch (error) { thrown = error; }
+Object.defineProperty(globalThis, "Symbol", original);
+console.log(JSON.stringify({ reads, thrown }));
+`;
+for (const file of [parameterFile, parameterEntry]) {
+  const result = execFileSync(
+    process.execPath,
+    ["--input-type=module", "-e", throwingSymbol, pathToFileURL(file).href],
+    {
+      encoding: "utf8",
+    }
+  );
+  assert.deepEqual(JSON.parse(result), { reads: 1, thrown: "ambient Symbol getter" });
+}

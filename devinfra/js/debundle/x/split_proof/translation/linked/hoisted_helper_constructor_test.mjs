@@ -80,3 +80,32 @@ const effectful = fixture(
 );
 const effectRefusal = effectful.run();
 assert.equal(effectRefusal.status, "refused", effectRefusal.log);
+
+// A separate, host-free placement. The first and third bindings straddle an
+// elision. The caller keeps the record passed to the helper.
+const arrayHelper = `function pick([first, , third], target) {
+  target.value = first;
+  return third;
+}`;
+const arrayCall = fixture(
+  "array-parameter",
+  arrayHelper + "\nexport const state = { value: 0 };\nexport const result = pick([3, 99, 7], state);\n",
+  ["#0"],
+  ["#1", "#2"]
+);
+check(arrayCall, "result", 7, arrayHelper);
+const expectedArray = { result: 7, state: { value: 3 } };
+const arrayEntry = path.join(arrayCall.out, entry);
+assert.deepEqual(observe(arrayCall.sourceFile, ["result", "state"]), expectedArray);
+assert.deepEqual(observe(arrayEntry, ["result", "state"]), expectedArray);
+const arrayFile = path.join(arrayCall.out, helper);
+const arrayBytes = readFileSync(arrayFile, "utf8");
+const wrongBinding = arrayBytes.replace("target.value = first;", "target.value = third;");
+assert.notEqual(wrongBinding, arrayBytes);
+writeFileSync(arrayFile, wrongBinding);
+assert.deepEqual(observe(arrayEntry, ["result", "state"]), { result: 7, state: { value: 7 } });
+const wrongArrayBinding = arrayCall.run({ checkOutput: true });
+assert.equal(wrongArrayBinding.status, "refused", wrongArrayBinding.log);
+assert.match(wrongArrayBinding.reason, /output module helper\.mjs differs/);
+writeFileSync(arrayFile, arrayBytes);
+assert.equal(arrayCall.run({ checkOutput: true }).status, "certified");
