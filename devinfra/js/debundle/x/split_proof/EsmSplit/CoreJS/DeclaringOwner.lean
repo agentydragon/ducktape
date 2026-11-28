@@ -10,9 +10,9 @@ namespace CoreJS.DeclaringOwner
 declaring unit. Faithfulness also identifies that owner as the unique authored
 claimant of the original ordinal. -/
 theorem declared_in_original_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (unique : EsmSplit.UniqueDefs B) (faithful : EsmSplit.Faithful B S P)
-    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) {ordinal : Nat}
-    (owned : ordinal ∈ owner.stmts) {u : Name} (declared : u ∈ (B.stmt ordinal).defs) :
+    (unique : EsmSplit.UniqueDefs B) (faithful : EsmSplit.Faithful B S P) {owner : EsmSplit.Module}
+    (ownerIn : owner ∈ P.mods) {ordinal : Nat} (owned : ordinal ∈ owner.stmts) {u : Name}
+    (declared : u ∈ (B.stmt ordinal).defs) :
     S.claimants B ordinal = [owner.name] ∧ P.declaredIn B u = .declared owner.name := by
   have ordinalBound : ordinal < B.length := faithful.2.2.2.2.2.1 owner ownerIn ordinal owned
   have ownerClaim : S.claimants B ordinal = [owner.name] :=
@@ -30,13 +30,13 @@ theorem declared_in_original_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P 
     have mdDeclares := @List.find?_some EsmSplit.Module (fun m => m.declares B u) md P.mods found
     obtain ⟨j, hj, hjDecl⟩ := List.any_eq_true.1 mdDeclares
     have jBound : j < B.length := faithful.2.2.2.2.2.1 md mdIn j hj
-    have same : j = ordinal := unique_defs unique jBound ordinalBound (List.contains_iff_mem.1 hjDecl) declared
+    have same : j = ordinal :=
+      unique_defs unique jBound ordinalBound (List.contains_iff_mem.1 hjDecl) declared
     subst j
     have mdClaim : S.claimants B ordinal = [md.name] :=
       (faithful.2.2.2.2.1 md mdIn ordinal (List.mem_range.2 ordinalBound)).1 hj
     rw [ownerClaim] at mdClaim
     have names : owner.name = md.name := by simpa using mdClaim
     simp [names]
-
 
 end CoreJS.DeclaringOwner

@@ -5,7 +5,9 @@ import Lean.Data.Json
 namespace CoreJS
 
 inductive HostProfile where
-  | empty | browserPage | ecmascript
+  | empty
+  | browserPage
+  | ecmascript
   /-- Test-only: the host the Node comparison harness records. It is not a deployment profile. -/
   | nodeRecording
   deriving DecidableEq, Repr
@@ -19,13 +21,16 @@ def label : HostProfile → String
   | .nodeRecording => "node-recording"
 
 /-- Fresh `Symbol(…)` calls and the ambient well-known symbols are host observations. -/
-def ambientSymbols (p : HostProfile) : Bool := p == .browserPage || p == .nodeRecording
+def ambientSymbols (p : HostProfile) : Bool :=
+  p == .browserPage || p == .nodeRecording
 
 /-- Under the recorded host, the host catalog's globals and `eval` are opaque host values. The world
 answers calls of `hostFunctions` and of the members of `hostNamespaces`. -/
 def recordedHostValue (p : HostProfile) (name : String) : Bool :=
-  p == .nodeRecording && (name == "eval" || hostFunctions.contains name || (hostNamespaces.lookup name).isSome ||
-    BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
+  p == .nodeRecording &&
+    (name == "eval" || hostFunctions.contains name || (hostNamespaces.lookup name).isSome ||
+      BrowserGlobals.functions.contains name ||
+      BrowserGlobals.objects.contains name)
 
 /-- Under the recorded host, a name outside the host catalog is undeclared: reading it throws. -/
 def undeclaredGlobal (p : HostProfile) (name : String) : Bool :=
@@ -35,12 +40,18 @@ def undeclaredGlobal (p : HostProfile) (name : String) : Bool :=
 def recordedPrim (p : HostProfile) (owner key : String) : Option Prim := do
   guard (p == .nodeRecording)
   match owner, key with
-  | "console", "log" => some .log
-  | "Object", "defineProperty" => some .defineProperty
-  | "Object", "create" => some .create
-  | "Object", "getPrototypeOf" => some .getPrototypeOf
-  | "Object", "setPrototypeOf" => some .setPrototypeOf
-  | _, _ => none
+  | "console", "log" =>
+    some .log
+  | "Object", "defineProperty" =>
+    some .defineProperty
+  | "Object", "create" =>
+    some .create
+  | "Object", "getPrototypeOf" =>
+    some .getPrototypeOf
+  | "Object", "setPrototypeOf" =>
+    some .setPrototypeOf
+  | _, _ =>
+    none
 
 /-- Read a supported deployment profile. -/
 def read (j : Lean.Json) : Except String HostProfile := do
@@ -48,26 +59,34 @@ def read (j : Lean.Json) : Except String HostProfile := do
     return .browserPage
   throw "unsupported host contract (expected browser-page)"
 
-def aliases := ["window", "globalThis", "self"]
+def aliases :=
+  ["window", "globalThis", "self"]
 
 def bindingType (profile : HostProfile) (name : String) : Option String := do
   guard (profile == .browserPage)
-  if aliases.contains name || BrowserGlobals.objects.contains name then return "object"
-  if BrowserGlobals.functions.contains name then return "function"
-  if BrowserGlobals.shims.contains name then return "undefined"
+  if aliases.contains name || BrowserGlobals.objects.contains name then
+    return "object"
+  if BrowserGlobals.functions.contains name then
+    return "function"
+  if BrowserGlobals.shims.contains name then
+    return "undefined"
   none
 
 def opaqueBinding (profile : HostProfile) (name : String) : Bool :=
-  profile == .browserPage && (BrowserGlobals.opaqueBindings.contains name || BrowserGlobals.shims.contains name)
+  profile == .browserPage &&
+    (BrowserGlobals.opaqueBindings.contains name || BrowserGlobals.shims.contains name)
 
 def bindingIdentity (profile : HostProfile) (name : String) : Option String := do
   if profile == .ecmascript then
     guard (name == "Object")
     return "intrinsic.Object"
   guard (profile == .browserPage)
-  if aliases.contains name then return "window"
-  if name == "Array" then return "intrinsic.Array"
-  if name == "Symbol" then return "intrinsic.Symbol"
+  if aliases.contains name then
+    return "window"
+  if name == "Array" then
+    return "intrinsic.Array"
+  if name == "Symbol" then
+    return "intrinsic.Symbol"
   guard (BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
   return "window." ++ name
 
@@ -78,7 +97,8 @@ def identity (profile : HostProfile) : HostRef → Option String
     profile.bindingIdentity name
   | .property "intrinsic.Array" key => do
     guard (profile == .browserPage)
-    if key == "from" then return "intrinsic.Array.from"
+    if key == "from" then
+      return "intrinsic.Array.from"
     guard (((BrowserGlobals.methods.lookup "Array").getD []).contains key)
     return "window.Array." ++ key
   | .property "Symbol" member => do
@@ -113,24 +133,34 @@ namespace HostPremises
 
 def assumptions (p : HostPremises) : List String :=
   (p.typeofBindings.map fun (name, value) =>
-    s!"typeof {name} is {value} without observable effects throughout initialization") ++
-  (p.refs.map fun (ref, identity) =>
-    let read := match ref with
-      | .binding name => name
-      | .property receiver key => receiver ++ "." ++ key
-    let result := if ref == .property "Symbol" "iterator" && identity == "Symbol.iterator" then
-      "the well-known iterator symbol"
-    else if ref == .property "Symbol" "asyncIterator" && identity == "Symbol.asyncIterator" then
-      "the well-known asyncIterator symbol"
-    else if ref == .property "Symbol" "hasInstance" && identity == "Symbol.hasInstance" then
-      "the well-known hasInstance symbol"
-    else if ref == .property "Symbol" "toStringTag" && identity == "Symbol.toStringTag" then
-      "the well-known toStringTag symbol"
-    else if identity == "intrinsic.Array" then "the intrinsic Array constructor"
-    else if identity == "intrinsic.Array.from" then "the intrinsic Array.from function"
-    else if identity == "intrinsic.Symbol" then "the intrinsic Symbol function"
-    else if identity == "window" then "the same page object" else s!"the stable host reference {identity}"
-    s!"{read} returns {result} without observable effects throughout initialization")
+      s!"typeof {name} is {value} without observable effects throughout initialization") ++
+    (p.refs.map fun (ref, identity) =>
+      let read :=
+        match ref with
+        | .binding name => name
+        | .property receiver key => receiver ++ "." ++ key
+      let result :=
+        if ref == .property "Symbol" "iterator" && identity == "Symbol.iterator" then
+          "the well-known iterator symbol"
+        else
+          if ref == .property "Symbol" "asyncIterator" && identity == "Symbol.asyncIterator" then
+            "the well-known asyncIterator symbol"
+          else
+            if ref == .property "Symbol" "hasInstance" && identity == "Symbol.hasInstance" then
+              "the well-known hasInstance symbol"
+            else
+              if ref == .property "Symbol" "toStringTag" && identity == "Symbol.toStringTag" then
+                "the well-known toStringTag symbol"
+              else
+                if identity == "intrinsic.Array" then "the intrinsic Array constructor"
+                else
+                  if identity == "intrinsic.Array.from" then "the intrinsic Array.from function"
+                  else
+                    if identity == "intrinsic.Symbol" then "the intrinsic Symbol function"
+                    else
+                      if identity == "window" then "the same page object"
+                      else s!"the stable host reference {identity}"
+      s!"{read} returns {result} without observable effects throughout initialization")
 
 /-- This world selects candidate premises. The certificate independently checks execution
 for every world satisfying just the observations made by the two initializers. -/
@@ -148,9 +178,10 @@ def observations (profile : HostProfile) : World where
 
 /-- Each used observation returns the specified result and preserves every host state. -/
 def Satisfied (p : HostPremises) (w : World) : Prop :=
-  (∀ name value, p.typeofBindings.lookup name = some value →
-    ∀ s, w.globalTypeof name s = some (.ret (.str value), s)) ∧
-  (∀ ref identity, p.refs.lookup ref = some identity → w.StableRead ref (.identity identity))
+  (∀ name value,
+      p.typeofBindings.lookup name = some value →
+        ∀ s, w.globalTypeof name s = some (.ret (.str value), s)) ∧
+    (∀ ref identity, p.refs.lookup ref = some identity → w.StableRead ref (.identity identity))
 
 def specialize (p : HostPremises) (w : World) : World :=
   { w with
@@ -179,4 +210,5 @@ theorem specialize_eq (p : HostPremises) (w : World) (h : p.Satisfied w) : p.spe
     exact congr (congrArg (fun f g => World.mk σ init step f g talk) typeObs) refObs
 
 end HostPremises
+
 end CoreJS

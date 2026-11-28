@@ -7,9 +7,8 @@ actual plan unit IDs. Executable IDs may occur anywhere between the rows. -/
 namespace CoreJS.ExportRows
 
 /-- A source row with a unique original ID is found at that ID. -/
-theorem rowAt_found {rows : List EsmSplit.LocalExportUnit}
-    (unique : (rows.map (·.ordinal)).Nodup) {row : EsmSplit.LocalExportUnit} (member : row ∈ rows) :
-    rowAt rows row.ordinal = some row := by
+theorem rowAt_found {rows : List EsmSplit.LocalExportUnit} (unique : (rows.map (·.ordinal)).Nodup)
+    {row : EsmSplit.LocalExportUnit} (member : row ∈ rows) : rowAt rows row.ordinal = some row := by
   have inMap : (row.ordinal, row) ∈ rows.map (fun r => (r.ordinal, r)) :=
     List.mem_map.mpr ⟨row, member, rfl⟩
   have uniqueKeys : ((rows.map (fun r => (r.ordinal, r))).map Prod.fst).Nodup := by
@@ -27,23 +26,31 @@ theorem select_ordered_rows {ids : List Nat} {rows : List EsmSplit.LocalExportUn
     (rowsOrdered : rows.Pairwise (fun a b => a.ordinal < b.ordinal))
     (owned : ∀ row ∈ rows, row.ordinal ∈ ids) : ids.filterMap (rowAt rows) = rows := by
   have keysOrdered : (rows.map (·.ordinal)).Pairwise (· < ·) := List.pairwise_map.mpr rowsOrdered
-  have uniqueKeys : (rows.map (·.ordinal)).Nodup := keysOrdered.imp (by
-    intro a b less same
-    subst b
-    exact (Nat.lt_irrefl a) less)
-  have selectedOrdered : (ids.filterMap (rowAt rows)).Pairwise
-      (fun a b => a.ordinal < b.ordinal) := List.pairwise_filterMap.mpr (idsOrdered.imp (by
-    intro i j less a foundA b foundB
-    rw [(rowAt_some foundA).2, (rowAt_some foundB).2]
-    exact less))
-  have selectedUnique : (ids.filterMap (rowAt rows)).Nodup := selectedOrdered.imp (by
-    intro a b less same
-    subst b
-    exact (Nat.lt_irrefl a.ordinal) less)
-  have rowsUnique : rows.Nodup := rowsOrdered.imp (by
-    intro a b less same
-    subst b
-    exact (Nat.lt_irrefl a.ordinal) less)
+  have uniqueKeys : (rows.map (·.ordinal)).Nodup :=
+    keysOrdered.imp
+      (by
+        intro a b less same
+        subst b
+        exact (Nat.lt_irrefl a) less)
+  have selectedOrdered : (ids.filterMap (rowAt rows)).Pairwise (fun a b => a.ordinal < b.ordinal) :=
+    List.pairwise_filterMap.mpr
+      (idsOrdered.imp
+        (by
+          intro i j less a foundA b foundB
+          rw [(rowAt_some foundA).2, (rowAt_some foundB).2]
+          exact less))
+  have selectedUnique : (ids.filterMap (rowAt rows)).Nodup :=
+    selectedOrdered.imp
+      (by
+        intro a b less same
+        subst b
+        exact (Nat.lt_irrefl a.ordinal) less)
+  have rowsUnique : rows.Nodup :=
+    rowsOrdered.imp
+      (by
+        intro a b less same
+        subst b
+        exact (Nat.lt_irrefl a.ordinal) less)
   have sameMembers : ∀ row, row ∈ ids.filterMap (rowAt rows) ↔ row ∈ rows := by
     intro row
     constructor
@@ -54,9 +61,9 @@ theorem select_ordered_rows {ids : List Nat} {rows : List EsmSplit.LocalExportUn
       exact List.mem_filterMap.mpr ⟨row.ordinal, owned row inRows, rowAt_found uniqueKeys inRows⟩
   have perm : (ids.filterMap (rowAt rows)).Perm rows :=
     (List.perm_ext_iff_of_nodup selectedUnique rowsUnique).2 sameMembers
-  exact perm.eq_of_pairwise (le := fun a b => a.ordinal < b.ordinal)
-    (fun a b _ _ ab ba => False.elim (Nat.lt_asymm ab ba)) selectedOrdered rowsOrdered
-
+  exact
+    perm.eq_of_pairwise (le := fun a b => a.ordinal < b.ordinal)
+      (fun a b _ _ ab ba => False.elim (Nat.lt_asymm ab ba)) selectedOrdered rowsOrdered
 
 end CoreJS.ExportRows
 
@@ -66,13 +73,16 @@ private theorem picked_ordered (S : Spec) (B : Bundle) {entry : ModName × List 
     (member : entry ∈ S.picked B) : entry.2.Pairwise (· < ·) := by
   let pickIds (selectors : List Selector) : Std.TreeSet Nat :=
     (selectors.flatMap (·.picks B.declIdx B.length)).foldl (·.insert ·) ∅
-  change entry ∈ S.modules.map (fun (name, selectors) => (name, (pickIds selectors).toList)) at member
+  change
+    entry ∈ S.modules.map (fun (name, selectors) => (name, (pickIds selectors).toList)) at member
   obtain ⟨⟨_, selectors⟩, _, rfl⟩ := List.mem_map.mp member
   simpa only [Nat.compare_eq_lt] using (Std.TreeSet.ordered_toList (t := pickIds selectors))
 
 private theorem picked_map_ordered (entries : List (ModName × List Nat))
     (ordered : ∀ entry ∈ entries, entry.2.Pairwise (· < ·)) (name : ModName) :
-    ((entries.foldr (fun e acc => acc.insert e.1 e.2) (∅ : Std.TreeMap ModName (List Nat))).getD name []).Pairwise (· < ·) := by
+    ((entries.foldr (fun e acc => acc.insert e.1 e.2) (∅ : Std.TreeMap ModName (List Nat))).getD
+          name []).Pairwise
+      (· < ·) := by
   induction entries with
   | nil => simp
   | cons first rest ih =>
@@ -83,8 +93,7 @@ private theorem picked_map_ordered (entries : List (ModName × List Nat))
 
 private theorem stmts_after_import_update (m : Module) (condition : Prop) [Decidable condition]
     (imports : List (ModName × List Name)) :
-    (if condition then { m with imports := imports } else m).stmts = m.stmts := by
-  split <;> rfl
+    (if condition then { m with imports := imports } else m).stmts = m.stmts := by split <;> rfl
 
 /-- Every actual planner module keeps its selected source IDs in increasing
 order, independently of the order in which modules are evaluated. -/
@@ -96,7 +105,6 @@ theorem mkPlan_module_ordered (B : Bundle) (S : Spec) {md : Module}
   rw [stmts_after_import_update] at same
   rw [← same]
   exact picked_map_ordered (S.picked B) (fun entry inPicked => picked_ordered S B inPicked) _
-
 
 end EsmSplit
 
@@ -121,8 +129,8 @@ theorem mkPlan_select_source_rows {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     exact actual.trans rfl
   apply select_ordered_rows (EsmSplit.mkPlan_module_ordered B S ownerIn) rowsOrdered
   intro row inRows
-  exact (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal
-    (List.mem_range.2 (within row inRows))).2 (by simpa [entryName] using claims row inRows)
-
+  exact
+    (valid.2.2.1.2.2.2.2.1 owner ownerIn row.ordinal (List.mem_range.2 (within row inRows))).2
+      (by simpa [entryName] using claims row inRows)
 
 end CoreJS.ExportRows

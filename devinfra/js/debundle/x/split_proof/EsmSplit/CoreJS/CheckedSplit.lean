@@ -1,8 +1,8 @@
 import EsmSplit.CoreJS.DeploymentPlacement
 import EsmSplit.CoreJS.LinkWorld
+import EsmSplit.CoreJS.PrimitiveRhs
 import EsmSplit.CoreJS.SingleModule
 import EsmSplit.CoreJS.SyntaxMatch
-import EsmSplit.CoreJS.PrimitiveRhs
 import EsmSplit.Split
 
 /-! Construct a CoreJS split for an order-preserving placement of simple
@@ -24,17 +24,21 @@ private def supportedUnit : Stmt → Bool
   | .funDecl (.mk _ .normal false [] [.ret value]) => simpleValue value
   | .decl .const _ (.call (.var _) []) => true
   | .decl .const _ value => (PrimitiveRhs.check (fun _ => true) value).isSome
-  | .decl .let_ _ value => (PrimitiveRhs.check (fun _ => true) value).isSome && initializedValue value
+  | .decl .let_ _ value =>
+    (PrimitiveRhs.check (fun _ => true) value).isSome && initializedValue value
   | _ => false
 
 /-- The source-derived bundle used by the checked constructor. -/
 def summarize (source : Program) : EsmSplit.Bundle :=
   match source.modules with
-  | [m] => m.body.map fun (_, stmt) =>
-    let defs := stmt.bindings.map Prod.fst
-    { src := "", defs, eager := stmt.free.filter fun name => !defs.contains name,
-      exports := (m.exports.filter fun (_, binding) => defs.contains binding).map fun (name, binding) => (name, some binding),
-      effect := true }
+  | [m] =>
+    m.body.map fun (_, stmt) =>
+      let defs := stmt.bindings.map Prod.fst
+      { src := "", defs, eager := stmt.free.filter fun name => !defs.contains name,
+        exports :=
+          (m.exports.filter fun (_, binding) => defs.contains binding).map fun (name, binding) =>
+            (name, some binding),
+        effect := true }
   | _ => []
 
 private def placementOf (bundle : EsmSplit.Bundle) (spec : EsmSplit.Spec) : List UnitPlacement :=
@@ -44,10 +48,10 @@ private def placementOf (bundle : EsmSplit.Bundle) (spec : EsmSplit.Spec) : List
 def requestedPlacement (source : Program) (spec : EsmSplit.Spec) : List UnitPlacement :=
   placementOf (summarize source) spec
 
-def Sound (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) (output : Program) : Prop :=
+def Sound (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) (output : Program) :
+    Prop :=
   Places (requestedPlacement source spec) source output ∧
-  SameExports source output ∧
-  ScheduleEquivalent requested (fun _ => True) source output
+    SameExports source output ∧ ScheduleEquivalent requested (fun _ => True) source output
 
 /-- Executable statements from the single original module, in original order.
 Other source shapes are rejected by the constructor. -/
@@ -67,8 +71,8 @@ structure Construction (source : Program) (spec : EsmSplit.Spec) (requested : Gu
   planned : plan = EsmSplit.mkPlan bundle spec
   constructed : program = splitProgram (sourceStatements source) bundle plan
 
-private theorem forRequest {source output : Program}
-    (requested : Guarantee) (runs : ∀ w n, runProgram w n source = runProgram w n output) :
+private theorem forRequest {source output : Program} (requested : Guarantee)
+    (runs : ∀ w n, runProgram w n source = runProgram w n output) :
     ScheduleEquivalent requested (fun _ => True) source output := by
   cases requested with
   | allOutcomes => exact fun w _ n => runs w n
@@ -82,34 +86,52 @@ results carry the requested guarantee for every CoreJS world. -/
 def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) :
     Except String (Construction source spec requested) := do
   unless !spec.privateEntryBody && (spec.sequential || spec.order.isEmpty) do
-    throw "checked split requires no private entry body and an explicit sequential order when an order is supplied"
+    throw
+        "checked split requires no private entry body and an explicit sequential order when an order is supplied"
   EsmSplit.validateModulePaths (spec.modules.map Prod.fst)
   let [m] := source.modules | throw "checked split requires a single source module"
   let stmts := m.body.map Prod.snd
   let body := (List.range stmts.length).zip stmts
-  let some ⟨sourceShape⟩ := SyntaxMatch.programEq source
-      { entry := m.name, modules := [{ name := m.name, imports := [], body, exports := m.exports }] } |
-    throw "source must be an import-free entry with consecutive unit identities starting at zero"
+  let some ⟨sourceShape⟩ :=
+    SyntaxMatch.programEq source
+      { entry := m.name,
+        modules :=
+          [{ name := m.name, imports := [], body,
+             exports :=
+               m.exports }] } | throw "source must be an import-free entry with consecutive unit identities starting at zero"
   if spec.sequential then
-    unless m.body.all (fun (_, stmt) => match stmt with
-        | .decl .const _ value => (PrimitiveRhs.check (fun _ => true) value).isSome
-        | .decl .let_ _ value => (PrimitiveRhs.check (fun _ => true) value).isSome && initializedValue value
-        | _ => false) do
-      throw "explicit sequential placement supports only simple const or initialized let declarations"
+    unless
+      m.body.all
+        (fun (_, stmt) =>
+          match stmt with
+          | .decl .const _ value => (PrimitiveRhs.check (fun _ => true) value).isSome
+          | .decl .let_ _ value =>
+            (PrimitiveRhs.check (fun _ => true) value).isSome && initializedValue value
+          | _ => false) do
+      throw
+          "explicit sequential placement supports only simple const or initialized let declarations"
   for (id, stmt) in m.body do
     unless supportedUnit stmt do
-      throw s!"unsupported unit {id}: expected a simple declaration or a zero-argument function returning a value"
+      throw
+          s!"unsupported unit {id}: expected a simple declaration or a zero-argument function returning a value"
   let bundle := summarize source
   let plan := EsmSplit.mkPlan bundle spec
   if spec.sequential then
     unless plan.evalOrder == spec.order ++ [spec.entry] do
       throw "the constructed modules do not follow the requested order"
-  let .isTrue kept := (inferInstance : Decidable (OrderKept stmts plan)) |
-    throw "requested placement changes the source unit order"
-  let .isTrue valid := (inferInstance : Decidable (EsmSplit.Valid bundle spec plan)) |
-    throw "plan failed the placement, linkage or scope checks for the requested spec"
-  let .isTrue footprints := (inferInstance : Decidable (FootprintsOfSyntax stmts bundle)) |
-    throw "source footprints do not match the planned units"
+  let .isTrue kept :=
+    (inferInstance :
+      Decidable (OrderKept stmts plan)) | throw "requested placement changes the source unit order"
+  let .isTrue valid :=
+    (inferInstance :
+      Decidable
+        (EsmSplit.Valid bundle spec
+          plan)) | throw "plan failed the placement, linkage or scope checks for the requested spec"
+  let .isTrue footprints :=
+    (inferInstance :
+      Decidable
+        (FootprintsOfSyntax stmts
+          bundle)) | throw "source footprints do not match the planned units"
   let output := splitProgram stmts bundle plan
   let ⟨placed⟩ ← checkPlaces (placementOf bundle spec) source output
   let links ← checkProbePair source output
@@ -119,15 +141,18 @@ def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarante
       have sourceRun : runProgram w n source = runProgram w n (Program.single stmts) := by
         rw [sourceShape]
         exact runProgram_singleModuleMetadata body (zip_range_sorted stmts) m.name m.exports w n
-      exact sourceRun.trans (run_same (split_holds_statements (orderKept_perm kept)).1
-        (split_holds_statements (orderKept_perm kept)).2 (split_scopes_agree valid footprints kept) n)
+      exact
+        sourceRun.trans
+          (run_same (split_holds_statements (orderKept_perm kept)).1
+            (split_holds_statements (orderKept_perm kept)).2
+            (split_scopes_agree valid footprints kept) n)
     have originalStatements : sourceStatements source = stmts := by
       rw [sourceShape]
       simp only [sourceStatements, body]
       exact List.map_snd_zip (by simp)
     return ⟨bundle, plan, output,
-      ⟨placed, links.sameExports exportsMatch, forRequest requested runs⟩,
-      originalStatements ▸ footprints, rfl, by simp [output, originalStatements]⟩
+        ⟨placed, links.sameExports exportsMatch, forRequest requested runs⟩,
+        originalStatements ▸ footprints, rfl, by simp [output, originalStatements]⟩
   else
     throw "the split entry does not export the source's public live cells"
 
@@ -145,9 +170,8 @@ def checkOutput {source spec requested} (checked : Construction source spec requ
   | none => .error "decoded output differs from the constructed modules"
 
 theorem checkOutput_sound {source spec requested decoded}
-    (checked : Construction source spec requested)
-    (same : decoded = checked.program) : Sound source spec requested decoded :=
+    (checked : Construction source spec requested) (same : decoded = checked.program) :
+    Sound source spec requested decoded :=
   same ▸ checked.sound
-
 
 end CoreJS.CheckedSplit

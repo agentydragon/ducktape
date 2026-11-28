@@ -9,22 +9,27 @@ variable {W : World}
 structure ParentAt (s : State W) (env : Env) (base : Name) (cell ctor proto : Addr) : Prop where
   lookup : env.vars.lookup base = some cell
   binding : ∃ mutable, s.cellAt cell = some ⟨some (.obj ctor), mutable⟩
-  object : ∃ o f closed fields w e c, s.objAt ctor = some o ∧
-    o.code = some (.closure f closed fields) ∧ f.kind = .classCtor ∧
-    o.props.lookup (.str "prototype") = some (.data (.obj proto) w e c)
+  object :
+    ∃ o f closed fields w e c,
+      s.objAt ctor = some o ∧
+        o.code = some (.closure f closed fields) ∧
+        f.kind = .classCtor ∧ o.props.lookup (.str "prototype") = some (.data (.obj proto) w e c)
 
 theorem ParentAt.in_region {s : State W} (h : ParentAt s env base cell ctor proto) (r : Nat) :
-    ParentAt { s with region := r } env base cell ctor proto := ⟨h.lookup, h.binding, h.object⟩
+    ParentAt { s with region := r } env base cell ctor proto :=
+  ⟨h.lookup, h.binding, h.object⟩
 
-theorem ParentAt.after_local {s t : State W} (h : ParentAt s env base cell ctor proto)
-    {m : M W α} (hm : Local (i + 1) R m) (hc : cell.region ≠ i + 1) (ho : ctor.region ≠ i + 1)
+theorem ParentAt.after_local {s t : State W} (h : ParentAt s env base cell ctor proto) {m : M W α}
+    (hm : Local (i + 1) R m) (hc : cell.region ≠ i + 1) (ho : ctor.region ≠ i + 1)
     (run : inRegion i m s = .ok a t) : ParentAt t env base cell ctor proto := by
   obtain ⟨u, hu, rfl⟩ := inRegion_ok_state run
   obtain ⟨H, C, rfl, _⟩ := hm _ _ _ _ (Sees.refl rfl) hu
   refine ⟨h.lookup, ?_, ?_⟩
   · obtain ⟨mutable, hb⟩ := h.binding
-    exact ⟨mutable, (by simpa only [State.cellAt_put, ite_eq_right hc] using hb :
-      (s.put (i + 1) H C).cellAt cell = _)⟩
+    exact
+      ⟨mutable,
+        (by simpa only [State.cellAt_put, ite_eq_right hc] using hb :
+          (s.put (i + 1) H C).cellAt cell = _)⟩
   · obtain ⟨o, f, closed, fields, w, e, c, hob, rest⟩ := h.object
     refine ⟨o, f, closed, fields, w, e, c, ?_, rest⟩
     change (s.put (i + 1) H C).objAt ctor = _
@@ -40,12 +45,14 @@ private def withParent (fuel : Nat) (env : Env) (name : Name) (ms : List ClassMe
 
 private theorem eval_withParent (h : ParentAt s env base cell ctor proto)
     (hm : plainClassMembers ms = true) (n : Nat) :
-    evalExpr n env (.derived name false (.var base) ms none) s = withParent n env name ms ctor proto s := by
+    evalExpr n env (.derived name false (.var base) ms none) s =
+      withParent n env name ms ctor proto s := by
   cases n with
   | zero => rfl
   | succ n =>
     cases n with
-    | zero => simp only [evalExpr, staticInitializers_plain hm, evalStaticInitializers]; rfl
+    | zero =>
+      simp only [evalExpr, staticInitializers_plain hm, evalStaticInitializers]; rfl
     | succ n =>
       obtain ⟨mutable, hb⟩ := h.binding
       obtain ⟨o, f, closed, fields, w, e, c, ho, hcode, hk, hp⟩ := h.object
@@ -55,9 +62,12 @@ private theorem eval_withParent (h : ParentAt s env base cell ctor proto)
         simpa only [evalExpr] using hr
       have hparent := classParents_ownPrototype (callFn (n + 1)) ho hcode hk hp
       simp only [evalExpr, staticInitializers_plain hm, evalStaticInitializers]
-      change ((evalExpr (n + 1) env (.var base)) >>= fun v =>
-        classParents (callFn (n + 1)) v >>= fun parents =>
-        finishDerived (evalMembers (n + 1)) env name false ms parents) s = _
+      change
+        ((evalExpr (n + 1) env (.var base)) >>= fun v =>
+              classParents (callFn (n + 1)) v >>= fun parents =>
+                finishDerived (evalMembers (n + 1)) env name false ms parents)
+            s =
+          _
       rw [bind_of_ok hvar, bind_of_ok hparent] <;> rfl
 
 private def parentDecl (n : Nat) (env : Env) (name x : Name) (ms : List ClassMember)
@@ -100,22 +110,22 @@ theorem ParentAt.after_derived {s t : State W} (h : ParentAt s env base cell cto
     (hc : cell.region ≠ i + 1) (ho : ctor.region ≠ i + 1)
     (run : runUnit n env i (.decl .var x (.derived name false (.var base) ms none)) s = .ok f t) :
     ParentAt t env base cell ctor proto :=
-  h.after_local (parentDecl_local (R := fun _ => False) n hm hx) hc ho ((parentDecl_eq h hm n).symm.trans run)
+  h.after_local (parentDecl_local (R := fun _ => False) n hm hx) hc ho
+    ((parentDecl_eq h hm n).symm.trans run)
 
 /-- A successful swap of an anonymous derived declaration and a local computation preserves both
 results and the entire final state, in either direction, given the superclass at the start. -/
-theorem derived_var_commutes_at {s : State W} {m : M W α}
-    (h : ParentAt s env base cell ctor proto) (hm : plainClassMembers ms = true)
-    (hx : ∀ c, env.vars.lookup x = some c → c.region = i + 1)
+theorem derived_var_commutes_at {s : State W} {m : M W α} (h : ParentAt s env base cell ctor proto)
+    (hm : plainClassMembers ms = true) (hx : ∀ c, env.vars.lookup x = some c → c.region = i + 1)
     (hij : i ≠ j) (hl : Local (j + 1) R m) (hr : ∀ c, R c → c.region ≠ i + 1)
     (hc : cell.region ≠ j + 1) (ho : ctor.region ≠ j + 1) (n : Nat) (name : Name) :
     let a := runUnit n env i (.decl .var x (.derived name false (.var base) ms none))
     let b := inRegion j m
-    ∀ f v t, (∃ u, a s = .ok f u ∧ b u = .ok v t) ↔
-             (∃ u, b s = .ok v u ∧ a u = .ok f t) := by
+    ∀ f v t, (∃ u, a s = .ok f u ∧ b u = .ok v t) ↔ (∃ u, b s = .ok v u ∧ a u = .ok f t) := by
   intro a b f v t
-  have hs := parentDecl_local (W := W) (R := fun _ => False) (ctor := ctor) (proto := proto)
-    (name := name) n hm hx
+  have hs :=
+    parentDecl_local (W := W) (R := fun _ => False) (ctor := ctor) (proto := proto) (name := name) n
+      hm hx
   have hnone : ∀ c : Addr, False → c.region ≠ j + 1 := fun _ h => h.elim
   constructor
   · rintro ⟨u, ha, hb⟩

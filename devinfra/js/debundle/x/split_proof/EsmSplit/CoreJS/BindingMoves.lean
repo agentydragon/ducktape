@@ -31,9 +31,10 @@ theorem bindingCertificateTab_getD (ss : List Stmt) (B : EsmSplit.Bundle) (i : N
   · simp [bindingCertificateTab, hi, bindingCertificate]
 
 /-- A table-based pair check equivalent to `certifiedMayMove`. -/
-def certifiedMayMoveAt (ss : Array Stmt) (arr : Array EsmSplit.Stmt) (reads : Array EsmSplit.NameSet)
-    (certs : Array Bool) (i j : Nat) : Bool :=
-  MayMoveAt ss i j || (certs.getD i false && certs.getD j false && !EsmSplit.Bundle.conflictT arr reads i j)
+def certifiedMayMoveAt (ss : Array Stmt) (arr : Array EsmSplit.Stmt)
+    (reads : Array EsmSplit.NameSet) (certs : Array Bool) (i j : Nat) : Bool :=
+  MayMoveAt ss i j ||
+    (certs.getD i false && certs.getD j false && !EsmSplit.Bundle.conflictT arr reads i j)
 
 theorem certifiedMayMoveAt_eq (ss : List Stmt) (B : EsmSplit.Bundle) (i j : Nat) :
     certifiedMayMoveAt ss.toArray B.toArray B.readsTab (bindingCertificateTab ss B) i j =
@@ -53,15 +54,13 @@ theorem certifiedMovesOk_iff (ss : List Stmt) (B : EsmSplit.Bundle) (order : Lis
 
 /-- Neither summary writes a name the other reads or writes. -/
 def BindingSummary.Independent (a b : BindingSummary) : Prop :=
-  (∀ x ∈ a.writes, x ∉ b.reads ∧ x ∉ b.writes) ∧
-  (∀ x ∈ b.writes, x ∉ a.reads ∧ x ∉ a.writes)
+  (∀ x ∈ a.writes, x ∉ b.reads ∧ x ∉ b.writes) ∧ (∀ x ∈ b.writes, x ∉ a.reads ∧ x ∉ a.writes)
 
 /-- An actual conflict-free pair has disjoint reads/writes when neither statement is hoisted. -/
-theorem binding_names_disjoint {B : EsmSplit.Bundle} {i j : Nat}
-    (hi : (B.stmt i).hoisted = false) (hj : (B.stmt j).hoisted = false)
-    (hc : B.conflict i j = false) :
+theorem binding_names_disjoint {B : EsmSplit.Bundle} {i j : Nat} (hi : (B.stmt i).hoisted = false)
+    (hj : (B.stmt j).hoisted = false) (hc : B.conflict i j = false) :
     (∀ x ∈ (B.stmt i).binds, x ∉ B.reads j ∧ x ∉ (B.stmt j).binds) ∧
-    (∀ x ∈ (B.stmt j).binds, x ∉ B.reads i ∧ x ∉ (B.stmt i).binds) := by
+      (∀ x ∈ (B.stmt j).binds, x ∉ B.reads i ∧ x ∉ (B.stmt i).binds) := by
   simp only [EsmSplit.Bundle.conflict, hi, hj, Bool.not_false, Bool.true_and,
     Bool.or_eq_false_iff] at hc
   have hab := hc.1.2
@@ -97,9 +96,8 @@ theorem binding_names_disjoint {B : EsmSplit.Bundle} {i j : Nat}
 
 /-- Checked summaries inherit noninterference from the actual bundle conflict check. -/
 theorem binding_summaries_independent {ss : List Stmt} {B : EsmSplit.Bundle} {i j : Nat}
-    {si sj : Stmt} {mi mj : BindingSummary}
-    (hi : bindingCertificate ss B i = true) (hj : bindingCertificate ss B j = true)
-    (hsi : ss[i]? = some si) (hsj : ss[j]? = some sj)
+    {si sj : Stmt} {mi mj : BindingSummary} (hi : bindingCertificate ss B i = true)
+    (hj : bindingCertificate ss B j = true) (hsi : ss[i]? = some si) (hsj : ss[j]? = some sj)
     (hmi : si.bindingSummary = some mi) (hmj : sj.bindingSummary = some mj)
     (hc : B.conflict i j = false) : mi.Independent mj := by
   obtain ⟨si', fi, mi', hsi', hfi, hhi, hmi', hri, hwi⟩ := bindingCertificate_witness hi
@@ -116,16 +114,17 @@ theorem binding_summaries_independent {ss : List Stmt} {B : EsmSplit.Bundle} {i 
   have hfj' : B.stmt j = fj := by simp [EsmSplit.Bundle.stmt, hfj]
   have hd := binding_names_disjoint (by simpa [hfi'] using hhi) (by simpa [hfj'] using hhj) hc
   rw [hfi', hfj'] at hd
-  exact ⟨fun x hx => ⟨fun hr => (hd.1 x (hwi x hx)).1 (hrj x hr),
-      fun hw => (hd.1 x (hwi x hx)).2 (hwj x hw)⟩,
-    fun x hx => ⟨fun hr => (hd.2 x (hwj x hx)).1 (hri x hr),
-      fun hw => (hd.2 x (hwj x hx)).2 (hwi x hw)⟩⟩
+  exact
+    ⟨fun x hx =>
+      ⟨fun hr => (hd.1 x (hwi x hx)).1 (hrj x hr), fun hw => (hd.1 x (hwi x hx)).2 (hwj x hw)⟩,
+      fun x hx =>
+      ⟨fun hr => (hd.2 x (hwj x hx)).1 (hri x hr), fun hw => (hd.2 x (hwj x hx)).2 (hwi x hw)⟩⟩
 
 /-- Name noninterference transfers to concrete cells in an injective linked environment. -/
 theorem BindingSummary.Independent.cells {a b : BindingSummary} (h : a.Independent b) (env : Env)
     (hinj : ∀ x y c, env.vars.lookup x = some c → env.vars.lookup y = some c → x = y) :
-    (∀ c, a.writeCells env c → ¬ (b.readCells env c ∨ b.writeCells env c)) ∧
-    (∀ c, b.writeCells env c → ¬ (a.readCells env c ∨ a.writeCells env c)) := by
+    (∀ c, a.writeCells env c → ¬(b.readCells env c ∨ b.writeCells env c)) ∧
+      (∀ c, b.writeCells env c → ¬(a.readCells env c ∨ a.writeCells env c)) := by
   constructor
   · rintro c ⟨x, hx, hxc⟩ (⟨y, hy, hyc⟩ | ⟨y, hy, hyc⟩)
     · have he := hinj x y c hxc hyc
@@ -150,8 +149,9 @@ theorem bindingMayMove_sound {W : World} (ss : List Stmt) (B : EsmSplit.Bundle) 
   obtain ⟨si, fi, mi, hsi, _, _, hmi, _, _⟩ := bindingCertificate_witness hc.1.1
   obtain ⟨sj, fj, mj, hsj, _, _, hmj, _, _⟩ := bindingCertificate_witness hc.1.2
   have hn := binding_summaries_independent hc.1.1 hc.1.2 hsi hsj hmi hmj hc.2
-  have hd := hn.cells (bundleEnv ss frames) (fun x y c hx hy =>
-    declareTops_bundleEnv_injective hframes hx hy)
+  have hd :=
+    hn.cells (bundleEnv ss frames)
+      (fun x y c hx hy => declareTops_bundleEnv_injective hframes hx hy)
   have hi := Stmt.bindingFootprint hmi n (bundleEnv ss frames) (W := W)
   have hj := Stmt.bindingFootprint hmj n (bundleEnv ss frames) (W := W)
   constructor
@@ -168,7 +168,8 @@ theorem certifiedMayMove_sound {W : World} {ss : List Stmt} {B : EsmSplit.Bundle
 /-- Actual checked footprints extend the existing successful-execution equivalence theorem. -/
 theorem moves_preserve_of_certifiedMovesOk {W : World} {ss : List Stmt} {B : EsmSplit.Bundle}
     {S : EsmSplit.Spec} {P : EsmSplit.Plan} (hvalid : EsmSplit.Valid B S P)
-    (hfp : FootprintsOfSyntax ss B) (hmove : certifiedMovesOk ss B P.execOrder = true) (s : State W) :
+    (hfp : FootprintsOfSyntax ss B) (hmove : certifiedMovesOk ss B P.execOrder = true)
+    (s : State W) :
     Ends W (Program.single ss) (.ok () s) ↔ Ends W (splitProgram ss B P) (.ok () s) :=
   moves_preserve_of_sound hvalid hfp (certifiedMayMove_sound hfp hvalid.1)
     ((certifiedMovesOk_iff ss B P.execOrder).1 hmove) s

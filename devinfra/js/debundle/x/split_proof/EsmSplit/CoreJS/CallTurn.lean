@@ -10,13 +10,11 @@ namespace CoreJS
 
 variable {W : World}
 
-private theorem dispatchCall_lift
-    (localBody : Func → Env → Val → List Val → M W Val)
-    (opaqueBody : Nat → List (Option Addr) → Told → M W Val)
-    (callee this : Val) (args : List Val) :
+private theorem dispatchCall_lift (localBody : Func → Env → Val → List Val → M W Val)
+    (opaqueBody : Nat → List (Option Addr) → Told → M W Val) (callee this : Val) (args : List Val) :
     dispatchCall TurnM.lift (fun f closed r argv => TurnM.lift (localBody f closed r argv))
-      (fun code cells told => TurnM.lift (opaqueBody code cells told)) callee this args =
-    TurnM.lift (dispatchCall (fun run => run) localBody opaqueBody callee this args) := by
+        (fun code cells told => TurnM.lift (opaqueBody code cells told)) callee this args =
+      TurnM.lift (dispatchCall (fun run => run) localBody opaqueBody callee this args) := by
   cases callee <;> simp only [dispatchCall, dispatchCallWithDeferred, TurnM.lift_bind]
   congr
   funext obj
@@ -41,32 +39,41 @@ def callFnTurn (fuel : Nat) (callee this : Val) (args : List Val) : TurnM W Val 
 /-- Full same-fuel overlap, including any changes to the heap, cells, host,
 output and handed-out identities. Existing jobs survive every stateful outcome. -/
 theorem callFnTurn_overlap (fuel : Nat) (callee this : Val) (args : List Val) :
-    (callFnTurn fuel callee this args : TurnM W Val) = TurnM.lift (callFn fuel callee this args) := by
+    (callFnTurn fuel callee this args : TurnM W Val) =
+      TurnM.lift (callFn fuel callee this args) := by
   cases fuel with
-  | zero => rw [callFn]; rfl
-  | succ n => rw [callFn]; exact dispatchCall_lift _ _ _ _ _
+  | zero =>
+    rw [callFn]; rfl
+  | succ n =>
+    rw [callFn]; exact dispatchCall_lift _ _ _ _ _
 
 /-- Ordinary callee and argument evaluation hand their current turn to the
 resolved call. In particular, callee expressions, aliases and nested
 argument calls retain their evaluation order and the original bound. -/
 theorem evalCall_turn (n : Nat) (env : Env) (f : Expr) (args : List Expr) :
-    (TurnM.lift (evalExpr (n + 1) env (.call f args)) : TurnM W Val) = (do
-      let callee ← TurnM.lift (evalExpr n env f)
-      let argv ← TurnM.lift (evalArgs n env args)
-      callFnTurn n callee .undef argv) := by
+    (TurnM.lift (evalExpr (n + 1) env (.call f args)) : TurnM W Val) =
+      (do
+        let callee ← TurnM.lift (evalExpr n env f)
+        let argv ← TurnM.lift (evalArgs n env args)
+        callFnTurn n callee .undef argv) := by
   simp only [evalExpr, directExprCall, callFnTurn_overlap, TurnM.lift_bind]
 
 /-- An opaque host request uses the same resolved call, after the existing
 host-to-CoreJS conversions and before handing the result back to the host. -/
-theorem performCall_turn (n code : Nat) (cells : List (Option Addr)) (f r : WVal) (args : List WVal) :
-    (TurnM.lift (perform (callFn n)
-      (fun callee argv => constructTarget n callee callee argv) code cells (.call f r args)) : TurnM W Told) =
+theorem performCall_turn (n code : Nat) (cells : List (Option Addr)) (f r : WVal)
+    (args : List WVal) :
+    (TurnM.lift
+          (perform (callFn n) (fun callee argv => constructTarget n callee callee argv) code cells
+            (.call f r args)) :
+        TurnM W Told) =
       (do
         let callee ← TurnM.lift (fromW f)
         let receiver ← TurnM.lift (fromW r)
         let argv ← TurnM.lift (args.mapM fromW)
         let result ← callFnTurn n callee receiver argv
-        TurnM.lift (do pure (.value (← toW result)))) := by
+        TurnM.lift
+            (do
+              pure (.value (← toW result)))) := by
   simp only [perform, requestCall, callFnTurn_overlap, TurnM.lift_bind]
 
 /-- Run cleanup from the body's resulting turn. A model refusal or fuel
@@ -97,8 +104,8 @@ theorem execFinally_turn (n : Nat) (env : Env) (body finalizer : Stmt) :
 
 /-- The body is supplied as a turn-valued recursion edge, at the caller's
 chosen fuel. Lifting its ordinary instantiation preserves the incoming FIFO. -/
-theorem ordinaryCallBody_lift (body : Env → List Stmt → M W Flow)
-    (f : Func) (closed : Env) (this : Val) (args : List Val) :
+theorem ordinaryCallBody_lift (body : Env → List Stmt → M W Flow) (f : Func) (closed : Env)
+    (this : Val) (args : List Val) :
     ordinaryCallBody TurnM.lift (fun env ss => TurnM.lift (body env ss)) f closed this args =
       TurnM.lift (ordinaryCallBody (fun m => m) body f closed this args) := by
   simp only [ordinaryCallBody, TurnM.lift_bind]
@@ -116,8 +123,10 @@ same bounds, and the same handling of replies and language exceptions. -/
 theorem converse_turn (n code : Nat) (cells : List (Option Addr)) (told : Told) :
     (TurnM.lift (converse (n + 1) code cells told) : TurnM W Val) =
       conversationStep TurnM.lift TurnM.attempt
-        (fun req => TurnM.lift (perform (callFn n) (fun callee args => constructTarget n callee callee args)
-          code cells req))
+        (fun req =>
+          TurnM.lift
+            (perform (callFn n) (fun callee args => constructTarget n callee callee args) code cells
+              req))
         (fun answer => TurnM.lift (converse n code cells answer)) told := by
   simp only [converse, conversationStep, TurnM.lift_bind]
   congr
@@ -129,15 +138,15 @@ ordinary observation. Quantify over arbitrary incoming turns. -/
 def TurnM.Projects (run : TurnM W α) (ordinary : M W α) : Prop :=
   ∀ turn, (run turn).erase = ordinary turn.state
 
-theorem TurnM.Projects.lift (ordinary : M W α) : Projects (TurnM.lift ordinary) ordinary :=
-  fun _ => TurnResult.erase_withJobs _ _
+theorem TurnM.Projects.lift (ordinary : M W α) : Projects (TurnM.lift ordinary) ordinary := fun _ =>
+  TurnResult.erase_withJobs _ _
 
-theorem TurnM.Projects.pure (value : α) : Projects (pure value : TurnM W α) (pure value) :=
-  fun _ => rfl
+theorem TurnM.Projects.pure (value : α) : Projects (pure value : TurnM W α) (pure value) := fun _ =>
+  rfl
 
-theorem TurnM.Projects.bind {run : TurnM W α} {ordinary : M W α}
-    {next : α → TurnM W β} {legacyNext : α → M W β}
-    (head : Projects run ordinary) (tail : ∀ a, Projects (next a) (legacyNext a)) :
+theorem TurnM.Projects.bind {run : TurnM W α} {ordinary : M W α} {next : α → TurnM W β}
+    {legacyNext : α → M W β} (head : Projects run ordinary)
+    (tail : ∀ a, Projects (next a) (legacyNext a)) :
     Projects (run >>= next) (ordinary >>= legacyNext) := by
   intro turn
   rw [bind_apply, M.bind_apply, ← head turn]
@@ -145,32 +154,34 @@ theorem TurnM.Projects.bind {run : TurnM W α} {ordinary : M W α}
   | ok value after => exact tail value after
   | _ => rfl
 
-theorem TurnM.Projects.attempt {run : TurnM W α} {ordinary : M W α}
-    (h : Projects run ordinary) :
+theorem TurnM.Projects.attempt {run : TurnM W α} {ordinary : M W α} (h : Projects run ordinary) :
     Projects (TurnM.attempt run) (CoreJS.attempt ordinary) := by
   intro turn
   simp only [TurnM.attempt, CoreJS.attempt, ← h turn]
   cases run turn <;> rfl
 
 /-- The local body may extend the FIFO without changing the projected result. -/
-theorem ordinaryCallBody_projects
-    {body : Env → List Stmt → TurnM W Flow} {legacy : Env → List Stmt → M W Flow}
-    (overlap : ∀ env ss, TurnM.Projects (body env ss) (legacy env ss))
-    (f : Func) (closed : Env) (this : Val) (args : List Val) :
+theorem ordinaryCallBody_projects {body : Env → List Stmt → TurnM W Flow}
+    {legacy : Env → List Stmt → M W Flow}
+    (overlap : ∀ env ss, TurnM.Projects (body env ss) (legacy env ss)) (f : Func) (closed : Env)
+    (this : Val) (args : List Val) :
     TurnM.Projects (ordinaryCallBody TurnM.lift body f closed this args)
       (ordinaryCallBody (fun m => m) legacy f closed this args) :=
   (TurnM.Projects.lift _).bind fun env => (overlap env f.body).bind fun _ => .lift _
 
 theorem finallyTurn_projects {body cleanup : TurnM W Flow} {oldBody oldCleanup : M W Flow}
-    (bodyOverlap : TurnM.Projects body oldBody) (cleanupOverlap : TurnM.Projects cleanup oldCleanup) :
-    TurnM.Projects (finallyTurn body cleanup) (do
-      let result ← attempt oldBody
-      finishFinally oldCleanup throwVal result) :=
-  bodyOverlap.attempt.bind fun result => cleanupOverlap.bind fun flow => by
-    cases flow <;> try exact .pure _
-    cases result with
-    | ok value => exact .pure value
-    | error reason => exact .lift (throwVal reason)
+    (bodyOverlap : TurnM.Projects body oldBody)
+    (cleanupOverlap : TurnM.Projects cleanup oldCleanup) :
+    TurnM.Projects (finallyTurn body cleanup)
+      (do
+        let result ← attempt oldBody
+        finishFinally oldCleanup throwVal result) :=
+  bodyOverlap.attempt.bind fun result =>
+    cleanupOverlap.bind fun flow => by
+      cases flow <;> try exact .pure _
+      cases result with
+      | ok value => exact .pure value
+      | error reason => exact .lift (throwVal reason)
 
 /-- Conversion and the value reply see the callback's updated turn. -/
 theorem requestCall_projects {call : Val → Val → List Val → TurnM W Val} {legacy : Call W}
@@ -194,7 +205,8 @@ theorem conversationStep_projects {request : Request → TurnM W Told} {legacy :
       (conversationStep (fun m => m) attempt legacy legacyNext told) := by
   apply (TurnM.Projects.lift _).bind
   intro req
-  cases req <;> first
+  cases req <;>
+    first
     | exact .lift _
     | exact (TurnM.Projects.lift _).bind fun _ => .lift _
     | exact (requests _).attempt.bind fun _ => (TurnM.Projects.lift _).bind replies
