@@ -1,0 +1,22 @@
+{
+  "acorn": {
+    "sha256": "e2478dfecff35578381298798b067b66c0424057a99c4c6ddddc6f6b2fb45eee",
+    "bytes": 204565,
+    "units": 447
+  },
+  "lodash": {
+    "sha256": "00ba6a99a5abc67948346a25a7cb3064d730fd38b2256069f55a67b6c4f4fe02",
+    "bytes": 97358,
+    "units": 670
+  },
+  "semver": {
+    "sha256": "9a1ab71f40d915f55f3985c314a844d7686f936b1a097dd78ded2c92cf84ba44",
+    "bytes": 78583,
+    "units": 59
+  },
+  "zod": {
+    "sha256": "5d67ee00c72ddfbaa8d82f88913330687b364e6767faf5065538238d21495538",
+    "bytes": 767238,
+    "units": 1072
+  }
+}
