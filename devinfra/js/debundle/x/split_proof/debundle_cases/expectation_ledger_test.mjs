@@ -139,6 +139,39 @@ assert.equal(JSON.parse(wrongNamespace.stdout).status, "rejected");
 writeFileSync(residual, originalResidual);
 const ownerFile = path.join(declOutput, "x.mjs");
 const ownerSource = readFileSync(ownerFile, "utf8");
+const sourceLedger = () =>
+  observeExpectations({
+    accept: {
+      stdout: "3\n",
+      source: {
+        [authoredOwner]: { contains: ["export"], excludes: ["forbidden"], occurrences_at_least: { export: 1 } },
+        "static/app/modules/unmapped.js": { contains: ["export"] },
+      },
+    },
+    stage: declStage,
+    chunkFile: "static/app.js",
+    output: declOutput,
+    entry: declarator.entry,
+    moduleOutputs: new Map([[authoredOwner, "x.mjs"]]),
+    run,
+    nodeRun,
+  });
+const initialSource = sourceLedger();
+assert.deepEqual(assertion(initialSource, `source:${authoredOwner}`), {
+  assertion: `source:${authoredOwner}`,
+  status: "pass",
+  detail: { file: "x.mjs", missing: [], unexpected: [], tooFew: [] },
+});
+assert.equal(assertion(initialSource, "source:static/app/modules/unmapped.js").status, "unchecked");
+writeFileSync(ownerFile, ownerSource + "\n// forbidden\n");
+const wrongSource = sourceLedger();
+assert.equal(assertion(wrongSource, "stdout:emitted").status, "pass");
+assert.deepEqual(assertion(wrongSource, `source:${authoredOwner}`), {
+  assertion: `source:${authoredOwner}`,
+  status: "fail",
+  detail: { file: "x.mjs", missing: [], unexpected: ["forbidden"], tooFew: [] },
+});
+writeFileSync(ownerFile, ownerSource);
 const probeOwner = () =>
   run(process.execPath, [
     "--input-type=module",
