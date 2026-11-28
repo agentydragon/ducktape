@@ -60,6 +60,24 @@ rebinding `Node` to an equal-valued copy of `SourceLocation` breaks constructor
 identity, and running the prototype write before `Position` initializes
 throws in Node. The wrong-priority request also leaves the valid tree intact.
 
+The same projection also certifies `locutil-grouped`, with all four source
+members **#35–38** in `locations.mjs`. It keeps the earlier predicate and
+scanner in their existing separate projection owners and keeps `Node` and the
+selected public export row in the entry. The extra admitted row is a
+concretely lowered hoisted function immediately after the constructor block,
+capturing exactly the local constructor and the earlier scanner. The same
+ordered link, live export and disk readback checks apply. Node confirms that
+the entry exposes the same `getLineInfo` function as the helper, exercises
+the original constructor/prototype behavior, and detects a changed scanner
+binding that also fails disk readback.
+
+This recovers **4/4** of the known surviving `locutil` rows, with no unrelated
+body rows in that projection owner. The exact **447-row** workload has a
+different authored placement: it leaves #22 and #23 in the entry with the
+other retained units. Its empty-profile lowering stops at the unrelated
+eager `RegExp` at #8, before group checking. The projection adds no global
+premise and does not establish a split or a footprint for that full request.
+
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:acorn_node_location --test_output=all
 ```

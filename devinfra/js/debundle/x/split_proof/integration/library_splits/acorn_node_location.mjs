@@ -203,16 +203,19 @@ async function checkExtractedArtifacts(request, api, modules, order) {
 }
 
 const results = [];
-for (const [name, moveLocations] of [
-  ["node-kept", false],
-  ["locations-extracted", true],
+for (const [name, locationRows] of [
+  ["node-kept", []],
+  ["locations-extracted", [35, 36, 37]],
+  ["locutil-grouped", [35, 36, 37, 38]],
 ]) {
+  const moveLocations = locationRows.length > 0;
+  const moveLineInfo = locationRows.includes(38);
   const order = [newline, scanner, ...(moveLocations ? [locations] : [])];
   const owners = {
     [newline]: [22],
     [scanner]: [23],
-    ...(moveLocations ? { [locations]: [35, 36, 37] } : {}),
-    [entry]: moveLocations ? [38, nodeOrdinal, exportOrdinal] : [35, 36, 37, 38, nodeOrdinal, exportOrdinal],
+    ...(moveLocations ? { [locations]: locationRows } : {}),
+    [entry]: [35, 36, 37, 38, nodeOrdinal, exportOrdinal].filter((id) => !locationRows.includes(id)),
   };
   const modules = Object.fromEntries(Object.entries(owners).map(([file, ordinals]) => [file, selectors(ordinals)]));
 
@@ -226,12 +229,19 @@ for (const [name, moveLocations] of [
     'import { isNewLine } from "./newline.mjs";\n' + codeFor([23]) + "export { nextLineBreak };\n"
   );
   if (moveLocations) {
-    writeFileSync(path.join(control, locations), codeFor(owners[locations]) + "export { Position, SourceLocation };\n");
+    const scannerImport = moveLineInfo ? 'import { nextLineBreak } from "./scanner.mjs";\n' : "";
+    const groupExports = moveLineInfo ? "getLineInfo, SourceLocation, Position" : "Position, SourceLocation";
+    writeFileSync(
+      path.join(control, locations),
+      scannerImport + codeFor(locationRows) + `export { ${groupExports} };\n`
+    );
   }
   writeFileSync(
     path.join(control, entry),
     'import { isNewLine } from "./newline.mjs";\nimport { nextLineBreak } from "./scanner.mjs";\n' +
-      (moveLocations ? 'import { Position, SourceLocation } from "./locations.mjs";\n' : "") +
+      (moveLocations
+        ? `import { ${moveLineInfo ? "getLineInfo" : "Position"}, SourceLocation } from "./locations.mjs";\n`
+        : "") +
       codeFor(owners[entry].filter((id) => id !== exportOrdinal)) +
       publication
   );
@@ -251,6 +261,7 @@ for (const [name, moveLocations] of [
   writeFileSync(spec, JSON.stringify({ entry, modules, order, sequential: true }, null, 2));
   const request = { source: input, spec, out: path.join(tmp, name + "-cli"), require: "all-outcomes" };
   const result = split(request);
+  if (moveLineInfo) assert.equal(result.status, "certified", result.log);
   if (result.status === "certified") {
     assert.equal(result.guarantee, "all-outcomes", result.log);
     assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
@@ -258,7 +269,43 @@ for (const [name, moveLocations] of [
     assert.deepEqual(Object.keys(emitted), publicNames);
     assert.deepEqual(observe(emitted), expected);
     assert.deepEqual(result.files, moveLocations ? [entry, locations, newline, scanner] : [entry, newline, scanner]);
-    if (moveLocations) await checkExtractedArtifacts(request, emitted, modules, order);
+    if (moveLocations && !moveLineInfo) await checkExtractedArtifacts(request, emitted, modules, order);
+    if (moveLineInfo) {
+      const groupFile = path.join(request.out, locations);
+      const group = readFileSync(groupFile, "utf8");
+      const groupModule = await readModule(groupFile);
+      const { position, location } = instances(emitted);
+      assert.equal(emitted.getLineInfo, groupModule.getLineInfo);
+      assert(location instanceof groupModule.SourceLocation);
+      assert.equal(Object.getPrototypeOf(position.offset(4)), Object.getPrototypeOf(position));
+      const parsedGroup = parse(group);
+      const originalSequence = parsedGroup.ast.body.filter(
+        (row) => row.type !== "ImportDeclaration" && row.type !== "ExportNamedDeclaration"
+      );
+      assert.deepEqual(
+        originalSequence.map(({ start, end }) => group.slice(start, end)),
+        locationRows.map(statement)
+      );
+      const [reader] = parsedGroup.ast.body.filter((row) => row.type === "ImportDeclaration");
+      assert.equal(reader.source.value, "./scanner.mjs");
+      assert.deepEqual(
+        reader.specifiers.map(({ imported, local }) => [imported.name, local.name]),
+        [["nextLineBreak", "nextLineBreak"]]
+      );
+      // Same group, but link its scanner name to a different function.
+      const wrong = request.out + "-wrong-locutil-reader";
+      cpSync(request.out, wrong, { recursive: true });
+      writeFileSync(
+        path.join(wrong, scanner),
+        readFileSync(path.join(wrong, scanner), "utf8") + "\nexport function noBreak() { return -1; }\n"
+      );
+      const replacement = 'import { noBreak as nextLineBreak } from "./scanner.mjs";';
+      writeFileSync(path.join(wrong, locations), group.slice(0, reader.start) + replacement + group.slice(reader.end));
+      const changed = await readModule(path.join(wrong, entry));
+      assert.deepEqual(Object.keys(changed), publicNames);
+      assert.notDeepEqual(positionFields(changed.getLineInfo(programText, start)), expected.position);
+      assert.equal(split({ ...request, out: wrong, checkOutput: true }).status, "refused");
+    }
   } else {
     assert.equal(result.reasonCode, "no_constructed_rule", result.log);
   }
@@ -282,8 +329,7 @@ for (const [name, moveLocations] of [
 writeFileSync(path.join(artifacts, "results.json"), JSON.stringify(results, null, 2));
 
 if (process.env.EXPECT_NODE_LOCATION) {
-  assert.equal(results[0].verdict.status, process.env.EXPECT_NODE_LOCATION);
-  assert.equal(results[1].verdict.status, process.env.EXPECT_NODE_LOCATION);
+  for (const row of results) assert.equal(row.verdict.status, process.env.EXPECT_NODE_LOCATION, row.name);
 }
 
 // Spread invokes the iterator protocol, outside this dense array fragment.
