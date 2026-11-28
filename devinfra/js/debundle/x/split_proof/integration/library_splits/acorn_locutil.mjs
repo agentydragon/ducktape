@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { composeAcornOrigins, mapIntervals } from "./source_ownership.mjs";
 
@@ -192,6 +194,116 @@ export async function checkLocutilOutput(entry, owner, expected) {
     locationsMatch: true,
     extraExports: actualNames.filter((name) => !originalNames.includes(name)),
     missingExports: originalNames.filter((name) => !actualNames.includes(name)),
+  };
+}
+
+function staticRequests(ast) {
+  // Moving the implementation as a unit preserves its relative requests.
+  // The fixture must not depend on its old URL or on runtime resolution.
+  const nodes = [ast];
+  while (nodes.length) {
+    const node = nodes.pop();
+    assert(node.type !== "ImportExpression" && node.type !== "MetaProperty", node.type);
+    for (const child of Object.values(node)) {
+      if (Array.isArray(child)) nodes.push(...child.filter((item) => item?.type));
+      else if (child?.type) nodes.push(child);
+    }
+  }
+  return ast.body.flatMap((node) => {
+    if (!["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration"].includes(node.type) || !node.source)
+      return [];
+    assert(!node.attributes?.length);
+    return [node.source.value];
+  });
+}
+
+function graphTrace(directory, routes, entry, parse) {
+  const edges = new Map(
+    routes.map((name) => [
+      name,
+      staticRequests(parse(readFileSync(path.join(directory, name), "utf8"))).map((request) => {
+        assert(/^\.\.?\/[a-zA-Z0-9_./-]+\.js$/.test(request), request);
+        return path.posix.normalize(path.posix.join(path.posix.dirname(name), request));
+      }),
+    ])
+  );
+  const active = new Set();
+  const seen = new Set();
+  const order = [];
+  const backEdges = [];
+  function visit(name) {
+    assert(edges.has(name), `static request leaves the declared graph: ${name}`);
+    if (seen.has(name)) return;
+    seen.add(name);
+    active.add(name);
+    for (const dependency of edges.get(name)) {
+      if (active.has(dependency)) backEdges.push([name, dependency]);
+      visit(dependency);
+    }
+    active.delete(name);
+    order.push(name);
+  }
+  visit(entry);
+  assert.deepEqual([...seen].sort(), routes.toSorted(), "expected the whole emitted graph to be reachable");
+  return { order, backEdges };
+}
+
+// An explicit forwarder at the original entry path lets the 26 Rust modules
+// keep their internal imports and their relative evaluation order.
+export async function checkLocutilForwarder({ root, routes, entry, owner, target, expected, parse }) {
+  const privateRoot = path.join(target, "implementation");
+  for (const route of routes) {
+    const to = path.join(privateRoot, route);
+    mkdirSync(path.dirname(to), { recursive: true });
+    copyFileSync(path.join(root, route), to);
+    assert.deepEqual(readFileSync(to), readFileSync(path.join(root, route)));
+  }
+  const publicEntry = path.join(target, entry);
+  mkdirSync(path.dirname(publicEntry), { recursive: true });
+  const implementation = "implementation/" + entry;
+  const request = path.posix.relative(path.posix.dirname(entry), implementation);
+  assert(expected.names.every((name) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name)));
+  writeFileSync(publicEntry, `export { ${expected.names.join(", ")} } from ${JSON.stringify(request)};\n`);
+
+  const original = graphTrace(root, routes, entry, parse);
+  assert.deepEqual(original.backEdges, [], "expected the existing Acorn source-files graph to be acyclic");
+  const privateRoutes = routes.map((name) => "implementation/" + name);
+  const forwarded = graphTrace(target, [entry, ...privateRoutes], entry, parse);
+  assert.deepEqual(forwarded.order, [...original.order.map((name) => "implementation/" + name), entry]);
+  assert.deepEqual(
+    forwarded.backEdges,
+    original.backEdges.map((edge) => edge.map((name) => "implementation/" + name))
+  );
+
+  const privateEntry = await load(path.join(target, implementation));
+  const api = await load(publicEntry);
+  assert.deepEqual(Object.keys(api), expected.names);
+  for (const name of expected.names) assert.equal(api[name], privateEntry[name], name);
+  assert(!Object.hasOwn(api, "nextLineBreak"));
+  assert.deepEqual(await checkLocutilOutput(publicEntry, path.join(privateRoot, owner), expected), {
+    locationsMatch: true,
+    extraExports: [],
+    missingExports: [],
+  });
+
+  // Star forwarding to the very same implementation leaks its six glue names.
+  const star = path.join(path.dirname(target), "forwarded-star-control.mjs");
+  const starRequest = "./" + path.relative(path.dirname(star), path.join(target, implementation));
+  writeFileSync(star, `export * from ${JSON.stringify(starRequest)};\n`);
+  const leaked = Object.keys(await load(star)).filter((name) => !expected.names.includes(name));
+  assert.deepEqual(
+    leaked,
+    Object.keys(privateEntry).filter((name) => !expected.names.includes(name))
+  );
+  assert.equal(leaked.length, 6);
+
+  return {
+    implementationFiles: routes.length,
+    generatedFiles: 1,
+    originalBackEdges: original.backEdges.length,
+    extraExports: [],
+    missingExports: [],
+    rejectedStarSurface: leaked,
   };
 }
 
