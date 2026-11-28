@@ -562,7 +562,9 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(
             name="replication-repair",
             namespace=namespace.NAME,
-            annotations={"description": "Hourly copy-only repair of SeaweedFS volume replica placement."},
+            annotations={
+                "description": "Hourly copy-only repair of SeaweedFS volume replica placement, then disk-usage balance."
+            },
         ),
         spec=AdminScriptSpec(
             cluster_ref=AdminScriptSpecClusterRef(name=CLUSTER_NAME),
@@ -590,6 +592,11 @@ def chart(app: App) -> Chart:
                 "lock\n"
                 "volume.fix.replication -apply -doDelete=false -maxParallelization=2"
                 " -maxParallelizationPerServer=1 -retry=5\n"
+                # Slot counts are deliberately overcommitted (maxVolumeCounts above), so the
+                # default slot-density balance can't see bytes. -byDiskUsage ranks servers by
+                # their reported filesystem use, and the default -maxDiskUsagePercent=90 skips
+                # full targets. That filesystem is the volume PVC, not the Piraeus thin pool.
+                "volume.balance -collection ALL_COLLECTIONS -byDiskUsage -apply -maxParallelization 1\n"
                 "unlock\n"
             ),
         ),
