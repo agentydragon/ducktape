@@ -429,6 +429,8 @@ spec:
       log_parameter_max_length_on_error: "0"
       max_connections: "300"
       max_slot_wal_keep_size: 512MB
+      pg_stat_statements.max: "5000"
+      pg_stat_statements.track: top
   probes:
     liveness:
       isolationCheck:
@@ -447,6 +449,9 @@ spec:
   cluster:
     name: postgres
   databaseReclaimPolicy: delete
+  extensions:
+    - ensure: present
+      name: pg_stat_statements
   name: actions
   owner: actions
 ---
@@ -459,6 +464,9 @@ spec:
   cluster:
     name: postgres
   databaseReclaimPolicy: delete
+  extensions:
+    - ensure: present
+      name: pg_stat_statements
   name: egress
   owner: egress
 ---
@@ -471,6 +479,9 @@ spec:
   cluster:
     name: postgres
   databaseReclaimPolicy: delete
+  extensions:
+    - ensure: present
+      name: pg_stat_statements
   name: mcp_edge
   owner: mcp_edge
 ---
@@ -483,6 +494,9 @@ spec:
   cluster:
     name: postgres
   databaseReclaimPolicy: delete
+  extensions:
+    - ensure: present
+      name: pg_stat_statements
   name: notifications
   owner: notifications
 ---
@@ -495,6 +509,9 @@ spec:
   cluster:
     name: postgres
   databaseReclaimPolicy: delete
+  extensions:
+    - ensure: present
+      name: pg_stat_statements
   name: sandbox_service
   owner: sandbox_service
 ---
@@ -507,6 +524,9 @@ spec:
   cluster:
     name: postgres
   databaseReclaimPolicy: delete
+  extensions:
+    - ensure: present
+      name: pg_stat_statements
   name: session_dispatcher
   owner: session_dispatcher
 ---
@@ -519,6 +539,9 @@ spec:
   cluster:
     name: postgres
   databaseReclaimPolicy: retain
+  extensions:
+    - ensure: present
+      name: pg_stat_statements
   name: central_sampler
   owner: central_sampler
 ---
