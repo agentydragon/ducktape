@@ -258,6 +258,12 @@ const callbackCaptures = [
 assert.deepEqual(callbackCaptures, []);
 const providerAst = JSON.parse(annotated(providerPath, path.join(tmp, "wrapper-provider.json")));
 assert.deepEqual(runProbe("wrapperFactoryShape", { source: providerAst, ordinal: factoryOrdinal }), { output: true });
+const editorAst = JSON.parse(readFileSync(fullAst, "utf8"));
+const crossing = runProbe("wrapperCrossingShape", { source: editorAst, factoryAlias: alias.name });
+assert.deepEqual(crossing, { output: { wrapper: "po", arrow: "Jb" } });
+assert.deepEqual(runProbe("wrapperCrossingShape", { source: editorAst, factoryAlias: "notTheFactory" }), {
+  error: "unlinked imported name Ve",
+});
 const providerDecoded = runProbe("sourceClassification", { entry: providerName, source: providerAst });
 assert.equal(providerDecoded.error, "statement 0: unsupported global Object");
 
@@ -321,6 +327,7 @@ const wrapperReport = {
     decoded: providerDecoded,
   },
   moved: { ordinal: 1337, from: entry, to: scroll },
+  crossing,
   wrapperControl,
   reentry: { calls, retainedPartialExportsAfterThrow: true },
 };
