@@ -136,10 +136,11 @@ assert.equal(privateResult.reasonCode, "no_constructed_rule", privateResult.log)
 for (const plan of [movedExport, movedPrototype]) {
   assert.equal(plan.valid, true);
   assert.deepEqual(plan.sourcePublic, ["point", "Basis", "default"]);
-  assert.deepEqual(plan.draw, [
-    "unknown: deferred function point: unsupported switch fallthrough",
-    "unknown: deferred function point: unsupported switch fallthrough",
-  ]);
+  const expectedDraw = [
+    { trace: 12332, threw: false, sameContext: true, fields: [3, 6, 12] },
+    { trace: 123, threw: true, sameContext: true, fields: node.partial },
+  ];
+  assert.deepEqual(plan.draw, [expectedDraw, expectedDraw]);
 }
 assert.deepEqual(movedExport.order, [0, 1, 2, 3]);
 assert.deepEqual(movedExport.candidatePublic, ["Basis", "default"]);

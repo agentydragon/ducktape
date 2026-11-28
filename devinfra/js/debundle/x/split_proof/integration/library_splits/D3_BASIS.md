@@ -50,3 +50,21 @@ no input-import or deployment extension.
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:d3_basis_test --test_output=all
 ```
+
+## Switch fallthrough in the shared model
+
+The linked lowerer now runs the reachable case bodies in order without
+evaluating their labels after a match. It saves the discriminant once and
+uses the existing switch break scope. The statement-list proof shows that
+the suffix runs only after normal completion with exactly the fuel left by
+the prefix. Direct case lexical declarations and nontrailing defaults
+remain outside this fragment; nested blocks keep their own lexical scope.
+
+In the [updated replay](https://app.buildbuddy.io/invocation/c13e4d21-07cc-4ef9-b5d3-4cfbd4548f06),
+the original `Basis.prototype.point` method runs at fuel 256. The supplied
+context records move, line, curve, curve, line on the same receiver.
+When the first curve method records its call and throws the supplied
+sentinel object, the preceding writes remain: `_point` is 3 and the two
+previous x-coordinate fields are still 0 and 6, as in Node. The same two
+observations hold for the two plan models. The entry export and CLI
+admission issues above remain separate.
