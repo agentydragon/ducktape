@@ -222,6 +222,40 @@ function roundingBoundaryStrings() {
 
 export const cases = [
   {
+    name: "private field updates preserve numeric results, brand and receiver effects",
+    source: `
+      let reads = 0;
+      function receiver(value) { reads++; return value; }
+      class Worker {
+        #working = "2";
+        get working() { return this.#working; }
+        begin() { return this.#working++; }
+        finish() { return --this.#working; }
+        update(value) { return receiver(value).#working++; }
+      }
+      const worker = new Worker();
+      console.log(worker.begin(), worker.working, worker.finish());
+      console.log(worker.update(worker), worker.working, reads);
+      try { worker.update({}); }
+      catch { console.log("brand rejected", worker.working, reads); }
+    `,
+    end: "normal",
+  },
+  {
+    name: "optional call of a lexical task skips arguments only for a nullish task",
+    source: `
+      let reads = 0;
+      function run(task) { return task?.(++reads); }
+      console.log(run(undefined), run(null), reads);
+      console.log(run(function (x) { return this === undefined && x === 1; }), reads);
+      try { run(0); } catch { console.log("not callable", reads); }
+      const sentinel = {};
+      try { run(() => { throw sentinel; }); }
+      catch (error) { console.log(error === sentinel, reads); }
+    `,
+    end: "normal",
+  },
+  {
     name: "RegExp slots survive prototype changes while flags observes overridden properties",
     source: `
       const rx = /ab/dgimsy;

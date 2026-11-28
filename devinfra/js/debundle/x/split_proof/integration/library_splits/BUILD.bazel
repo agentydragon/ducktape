@@ -518,6 +518,25 @@ js_test(
 )
 
 js_test(
+    name = "retrier_pending_test",
+    size = "small",
+    args = ["$(rootpath //:pinned_retrier_package)"],
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//:pinned_retrier_package",
+        "//devinfra/js/debundle/x/split_proof:retrier_pending_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "retrier_pending_test.mjs",
+    env = {
+        "RETRIER_PENDING": "$(rootpath //devinfra/js/debundle/x/split_proof:retrier_pending_runner)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+)
+
+js_test(
     name = "retrier_baseline_test",
     size = "small",
     args = ["$(rootpath //:pinned_retrier_package)"],

@@ -1035,10 +1035,26 @@ private partial def linkedExprScoped (profile : HostProfile) (imports : List Nam
         pure false
       | op =>
         throw s!"unsupported linked update operator {op}"
-    let target ←
-      j.getObjVal? "argument" >>=
-          linkedTarget profile imports scope (linkedExprScoped profile imports scope "")
-    return .update target inc (← j.getObjValAs? Bool "prefix")
+    let argument ← j.getObjVal? "argument"
+    let pre ← j.getObjValAs? Bool "prefix"
+    let lower := linkedExprScoped profile imports scope ""
+    if let some name := privateMember? argument then
+      -- GetValue performs the brand check before numeric conversion. Reuse
+      -- ordinary update to obtain both the stored number and the expression
+      -- result, then write through the original branded receiver.
+      let receiver := ":private-receiver"
+      let value := ":private-update"
+      let result := ":private-update-result"
+      let access := [Expr.var (privateTable name), .var receiver]
+      let steps := [
+        Stmt.decl .let_ value (.prim (.privateSlot .get) access),
+        .decl .const result (.update (.var value) inc pre),
+        .expr (.prim (.privateSlot .set) (access ++ [.var value])),
+        .ret (.var result)]
+      return .call (.func (.mk "" .arrow false [receiver] steps))
+        [← lower (← argument.getObjVal? "object")]
+    let target ← linkedTarget profile imports scope lower argument
+    return .update target inc pre
   | "ObjectExpression" =>
     linkedObject (linkedExprScoped profile imports scope)
         (fun name => linkedFunction profile imports .method name false) j
