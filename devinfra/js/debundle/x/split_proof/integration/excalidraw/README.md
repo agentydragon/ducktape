@@ -14,6 +14,8 @@ The [unchanged-artifact baseline](identity_baseline.md) compares the original
 Excalidraw and library files byte for byte, and records what the ordinary
 CLI does with identity requests.
 
+The [v0.18.1 allocation audit](audits/allocation_v0181/README.md) gives the current Rust output counts by input chunk and known original owner, with emitted bytes and historical overlap reported separately.
+
 ## Diagnostic census
 
 Run the experimental Lean checker against the public, pinned Excalidraw bundle:
