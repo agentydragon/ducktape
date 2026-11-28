@@ -1822,6 +1822,7 @@ lean_library(
         ":corejs_link_world",
         ":corejs_plan_placement",
         ":corejs_primitive_rhs",
+        ":literal_swap_check",
     ],
 )
 
