@@ -52,19 +52,16 @@ function annotated(file, output) {
 }
 // Use the production parse and indexed source decoder. This test runner also
 // attempts a planner on supported inputs; these requests fail before that.
-function probe(file, spec, ast) {
-  const input = [
-    {
-      kind: "indexedInlinePlan",
-      input: { source: JSON.parse(ast), sourceText: readFileSync(file, "utf8"), spec },
-    },
-  ];
+function runProbe(kind, input) {
   return JSON.parse(
     execFileSync(process.env.LINKED_INPUT_CHECKER, {
       encoding: "utf8",
-      input: JSON.stringify(input) + "\n",
+      input: JSON.stringify([{ kind, input }]) + "\n",
     })
   )[0];
+}
+function probe(file, spec, ast) {
+  return runProbe("indexedInlinePlan", { source: JSON.parse(ast), sourceText: readFileSync(file, "utf8"), spec });
 }
 const movedPair = [1337, 1338];
 function placement(ids, moved) {
@@ -213,17 +210,86 @@ for (const [name, { ids, ...report }] of Object.entries({ single, pair, without4
   console.log(JSON.stringify({ name, retained: ids.length, ...report }));
 }
 
-// Contrast wrapper creation with an eager call at the initializer. Use the
-// actual provider with a synthetic callback so its captured cell is observable.
-const provider = await import(
-  "data:text/javascript," + encodeURIComponent(readFileSync(path.join(bundle, "chunk-BLPUKQJE.js"), "utf8"))
+// Trace the actual call through the named import and export to the defining
+// cell. These are parser facts; they do not authorize dropping the provider's
+// other units or replacing a live cell with a snapshot.
+const [declaration] = units[5].node.declarations;
+const call = declaration.init;
+assert.equal(call.type, "CallExpression");
+const alias = scope.set.get(call.callee.name);
+assert(alias.references.some((r) => r.identifier === call.callee && r.isRead()));
+const [imported] = alias.defs;
+assert.equal(imported.type, "ImportBinding");
+assert.equal(imported.parent.source.value, "./chunk-BLPUKQJE.js");
+const providerName = path.basename(imported.parent.source.value);
+const exported = imported.node.imported.name;
+assert.deepEqual([declaration.id.name, alias.name, providerName, exported], ["po", "Ve", "chunk-BLPUKQJE.js", "b"]);
+const providerPath = path.join(bundle, providerName);
+const providerCode = readFileSync(providerPath, "utf8");
+assert.equal(sha256(providerCode), hashes[providerName]);
+const providerParse = parseModule(providerCode, acorn.parse, eslintScope);
+const providerUnits = topLevelStatements(providerParse.ast);
+const providerScope = providerParse.scopes.scopes.find((s) => s.type === "module");
+const exportRow = providerParse.ast.body.find((node) => node.type === "ExportNamedDeclaration");
+const exp = exportRow.specifiers.find((sp) => sp.exported.name === exported);
+const factory = providerScope.set.get(exp.local.name);
+assert.equal(factory.defs.length, 1);
+assert.equal(factory.references.filter((r) => r.isWrite() && !r.init).length, 0);
+const factoryDeclaration = factory.defs[0].node;
+const factoryOrdinal = providerUnits.findIndex(({ node }) => node.declarations?.includes(factoryDeclaration));
+assert.deepEqual([factory.name, factoryOrdinal], ["n", 7]);
+const creator = factoryDeclaration.init;
+assert.equal(creator.type, "ArrowFunctionExpression");
+const loader = creator.body;
+assert.equal(loader.type, "ArrowFunctionExpression");
+const creatorScope = providerParse.scopes.acquire(creator);
+assert.deepEqual(
+  creatorScope.through.map((r) => r.identifier.name),
+  []
 );
+const loaderScope = providerParse.scopes.acquire(loader);
+const captures = [...new Set(loaderScope.through.map((r) => r.resolved))];
+assert.deepEqual(captures.map((binding) => binding.name).sort(), ["a", "b"]);
+assert(captures.every((binding) => binding.scope === creatorScope && binding.defs[0].type === "Parameter"));
+const callbackScope = parsed.scopes.acquire(call.arguments[0]);
+const callbackCaptures = [
+  ...new Set(callbackScope.through.filter((r) => r.resolved).map((r) => r.resolved.name)),
+].sort();
+assert.deepEqual(callbackCaptures, []);
+const providerDecoded = runProbe("sourceClassification", {
+  entry: providerName,
+  source: JSON.parse(annotated(providerPath, path.join(tmp, "wrapper-provider.json"))),
+});
+assert.equal(providerDecoded.error, "statement 0: unsupported global Object");
+
+// Exercise the resolved export with synthetic observable callbacks. A later
+// call publishes the cache before callback reentry, even if the callback throws.
+const provider = await import("data:text/javascript," + encodeURIComponent(providerCode));
+const makeWrapper = provider[exported];
+const failure = new Error("callback failed after publishing exports");
+let calls = 0;
+let partial;
+const reenter = makeWrapper((exports, module) => {
+  calls++;
+  partial = exports;
+  assert.equal(module.exports, exports);
+  exports.seen = true;
+  assert.equal(reenter(), exports);
+  throw failure;
+});
+assert.equal(calls, 0);
+assert.throws(reenter, (error) => error === failure);
+assert.equal(reenter(), partial);
+assert.equal(partial.seen, true);
+assert.equal(calls, 1);
+
+// Contrast lazy creation with an eager call at the initializer.
 function observe(movedFirst, eager) {
   let captured;
   let calls = 0;
   const arrow = () => 42;
   const make = () => {
-    const load = provider.b((exports) => {
+    const load = makeWrapper((exports) => {
       calls++;
       exports.captured = captured;
     });
@@ -244,4 +310,20 @@ const wrapperControl = {
   eager: [observe(false, true), observe(true, true)],
 };
 assert.deepEqual(wrapperControl, { lazy: [true, true], eager: [false, true] });
-console.log(JSON.stringify({ wrapperControl }));
+const wrapperReport = {
+  consumer: { owner: entry, ordinal: 5, binding: declaration.id.name, alias: alias.name, callbackCaptures },
+  provider: {
+    owner: providerName,
+    sha256: hashes[providerName],
+    ordinal: factoryOrdinal,
+    binding: factory.name,
+    exported,
+    captures: captures.map((binding) => binding.name).sort(),
+    decoded: providerDecoded,
+  },
+  moved: { ordinal: 1337, from: entry, to: scroll },
+  wrapperControl,
+  reentry: { calls, retainedPartialExportsAfterThrow: true },
+};
+writeFileSync(path.join(root, "wrapper-boundary.json"), JSON.stringify(wrapperReport, null, 2));
+console.log(JSON.stringify(wrapperReport));
