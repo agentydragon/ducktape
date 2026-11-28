@@ -538,6 +538,7 @@ private partial def linkedMember (lower : Json → Except String Expr) (j : Json
 private structure LinkedExprScope where
   inFunction : Bool
   allowClassLocals : Bool
+  deferFieldGlobals : Bool := false
 
 private def linkedTarget (profile : HostProfile) (imports : List Name) (scope : LinkedExprScope)
     (lower : Json → Except String Expr) (j : Json) : Except String Target := do
@@ -896,7 +897,12 @@ private partial def linkedExprScoped (profile : HostProfile) (imports : List Nam
       return .str (← stringLiteral j)
     literal key
   | "Identifier" =>
-    reference imports (scope.inFunction || scope.allowClassLocals) j profile
+    match reference imports (scope.inFunction || scope.allowClassLocals) j profile with
+    | .ok e => return e
+    | .error why =>
+      if scope.deferFieldGlobals && (← field j "k") == "G" then
+        return .prim (.opaqueAmbientRef (← identifier j)) []
+      throw why
   | "ThisExpression" =>
     return .this
   | "CoreJSDerivedReceiver" =>
@@ -1269,7 +1275,7 @@ private partial def linkedExprScoped (profile : HostProfile) (imports : List Nam
     throw s!"unsupported linked expression {kind}"
 private partial def linkedExpr (profile : HostProfile) (imports : List Name) (inFunction : Bool)
     (nameHint : Name) (j : Json) : Except String Expr :=
-  linkedExprScoped profile imports ⟨inFunction, false⟩ nameHint j
+  linkedExprScoped profile imports ⟨inFunction, false, false⟩ nameHint j
 private partial def linkedFunction (profile : HostProfile) (imports : List Name) (kind : FuncKind)
     (name : Name) (self : Bool) (j : Json) : Except String Func := do
   match ← linkedFunctionParts profile imports kind name self j with
@@ -1604,7 +1610,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     return (initializers ++ before, args, .withDefaults name .classCtor false slots arity body)
   /-- Class elements with default or explicit derived constructors. -/
   private partial def linkedClassScoped (profile : HostProfile) (imports : List Name)
-      (scope : LinkedExprScope) (hint : Name) (j : Json) : Except String Expr := do
+      (scope : LinkedExprScope) (hint : Name) (j : Json) (deferInstanceGlobals := false) : Except String Expr := do
     let id ← j.getObjVal? "id"
     let name ←
       if id == .null then
@@ -1698,7 +1704,8 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
           if value == .null then
             pure .undef
           else
-            linkedExprScoped profile imports classScope key value
+            linkedExprScoped profile imports
+              { classScope with deferFieldGlobals := deferInstanceGlobals && !static } key value
         members := members.push (.field static keyExpr init)
       else
         match ← field member "kind" with
@@ -1903,7 +1910,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       return ← linkedBlock profile imports blockScope j
     | "ClassDeclaration" =>
       let name ← j.getObjVal? "id" >>= localBinding
-      let classScope : LinkedExprScope := ⟨scope == .function, false⟩
+      let classScope : LinkedExprScope := ⟨scope == .function, false, false⟩
       return .decl .let_ name (← linkedClassScoped profile imports classScope name j)
     | "EmptyStatement" =>
       return .block []
@@ -2003,7 +2010,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let source ← lower "" (← j.getObjVal? "right")
       let body ← linkedStatement profile imports blockScope (← j.getObjVal? "body")
       if (← field left "type") != "VariableDeclaration" then
-        let target ← linkedTarget profile imports ⟨true, false⟩ (lower "") left
+        let target ← linkedTarget profile imports ⟨true, false, false⟩ (lower "") left
         let slot := ":for-of"
         return .forOf .const (.name slot) source (.block [.expr (.assign target (.var slot)), body])
       let #[d] ←
@@ -2109,12 +2116,30 @@ def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile :=
     return ([name], .funDecl (← linkedFunction profile imports .normal name false j))
   | "ClassDeclaration" =>
     let name ← j.getObjVal? "id" >>= moduleBinding
-    return ([name], .decl .let_ name (← linkedClassScoped profile imports ⟨false, false⟩ name j))
+    return ([name], .decl .let_ name (← linkedClassScoped profile imports ⟨false, false, false⟩ name j))
   | "VariableDeclaration" =>
     let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
     linkedDeclarator (linkedExpr profile imports false) moduleBinding (← field j "kind") d
   | _ =>
     throw "expected a module declaration"
+
+/-- Construction-only lowering of a named base class. Keys are names, and
+every member is an instance member. Ambient references in field bodies retain
+their ordinary lookup position, but refuse if evaluation reaches them. This
+entry is separate from the strict linked decoder. -/
+def linkedDeferredInstanceClass (imports : List Name) (j : Json) : Except String Stmt := do
+  unless (← field j "type") == "ClassDeclaration" do throw "expected a class declaration"
+  unless (← j.getObjVal? "superClass") == .null do throw "class heritage is eager"
+  let name ← j.getObjVal? "id" >>= moduleBinding
+  let body ← j.getObjVal? "body"
+  for member in ← body.getObjValAs? (Array Json) "body" do
+    unless ["MethodDefinition", "PropertyDefinition"].contains (← field member "type") do
+      throw "class block is eager"
+    if ← member.getObjValAs? Bool "static" then throw "static class member is outside the deferred fragment"
+    if ← member.getObjValAs? Bool "computed" then throw "computed class key is eager"
+    unless (← field (← member.getObjVal? "key") "type") == "Identifier" do
+      throw "expected a public identifier class key"
+  return .decl .let_ name (← linkedClassScoped .empty imports ⟨false, false, false⟩ name j true)
 
 /-- `export default …`: the binding the module exports as `default`, and its declaration. A named
 function or class keeps its binding. Otherwise the binding is `default`, a reserved word that no
@@ -2130,7 +2155,7 @@ def linkedDefaultExport (imports : List Name) (d : Json) (profile : HostProfile 
     if kind == "FunctionDeclaration" then
       return ("default", .funDecl (← linkedFunction profile imports .normal "default" false d))
     return ("default",
-        .decl .let_ "default" (← linkedClassScoped profile imports ⟨false, false⟩ "default" d))
+        .decl .let_ "default" (← linkedClassScoped profile imports ⟨false, false, false⟩ "default" d))
   return ("default", .decl .const "default" (← linkedExpr profile imports false "default" d))
 
 /-- A top-level executable statement of the linked fragment. -/

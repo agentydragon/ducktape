@@ -513,6 +513,23 @@ js_test(
     },
 )
 
+js_test(
+    name = "retrytask_class_test",
+    size = "small",
+    args = ["$(rootpath //:pinned_retrier_package)"],
+    data = [
+        "//:pinned_retrier_package",
+        "//devinfra/js/debundle/x/split_proof:retrytask_class_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "retrytask_class_test.mjs",
+    env = {
+        "RETRYTASK_CLASS": "$(rootpath //devinfra/js/debundle/x/split_proof:retrytask_class_runner)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+)
+
 _OWNERSHIP_SOURCES = [":real_bundles/" + variant + ".mjs" for variant in _LIBRARY_VARIANTS]
 
 _OWNERSHIP_TEST_DATA = [

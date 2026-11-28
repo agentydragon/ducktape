@@ -253,6 +253,7 @@ private def Parsed.body {nodeCount : Nat} (p : Parsed nodeCount) (base : Nat) : 
 with a part-zero script and can script individual callable bodies. -/
 private inductive BodyFormat where
   | linked
+  | deferredClass (ordinal : Nat)
   | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access) (fixed : Json)
   | recorded (scripts : Std.HashSet (Nat × Nat))
 
@@ -289,9 +290,15 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
   | .recorded scripts =>
     if scripts.contains (origin, 0) then
       return ← retain none
-  | .linked =>
+  | .linked | .deferredClass _ =>
     pure ()
   let (ast, sites) := numberSites origin format.scripts j
+  if let .deferredClass ordinal := format then
+    if origin == ordinal then
+      unless !exported && sites.templates.isEmpty do
+        throw (.unclassified "expected a local class declaration without template sites")
+      let stmt ← (FromESTree.linkedDeferredInstanceClass imports ast).mapError StructuralRefusal.unclassified
+      return (stmt, [], [])
   if exported then
     let (bindings, s) ←
       (FromESTree.linkedDeclaration imports ast profile).mapError StructuralRefusal.unclassified
@@ -735,7 +742,7 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
         StructuralRefusal.unclassified
   let (before, after) ←
     match format with
-    | .linked | .recorded _ =>
+    | .linked | .deferredClass _ | .recorded _ =>
       pure (before, after)
     | .structural _ location _ =>
       pure
@@ -758,6 +765,14 @@ def decodeSingleton (source providers files : Json) (P : EsmSplit.Plan)
 def decodePair (source providers files : Json) (P : EsmSplit.Plan)
     (profile : HostProfile := .empty) : Except String (Program × Program) :=
   DecodedDeployment.programs <$> decodeSingleton source providers files P profile
+
+/-- Only this explicitly selected local class may retain unresolved field
+references. Source and reread syntax, ownership and real linked cells are still
+checked by the normal decoder. This is not a publication route. -/
+def decodeDeferredClassPair (source files : Json) (P : EsmSplit.Plan) (ordinal : Nat) :
+    Except String (Program × Program) :=
+  (decode (.deferredClass ordinal) source (Json.mkObj []) files P .empty).map
+    DecodedDeployment.programs |>.mapError StructuralRefusal.reason
 
 /-! The one-pass decoded source shape is available before construction-specific
 coverage is enforced. Callers that need to distinguish an unsupported source

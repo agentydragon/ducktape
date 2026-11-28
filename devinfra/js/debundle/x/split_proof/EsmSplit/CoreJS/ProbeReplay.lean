@@ -1037,6 +1037,127 @@ private def replaySuccessOfEquivalent {source : World} {α : Type} (m : (w : Wor
           rfl }
   | .throw .. | .unknown .. | .fuel => none
 
+/-- Eager class work on this route uses only literal keys, closure allocation,
+and writes to fresh objects. Field initializers and method bodies are retained. -/
+def instanceMembers : List ClassMember → Bool
+  | [] => true
+  | .field false (.str _) _ :: ms
+  | .method false (.str _) _ :: ms
+  | .getter false (.str _) _ :: ms
+  | .setter false (.str _) _ :: ms => instanceMembers ms
+  | _ => false
+
+private theorem instanceMembers_noStatic {ms : List ClassMember} (plain : instanceMembers ms = true)
+    (keys : List (Bool × PropertyKey)) : staticInitializers ms keys = [] := by
+  induction ms generalizing keys with
+  | nil => rfl
+  | cons m ms ih =>
+    cases m with
+    | staticBlock _ => simp [instanceMembers] at plain
+    | field static key init =>
+      cases static <;> cases key <;> simp only [instanceMembers, Bool.false_eq_true] at plain
+      cases keys <;> simp only [staticInitializers] <;> exact ih plain _
+    | method static key f | getter static key f | setter static key f =>
+      cases static <;> cases key <;> simp only [instanceMembers, Bool.false_eq_true] at plain
+      all_goals exact ih plain _
+
+private theorem replay_instanceMembers {source target : World} (fuel : Nat) (env : Env)
+    (proto c : Addr) (ms : List ClassMember) (plain : instanceMembers ms = true) :
+    ReplayEquivalent (evalMembers fuel env proto c ms : M source _) (evalMembers fuel env proto c ms : M target _) := by
+  induction fuel generalizing ms with
+  | zero => exact replay_outOfFuel
+  | succ n ih =>
+    cases ms with
+    | nil => exact replay_pure []
+    | cons m ms =>
+      cases m with
+      | staticBlock _ => simp [instanceMembers] at plain
+      | field static key init =>
+        cases static <;> cases key <;> simp only [instanceMembers, Bool.false_eq_true] at plain
+        cases n with
+        | zero => exact replay_outOfFuel
+        | succ k =>
+          simp only [evalMembers, evalExpr, M.pure_bind]
+          apply replay_bind (replay_toKey_string _)
+          intro key
+          apply replay_bind (ih _ plain)
+          intro rest
+          exact replay_pure ((false, key) :: rest)
+      | method static key f | getter static key f | setter static key f =>
+        cases static <;> cases key <;> simp only [instanceMembers, Bool.false_eq_true] at plain
+        all_goals cases n
+        all_goals try exact replay_outOfFuel
+        all_goals
+          simp only [evalMembers, evalExpr, M.pure_bind, Bool.false_eq_true, ite_false,
+            Option.toList_none, List.nil_append]
+          apply replay_bind (replay_toKey_string _)
+          intro key
+          apply replay_bind (replay_makeClassMethod env proto key _ f)
+          intro value
+          apply replay_bind (replay_defineOwn proto key _)
+          intro _
+          apply replay_bind (ih _ plain)
+          intro rest
+          exact replay_pure rest
+
+private theorem replay_instanceClass {source target : World} (fuel : Nat) (env : Env)
+    (name : Name) (self : Bool) (ctor : Func) (ms : List ClassMember) (plain : instanceMembers ms = true) :
+    ReplayEquivalent (evalExpr fuel env (.cls name self ctor ms) : M source Val)
+      (evalExpr fuel env (.cls name self ctor ms) : M target Val) := by
+  cases fuel with
+  | zero => exact replay_outOfFuel
+  | succ n =>
+    simp only [evalExpr]
+    apply replay_bind (replay_selfScope _ _ _)
+    intro scopedEnv
+    apply replay_bind (replay_alloc _)
+    intro proto
+    apply replay_bind (replay_alloc _)
+    intro addr
+    apply replay_bind (replay_modifyObj proto _)
+    intro _
+    apply replay_bind (replay_instanceMembers n scopedEnv proto addr ms plain)
+    intro keys
+    apply replay_bind (replay_modifyObj addr _)
+    intro _
+    apply replay_bind (replay_initSelf scopedEnv self name (.obj addr))
+    intro _
+    simp only [instanceMembers_noStatic plain keys, evalStaticInitializers, M.pure_bind]
+    exact replay_pure (Val.obj addr)
+
+/-- A singleton schedule can prove that the actual class declaration completes
+without entering any stored initializer, in every world at the chosen fuel. -/
+def checkInstanceClassCreation {p : Program} (linked : CheckedLink p World.probe) (fuel : Nat) :
+    Option ((final : State World.probe) ×
+      PLift (∀ w, runProgram w fuel p = .ok () (replaceWorld w final))) := do
+  match schedule : unitsOf linked.linked with
+  | [(id, .decl .let_ name (.cls className self ctor ms), env)] =>
+    if plain : instanceMembers ms = true then
+      let normal ← replaySuccessOfEquivalent
+        (fun w => runUnits (W := w) fuel [(id, .decl .let_ name (.cls className self ctor ms), env)])
+        linked.ready (fun _ => by
+          simp only [runUnits]
+          apply replay_bind
+          · apply replay_inRegion
+            cases fuel with
+            | zero => exact replay_outOfFuel
+            | succ n =>
+              simp only [execStmt]
+              apply replay_bind (replay_instanceClass n env className self ctor ms plain)
+              intro v
+              apply replay_bind (replay_initVar env name v)
+              intro _
+              exact replay_pure Flow.normal
+          intro _
+          exact replay_pure ())
+      return ⟨normal.next, ⟨fun w => by
+        rw [run_after_link fuel (linked.forWorld w)]
+        change runUnits fuel (unitsOf linked.linked) (replaceWorld w linked.ready) = _
+        rw [schedule]
+        exact normal.replay w⟩⟩
+    else none
+  | _ => none
+
 /-- `void` evaluates its operand before discarding its value. -/
 theorem evalExpr_void (fuel : Nat) (env : Env) (operand : Expr) :
     (evalExpr (W := W) (fuel + 1) env (.unary .void operand)) =
