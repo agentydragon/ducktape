@@ -1,6 +1,6 @@
+import EsmSplit.CoreJS.BindingMoves
 import EsmSplit.CoreJS.Declaration.Input
 import EsmSplit.CoreJS.Declaration.Program
-import EsmSplit.CoreJS.BindingMoves
 
 namespace CoreJS.DeclarationCertificate
 
@@ -16,8 +16,9 @@ def covers (source : Lean.Json) (ss : List Stmt) : Bool :=
   | .ok groups => DeclarationInput.matchesStatements groups ss
   | .error _ => false
 
-theorem eval_eq_single {W : World} {source : Lean.Json} {ss : List Stmt} (covered : covers source ss = true)
-    (fuel : Nat) : eval W fuel source = .ok (runProgram W fuel (Program.single ss)) := by
+theorem eval_eq_single {W : World} {source : Lean.Json} {ss : List Stmt}
+    (covered : covers source ss = true) (fuel : Nat) :
+    eval W fuel source = .ok (runProgram W fuel (Program.single ss)) := by
   unfold covers at covered
   cases h : DeclarationInput.decode source with
   | error err => simp [h] at covered
@@ -46,7 +47,8 @@ theorem moves {W : World} {source : Lean.Json} {ss : List Stmt} {B : EsmSplit.Bu
   rw [eval_eq_single covered, Except.ok.injEq]
   rcases order with h | h
   · exact moves_preserve_run valid footprints ((movesOk_iff ss _).1 h) fuel s
-  · exact moves_preserve_run_of_sound valid footprints (certifiedMayMove_sound footprints valid.1)
-      ((certifiedMovesOk_iff ss B _).1 h) fuel s
+  · exact
+      moves_preserve_run_of_sound valid footprints (certifiedMayMove_sound footprints valid.1)
+        ((certifiedMovesOk_iff ss B _).1 h) fuel s
 
 end CoreJS.DeclarationCertificate

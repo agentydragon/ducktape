@@ -1,6 +1,6 @@
+import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.LinkedCertificate.Proof
 import EsmSplit.CoreJS.LinkedCertificate.QuoteCoreJS
-import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.ProbeReplay
 
 namespace CoreJS.LinkedBehavior
@@ -24,6 +24,7 @@ private def probeTerm? : Lean.Expr → Option ProbeTerm
 field in the run's final state; the probe's host state is `Unit`. Closures retain
 their full code and environment through `Obj.code`. `ToExpr` quotes floats
 by their IEEE bit patterns. -/
+
 private structure ProbeStateObservation where
   heap : List (List CoreJS.Obj)
   cells : List (List CoreJS.Binding)
@@ -33,7 +34,8 @@ private structure ProbeStateObservation where
   handed : List CoreJS.Addr
   deriving Lean.ToExpr
 
-private def observeProbeState (profile : HostPremises) (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : ProbeStateObservation :=
+private def observeProbeState (profile : HostPremises)
+    (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : ProbeStateObservation :=
   { heap := state.heap.toList.map Array.toList
     cells := state.cells.toList.map Array.toList
     region := state.region
@@ -43,7 +45,8 @@ private def observeProbeState (profile : HostPremises) (state : CoreJS.State (pr
 
 /-- Compare the complete state of two completed executions in the concrete probe.
 This is a refusal check only; matching probes still go through the all-world proof. -/
-def probeStatesEqual (profile : HostPremises) (left right : CoreJS.State (profile.specialize CoreJS.World.probe)) : Bool :=
+def probeStatesEqual (profile : HostPremises)
+    (left right : CoreJS.State (profile.specialize CoreJS.World.probe)) : Bool :=
   let leftTerm := Lean.toExpr (observeProbeState profile left)
   let rightTerm := Lean.toExpr (observeProbeState profile right)
   -- Equal quotations need no projection. On a difference compare only the constructor data,
@@ -54,12 +57,16 @@ def probeStatesEqual (profile : HostPremises) (left right : CoreJS.State (profil
 the runs' final results cannot be the shared result required by `Equivalent`.
 The projection need not be injective: equality of states implies equality of
 their quoted projections, which is enough to make a mismatch decisive. -/
-theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises) {source candidate : Program} {fuel : Nat}
+theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises)
+    {source candidate : Program} {fuel : Nat}
     {sourceState candidateState : CoreJS.State (profile.specialize CoreJS.World.probe)}
-    (sourceRun : CoreJS.runProgram (profile.specialize CoreJS.World.probe) fuel source = .ok () sourceState)
-    (candidateRun : CoreJS.runProgram (profile.specialize CoreJS.World.probe) fuel candidate = .ok () candidateState)
+    (sourceRun :
+      CoreJS.runProgram (profile.specialize CoreJS.World.probe) fuel source = .ok () sourceState)
+    (candidateRun :
+      CoreJS.runProgram (profile.specialize CoreJS.World.probe) fuel candidate =
+        .ok () candidateState)
     (different : probeStatesEqual profile sourceState candidateState = false) :
-    ¬ Equivalent source candidate := by
+    ¬Equivalent source candidate := by
   apply different_probe_states_refute_equivalence sourceRun candidateRun
   rintro rfl
   simp [probeStatesEqual] at different
@@ -68,7 +75,7 @@ theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises) {sour
 def CheckedProbePair.replayBlockers {source candidate : Program}
     (pair : CheckedProbePair source candidate) : List ReplayBlocker :=
   (replayScheduleBlockers (unitsOf pair.before.linked) ++
-    replayScheduleBlockers (unitsOf pair.after.linked)).eraseDups
+      replayScheduleBlockers (unitsOf pair.after.linked)).eraseDups
 
 /-- Successful concrete runs at the same fuel and with the same host premises.
 Compiled replay uses these runs when lifting the result to other worlds. -/
@@ -81,32 +88,40 @@ structure ProbeWitness (source candidate : Program) where
   candidateRun : runProgram (premises.specialize World.probe) fuel candidate = .ok () candidateState
   statesAgree : probeStatesEqual premises sourceState candidateState = true
 
-private theorem replayPremisedEquivalentFor {premises : HostPremises} {source candidate : Program} {fuel : Nat}
-    {sourceState candidateState : State (premises.specialize World.probe)}
-    (sourceReplay : ∀ w, runProgram (premises.specialize w) fuel source =
-      .ok () (replaceWorld (premises.specialize w) sourceState))
-    (candidateReplay : ∀ w, runProgram (premises.specialize w) fuel candidate =
-      .ok () (replaceWorld (premises.specialize w) candidateState))
+private theorem replayPremisedEquivalentFor {premises : HostPremises} {source candidate : Program}
+    {fuel : Nat} {sourceState candidateState : State (premises.specialize World.probe)}
+    (sourceReplay :
+      ∀ w,
+        runProgram (premises.specialize w) fuel source =
+          .ok () (replaceWorld (premises.specialize w) sourceState))
+    (candidateReplay :
+      ∀ w,
+        runProgram (premises.specialize w) fuel candidate =
+          .ok () (replaceWorld (premises.specialize w) candidateState))
     (statesAgree : sourceState = candidateState) : EquivalentFor premises source candidate := by
   by_cases empty : premises = {}
   · subst premises
     apply of_runs fuel
     intro w
-    have satisfied : ({} : HostPremises).Satisfied w := by
-      simp [HostPremises.Satisfied]
+    have satisfied : ({} : HostPremises).Satisfied w := by simp [HostPremises.Satisfied]
     have sourceRun := sourceReplay w
     have candidateRun := candidateReplay w
     rw [← statesAgree] at candidateRun
     have specialized := HostPremises.specialize_eq ({} : HostPremises) w satisfied
     have sourceRunAtWorld : runProgram w fuel source = .ok () (replaceWorld w sourceState) := by
-      have transport := congrArg
-        (fun world : World => runProgram world fuel source = .ok () (replaceWorld world sourceState))
-        specialized
+      have transport :=
+        congrArg
+          (fun world : World =>
+            runProgram world fuel source = .ok () (replaceWorld world sourceState))
+          specialized
       exact transport.mp sourceRun
-    have candidateRunAtWorld : runProgram w fuel candidate = .ok () (replaceWorld w sourceState) := by
-      have transport := congrArg
-        (fun world : World => runProgram world fuel candidate = .ok () (replaceWorld world sourceState))
-        specialized
+    have candidateRunAtWorld :
+      runProgram w fuel candidate = .ok () (replaceWorld w sourceState) := by
+      have transport :=
+        congrArg
+          (fun world : World =>
+            runProgram world fuel candidate = .ok () (replaceWorld world sourceState))
+          specialized
       exact transport.mp candidateRun
     exact ⟨_, sourceRunAtWorld, candidateRunAtWorld⟩
   · simp [EquivalentFor, empty]
@@ -116,25 +131,35 @@ private theorem replayPremisedEquivalentFor {premises : HostPremises} {source ca
     rw [← statesAgree] at candidateRun
     have specialized := premises.specialize_eq w satisfied
     have sourceRunAtWorld : runProgram w fuel source = .ok () (replaceWorld w sourceState) := by
-      have transport := congrArg
-        (fun world : World => runProgram world fuel source = .ok () (replaceWorld world sourceState))
-        specialized
+      have transport :=
+        congrArg
+          (fun world : World =>
+            runProgram world fuel source = .ok () (replaceWorld world sourceState))
+          specialized
       exact transport.mp sourceRun
-    have candidateRunAtWorld : runProgram w fuel candidate = .ok () (replaceWorld w sourceState) := by
-      have transport := congrArg
-        (fun world : World => runProgram world fuel candidate = .ok () (replaceWorld world sourceState))
-        specialized
+    have candidateRunAtWorld :
+      runProgram w fuel candidate = .ok () (replaceWorld w sourceState) := by
+      have transport :=
+        congrArg
+          (fun world : World =>
+            runProgram world fuel candidate = .ok () (replaceWorld world sourceState))
+          specialized
       exact transport.mp candidateRun
-    exact ⟨replaceWorld w sourceState,
-      ⟨fuel, sourceRunAtWorld, by simp⟩,
-      ⟨fuel, candidateRunAtWorld, by simp⟩⟩
+    exact
+      ⟨replaceWorld w sourceState, ⟨fuel, sourceRunAtWorld, by simp⟩,
+        ⟨fuel, candidateRunAtWorld, by simp⟩⟩
 
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
+
 #audit_linked_programs replayPremisedEquivalentFor
+
 #audit_linked_programs CheckedProbePair.sameExports
 
 inductive RefusalCode where
-  | probeMismatch | probeThrow | probeUnknown | probeFuel
+  | probeMismatch
+  | probeThrow
+  | probeUnknown
+  | probeFuel
 
 def RefusalCode.label : RefusalCode → String
   | .probeMismatch => "probe_mismatch"
@@ -155,7 +180,9 @@ private structure ValuePair where
 private def pathKey : PropertyKey → Lean.Json
   | .str name => .str name
   | .wellKnownSymbol sym => Lean.Json.mkObj [("symbol", .str sym.description)]
-  | .symbol a => Lean.Json.mkObj [("symbol", .str "fresh"), ("region", Lean.toJson a.region), ("index", Lean.toJson a.index)]
+  | .symbol a =>
+    Lean.Json.mkObj
+      [("symbol", .str "fresh"), ("region", Lean.toJson a.region), ("index", Lean.toJson a.index)]
 
 private def displayValue : Val → String
   | .undef => "undefined"
@@ -171,44 +198,51 @@ private def displayValue : Val → String
 
 /-- Inspect exported cells and their immediate own data properties without calling JS. -/
 private def observeExports (profile : HostPremises) (source candidate : Program)
-    (original split : State (profile.specialize World.probe)) : List ValuePair := Id.run do
-  let world := profile.specialize World.probe
-  let a := (exports world source).getD []
-  let b := (exports world candidate).getD []
-  let mut values := []
-  for (name, addr) in a do
-    let some left := (original.cellAt addr).bind (·.value) | continue
-    let some right := ((b.lookup name).bind split.cellAt).bind (·.value) | continue
-    values := ⟨[.str name], left, right⟩ :: values
-    if let (.obj l, .obj r) := (left, right) then
-      if let (some l, some r) := (original.objAt l, split.objAt r) then
-        let properties := Std.HashMap.ofList r.props
-        for (key, value) in l.props do
-          if let (.data a .., some (.data b ..)) := (value, properties[key]?) then
-            values := ⟨[.str name, pathKey key], a, b⟩ :: values
-  return values.reverse
+    (original split : State (profile.specialize World.probe)) : List ValuePair :=
+  Id.run do
+    let world := profile.specialize World.probe
+    let a := (exports world source).getD []
+    let b := (exports world candidate).getD []
+    let mut values := []
+    for (name, addr) in a do
+      let some left := (original.cellAt addr).bind (·.value) | continue
+      let some right := ((b.lookup name).bind split.cellAt).bind (·.value) | continue
+      values := ⟨[.str name], left, right⟩ :: values
+      if let (.obj l, .obj r) := (left, right) then
+        if let (some l, some r) := (original.objAt l, split.objAt r) then
+          let properties := Std.HashMap.ofList r.props
+          for (key, value) in l.props do
+            if let (.data a .., some (.data b ..)) := (value, properties[key]?) then
+              values := ⟨[.str name, pathKey key], a, b⟩ :: values
+    return values.reverse
 
-private def firstExportDifference (values : List ValuePair) : Option Lean.Json := Id.run do
-  let mut seenOriginal : Std.HashMap (Nat × Nat) ((Nat × Nat) × List Lean.Json) := {}
-  let mut seenSplit : Std.HashMap (Nat × Nat) ((Nat × Nat) × List Lean.Json) := {}
-  for ⟨path, original, split⟩ in values do
-    if let (.obj a, .obj b) := (original, split) then
-      let l := (a.region, a.index)
-      let r := (b.region, b.index)
-      let detail (earlier : List Lean.Json) (aliased : Bool) := Lean.Json.mkObj [
-        ("kind", Lean.toJson "alias"), ("paths", Lean.toJson [earlier, path]),
-        ("original_alias", Lean.toJson aliased), ("split_alias", Lean.toJson (!aliased))]
-      if let some (previous, earlier) := seenOriginal[l]? then
-        if previous != r then return some (detail earlier true)
-      if let some (previous, earlier) := seenSplit[r]? then
-        if previous != l then return some (detail earlier false)
-      seenOriginal := seenOriginal.insert l (r, path)
-      seenSplit := seenSplit.insert r (l, path)
-    else if Lean.toExpr original != Lean.toExpr split then
-      return some (Lean.Json.mkObj [
-        ("kind", Lean.toJson "value"), ("path", Lean.toJson path),
-        ("original", Lean.toJson (displayValue original)), ("split", Lean.toJson (displayValue split))])
-  return none
+private def firstExportDifference (values : List ValuePair) : Option Lean.Json :=
+  Id.run do
+    let mut seenOriginal : Std.HashMap (Nat × Nat) ((Nat × Nat) × List Lean.Json) := {}
+    let mut seenSplit : Std.HashMap (Nat × Nat) ((Nat × Nat) × List Lean.Json) := {}
+    for ⟨path, original, split⟩ in values do
+      if let (.obj a, .obj b) := (original, split) then
+        let l := (a.region, a.index)
+        let r := (b.region, b.index)
+        let detail (earlier : List Lean.Json) (aliased : Bool) :=
+          Lean.Json.mkObj
+            [("kind", Lean.toJson "alias"), ("paths", Lean.toJson [earlier, path]),
+              ("original_alias", Lean.toJson aliased), ("split_alias", Lean.toJson (!aliased))]
+        if let some (previous, earlier) := seenOriginal[l]? then
+          if previous != r then
+            return some (detail earlier true)
+        if let some (previous, earlier) := seenSplit[r]? then
+          if previous != l then
+            return some (detail earlier false)
+        seenOriginal := seenOriginal.insert l (r, path)
+        seenSplit := seenSplit.insert r (l, path)
+      else if Lean.toExpr original != Lean.toExpr split then
+        return some
+            (Lean.Json.mkObj
+              [("kind", Lean.toJson "value"), ("path", Lean.toJson path),
+                ("original", Lean.toJson (displayValue original)),
+                ("split", Lean.toJson (displayValue split))])
+    return none
 
 /-- Only fuel exhaustion can be resolved by a larger witness. A normal probe
 selects a witness for the kernel proof. If both runs finish but their complete
@@ -220,54 +254,77 @@ private def probeWitnessAt (profile : HostPremises) (source candidate : Program)
     match candidateRun : runProgram (profile.specialize World.probe) fuel candidate with
     | .ok () candidateState =>
       match statesAgree : probeStatesEqual profile sourceState candidateState with
-      | true => return some ⟨profile, fuel, sourceState, candidateState, sourceRun, candidateRun, statesAgree⟩
+      | true =>
+        return some
+            ⟨profile, fuel, sourceState, candidateState, sourceRun, candidateRun, statesAgree⟩
       | false =>
-        let _ : ¬ Equivalent source candidate :=
+        let _ : ¬Equivalent source candidate :=
           probeObservationMismatchRefutesEquivalent profile sourceRun candidateRun statesAgree
-        throw ⟨.probeMismatch, "probe executions completed normally with different final states",
-          firstExportDifference (observeExports profile source candidate sourceState candidateState)⟩
-    | .fuel => return none
-    | .throw .. => throw ⟨.probeThrow, "split threw during linked initialization", none⟩
-    | .unknown why _ => throw ⟨.probeUnknown, s!"split reached an unknown result during linked initialization: {why}", none⟩
-  | .fuel => return none
-  | .throw .. => throw ⟨.probeThrow, "original threw during linked initialization", none⟩
-  | .unknown why _ => throw ⟨.probeUnknown, s!"original reached an unknown result during linked initialization: {why}", none⟩
+        throw
+            ⟨.probeMismatch, "probe executions completed normally with different final states",
+              firstExportDifference
+                (observeExports profile source candidate sourceState candidateState)⟩
+    | .fuel =>
+      return none
+    | .throw .. =>
+      throw ⟨.probeThrow, "split threw during linked initialization", none⟩
+    | .unknown why _ =>
+      throw
+          ⟨.probeUnknown, s!"split reached an unknown result during linked initialization: {why}",
+            none⟩
+  | .fuel =>
+    return none
+  | .throw .. =>
+    throw ⟨.probeThrow, "original threw during linked initialization", none⟩
+  | .unknown why _ =>
+    throw
+        ⟨.probeUnknown, s!"original reached an unknown result during linked initialization: {why}",
+          none⟩
 
 /-- Evaluating a flat record uses one level of interpreter fuel per property.
 Reserve the usual depth for its expressions and surrounding declaration. -/
-private def recordFuelLimit (source : Program) : Nat := Id.run do
-  let mut width := 0
-  for m in source.modules do
-    for (_, s) in m.body do
-      if let .decl _ _ (.obj props) := s then
-        width := max width props.length
-  return min 2048 (64 + width)
+private def recordFuelLimit (source : Program) : Nat :=
+  Id.run do
+    let mut width := 0
+    for m in source.modules do
+      for (_, s) in m.body do
+        if let .decl _ _ (.obj props) := s then
+          width := max width props.length
+    return min 2048 (64 + width)
 
-private def findProbe (profile : HostPremises) (source candidate : Program) : Except Refusal (ProbeWitness source candidate) := do
+private def findProbe (profile : HostPremises) (source candidate : Program) :
+    Except Refusal (ProbeWitness source candidate) := do
   let test := probeWitnessAt profile source candidate
   for fuel in [16, 32, 64] do
-    if let some witness ← test fuel then return witness
+    if let some witness← test fuel then
+      return witness
   let limit := recordFuelLimit source
   if limit > 64 then
-    if let some witness ← test limit then return witness
+    if let some witness← test limit then
+      return witness
   throw ⟨.probeFuel, s!"linked initialization exhausted the fuel search budget ({limit})", none⟩
 
 /-- Collect host observations from both concrete executions to select the theorem's hypotheses. -/
-private def observePremises (profile : HostProfile) (source candidate : Program) : HostPremises := Id.run do
-  if profile == .empty then return {}
-  let world := HostPremises.observations profile
-  let limit := max (recordFuelLimit source) (recordFuelLimit candidate)
-  let observed := fun (program : Program) =>
-    match runProgram world limit program with
-    | .ok _ s | .throw _ s | .unknown _ s => s.world.state
-    | .fuel => ({} : HostPremises)
-  let left := observed source
-  let right := observed candidate
-  return { typeofBindings := (left.typeofBindings ++ right.typeofBindings).eraseDups.mergeSort (fun a b => a.1 ≤ b.1)
-           refs := (left.refs ++ right.refs).eraseDups.reverse }
+private def observePremises (profile : HostProfile) (source candidate : Program) : HostPremises :=
+  Id.run do
+    if profile == .empty then
+      return {}
+    let world := HostPremises.observations profile
+    let limit := max (recordFuelLimit source) (recordFuelLimit candidate)
+    let observed := fun (program : Program) =>
+      match runProgram world limit program with
+      | .ok _ s | .throw _ s | .unknown _ s => s.world.state
+      | .fuel => ({} : HostPremises)
+    let left := observed source
+    let right := observed candidate
+    return {
+        typeofBindings :=
+          (left.typeofBindings ++ right.typeofBindings).eraseDups.mergeSort (fun a b => a.1 ≤ b.1)
+        refs := (left.refs ++ right.refs).eraseDups.reverse }
 
 /-- Find the concrete fuel witness before generating the all-world proof. -/
-def probeWitness (profile : HostProfile) (source candidate : Program) : Except Refusal (ProbeWitness source candidate) :=
+def probeWitness (profile : HostProfile) (source candidate : Program) :
+    Except Refusal (ProbeWitness source candidate) :=
   findProbe (observePremises profile source candidate) source candidate
 
 end CoreJS.LinkedBehavior
