@@ -84,7 +84,16 @@ export function inspect({ original, candidate, manifest, worker }) {
   const fixed = Object.fromEntries(paths.filter((file) => file !== changed.path).map((file) => [file, asts[file]]));
   const files = annotations({ [changed.path]: after[changed.path], [worker]: after[worker] });
   const modules = Object.entries({ ...asts, [worker]: files[worker], candidateFacade: files[changed.path] });
+  const queries = [
+    [entry, "defaultErrorMap"],
+    ["v3/external.js", "defaultErrorMap"],
+    ["v3/errors.js", "defaultErrorMap"],
+    [entry, "z"],
+    [entry, "default"],
+  ];
   const inputs = [
+    { kind: "starMetadata", input: { files: asts, queries } },
+    { kind: "starMetadata", input: { files: { ...asts, ...files }, queries } },
     { kind: "deploymentDiagnostic", input: { entry, source: asts[changed.path], spec, fixed, files } },
     ...modules.map(([key, ast]) => ({
       kind: "moduleDiagnostic",
@@ -99,11 +108,24 @@ export function inspect({ original, candidate, manifest, worker }) {
     })
   );
   for (const row of results) assert.ok(row.output, JSON.stringify(row));
-  const [deployment, ...probes] = results.map(({ output }) => output);
+  const [beforeStar, afterStar, deployment, ...probes] = results.map(({ output }) => output);
+  const starOrigins = [
+    [changed.path, "default"],
+    [changed.path, "default"],
+    [changed.path, "default"],
+    [entry, "z"],
+    [entry, "default"],
+  ];
+  assert.deepEqual(
+    beforeStar,
+    starOrigins.map((output) => ({ output }))
+  );
+  assert.deepEqual(afterStar, beforeStar);
   const graph = (tree) =>
     schedule(entry, Object.fromEntries(Object.entries(tree).map(([file, parsed]) => [file, record(parsed, file)])));
   const report = {
     deployment,
+    starOrigins: queries.map((query, i) => ({ query, origin: starOrigins[i] })),
     before: graph(before),
     after: graph(after),
     modules: Object.fromEntries(modules.map(([key], index) => [key, probes[index]])),
@@ -113,6 +135,7 @@ export function inspect({ original, candidate, manifest, worker }) {
   console.log(
     JSON.stringify({
       deployment,
+      starOrigins: report.starOrigins,
       before: report.before.order,
       after: report.after.order,
       cycles: [report.before.cycles, report.after.cycles],

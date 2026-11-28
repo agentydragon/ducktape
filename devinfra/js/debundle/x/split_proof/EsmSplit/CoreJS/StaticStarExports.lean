@@ -1,0 +1,224 @@
+import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.ModuleInput
+import EsmSplit.ESTreeUnits
+import EsmSplit.Lower
+
+/-!
+Resolve ordinary star exports in an explicit finite DAG of parsed ESM files.
+The projection is for linked readback and diagnostics. It neither rewrites JS
+nor admits a deployment to the ordinary splitter.
+-/
+namespace CoreJS.StaticStarExports
+
+open Lean (Json)
+open EsmSplit
+
+abbrev Origin := String × Name
+
+private inductive Request where
+  | named (edge : Import)
+  | namespaceImport (source : String) (localName : Name)
+  | indirect (source : String) (names : List (Name × Name))
+  | star (source : String)
+  deriving DecidableEq
+
+private def Request.source : Request → String
+  | .named edge => edge.source
+  | .namespaceImport source _ | .indirect source _ | .star source => source
+
+private structure Record where
+  path : String
+  nodes : Array Json
+  requests : List (Nat × Request)
+  explicit : List (Name × Name)
+  locals : List Name
+
+private def readRequest (path : String) (node : Json) : Except String Request := do
+  let specs ← node.getObjValAs? (Array Json) "specifiers"
+  if specs.any (fun sp => Lower.typ sp == "ImportNamespaceSpecifier") then
+    let #[sp] := specs | throw "unsupported mixed namespace import"
+    return .namespaceImport (← ModuleInput.importSource path node)
+      (← sp.getObjVal? "local" >>= FromESTree.identifier)
+  return .named (← ModuleInput.importDecl path node)
+
+private def forwardingLocal (kind : String) (slot : Nat) (name : Name) : Name := s!":{kind}:{slot}:{name}"
+
+private def readRecord (path : String) (ast : Json) : Except String Record := do
+  unless ModuleInput.supportedFilename path do throw "unsupported module path"
+  let nodes ← ESTreeUnits.checkedNodes ast (← ast.getObjValAs? String "sourceText")
+  let mut requests := #[]
+  let mut explicit := #[]
+  let mut locals := nodes.toList.flatMap Lower.topDefs
+  for (node, id) in nodes.zipIdx do
+    match Lower.typ node with
+    | "ImportDeclaration" => requests := requests.push (id, ← readRequest path node)
+    | "ExportAllDeclaration" =>
+      ModuleInput.noAttributes node
+      unless (← node.getObjVal? "exported") == .null do throw "unsupported namespace re-export"
+      let source ← node.getObjVal? "source" >>= FromESTree.stringLiteral >>= ModuleInput.resolve path
+      requests := requests.push (id, .star source)
+    | "ExportNamedDeclaration" =>
+      ModuleInput.noAttributes node
+      let source ← node.getObjVal? "source"
+      if source != .null then
+        let target ← FromESTree.stringLiteral source >>= ModuleInput.resolve path
+        let names ← (← node.getObjValAs? (List Json) "specifiers").mapM FromESTree.exportSpec
+        requests := requests.push (id, .indirect target names)
+        for (publicName, _) in names do
+          explicit := explicit.push (publicName, forwardingLocal "indirect" id publicName)
+      else if (← node.getObjVal? "declaration") == .null then
+        for sp in ← node.getObjValAs? (Array Json) "specifiers" do
+          explicit := explicit.push (← FromESTree.exportSpec sp)
+      else
+        explicit := explicit ++ ((Lower.topDefs node).map fun x => (x, x)).toArray
+    | "ExportDefaultDeclaration" =>
+      let localName := (Lower.topDefs node).headD "default"
+      explicit := explicit.push ("default", localName)
+      locals := localName :: locals
+    | _ => pure ()
+  unless (explicit.toList.map Prod.fst).Nodup do throw "duplicate explicit export"
+  return ⟨path, nodes, requests.toList, explicit.toList, locals⟩
+
+private inductive Resolution where
+  | found (origin : Origin) (starSlot : Option Nat)
+  | ambiguous
+  deriving DecidableEq
+
+private abbrev Table := List (Name × Resolution)
+
+private def requireName (table : Table) (source name : String) : Except String Origin :=
+  match table.lookup name with
+  | some (.found origin _) => pure origin
+  | some .ambiguous => throw s!"{source}: ambiguous export {name}"
+  | none => throw s!"{source}: missing export {name}"
+
+private def mergeStar (row : Record) (slot : Nat) (table : Table) (exported : Name × Resolution) : Table :=
+  let (name, candidate) := exported
+  if name == "default" || (row.explicit.lookup name).isSome then table
+  else
+    let next := match candidate with
+      | .found origin _ => Resolution.found origin (some slot)
+      | .ambiguous => Resolution.ambiguous
+    match table.lookup name with
+    | none => table ++ [(name, next)]
+    | some (.found previous _) =>
+      match next with
+      | .found origin _ => if origin == previous then table else conflict table name
+      | .ambiguous => conflict table name
+    | some .ambiguous => table
+where
+  conflict (rows : Table) (name : Name) := rows.map fun (key, old) =>
+    (key, if key == name then .ambiguous else old)
+
+private def resolveRecord (row : Record) (done : List (String × Table)) : Except String Table := do
+  let mut imported : List (Name × Origin) := []
+  for (slot, req) in row.requests do
+    match req with
+    | .named edge =>
+      for (publicName, localName) in edge.names do
+        let cell ← requireName ((done.lookup edge.source).getD []) edge.source publicName
+        imported := imported ++ [(localName, cell)]
+    | .indirect source names =>
+      for (publicName, requested) in names do
+        let cell ← requireName ((done.lookup source).getD []) source requested
+        imported := imported ++ [(forwardingLocal "indirect" slot publicName, cell)]
+    -- This is only the origin of the namespace binding, not a modeled namespace object.
+    | .namespaceImport _ localName => imported := imported ++ [(localName, (row.path, localName))]
+    | .star _ => pure ()
+  let mut table ← row.explicit.mapM fun (name, localName) => do
+    if let some origin := imported.lookup localName then
+      return (name, Resolution.found origin none)
+    unless row.locals.contains localName do throw s!"unbound export {name}"
+    return (name, Resolution.found (row.path, localName) none)
+  for (slot, req) in row.requests do
+    if let .star source := req then
+      table := ((done.lookup source).getD []).foldl (mergeStar row slot) table
+  return table
+
+/-- Resolved static metadata. The origins are source binding names rather than heap
+addresses; only the actual CoreJS linker can check cells after body lowering. -/
+structure Graph where
+  private mk ::
+  private records : List Record
+  private tables : List (String × Table)
+
+def Graph.origin (graph : Graph) (path name : String) : Except String Origin := do
+  let some table := graph.tables.lookup path | throw s!"missing module {path}"
+  requireName table path name
+
+/-- Refuse cycles explicitly; no prefix of a cyclic graph is admitted.
+Lookup uses normalized relative paths, with no host or package resolution. -/
+def resolve (files : Json) : Except String Graph := do
+  let records ← (← files.getObj?).toList.mapM fun (path, ast) =>
+    (readRecord path ast).mapError (fun why => s!"{path}: {why}")
+  let paths := records.map (·.path)
+  for row in records do
+    for (_, req) in row.requests do
+      unless paths.contains req.source do throw s!"{row.path}: missing static provider {req.source}"
+  let mut todo := records
+  let mut done : List (String × Table) := []
+  for _ in records do
+    let some row := todo.find? (fun row => row.requests.all (fun (_, req) => (done.lookup req.source).isSome))
+      | throw "cyclic static module records are unsupported"
+    let table ← (resolveRecord row done).mapError (fun why => s!"{row.path}: {why}")
+    done := (row.path, table) :: done
+    todo := todo.filter (·.path != row.path)
+  return ⟨records, done⟩
+
+/-- Project remote re-export headers away from statement lowering. Each real request
+occupies the same slot in the CoreJS import list even if it forwards no names.
+Every forwarded name imports from that immediate provider, so the existing
+linker follows the chain and allocates no new binding cell. -/
+private def lowerRecord (graph : Graph) (row : Record) (base : Nat) : Except String Module := do
+  let mut nodes := #[]
+  let mut ids := #[]
+  for (node, id) in row.nodes.zipIdx do
+    let kind := Lower.typ node
+    if kind == "ExportAllDeclaration" ||
+        (kind == "ExportNamedDeclaration" && !Lower.isNull (Lower.fld node "source")) then continue
+    nodes := nodes.push node
+    if !["ImportDeclaration", "EmptyStatement", "DebuggerStatement"].contains kind &&
+        !(kind == "ExportNamedDeclaration" && Lower.isNull (Lower.fld node "declaration")) then
+      ids := ids.push (base + id)
+  let ordinary ← LinkedInput.parseLinkedModuleWithOrdinals row.path nodes ids.toList
+  let expected := row.requests.filterMap fun (_, req) =>
+    if let .named edge := req then some edge else none
+  let localExports := row.explicit.filter fun (_, localName) => !localName.startsWith ":indirect:"
+  unless ordinary.imports == expected && ordinary.exports == localExports do
+    throw "ordinary decoder disagrees with module records"
+  let table := (graph.tables.lookup row.path).getD []
+  let mut imports := #[]
+  let mut exports := row.explicit.toArray
+  for (slot, req) in row.requests do
+    match req with
+    | .named edge => imports := imports.push edge
+    | .namespaceImport .. => throw "namespace imports are metadata only"
+    | .indirect source names =>
+      imports := imports.push ⟨source, names.map fun (publicName, requested) =>
+        (requested, forwardingLocal "indirect" slot publicName)⟩
+    | .star source =>
+      let mut names := #[]
+      for (name, binding) in table do
+        if let .found _ (some selected) := binding then
+          if selected == slot then
+            let localName := forwardingLocal "star" slot name
+            names := names.push (name, localName)
+            exports := exports.push (name, localName)
+      imports := imports.push ⟨source, names.toList⟩
+  return { ordinary with imports := imports.toList, exports := exports.toList }
+
+/-- Build an empty-profile program for linked readback. In particular, successful
+metadata resolution does not make namespace values or provider bodies executable. -/
+def Graph.lower (graph : Graph) (entry : String) : Except String Program := do
+  let mut modules := #[]
+  let mut base := 0
+  for row in graph.records do
+    let m ← (lowerRecord graph row base).mapError (fun why => s!"{row.path}: {why}")
+    modules := modules.push m
+    base := base + row.nodes.size
+  let program : Program := ⟨entry, modules.toList⟩
+  unless decide (program.evalOrder.Perm (modules.toList.map (·.name))) do
+    throw "static graph has missing or unreachable modules"
+  return program
+
+end CoreJS.StaticStarExports
