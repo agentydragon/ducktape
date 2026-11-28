@@ -1,5 +1,5 @@
 // Account for authored corpus observations separately from proof admission.
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -76,10 +76,11 @@ export function observeExpectations({
   }
   // The original program has one namespace; named owner files exist only in the emitted graph.
   const chunk = chunkFile.replace(/\.js$/, "");
+  const emittedRoute = (name) => (name === `${chunk}/entry.js` ? entry : moduleOutputs.get(name));
   if (accept.entry === chunk) set(ledger, "entry", "pass");
   for (const [name, expectation] of Object.entries(accept.exports ?? {})) {
     const isEntry = name === `${chunk}/entry.js`;
-    const target = isEntry ? entry : moduleOutputs.get(name);
+    const target = emittedRoute(name);
     if (target === undefined) continue;
     if (!safeRelative(target)) throw new Error(`invalid emitted module path: ${target}`);
     const script = `const m = await import(process.argv[1]); console.log('NAMESPACE ' + JSON.stringify(Object.keys(m)));`;
@@ -99,6 +100,29 @@ export function observeExpectations({
       original: before,
       emitted: after,
       ...(!isEntry && { file: target }),
+    });
+  }
+  for (const [name, expectation] of Object.entries(accept.source ?? {})) {
+    const target = emittedRoute(name);
+    if (target === undefined) continue;
+    if (!safeRelative(target)) throw new Error(`invalid emitted module path: ${target}`);
+    const file = path.join(output, target);
+    if (!existsSync(file)) {
+      set(ledger, `source:${name}`, "fail", { file: target, missingFile: true });
+      continue;
+    }
+    const code = readFileSync(file, "utf8");
+    const missing = (expectation.contains ?? []).filter((needle) => !code.includes(needle));
+    const unexpected = (expectation.excludes ?? []).filter((needle) => code.includes(needle));
+    const tooFew = Object.entries(expectation.occurrences_at_least ?? {}).flatMap(([needle, minimum]) => {
+      const found = needle === "" ? [...code].length + 1 : code.split(needle).length - 1;
+      return found < minimum ? [{ needle, minimum, found }] : [];
+    });
+    set(ledger, `source:${name}`, missing.length || unexpected.length || tooFew.length ? "fail" : "pass", {
+      file: target,
+      missing,
+      unexpected,
+      tooFew,
     });
   }
   for (const [name, expectation] of Object.entries(accept.probes ?? {})) {
