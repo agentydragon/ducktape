@@ -938,6 +938,17 @@ private partial def linkedExprScoped (profile : HostProfile) (imports : List Nam
       let member ← body.getObjVal? "callee"
       let reason :=
         if optionalCallee then "unsupported optional call" else "unsupported optional chain"
+      if optionalCallee && property.isNone && (← field member "type") == "Identifier" then
+        unless ["T", "L", "V"].contains (← field member "k") do
+          throw reason
+        let callee ← lower member
+        let args ← (← body.getObjValAs? (List Json) "arguments").mapM (linkedArgument lower)
+        -- The identifier denotes a lexical cell. Reading it for the nullish
+        -- test and again for the call executes no code; the call saves its
+        -- callee before it evaluates any arguments.
+        return .cond
+          (.logical .or (.binary .strictEq callee .null) (.binary .strictEq callee .undef))
+          .undef (.call callee args)
       unless (← field member "type") == "MemberExpression" do
         throw reason
       let optionalReceiver ← member.getObjValAs? Bool "optional"

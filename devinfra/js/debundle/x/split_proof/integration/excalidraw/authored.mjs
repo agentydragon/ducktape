@@ -149,6 +149,38 @@ for (const [chunk, spec] of [
     })
   );
   write("census", census);
+  if (chunk === "main") {
+    // Replay the exact ordinary subexpression of an opaque row. Supply
+    // lexical fixtures for its inputs, without rewriting the original node.
+    let callback;
+    walk(units[1290].node, (node) => {
+      if (node.type === "ChainExpression" && node.start === 535080 && node.end === 535132) callback = node;
+    });
+    assert(callback);
+    const expression = source.slice(callback.start, callback.end);
+    assert.equal(expression, "n?.(a.openSidebar?.name!==e.name?null:a.openSidebar)");
+    const test = `
+      let trace = "";
+      const a = { get openSidebar() { trace += "a"; return {name: "menu"}; } };
+      function observe(n, e) { return ${expression}; }
+      function callback(x) { trace += this === undefined ? "c" : "wrong receiver"; return x?.name; }
+      console.log(observe(null, {name: "menu"}), trace);
+      console.log(observe(callback, {name: "menu"}), trace);
+      console.log(observe(callback, {name: "other"}), trace);
+    `;
+    const fixture = write("local-optional-callback", dumpParsed(parseModule(test, acorn.parse, eslintScope)));
+    const result = JSON.parse(execFileSync(process.env.COREJS, ["--ast", fixture], { encoding: "utf8" }));
+    const node = execFileSync(process.execPath, ["--input-type=module", "-e", test], { encoding: "utf8" });
+    assert.equal(result.end, "normal", JSON.stringify(result));
+    assert.deepEqual(result.out, node.split("\n").slice(0, -1));
+    assert.deepEqual(result.out, ["undefined ", "menu aac", "undefined aacac"]);
+    const original = census.unit_details.find((row) => row.unit === 1290);
+    assert(original?.opaque);
+    assert.match(original.concrete_refusal, /unsupported global Object/);
+    console.log(
+      JSON.stringify({ digest, unit: 1290, span: [callback.start, callback.end], original, replay: result.out })
+    );
+  }
   const classification = JSON.parse(
     execFileSync(process.env.LINKED_INPUT_CHECKER, {
       input:
