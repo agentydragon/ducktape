@@ -4900,3 +4900,36 @@ lean_proof_test(
     ],
     deps = [":corejs_eval"],
 )
+
+lean_library(
+    name = "corejs_deferred_class_creation",
+    srcs = ["EsmSplit/CoreJS/DeferredClassCreation.lean"],
+    deps = [
+        ":corejs_link_world",
+        ":corejs_linked_input",
+        ":corejs_linked_pivot_check",
+        ":corejs_probe_replay",
+        ":corejs_state_match",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_deferred_class_creation_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.DeferredClassCreation"],
+    required_theorems = ["CoreJS.DeferredClassCreation.check"],
+    deps = [":corejs_deferred_class_creation"],
+)
+
+test_runner(
+    name = "retrytask_class_runner",
+    src = "RetryTaskClassTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":corejs_deferred_class_creation",
+        ":estree_emit",
+        ":estree_units",
+        ":lowersplit_input",
+        ":split_files",
+    ],
+)

@@ -40,3 +40,19 @@ root is a modeled lexical value. Those function declarations can be deferred in 
 classifier; the direct-unit verdicts are not the ordinary CLI verdict or
 proofs of the deferred bodies. The Node observations supply no host or
 checkpoint premises to the splitter.
+
+The separate `retrytask_class_test` extracts the exact class declaration
+from ordinal 7 of that hash-checked file. It appends a local export for the
+test and moves the declaration into a dependency. After rereading the two
+scratch modules, the Lean checker verifies the linked state, resolved
+captures, and live export cell, and proves module evaluation creates the
+class in every modeled world at the tested fuel. The actual class takes no
+outer lexical captures. This is a class-only projection; it does not admit
+publication of the full Retrier plan.
+
+CoreJS stores the instance field expressions on the constructor. When the
+test reaches `new RetryTask`, the first initializer stops at the ambient
+`Math` lookup. Controlled Node runs verify that evaluating the class looks
+up and draws nothing, while each instance looks up and calls `Math.random`
+in order. Those runs do not assume pristine globals or supply a native
+operation to the Lean proof.
