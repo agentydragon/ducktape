@@ -1,6 +1,4 @@
 import EsmSplit.CoreJS.PlanPlacement
-import EsmSplit.CoreJS.Split
-import EsmSplit.Split
 
 /-! An order projection for source units whose original ordinals have holes.
 The plan continues to enumerate every source unit, including standalone

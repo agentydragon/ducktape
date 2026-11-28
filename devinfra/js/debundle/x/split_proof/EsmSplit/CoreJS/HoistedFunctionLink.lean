@@ -29,9 +29,10 @@ def primitiveConstValue_decidable : (value : Expr) → Decidable (primitiveConst
   | .str _ => isTrue trivial
   | .regexp _ | .var _ | .host _ | .this | .func _ | .obj _ | .arr _ | .spreadArg _ | .cls .. |
     .derived .. | .get .. | .getSuper _ | .getOptional .. | .getOptionalThen .. | .hasProp .. |
-    .delete .. | .assign .. | .assignOp .. | .assignLogical .. | .update .. | .call .. | .callMethod .. | .callSuper .. |
-    .callOptionalReceiver .. | .callOptionalCallee .. | .new .. | .prim .. | .unary .. |
-    .binary .. | .logical .. | .cond .. | .seq .. => isFalse (by simp [primitiveConstValue])
+    .delete .. | .assign .. | .assignOp .. | .assignLogical .. | .update .. | .call .. |
+    .callMethod .. | .callSuper .. | .callOptionalReceiver .. | .callOptionalCallee .. | .new .. |
+    .prim .. | .unary .. | .binary .. | .logical .. | .cond .. | .seq .. =>
+    isFalse (by simp [primitiveConstValue])
 
 /-- A function declaration's execution step is inert even at a zero fuel
 bound: at zero both sides of any nonempty schedule return `.fuel`; with

@@ -41,7 +41,9 @@ def observeExport {w : World} (p : Program) (fuel : Nat) (name : Name) (cell : A
   match runProgram w fuel p with
   | .ok () state =>
     if (exports w p).any (·.contains (name, cell)) then
-      (do observe (← readCell cell)) state
+      (do
+          observe (← readCell cell))
+        state
     else .unknown "missing public cell" state
   | .throw v state => .throw v state
   | .unknown why state => .unknown why state
@@ -50,10 +52,10 @@ def observeExport {w : World} (p : Program) (fuel : Nat) (name : Name) (cell : A
 /-- An observer using the same public cell gets the same complete result,
 including the effects of supplied getters and callbacks. Equality can
 still be an unsupported result on both sides. -/
-theorem Behavior.observeExport_eq {source candidate : Program}
-    (proof : Behavior source candidate) (w : World)
-    (fuel : Nat) (name : Name) (cell : Addr) (observe : Val → M w α) :
-    observeExport source fuel name cell observe = observeExport candidate fuel name cell observe := by
+theorem Behavior.observeExport_eq {source candidate : Program} (proof : Behavior source candidate)
+    (w : World) (fuel : Nat) (name : Name) (cell : Addr) (observe : Val → M w α) :
+    observeExport source fuel name cell observe =
+      observeExport candidate fuel name cell observe := by
   obtain ⟨a, b, ha, hb, perm⟩ := proof.publicCells w
   have same : a.contains (name, cell) = b.contains (name, cell) := by
     apply Bool.eq_iff_iff.mpr

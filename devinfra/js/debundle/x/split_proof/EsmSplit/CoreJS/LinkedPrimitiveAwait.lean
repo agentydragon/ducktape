@@ -1,14 +1,6 @@
-import EsmSplit.CoreJS.CallTurn
-import EsmSplit.CoreJS.Eval
-import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.LinkedInput
-import EsmSplit.CoreJS.PrimitiveAwait
 import EsmSplit.CoreJS.ProgramTurn
-import EsmSplit.CoreJS.Scope
-import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.SyntaxMatch
-import EsmSplit.ESTreeUnits
-import EsmSplit.Plan
 
 /-!
 An explicit model entry for linked modules with discarded primitive awaits

@@ -1,8 +1,5 @@
-import EsmSplit.Cli
 import EsmSplit.CoreJS.Declaration.Certificate
-import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.HeritageCertificate
-import EsmSplit.CoreJS.Move
 import EsmSplit.LowerSplit.Input
 
 /-! Report plan checks and model diagnostics without emitting modules. -/

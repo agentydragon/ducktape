@@ -4,13 +4,13 @@ import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.DynamicImports
 import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.IndexedInlineConstructor
+import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedInputCensus
-import EsmSplit.CoreJS.LinkWorld
-import EsmSplit.CoreJS.StaticStarExports
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.CoreJS.StateMatch
+import EsmSplit.CoreJS.StaticStarExports
 import EsmSplit.CoreJS.SyntaxMatch
 import EsmSplit.CoreJS.WrapperLoader
 import EsmSplit.LowerSplit.Input
@@ -266,7 +266,9 @@ private def wrapperFactoryShape (input : Json) : Except String Json := do
   let some node := nodes[ordinal]? | throw "no such factory unit"
   let lowered ← CoreJS.LinkedInput.lowerLinkedStatement .empty [] ordinal node false false
   let expected := CoreJS.WrapperLoader.factory "n" "a" "b"
-  let some _ := CoreJS.SyntaxMatch.stmtEq lowered expected | throw "factory syntax differs from the loader proof"
+  let some _ :=
+    CoreJS.SyntaxMatch.stmtEq lowered
+      expected | throw "factory syntax differs from the loader proof"
   return toJson true
 
 /-- Check the actual indexed decoder, source-derived planner bundle and
@@ -439,13 +441,16 @@ private def starReadback (input : Json) : Except String Json := do
   let graph ← CoreJS.StaticStarExports.resolve (← input.getObjVal? "files")
   let program ← graph.lower (← input.getObjValAs? String "entry")
   let linked ← CoreJS.LinkedBehavior.checkLink program
-  let .ok () ready := CoreJS.runProgram CoreJS.World.probe 256 program | throw "execution did not complete"
+  let .ok () ready :=
+    CoreJS.runProgram CoreJS.World.probe 256 program | throw "execution did not complete"
   let queries ← input.getObjValAs? (List (String × String)) "queries"
-  let values ← queries.mapM fun (path, name) => do
-    let exports ← CoreJS.EntryExports.resolve path linked.linked
-    let some addr := exports.lookup name | throw s!"{path}: no linked export {name}"
-    let some (.bool val) := (ready.cellAt addr).bind (·.value) | throw s!"{path}: not a boolean: {name}"
-    return Json.mkObj [("cell", toJson [addr.region, addr.index]), ("value", toJson val)]
+  let values ←
+    queries.mapM fun (path, name) => do
+        let exports ← CoreJS.EntryExports.resolve path linked.linked
+        let some addr := exports.lookup name | throw s!"{path}: no linked export {name}"
+        let some (.bool val) :=
+          (ready.cellAt addr).bind (·.value) | throw s!"{path}: not a boolean: {name}"
+        return Json.mkObj [("cell", toJson [addr.region, addr.index]), ("value", toJson val)]
   let mut result := [("order", toJson program.evalOrder), ("exports", toJson values)]
   if let .ok (path, name) := input.getObjValAs? (String × String) "namespaceRead" then
     let view ← CoreJS.StaticStarExports.NamespaceView.ofLinked path linked.linked
@@ -453,7 +458,8 @@ private def starReadback (input : Json) : Except String Json := do
     let .throw (.error .reference _) _ := read linked.ready
       | throw "namespace read should see the uninitialized exported cell"
     let .ok (.bool value) _ := read ready | throw "namespace read did not see the final boolean"
-    let .ok .undef _ := view.read "missing" ready | throw "missing namespace member did not yield undefined"
+    let .ok .undef _ :=
+      view.read "missing" ready | throw "missing namespace member did not yield undefined"
     result := result ++ [("liveRead", toJson value)]
   return Json.mkObj result
 
@@ -468,10 +474,13 @@ private def namespaceLinks (input : Json) : Except String Json := do
   let members := view.members.map fun (name, cell) => (name, addr cell)
   let publicExports := (← links.exports entry).map fun (name, cell) => (name, addr cell)
   let queries ← input.getObjValAs? (List (String × String)) "queries"
-  let locals ← queries.mapM fun (path, name) => do
-    return ((path, name), addr (← links.localCell path name))
-  return Json.mkObj [("target", toJson view.target), ("members", toJson members),
-    ("exports", toJson publicExports), ("locals", toJson locals), ("namespaceBinding", addr localCell)]
+  let locals ←
+    queries.mapM fun (path, name) => do
+        return ((path, name), addr (← links.localCell path name))
+  return Json.mkObj
+      [("target", toJson view.target), ("members", toJson members),
+        ("exports", toJson publicExports), ("locals", toJson locals),
+        ("namespaceBinding", addr localCell)]
 
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
