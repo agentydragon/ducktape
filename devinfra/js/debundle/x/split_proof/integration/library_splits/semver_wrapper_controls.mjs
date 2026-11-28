@@ -47,3 +47,35 @@ export function observe(factory, loadConstants) {
     })
   );
 }
+
+let liveProbe;
+
+// Configure the next import of the full, instrumented bundle. State lives
+// in the control module, outside the original loaders and public namespace.
+export function configureLiveProbe(callbacks, rebindAt) {
+  const trace = { before: [], after: [] };
+  const failure = new Error("live helper reached a cold constants loader");
+  liveProbe = { callbacks, rebindAt, trace, failure };
+  return { trace, failure };
+}
+
+export function installLiveProbe(lookup, setHelper) {
+  assert(liveProbe);
+  const { callbacks, rebindAt, trace, failure } = liveProbe;
+  liveProbe = undefined;
+  const ordinal = (keys) => (keys.length === 1 ? callbacks.get(keys[0])?.id : undefined);
+  function after(value) {
+    const keys = Reflect.apply(lookup, this, [value]);
+    const id = ordinal(keys);
+    if (id !== undefined) trace.after.push(id);
+    if (id === 9) throw failure;
+    return keys;
+  }
+  setHelper(function (value) {
+    const keys = Reflect.apply(lookup, this, [value]);
+    const id = ordinal(keys);
+    if (id !== undefined) trace.before.push(id);
+    if (id === rebindAt) setHelper(after);
+    return keys;
+  });
+}

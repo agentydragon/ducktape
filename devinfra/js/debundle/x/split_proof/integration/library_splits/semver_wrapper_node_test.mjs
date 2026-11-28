@@ -133,6 +133,67 @@ assert.deepEqual(abruptLookups, [55, 11, 9]);
 const fresh = await import(tracedUrl + "?fresh");
 assert.equal(fresh.semver.valid("1.2.3"), "1.2.3");
 
+const syntax = (node) =>
+  JSON.stringify(node, (key, value) => (["start", "end", "range", "loc"].includes(key) ? undefined : value));
+
+// Add a test-only closure which can rebind the existing lexical cell before
+// the actual first load. Keep all 59 original units in their original order.
+const liveDir = path.join(output, "live-rebind");
+mkdirSync(liveDir);
+const liveName = "semver-live-rebind.mjs";
+const controlsName = "semver_wrapper_controls.mjs";
+const controlSource = new URL("./semver_wrapper_controls.mjs", import.meta.url);
+copyFileSync(controlSource, path.join(liveDir, controlsName));
+const liveSource = path.join(tmp, "live-printer-source.mjs");
+// Parse the new nodes with ranges in the printer's source. Only the AST
+// splice below changes the evaluation sequence.
+const augmented =
+  code +
+  `
+import { installLiveProbe } from "./${controlsName}";
+installLiveProbe(__getOwnPropNames, (replacement) => { __getOwnPropNames = replacement; });
+`;
+writeFileSync(liveSource, augmented);
+const augmentedUnits = topLevelStatements(parseModule(augmented, acorn.parse).ast);
+const [probeImport, probeInstall] = augmentedUnits.slice(units.length).map(({ node }) => node);
+const body = units.map(({ node }) => node);
+const liveManifest = path.join(tmp, "live-rebind.json");
+writeFileSync(
+  liveManifest,
+  JSON.stringify({
+    [liveName]: {
+      type: "Program",
+      sourceType: "module",
+      body: [probeImport, ...body.slice(0, 56), probeInstall, ...body.slice(56)],
+    },
+  })
+);
+execFileSync(process.env.MODULE_IO, ["--print", liveManifest, liveDir, liveSource]);
+const livePath = path.join(liveDir, liveName);
+const liveUnits = topLevelStatements(parseModule(readFileSync(livePath, "utf8"), acorn.parse).ast);
+assert.equal(liveUnits.length, units.length + 2);
+assert.deepEqual(
+  liveUnits.filter((_, i) => i !== 0 && i !== 57).map(({ node }) => syntax(node)),
+  body.map(syntax)
+);
+const { configureLiveProbe } = await import(pathToFileURL(path.join(liveDir, controlsName)).href);
+const liveUrl = pathToFileURL(livePath).href;
+
+// #11 calls constants before any other dependency. Its lookup rebinds the
+// helper before the first constants call, which reaches the throwing helper.
+const cold = configureLiveProbe(callbacks, 11);
+await assert.rejects(import(liveUrl + "?cold"), (error) => error === cold.failure);
+assert.deepEqual(cold.trace, { before: [55, 11], after: [9] });
+
+// #11 calls #10 after #9 returns. Rebind at #10 instead; the later #9 calls
+// must hit the filled cache. #55's public SEMVER_SPEC_VERSION uses #9's value.
+const warm = configureLiveProbe(callbacks, 10);
+const live = await import(liveUrl);
+assert.equal(live.semver.SEMVER_SPEC_VERSION, "2.0.0");
+assert.equal((await import(liveUrl)).semver, live.semver);
+assert.deepEqual(await smoke("semver", livePath), baseline);
+assert.deepEqual(warm.trace, { before: duringImport.slice(0, 4), after: duringImport.slice(4) });
+
 // Project the original capture, factory and first loader into a test driver.
 // Reparse emitted bytes before running the private controls.
 const projectionIds = [3, 6, 9];
@@ -158,8 +219,6 @@ execFileSync(process.env.MODULE_IO, ["--print", manifest, projectionDir, source]
 const projectionPath = path.join(projectionDir, projection);
 const parsedProjection = parseModule(readFileSync(projectionPath, "utf8"), acorn.parse);
 const printedUnits = topLevelStatements(parsedProjection.ast);
-const syntax = (node) =>
-  JSON.stringify(node, (key, value) => (["start", "end", "range", "loc"].includes(key) ? undefined : value));
 for (const [index, ordinal] of projectionIds.entries()) {
   const original = declaration(ordinal).init;
   const readback = printedUnits[index].node.declarations[0].init;
@@ -208,6 +267,7 @@ writeFileSync(
         afterImport,
         abruptImport: { lookups: abruptLookups, sameErrorOnRepeatImport: true, freshImport: "1.2.3" },
       },
+      liveRebind: { originalUnits: units.length, cold: cold.trace, warm: warm.trace },
       projection: {
         units: projectionIds,
         controls: controlRun,
