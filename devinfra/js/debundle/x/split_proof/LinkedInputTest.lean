@@ -231,6 +231,31 @@ private def indexedArraySlice (input : Json) : Except String Json := do
         |>.mapError (·.reason)
       return toJson (kind.scope, kind.level.label)
 
+/-- Compare the planner's default publication to the real link before and
+after evaluation. The callable object can already exist at instantiation. -/
+private def defaultLayout (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let text ← source.getObjValAs? String "sourceText"
+  let decoded ← CoreJS.AuthenticatedSource.decodeIndexedSource source text "entry.mjs"
+  let bundle := EsmSplit.LowerSplit.sourceBundle decoded.nodes
+  let some (_, defaultOrdinal) := bundle.zipIdx.find? (fun (row, _) => row.exports.any (·.1 == "default")) |
+    throw "missing default row"
+  let row := bundle.stmt defaultOrdinal
+  let checked ← CoreJS.LinkedBehavior.checkLink decoded.program
+  let before := checked.forWorld CoreJS.World.probe
+  let exports ← CoreJS.EntryExports.resolve decoded.program.entry before.linked
+  let some cell := exports.lookup "default" | throw "missing default cell"
+  let .ok () after := CoreJS.runProgram CoreJS.World.probe 16 decoded.program |
+    throw "default probe did not evaluate successfully"
+  let value (state : CoreJS.State CoreJS.World.probe) := (state.cellAt cell).bind CoreJS.Binding.value
+  let some (.obj object) := value after | throw "default is not an object after evaluation"
+  return Json.mkObj [
+    ("defs", toJson row.defs),
+    ("publicBinding", toJson ((row.exports.lookup "default").join)),
+    ("hoisted", toJson row.hoisted),
+    ("initializedAtLink", toJson ((value before.ready).isSome)),
+    ("sameFunctionObject", toJson (value before.ready == some (.obj object)))]
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
@@ -244,6 +269,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "singletonSourceShape" => pure (singletonSourceShape (← fixture.getObjVal? "input"))
       | "sourceClassification" => pure (sourceClassification (← fixture.getObjVal? "input"))
       | "inlineConstructor" => pure (inlineConstructor (← fixture.getObjVal? "input"))
+      | "defaultLayout" => pure (defaultLayout (← fixture.getObjVal? "input"))
       | "indexedInlinePlan" => pure (indexedInlinePlan (← fixture.getObjVal? "input"))
       | "indexedArraySlice" => pure (indexedArraySlice (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
