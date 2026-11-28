@@ -158,6 +158,15 @@ def analyzeFootprints (asts units : Array Json) (prem : Effects.Premises) (timin
 def bundleOfFootprints (asts : Array Json) (fps : Array Lower.Footprint) : Bundle :=
   (asts.zip fps).toList.map fun (ast, f) => toStmt ast f
 
+/-- The raw anonymous default function declares a reserved internal binding
+in linked CoreJS. An expression (including a parenthesized function) does not
+have declaration-time function instantiation. -/
+private def anonymousDefaultFunction (ast : Json) : Bool :=
+  let declaration := Lower.fld ast "declaration"
+  Lower.typ ast == "ExportDefaultDeclaration" &&
+    Lower.typ declaration == "FunctionDeclaration" &&
+    Lower.isNull (Lower.fld declaration "id")
+
 /-- The linked execution theorem checks the schedules themselves. Its planner needs only the
 bindings each unit declares, mentions, assigns and exports. Promoting lazy reads to eager in
 the effect analysis leaves their first-occurrence order in `eager ++ lazy` unchanged. -/
@@ -165,9 +174,13 @@ def linkedLayoutBundle (asts units : Array Json) : Bundle :=
   let tops := units.map Lower.analyzeTop
   let declared := Effects.declaredNames tops
   (asts.zip tops).toList.map fun (ast, t) =>
-    { src := "", defs := t.defs, eager := (Effects.dedupeArr t.rawEager).toList,
-      lazy := (Effects.dedupeArr t.rawLazy).toList, assigns := Effects.assignedNames t declared,
-      exports := published ast, hoisted := t.hoisted }
+    let row : Stmt :=
+      { src := "", defs := t.defs, eager := (Effects.dedupeArr t.rawEager).toList,
+        lazy := (Effects.dedupeArr t.rawLazy).toList, assigns := Effects.assignedNames t declared,
+        exports := published ast, hoisted := t.hoisted }
+    if anonymousDefaultFunction ast then
+      { row with defs := ["default"], exports := [("default", some "default")], hoisted := true }
+    else row
 
 /-- Build the planner bundle from all checked source nodes, including export metadata. -/
 def sourceBundle (nodes : Array Json) : EsmSplit.Bundle :=

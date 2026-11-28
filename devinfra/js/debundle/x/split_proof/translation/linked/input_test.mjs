@@ -38,6 +38,20 @@ const orders = [
   [5, 2, 3, 1],
 ];
 const cases = [{ kind: "linked", input: linked(), expected: orders }];
+// Parenthesizing exactly the same function turns it into an expression:
+// the default cell must only receive its closure at evaluation time.
+for (const [source, expected] of [
+  [
+    "export default function () { return 42; }",
+    { defs: ["default"], publicBinding: "default", hoisted: true, initializedAtLink: true, sameFunctionObject: true },
+  ],
+  [
+    "export default (function () { return 42; });",
+    { defs: [], publicBinding: null, hoisted: false, initializedAtLink: false, sameFunctionObject: false },
+  ],
+]) {
+  cases.push({ kind: "defaultLayout", input: { source: parse(source) }, expected });
+}
 const inlineLexicalSource = "let seed = 7; let ready = seed + 2; export let result = ready;\n";
 const inlineLexicalSpec = {
   entry: "entry.mjs",
