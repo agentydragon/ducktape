@@ -1,0 +1,9 @@
+{
+  "entry": "v3/locales/en.js",
+  "modules": {
+    "v3/locales/en-error-map.mjs": ["#0", "#1", "#2"],
+    "v3/locales/en.js": ["#3"]
+  },
+  "order": ["v3/locales/en-error-map.mjs"],
+  "sequential": true
+}
