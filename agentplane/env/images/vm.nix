@@ -186,9 +186,10 @@ in
   # the serial console. The VM starts on the host's clock and is never suspended.
   services.timesyncd.enable = false;
 
-  # Keep the replaceable guest root small: the runner's journals live on the state PVC and agent
-  # work on the workspace disk. Every closure byte is pulled to the node before the guest boots.
-  virtualisation.diskSize = 8 * 1024;
+  # Keep the replaceable guest root compact: the runner's journals live on the state PVC and agent
+  # work on the workspace disk. The shared hook closure includes Lean's runtime; leave it room while
+  # keeping every closure byte off the workspace disk and in the replaceable guest image.
+  virtualisation.diskSize = 10 * 1024;
   # Nobody reads man pages, info or the NixOS manual in a guest whose only interface is the runner.
   documentation.enable = false;
   # disk-image.nix cannot pass copyChannel, whose default puts a second nixpkgs source in the image.
