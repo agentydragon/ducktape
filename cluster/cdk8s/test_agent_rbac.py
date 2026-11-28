@@ -107,33 +107,40 @@ def rendering(request: pytest.FixtureRequest) -> Rendering:
 def test_public_coder_and_haku_configured_diagnostics_are_secret_free(static_resources: list[dict[str, Any]]) -> None:
     """Configured public diagnostics do not widen secret or exec access."""
     read = {"get", "list", "watch"}
-    metadata_role = find_resource(static_resources, "ClusterRole", "agent-readable-namespace-metadata")
-    assert all(set(rule["verbs"]) == read for rule in metadata_role["rules"])
-    assert not {
-        "secrets",
-        "externalsecrets",
-        "secretstores",
-        "clustersecretstores",
-        "pushsecrets",
-        "clusterpushsecrets",
-        "pods/log",
-        "pods/exec",
-        "pods/attach",
-        "pods/portforward",
-    } & {resource for rule in metadata_role["rules"] for resource in rule["resources"]}
+    rbac = Rbac(static_resources)
+    metadata = rbac.rules("ClusterRole", "agent-readable-namespace-metadata", None)
+    assert not uncovered({Permission(None, "", "pods", verb) for verb in read}, metadata)
+    for grant in metadata:
+        assert not any(
+            grant.matches_resource("external-secrets.io", resource)
+            for resource in (
+                "externalsecrets",
+                "secretstores",
+                "clustersecretstores",
+                "pushsecrets",
+                "clusterpushsecrets",
+            )
+        ), grant
+        assert not any(grant.matches_resource("", resource) for resource in ("pods/attach", "pods/portforward")), grant
 
-    for name in (
-        "agent-clickhouse-diagnostics-reader",
-        "agent-haku-console-metadata-reader",
-        "agent-public-coder-extended-diagnostics-reader",
+    diagnostics = set(metadata)
+    for binding_name, namespace, group, resource in (
+        ("agent-clickhouse-diagnostics-reader", "clickhouse", "clickhouse.altinity.com", "clickhouseinstallations"),
+        ("agent-haku-console-metadata-reader", "haku-console", "", "pods"),
+        (
+            "agent-public-coder-extended-diagnostics-reader",
+            "public-coder-agent",
+            "volsync.backube",
+            "replicationsources",
+        ),
     ):
-        role = find_resource(static_resources, "Role", name)
-        binding = find_resource(static_resources, "RoleBinding", name)
-        assert binding["roleRef"]["name"] == role["metadata"]["name"]
-        assert all(set(rule["verbs"]) == read for rule in role["rules"]), name
-        assert not {"secrets", "pods/log", "pods/exec"} & {
-            resource for rule in role["rules"] for resource in rule["resources"]
-        }, name
+        binding = find_resource(static_resources, "RoleBinding", binding_name, namespace=namespace)
+        grants = rbac.binding_rules(binding)
+        assert not uncovered({Permission(namespace, group, resource, verb) for verb in read}, grants), binding_name
+        diagnostics.update(grants)
+    for grant in diagnostics:
+        assert grant.verb in read, grant
+        assert not any(grant.matches_resource("", resource) for resource in ("secrets", "pods/log", "pods/exec")), grant
 
     # The staging public-coder preset receives cluster diagnostics through its Agentplane grant.
     haku_cluster_binding = find_resource(static_resources, "ClusterRoleBinding", "agent-cluster-diagnostics-reader")
@@ -143,7 +150,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(static_res
         ("ServiceAccount", "haku", "haku-sandbox"),
     }
 
-    grants = Rbac(static_resources).binding_rules(haku_cluster_binding)
+    grants = rbac.binding_rules(haku_cluster_binding)
     required = {
         Permission(None, group, resource, verb)
         for group, resource in (
