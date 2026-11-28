@@ -288,10 +288,8 @@ private theorem enter_wrapper_ok {s : State W} (closed : Env) (name : Name)
   refine ⟨{ closed with vars := frame ++ closed.vars }, t, ?_, heap, region, keep⟩
   have vars : varNamesOf [.ret (.func returned)] = [] := rfl
   have nt : newTargetBindings (.mk name .arrow false params [.ret (.func returned)]) .undef = [] := rfl
-  have arrowNe : (FuncKind.arrow != FuncKind.arrow) = false := rfl
-  have arrow : (FuncKind.arrow == FuncKind.arrow) = true := rfl
   simp only [enterFunction, strictArgumentsBindings, parameterBindings, nt, wrapperFactory,
-    Func.kind, Func.params, Func.body, arrow, arrowNe, Bool.false_and, Bool.false_eq_true, ↓reduceIte, M.pure_bind, vars,
+    Func.kind, Func.params, Func.body, FuncKind.isArrow, Bool.not_true, Bool.false_and, Bool.false_eq_true, ↓reduceIte, M.pure_bind, vars,
     List.eraseDups_nil, List.filter_nil, List.map_nil, List.append_nil]
   unfold declare
   rw [M.bind_assoc, bind_of_ok run]
