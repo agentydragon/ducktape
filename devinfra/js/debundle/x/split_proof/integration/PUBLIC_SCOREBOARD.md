@@ -1,5 +1,25 @@
 # Public split-proof scoreboard
 
+## Snapshot 2026-11-28 — devel `d6ad79790ebcf75be9deea8574c0d1be95a42f37`
+
+The [Excalidraw allocation audit](https://github.com/agentydragon/ducktape/pull/20708)
+has been replayed on devel `b394c691eb63582cc35cbfa13a24a86a4a3e09c8`.
+Its three Rust allocation ledgers are byte-for-byte unchanged from the
+`a710e07` measurement in the previous snapshot. The supported authored replay
+and four companion targets [passed](https://app.buildbuddy.io/invocation/59d1e6ca-f314-4bc0-a50e-ed7578306232).
+The stale forced-diagnostic harness blocker noted below was resolved by #20683;
+it is not a current blocker or semantic result.
+
+The replay records structural order conflicts for the full editor and main
+requests (60,295 and 130,667 respectively), and for the historical selected
+editor and main requests (45,120 and 1,300). The ordinary CLI refused both
+full chunks and the exact 365+1 joint selection, publishing zero files. There
+is no disk or browser outcome for a strict emitted split. The audit's new
+per-destination replay table distinguishes concrete lowering, opaque fallback,
+and refusal; these are diagnostics, not additional certified allocations.
+The audit remains under review at head
+`8e98a0eba2ab6d39415aa2127cbe61a3c09ac536`.
+
 ## Snapshot 2026-11-28 — devel `b394c691eb63582cc35cbfa13a24a86a4a3e09c8`
 
 ### Saved placements: retained-tail construction landed
@@ -54,8 +74,9 @@ Physical JS bytes are also separate from original-unit recovery: editor
 main and historical joint strict requests refused without publishing; these
 Rust emissions add **zero strict certificates** and no new strict disk or
 browser result. The historical structural/browser evidence remains labeled in
-the older snapshot. A stale full replay is a harness issue pending its fix; it
-must not be counted as a semantic or certification outcome.
+the older snapshot. At this checkpoint a stale full replay was a harness issue,
+not a semantic or certification outcome; its later resolution is recorded in
+the newer snapshot above.
 
 ## Snapshot 2026-11-28 — devel `27b68135d257d9ed34c358cf203eb36eefb77cd2`
 
