@@ -501,6 +501,31 @@ js_test(
 
 _OWNERSHIP_SOURCES = [":real_bundles/" + variant + ".mjs" for variant in _LIBRARY_VARIANTS]
 
+_OWNERSHIP_TEST_DATA = [
+    "acorn_locutil.mjs",
+    "results/acorn-8.19.0-rollup-map.json.gz",
+    "results/full-blocker-census.json.gz",
+    "smoke.mjs",
+    "source_ownership.mjs",
+    "source_pins.json",
+    ":node_modules/acorn",
+    ":node_modules/eslint-scope",
+    ":node_modules/zod",
+    "//:node_modules/typescript",
+    "//devinfra/js/debundle",
+    "//devinfra/js/debundle:debundle_resolve_placement",
+    "//devinfra/js/debundle/x/split_proof:lowersplit",
+    "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+    "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+]
+
+_OWNERSHIP_TEST_ENV = {
+    "DEBUNDLE": "$(rootpath //devinfra/js/debundle:debundle)",
+    "DEBUNDLE_RESOLVER": "$(rootpath //devinfra/js/debundle:debundle_resolve_placement)",
+    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+}
+
 js_test(
     name = "source_ownership_test",
     size = "large",
@@ -513,29 +538,30 @@ js_test(
             ".map",
             ".meta.json",
         ]
-    ] + [
-        "results/acorn-8.19.0-rollup-map.json.gz",
-        "results/full-blocker-census.json.gz",
-        "smoke.mjs",
-        "source_ownership.mjs",
-        "source_pins.json",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        ":node_modules/zod",
-        "//:node_modules/typescript",
-        "//devinfra/js/debundle",
-        "//devinfra/js/debundle:debundle_resolve_placement",
-        "//devinfra/js/debundle/x/split_proof:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ] + _OWNERSHIP_TEST_DATA,
+    entry_point = "source_ownership_test.mjs",
+    env = _OWNERSHIP_TEST_ENV,
+    tags = ["manual"],
+)
+
+js_test(
+    name = "acorn_locutil_test",
+    size = "medium",
+    args = [
+        "--acorn-locutil",
+        "$(rootpath :real_bundles/acorn.mjs)",
+    ],
+    data = _OWNERSHIP_TEST_DATA + [
+        "results/source-ownership.json.gz",
+        ":real_bundles/acorn.map",
+        ":real_bundles/acorn.meta.json",
+        ":real_bundles/acorn.mjs",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
     ],
     entry_point = "source_ownership_test.mjs",
-    env = {
-        "DEBUNDLE": "$(rootpath //devinfra/js/debundle:debundle)",
-        "DEBUNDLE_RESOLVER": "$(rootpath //devinfra/js/debundle:debundle_resolve_placement)",
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+    env = _OWNERSHIP_TEST_ENV | {
+        "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
     },
-    tags = ["manual"],
 )
 
 js_test(
