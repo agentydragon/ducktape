@@ -785,7 +785,7 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
   -- Linked lowering retains the entire parsed method and its lexical arrows. The
   -- closure keeps its home object, and invocation with a refusal always stops replay.
   let refusal (why : String) :=
-    if kind == .asyncFn || kind == .asyncGenerator then
+    if kind.isAsync || kind == .asyncGenerator then
       -- The outer function can retain this refusal. Its syntax must still match
       -- across relocated modules, so use the linker's stable callable identity.
       let location :=
@@ -1305,25 +1305,27 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
           deferredFunction j .generator name self arity
               "generator invocation requires suspension semantics")
   if async then
-    -- Start with declarations, not arrows or methods (whose receiver context differs).
-    if
-        kind == .normal && (field j "type").toOption == some "FunctionDeclaration" &&
-          tags.all (· == "Identifier") &&
-          !needsOpaqueContext j (checkPrivateNames := true) then
+    let arrow := kind == .arrow
+    let asyncKind := if arrow then FuncKind.asyncArrow else FuncKind.asyncFn
+    if (arrow || (kind == .normal && (field j "type").toOption == some "FunctionDeclaration")) &&
+        tags.all (· == "Identifier") && !needsOpaqueContext j (checkPrivateNames := true) then
       let body ← j.getObjVal? "body"
-      if !hasAsyncSuspension body && (field body "type").toOption == some "BlockStatement" then
+      if !hasAsyncSuspension body then
         let params ← parameters.toList.mapM localBinding
         if params.Nodup then
-          if let .ok stmts :=
-              linkedBlockBody profile imports .function body (allowFunctions := true) then
+          let lowered := if (field body "type").toOption == some "BlockStatement" then
+            linkedBlockBody profile imports .function body (allowFunctions := true)
+          else if arrow then
+            (linkedExpr profile imports true "" body).map fun result => [.ret result]
+          else
+            .error "expected an async function body block"
+          if let .ok stmts := lowered then
             let functions := (funDecls stmts).map Func.name
-            if
-                functions.Nodup &&
-                  !functions.any (fun x => params.contains x || (varNamesOf stmts).contains x) then
-              return .complete (.mk name .asyncFn self params stmts)
+            if functions.Nodup &&
+                !functions.any (fun x => params.contains x || (varNamesOf stmts).contains x) then
+              return .complete (.mk name asyncKind self params stmts)
     return .complete
-        (←
-          deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics")
+      (← deferredFunction j asyncKind name self arity "async invocation requires Promise semantics")
   let j ←
     if kind == .arrow then
       pure j

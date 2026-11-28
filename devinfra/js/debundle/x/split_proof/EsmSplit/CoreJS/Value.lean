@@ -444,7 +444,7 @@ def FuncKind.instanceProto : FuncKind → Addr
   | _ => objectProto
 
 def Func.intrinsicProto (f : Func) : Addr :=
-  if f.kind == .asyncFn then asyncFunctionProto
+  if f.kind.isAsync then asyncFunctionProto
   else
     if f.kind == .asyncGenerator then asyncGeneratorFunctionProto
     else if f.kind == .generator then generatorFunctionProto else functionProto

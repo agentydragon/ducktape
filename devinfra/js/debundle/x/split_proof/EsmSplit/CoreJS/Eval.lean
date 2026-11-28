@@ -220,7 +220,7 @@ def parameterBindings (f : Func) (args : List Val) : M W (List (Name × Binding)
   | _ => pure (fixedParameterBindings f.params args)
 
 def newTargetBindings (f : Func) (newTarget : Val) : List (Name × Binding) :=
-  if f.kind != .arrow && (freeStmts f.body).contains newTargetName then
+  if !f.kind.isArrow && (freeStmts f.body).contains newTargetName then
     [(newTargetName, { value := some newTarget, mutable := false })]
   else []
 
@@ -240,7 +240,7 @@ def strictArgumentsObject (vs : List Val) : Obj :=
 
 /-- Arrow functions resolve arguments through the environment captured at creation. -/
 def strictArgumentsBindings (f : Func) (vs : List Val) : M W (List (Name × Binding)) := do
-  if f.kind != .arrow && (freeStmts f.body).contains "arguments" then
+  if !f.kind.isArrow && (freeStmts f.body).contains "arguments" then
     let a ← alloc (strictArgumentsObject vs)
     return [("arguments", { value := some (.obj a), mutable := true })]
   return []
@@ -254,7 +254,7 @@ def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val)
     ((varNamesOf f.body).eraseDups.filter (!f.params.contains ·)).map fun x =>
       (x, { value := some .undef, mutable := true : Binding })
   let env ←
-    declare { closed with this := if f.kind == .arrow then closed.this else this }
+    declare { closed with this := if f.kind.isArrow then closed.this else this }
         (((params ++ vars) ++ implicitArgs) ++ newTargetBindings f newTarget)
   enterBlock env f.body
 
@@ -529,7 +529,7 @@ def dispatchCallWithDeferred {m : Type → Type} [Monad m] (sync : {α : Type} �
         | some (code, part, free, none) =>
           opaqueBody code (free.map (closed.vars.lookup ·))
               (.run code part (← sync (toW callee))
-                (← sync (toW (if f.kind == .arrow then closed.this else this)))
+                (← sync (toW (if f.kind.isArrow then closed.this else this)))
                 (← sync (args.mapM toW)) false)
         | none =>
           localBody f closed this args
@@ -603,7 +603,7 @@ using the synchronous prefix rules. A deferred body never reaches here. -/
 def runLocalCall (body : Env → List Stmt → M W Flow) (f : Func) (closed : Env) (this : Val)
     (args : List Val) : M W Val :=
   let run := ordinaryCallBody (m := M W) (fun run => run) body f closed this args
-  if f.kind == .asyncFn then AsyncPrefix.invokeBody promiseProto run else run
+  if f.kind.isAsync then AsyncPrefix.invokeBody promiseProto run else run
 
 mutual
 def evalExpr : Nat → Env → Expr → M W Val
