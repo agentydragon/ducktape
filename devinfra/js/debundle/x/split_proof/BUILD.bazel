@@ -1640,7 +1640,7 @@ lean_proof_test(
 lean_library(
     name = "checked_artifact",
     testonly = True,
-    srcs = ["EsmSplit/LowerSplit/CheckedArtifact.lean"],
+    srcs = ["TestSupport/CheckedArtifact.lean"],
     deps = [
         ":corejs_checked_split",
         ":corejs_linked_input",
@@ -1650,7 +1650,7 @@ lean_library(
 lean_library(
     name = "sparse_checked_artifact",
     testonly = True,
-    srcs = ["EsmSplit/LowerSplit/SparseArtifact.lean"],
+    srcs = ["TestSupport/SparseArtifact.lean"],
     deps = [
         ":corejs_linked_input",
         ":corejs_sparse_checked_split",
@@ -1662,11 +1662,11 @@ lean_library(
 lean_proof_test(
     name = "sparse_checked_artifact_axioms_test",
     allow_empty = True,
-    modules = ["EsmSplit.LowerSplit.SparseArtifact"],
+    modules = ["TestSupport.SparseArtifact"],
     required_theorems = [
-        "EsmSplit.LowerSplit.SparseArtifact.prepare",
-        "EsmSplit.LowerSplit.SparseArtifact.verify",
-        "EsmSplit.LowerSplit.SparseArtifact.verify_sound",
+        "TestSupport.SparseArtifact.prepare",
+        "TestSupport.SparseArtifact.verify",
+        "TestSupport.SparseArtifact.verify_sound",
     ],
     deps = [":sparse_checked_artifact"],
 )
@@ -1686,8 +1686,8 @@ test_runner(
 lean_proof_test(
     name = "checked_artifact_axioms_test",
     allow_empty = True,
-    modules = ["EsmSplit.LowerSplit.CheckedArtifact"],
-    required_theorems = ["EsmSplit.LowerSplit.CheckedArtifact.verify_sound"],
+    modules = ["TestSupport.CheckedArtifact"],
+    required_theorems = ["TestSupport.CheckedArtifact.verify_sound"],
     deps = [":checked_artifact"],
 )
 

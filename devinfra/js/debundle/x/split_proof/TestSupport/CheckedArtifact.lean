@@ -4,7 +4,7 @@ import EsmSplit.CoreJS.LinkedInput
 /-! Connect the checked CoreJS construction to the output of the existing
 linked decoder. The staging adapter supplies ASTs re-read from disk. -/
 
-namespace EsmSplit.LowerSplit.CheckedArtifact
+namespace TestSupport.CheckedArtifact
 
 open Lean (Json)
 open CoreJS CoreJS.CheckedSplit
@@ -38,4 +38,4 @@ theorem verify_sound {original files source spec requested} {built : Constructio
   proof.down
 
 
-end EsmSplit.LowerSplit.CheckedArtifact
+end TestSupport.CheckedArtifact
