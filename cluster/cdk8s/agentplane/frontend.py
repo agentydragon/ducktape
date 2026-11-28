@@ -4,6 +4,7 @@ from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Volume
 from constructs import Construct
 
+from agentplane.app.frontend.serving.routes import PUBLIC_PATHS
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -61,7 +62,7 @@ class Frontend(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             hostnames=[self.props.hostname],
             backend=self.service,
-            paths=["/", "/index.html", "/main.js", "/main.css", "/sw.js", "/favicon.svg"],
+            paths=PUBLIC_PATHS,
         )
         NetworkPolicy(
             self,
