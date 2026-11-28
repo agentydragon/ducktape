@@ -57,10 +57,48 @@ private def observe (program : Program) (code expected : Nat) : Except String Un
     throw "expected the retained unknown outcome"
   checkWrites stopped expected
 
+/-- Invoke the hoisted function through the entry's capture. Observe a write
+before either returning to the caller or throwing back through it. -/
+private def publicWorld (throws : Bool) : World where
+  σ := Nat
+  init := 0
+  step := fun _ _ _ s => (.unknown "unexpected primitive host call", s)
+  talk := fun told turn =>
+    let request := match turn, told with
+      | 0, .run 1 0 (.prim .undef) (.prim .undef) [] false => .readVar 0
+      | 1, .value (.handle 0) => .call (.handle 0) (.prim .undef) []
+      | 2, .run 0 1 (.handle 0) (.prim .undef) [] false => .newObject none
+      | 3, .value (.handle 1) => .set (.handle 1) (.prim (.str "called")) (.prim (.bool true))
+      | 4, .value (.prim .undef) =>
+        if throws then .throw (.prim (.str "after call write")) else .done (.handle 1)
+      | 5, .value (.handle 1) => .done (.prim .undef)
+      | 5, .threw (.prim (.str "after call write")) => .throw (.prim (.str "after call write"))
+      | _, _ => .unknown "unexpected public call or reply"
+    (request, turn + 1)
+
+private def observePublic (program : Program) (name : String) (throws : Bool) : Except String Addr := do
+  let w := publicWorld throws
+  let some [(published, cell)] := LinkedBehavior.exports w program |
+    throw "expected exactly one resolved public cell"
+  unless published == name do throw "wrong public name"
+  let state ← match runProgram w 32 program with
+    | .ok () s => if throws then throw "expected the reached call to throw" else pure s
+    | .throw (.str "after call write") s =>
+      if throws then pure s else throw "expected the reached call to return"
+    | _ => throw "did not reach the expected call outcome"
+  let some (.obj callee) := (state.cellAt cell).bind (·.value) |
+    throw "the public cell must hold the hoisted function"
+  unless (show Nat from state.world.state) == 6 && state.world.handed[0]? == some callee do
+    throw "the reached call did not invoke the exported function"
+  let some returned := state.world.handed[1]? | throw "missing callback allocation"
+  let some obj := state.objAt returned | throw "lost callback allocation"
+  unless (obj.props.lookup (.str "called") matches some (.data (.bool true) true true true)) do
+    throw "lost the effect before the return or throw"
+  return cell
+
 def main (args : List String) : IO Unit := do
   let [sourceFile, requestFile, outputRoot, value] := args |
-    throw (IO.userError "expected SOURCE REQUEST OUTPUT_ROOT EXPECTED_FIRST_CAPTURE")
-  let some expected := value.toNat? | throw (IO.userError "expected numeric capture")
+    throw (IO.userError "expected SOURCE REQUEST OUTPUT_ROOT CAPTURE_VALUE_OR_PUBLIC_NAME")
   let request ← loadAuthoredSpec requestFile
   IO.FS.withTempDir fun work => do
     let source ← readBundle sourceFile work true false
@@ -73,5 +111,12 @@ def main (args : List String) : IO Unit := do
     let decoded ← IO.ofExcept <|
       (LinkedInput.decodeStructuralSingleton source.program (Json.mkObj []) files built.plan built.pivots).mapError
         LinkedBehavior.StructuralRefusal.reason
-    for program in [decoded.before, decoded.after] do
-      IO.ofExcept (observe program built.pivots.length expected)
+    if built.pivots.isEmpty then
+      for throws in [false, true] do
+        let before ← IO.ofExcept (observePublic decoded.before value throws)
+        let after ← IO.ofExcept (observePublic decoded.after value throws)
+        unless before == after do throw (IO.userError "the exported binding moved to a different cell")
+    else
+      let some expected := value.toNat? | throw (IO.userError "expected numeric capture")
+      for program in [decoded.before, decoded.after] do
+        IO.ofExcept (observe program built.pivots.length expected)
