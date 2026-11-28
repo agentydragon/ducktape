@@ -4882,3 +4882,17 @@ lean_proof_test(
     ],
     deps = [":corejs_eval"],
 )
+
+test_runner(
+    name = "semver_bootstrap_runner",
+    src = "SemverBootstrapTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":corejs_from_estree",
+        ":corejs_scope",
+        ":estree_emit",
+        ":estree_units",
+        ":lowersplit_input",
+        ":split_files",
+    ],
+)

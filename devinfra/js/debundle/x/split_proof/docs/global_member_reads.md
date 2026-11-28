@@ -112,3 +112,71 @@ justify the opaque operation's correspondence.
 The policy decision is which deployment correspondence or environment
 premises the product is willing to expose and trust. Until that is decided and
 proved, retain the current refusal.
+
+## Checked semver prefix experiment
+
+[The test](../integration/library_splits/semver_bootstrap_test.mjs) takes only
+the first two statements of the pinned readable semver bundle above. It checks
+the full source digest, extracts the original statement ranges, and stages
+ordinal 0 in `helper.mjs` and ordinal 1 in `entry.mjs` with a side-effect import
+keeping the original order. The regular artifact comparator independently
+parses both scratch files. A narrow test decoder checks the two original
+ambient references against the staged sequence, including declaration kind,
+binding name and the noncomputed member. The generated import must name the
+helper and execute before row 1. A duplicate or an extra member read is
+refused on disk reread. This is a two-statement experiment, not a full-bundle
+placement.
+
+[The Lean proof](../SemverBootstrapTest.lean) also checks each row as a
+composition of existing evaluator operations:
+
+```lean
+let ref ← resolveGlobal env global "Object"
+let base ← readGlobal (callFn fuel) "Object" ref
+let value ← getProp (callFn fuel) base (.str row.key)
+writeVar env row.target value
+```
+
+For each callback fuel and each `World`, the original and staged
+computations are equal when both checked schedules decode to the same
+ordered list, both sides have the same supplied ordinary `GlobalEnv` and
+incoming `State`, and both lexical scopes agree on the resolved optional
+`Object` cell and each already allocated module-var destination address.
+No property or binding must be constant. The theorem equates the whole
+result, including the state after a thrown value: if lookup or Get throws,
+the destination write and following rows do not run, but earlier writes
+remain. Normal execution saves the returned value itself, so later rebinding
+of `Object` cannot retarget the saved value.
+
+The differential controls write a trace in the accessors. `B` is the
+ambient binding getter; `C` and `D` are the member getters for `create` and
+`defineProperty`. The member getters check that `this` is the object returned
+by the lookup. The paired runs use fresh identical inputs.
+
+| Schedule or state                            | Trace                                | Observation                                                           |
+| -------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
+| Original and authored split, in order        | `BCBD`                               | Member getters run once each.                                         |
+| Repeat the first row                         | `BCBCBD`                             | Same saved identity, different effects.                               |
+| Execute row 1 first                          | `BDBC`                               | Call order changes even when saved values match.                      |
+| The ambient binding getter writes and throws | `B`                                  | The same sentinel escapes; no member getter or destination write.     |
+| The first member getter writes and throws    | `BC`                                 | The same sentinel escapes, the writes remain, and row 1 does not run. |
+| Replace the mutable binding after the save   | `CD` in the modeled declarative case | A fresh lookup sees the replacement; the saved identity is unchanged. |
+
+The exact full readable semver halves and advance-second requests still refuse
+with `no_constructed_rule`. At the relevant layer the empty-profile lowerer
+still reports `unsupported global Object`. The test runner neither enables a
+host profile nor changes ordinary CLI admission.
+
+The remaining bridge must connect actual linked module resolution and the
+actual runtime global record at this point to the same supplied ordinary
+global environment and heap, with correct object and cell identities.
+A partial snapshot cannot model an exotic global receiver or a proxy trap.
+`World.hostRef` cannot return arbitrary live values or invoke a binding
+getter in this heap; recording two returned intrinsic identities omits the
+effects the controls distinguish. The restricted next theorem should apply
+only where that environment correspondence and identical ordered lookup
+have been proved. A later call is separate: dispatch on the saved value's
+actual identity, and justify descriptor conversion and allocation only for
+the reached genuine intrinsic. A replacement or throwing getter must keep
+its original behavior. Neither the restricted theorem nor these tests supply
+that independent native correspondence.

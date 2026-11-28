@@ -570,3 +570,20 @@ js_test(
     data = ["source_ownership.mjs"],
     entry_point = "source_ownership_unit_test.mjs",
 )
+
+js_test(
+    name = "semver_bootstrap_test",
+    size = "small",
+    args = ["$(rootpath :real_bundles/semver.mjs)"],
+    data = [
+        ":real_bundles/semver.json",
+        ":real_bundles/semver.mjs",
+        "//devinfra/js/debundle/x/split_proof:semver_bootstrap_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    entry_point = "semver_bootstrap_test.mjs",
+    env = {
+        "SEMVER_BOOTSTRAP": "$(rootpath //devinfra/js/debundle/x/split_proof:semver_bootstrap_runner)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+)
