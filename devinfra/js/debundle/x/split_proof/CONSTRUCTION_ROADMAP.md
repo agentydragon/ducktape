@@ -4,6 +4,8 @@ The deliverable is the production CLI splitting a pinned application according t
 
 The [contract and evidence ledger](PLAN.md#acceptance-contract) distinguishes the theorem from its application. The JS frontend, scope annotation/lowering and JS printer are trusted. Lean proves the transformation **between CoreJS programs** at splitter build time. For every source and placement the constructor accepts, its output must honor ownership and module order, preserve public names and live cells, and preserve all modeled outcomes, effects and final state in every admitted world. Matching normal returns misses a write followed by a throw. Matching two `unknown` results does not establish how an unmodeled host operation behaves. Keep such a case outside the claimed coverage unless a rule establishes preservation without needing to interpret that operation.
 
+Before choosing work from the milestones below, read the [admission pivot and open input question](PLAN.md#admission-pivot-compose-the-evidence-for-a-split). Use a workload to expose a missing proof obligation and test the same rule in combination with another placement.
+
 ## First milestone: useful CoreJS without inspection
 
 Prove a family of ordinary programs can be split, then demonstrate it on an unchanged, useful placement through the production CLI. Start with lexical declarations and references to earlier bindings. Grow to reads through live imports, shared mutable cells, and moves whose effects and allocation identities are understood. Check both the emitted modules and a nearby unsafe placement. A proof for one operator or a passing example from a retired splitter does not establish this milestone.

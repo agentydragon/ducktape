@@ -1,5 +1,7 @@
 @README.md
 
+Before extending the production checker, read the [admission pivot in the plan](PLAN.md#admission-pivot-compose-the-evidence-for-a-split). Extend a reusable check and exercise it in combination; keep fixture-only rules out of production.
+
 ## Lean proof output
 
 Do not commit `#print axioms` commands in split-proof Lean sources. Lean emits each
