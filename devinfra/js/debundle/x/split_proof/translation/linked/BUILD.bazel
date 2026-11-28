@@ -223,6 +223,17 @@ js_test(
     shard_count = 6,
 )
 
+js_test(
+    name = "finite_static_graph_test",
+    data = [
+        ":harness",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "finite_static_graph_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
+)
+
 js_library(
     name = "lint_sources",
     srcs = glob(["*.mjs"]),

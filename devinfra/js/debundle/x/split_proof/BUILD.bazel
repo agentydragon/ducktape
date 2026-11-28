@@ -1745,6 +1745,7 @@ lean_library(
         ":corejs_callable_default_provider",
         ":corejs_checked_split",
         ":corejs_constructed_output",
+        ":corejs_finite_static_graph",
         ":corejs_indexed_checked_split",
         ":corejs_indexed_default_snapshot",
         ":corejs_indexed_exported_function",
@@ -1768,6 +1769,31 @@ lean_library(
         ":plan",
         ":terminal_export_placement",
     ],
+)
+
+lean_library(
+    name = "corejs_finite_static_graph",
+    srcs = ["EsmSplit/CoreJS/FiniteStaticGraph.lean"],
+    deps = [
+        ":corejs_deployment_placement",
+        ":corejs_link_world",
+        ":corejs_linked_pivot_check",
+        ":corejs_plan_placement",
+        ":corejs_state_match",
+        ":corejs_static_provider_construction",
+        ":lowersplit_input",
+        ":module_path",
+    ],
+)
+
+lean_proof_test(
+    name = "finite_static_graph_axioms_test",
+    modules = ["EsmSplit.CoreJS.FiniteStaticGraph"],
+    required_theorems = [
+        "CoreJS.FiniteStaticGraph.construct",
+        "CoreJS.FiniteStaticGraph.Construction.readbackGuarantees",
+    ],
+    deps = [":corejs_finite_static_graph"],
 )
 
 lean_library(

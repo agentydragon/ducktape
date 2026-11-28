@@ -35,7 +35,7 @@ private def coreUnits (sourceEntry : Module) (module : EsmSplit.Module) : List (
 /-- Source ordinals occupied by import/export syntax. These nodes are not
 executable CoreJS units, but the authored plan still selects an owner for each
 one and the module lowering requires them to remain in the entry. -/
-private def metadataOrdinals (nodes : Array Json) : List Nat :=
+def metadataOrdinals (nodes : Array Json) : List Nat :=
   nodes.toList.zipIdx.filterMap fun (node, ordinal) =>
     if ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration"].contains
         ((node.getObjValAs? String "type").toOption.getD "") then some ordinal else none
@@ -48,7 +48,7 @@ private def ordinaryNodeTypes : List String :=
     "ExportSpecifier", "VariableDeclaration", "VariableDeclarator", "Identifier",
     "Literal", "BinaryExpression", "ConditionalExpression"]
 
-private partial def ordinarySynchronousSyntax : Json → Bool
+partial def ordinarySynchronousSyntax : Json → Bool
   | .obj fields =>
     let nodeType := fields.get? "type"
     let nodeAllowed := match nodeType with
@@ -74,7 +74,7 @@ private partial def ordinarySynchronousSyntax : Json → Bool
 /-- The primitive subset has no reads outside imports and earlier lexical
 declarations. In particular it cannot turn an unknown host name into an
 unmodeled JavaScript exception. -/
-private def ordinaryModuleGraph (program : Program) : Bool :=
+def ordinaryModuleGraph (program : Program) : Bool :=
   program.modules.all fun module =>
     let imports := module.imports.flatMap fun request => request.names.map Prod.snd
     let (_, safe) := module.body.foldl (fun (known, safe) (_, statement) =>
@@ -94,7 +94,7 @@ private def externalImports (sourceEntry : Module) (entry : String)
       let names := request.names.filter fun (_, localName) => used.contains localName
       if names.isEmpty then none else some { request with names }
 
-private def outputModule (sourceEntry : Module) (plan : EsmSplit.Plan)
+def outputModule (sourceEntry : Module) (plan : EsmSplit.Plan)
     (module : EsmSplit.Module) : Module :=
   let body := coreUnits sourceEntry module
   { name := module.name
@@ -120,7 +120,7 @@ def providerRequest (source : LinkedInput.DecodedSource) : Except String Import 
 
 /-- Import metadata has no executable ID, but like an export row it must still
 account for its own original ordinal. No other omitted source items are allowed. -/
-private def completeSource (source : LinkedInput.DecodedSource) : Bool :=
+def completeSource (source : LinkedInput.DecodedSource) : Bool :=
   let imports := (metadataOrdinals source.nodes).filter fun id =>
     (source.nodes[id]?.bind fun node => (node.getObjValAs? String "type").toOption) ==
       some "ImportDeclaration"

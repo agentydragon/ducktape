@@ -2,6 +2,7 @@ import EsmSplit.CoreJS.AuthenticatedSource
 import EsmSplit.CoreJS.CallableDefaultProvider
 import EsmSplit.Cli
 import EsmSplit.CoreJS.ConstructedOutput
+import EsmSplit.CoreJS.FiniteStaticGraph
 import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.CoreJS.IndexedDefaultSnapshot
 import EsmSplit.CoreJS.IndexedExportedFunction
@@ -492,6 +493,61 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
             if let some verdict ← tryOrderedHelper spec src decoded out work options timings then return verdict
   noConstructor options.request.label s!"no constructor accepts the requested placement of {chunk.path}"
 
+/-- Select only the closed raw .mjs route. Other multi-chunk deployments
+retain the existing refusal, including package and resolved placements. -/
+private def finiteStaticInput (manifest : DeploymentManifest) :
+    Option (Spec × List DeploymentChunk) := do
+  guard (manifest.ownedNodePackage.isNone && manifest.chunks.length >= 3)
+  let entry ← manifest.chunks.find? (·.path == manifest.entry)
+  let .authored spec := entry.placement | none
+  let fixed := manifest.chunks.filter (·.path != manifest.entry)
+  guard (manifest.chunks.all (fun chunk => chunk.path.endsWith ".mjs" &&
+    chunk.source.extension == some "mjs") && fixed.all (fun chunk =>
+      match chunk.placement with | .fixed => true | _ => false))
+  return (spec, fixed)
+
+private def runFiniteStaticGraph (manifest : DeploymentManifest) (spec : Spec)
+    (fixed : List DeploymentChunk) (out work : System.FilePath) (options : CertifiedOptions)
+    (timings : Bool) : IO UInt32 := do
+  let scope := "finite-static-graph"
+  let refuse := fun reason => noConstructor options.request.label s!"finite static graph: {reason}"
+  try
+    let root ← deploymentRoot manifest
+    let fixedNames := fixed.map (·.path)
+    let files ← readModules root work (manifest.entry :: fixedNames).toArray
+    let decode ast name := do
+      let text ← ast.getObjValAs? String "sourceText"
+      CoreJS.AuthenticatedSource.decodeSourceClassification ast text name (importer := name)
+    let ast ← IO.ofExcept (files.getObjVal? manifest.entry)
+    let source ← IO.ofExcept (ast.getObjValAs? String "sourceText")
+    let entry ← IO.ofExcept (decode ast manifest.entry)
+    let providers ← IO.ofExcept (fixedNames.mapM fun name => do
+      return (name, ← files.getObjVal? name))
+    let decoded ← IO.ofExcept (providers.mapM fun (name, ast) => decode ast name)
+    let built ← match CoreJS.FiniteStaticGraph.construct entry decoded spec with
+      | .ok built => pure built
+      | .error reason => return ← refuse reason
+    checkNewRoutes root work spec.order
+    let programs ← IO.ofExcept
+      (ESTreeEmit.programs entry.nodes (sourceBundle entry.nodes) built.printerPlan source spec.entry)
+    let input := work / "source.mjs"
+    IO.FS.writeFile input source
+    let part : OutputPart := { programs, source, input, work }
+    let result ← certifyOutput (α := Unit) [part] (Json.mkObj providers) out work options.checkOnly timings
+      (parseProviders := true) fun files => pure do
+        let ⟨same⟩ ← (CoreJS.ConstructedOutput.checkConstructedOutput files built.program).mapError
+          fun reason => ({ reason } : CertificationRefusal)
+        let _proof := fun observed
+            (decoded : CoreJS.ConstructedOutput.decodeConstructedOutput files built.program = .ok observed) =>
+          built.readbackGuarantees (Except.ok.inj (decoded.symm.trans same))
+        return ()
+    match result with
+    | .ok _ =>
+      emitVerdict options.request.label (.ok .allOutcomes) scope
+        [("strategy", toJson "compiled-constructor"), importReceipt options built.before built.program fixedNames]
+    | .error why => emitRefusal options.request.label why scope
+  catch e => refuse e.toString
+
 def certified (args : List String) : IO UInt32 := do
   let (level?, args) := EsmSplit.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label
@@ -508,12 +564,15 @@ def certified (args : List String) : IO UInt32 := do
       | throw (IO.userError "usage: lowersplit <deployment.json> <outdir> [--require LEVEL] [--check-output]")
     let out ← IO.ofExcept (outputDirectory dest)
     let manifest ← readDeploymentManifest manifestPath (allowOwnedPackage := true)
-    let [chunk] := manifest.chunks | return ← noConstructor label "no constructor supports multi-chunk deployments"
     let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
     IO.FS.withTempDir fun work =>
-      match manifest.ownedNodePackage with
-      | some pkg => runOwnedNodePackage pkg chunk out work { request, checkOnly } timings
-      | none => runSingleton chunk out work { request, checkOnly } timings
+      if let [chunk] := manifest.chunks then
+        match manifest.ownedNodePackage with
+        | some pkg => runOwnedNodePackage pkg chunk out work { request, checkOnly } timings
+        | none => runSingleton chunk out work { request, checkOnly } timings
+      else if let some (spec, fixed) := finiteStaticInput manifest then
+        runFiniteStaticGraph manifest spec fixed out work { request, checkOnly } timings
+      else noConstructor label "no constructor supports multi-chunk deployments"
   catch e => emitVerdict label (.error e.toString)
 
 end EsmSplit.LowerSplit

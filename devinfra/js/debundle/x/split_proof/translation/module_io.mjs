@@ -103,7 +103,7 @@ function readMap(file, description) {
 }
 
 function checkOutput(manifestPath, dir, checkedPath) {
-  const { parts, providers } = readMap(manifestPath, "output manifest");
+  const { parts, providers, parseProviders = false } = readMap(manifestPath, "output manifest");
   if (!fs.lstatSync(dir).isDirectory()) throw new Error(`expected a module directory at ${dir}`);
 
   const wanted = new Set(Object.keys(providers));
@@ -147,8 +147,9 @@ function checkOutput(manifestPath, dir, checkedPath) {
     }
   }
   for (const [name, sourceText] of Object.entries(providers)) {
-    if (!fs.readFileSync(actual[name]).equals(Buffer.from(sourceText)))
-      throw new Error(`provider ${name} differs from the source graph`);
+    const bytes = fs.readFileSync(actual[name]);
+    if (!bytes.equals(Buffer.from(sourceText))) throw new Error(`provider ${name} differs from the source graph`);
+    if (parseProviders) files[name] = linkedProgram(utf8.decode(bytes));
   }
   writeJson(checkedPath, { files, grouped });
 }

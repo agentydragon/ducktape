@@ -38,10 +38,10 @@ def checkIndexedSource (decoded : LinkedInput.DecodedSource) : Except String Ind
 
 /-- Decode the CoreJS source and complete source-item trace once, before
 construction-specific coverage is applied. -/
-def decodeSourceClassification (original : Json) (sourceText entry : String) :
+def decodeSourceClassification (original : Json) (sourceText entry : String) (importer := "bundle.mjs") :
     Except String LinkedInput.DecodedSource := do
   let nodes ← ESTreeUnits.checkedNodes original sourceText
-  LinkedInput.decodeSingletonSourceNodes nodes entry
+  LinkedInput.decodeSingletonSourceNodes nodes entry importer
 
 /-- Retain the full source ordinals for an authored constructor. A node the
 linked model skips, such as a debugger or empty statement, prevents coverage. -/
