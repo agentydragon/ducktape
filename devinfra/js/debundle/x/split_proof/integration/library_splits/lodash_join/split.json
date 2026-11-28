@@ -1,0 +1,9 @@
+{
+  "entry": "join.js",
+  "order": ["join-implementation.mjs"],
+  "modules": {
+    "join-implementation.mjs": ["#0", "#1", "#2"],
+    "join.js": ["#3"]
+  },
+  "sequential": true
+}
