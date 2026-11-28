@@ -296,12 +296,23 @@ func TestOnlineRepackDryRunMixedFormatsAndRerunPreserveWireFrames(t *testing.T) 
 	if err != nil || inventoryAfter.LegacyBlocks != inventoryBefore.LegacyBlocks-1 || inventoryAfter.InvalidBlocks != inventoryBefore.InvalidBlocks {
 		t.Fatalf("inventory after repack: before %+v, after %+v, err %v", inventoryBefore, inventoryAfter, err)
 	}
+	// A logically identical replay is insufficient: fail on any physical journal write.
+	if _, err := writer.db.ExecContext(t.Context(), `
+ CREATE FUNCTION reject_history_rewrite() RETURNS trigger LANGUAGE plpgsql AS $$
+ BEGIN RAISE EXCEPTION 'second repack wrote to %',TG_TABLE_NAME; END $$;
+ CREATE TRIGGER reject_raw_rewrite BEFORE INSERT OR UPDATE OR DELETE ON session_event FOR EACH ROW EXECUTE FUNCTION reject_history_rewrite();
+ CREATE TRIGGER reject_block_rewrite BEFORE INSERT OR UPDATE OR DELETE ON session_event_block FOR EACH ROW EXECUTE FUNCTION reject_history_rewrite()`); err != nil {
+		t.Fatal(err)
+	}
 	again, err := compactor.RepackSession(t.Context(), id, true, nil)
 	if err != nil || again.Entries != int64(len(original)) {
 		t.Fatalf("safe rescan did not revisit the committed prefix: %+v, %v", again, err)
 	}
 	assertLogicalFrames(t, logicalFrames(t, writer.db, id), before)
 
+	if _, err := writer.db.ExecContext(t.Context(), `DROP TRIGGER reject_raw_rewrite ON session_event; DROP TRIGGER reject_block_rewrite ON session_event_block; DROP FUNCTION reject_history_rewrite()`); err != nil {
+		t.Fatal(err)
+	}
 	suffix := repackTestEntries(4)
 	for index, entry := range suffix {
 		entry.Cursor = uint64(len(original) + index + 1)
@@ -723,4 +734,35 @@ func TestRepackGroupsOutputBlocksInBoundedTransactions(t *testing.T) {
 			t.Fatalf("largest transaction installed %d blocks, want %d", got, limit)
 		}
 	}
+}
+
+func TestRepackKeepsMatchingBlockBesideLegacyBlock(t *testing.T) {
+	writer := testStore(t)
+	id := opened(t, writer)
+	var entries []*eventlogpb.EventEntry
+	for i := 1; i <= 12; i++ {
+		entries = append(entries, nativeEntry(uint64(i), strings.Repeat("compressible frame ", 20)))
+	}
+	appendEntries(t, writer, id, entries...)
+	seedBlockFromRows(t, writer.db, id, int64s(1, 4), false)
+	seedBlockFromRows(t, writer.db, id, int64s(5, 8), true)
+	seedBlockFromRows(t, writer.db, id, int64s(9, 12), false)
+	var xmin string
+	getVersion := func() string {
+		t.Helper()
+		if err := writer.db.QueryRowContext(t.Context(), `SELECT xmin::text FROM session_event_block WHERE session_id=$1 AND first_cursor=5`, id).Scan(&xmin); err != nil {
+			t.Fatal(err)
+		}
+		return xmin
+	}
+	before := getVersion()
+	compactor := NewStore(writer.db, Options{EventPackers: repackTestPackers(t)})
+	result, err := compactor.RepackSession(t.Context(), id, true, nil)
+	if err != nil || result.LegacyBlocks != 2 || result.Entries != 12 {
+		t.Fatalf("mixed repack: %+v, %v", result, err)
+	}
+	if getVersion() != before {
+		t.Fatal("rewrote unchanged block between two legacy blocks")
+	}
+	assertEntries(t, readPage(t, compactor, id, 0, 20).Entries, entries...)
 }

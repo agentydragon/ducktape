@@ -240,8 +240,8 @@ a 5 second transaction budget (`--batch-transaction-budget`), revalidates the ex
 settlement/removal state, and atomically installs up to four output blocks (`--max-blocks-per-txn`). The whole
 packing transaction is bounded to 256 frames and 8 MiB of block input. Set the flag to 1
 to install a single block per commit. PostgreSQL `transaction_timeout` and the transaction context enforce the budget;
-an expired batch rolls back and retries the same candidate up to three times. Existing blocks are
-unpacked in bounded units before their frames are merged with ordinary rows and repacked, which
+an expired batch rolls back and retries the same candidate up to three times. Existing blocks matching the next cut and encoded payload stay in place. Other blocks are
+unpacked in bounded units as their frames are merged with ordinary rows and repacked, which
 handles sparse cursors, interleaved kinds, partial block boundaries and mixed formats without
 nested block spans. The unpack transaction compares raw block metadata and bytes to its prepared
 candidate and inserts already-validated raw frames without decoding the source payload under lock.
@@ -255,8 +255,7 @@ hold and append wait in the test output; this PR did not run a live apply canary
 The database stores no repack run or per-Session progress records. Each bounded batch commits its
 event-row/block replacement atomically. If the process stops, the next invocation rescans Sessions
 from the beginning; previously committed blocks and ordinary rows remain valid inputs, so the scan
-can safely repeat work. A rescan may rewrite blocks committed by an earlier process and therefore
-generate additional WAL. Within one process, Session watermarks and cursors advance in memory.
+can safely repeat work. A rescan with the same profile and unchanged input leaves journal rows untouched. Within one process, Session watermarks and cursors advance in memory.
 Busy Sessions and batches that exhaust their budget are deferred while the command scans the rest,
 then retried in three bounded sweeps. If contention remains, the command exits with a busy or budget
 error; a later invocation starts a fresh safe scan. Avoid overlapping all-session runs because they

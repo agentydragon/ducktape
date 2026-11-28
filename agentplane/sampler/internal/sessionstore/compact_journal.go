@@ -743,17 +743,39 @@ func (row repackStorage) equal(other repackStorage) bool {
 }
 
 func replaceJournalStorage(ctx context.Context, tx *sql.Tx, sessionID string, sources []repackStorage, outputs []repackStorage) error {
-	if len(sources) > 0 {
-		first, last := sources[0].first, sources[len(sources)-1].last
-		var rawCount, blockCount int64
-		for _, source := range sources {
-			if source.block {
-				blockCount++
-			} else {
-				rawCount++
-			}
+	// Source verification still covers the entire batch. Change only the physical keys
+	// whose complete row differs; an unchanged row can occur in the middle of a batch.
+	byFirst := make(map[uint64]repackStorage, len(sources))
+	for _, row := range sources {
+		byFirst[row.first] = row
+	}
+	changed := make([]repackStorage, 0, len(outputs))
+	for _, row := range outputs {
+		if old, ok := byFirst[row.first]; ok && row.equal(old) {
+			delete(byFirst, row.first)
+		} else {
+			changed = append(changed, row)
 		}
-		deleted, err := tx.ExecContext(ctx, `DELETE FROM sampler_event WHERE `+repackEventRange, sessionID, first, last)
+	}
+	var raw, blocks []int64
+	for _, row := range byFirst {
+		if row.block {
+			blocks = append(blocks, int64(row.first))
+		} else {
+			raw = append(raw, int64(row.first))
+		}
+	}
+	for _, deletion := range []struct {
+		query string
+		keys  []int64
+	}{
+		{`DELETE FROM sampler_event WHERE session_id=$1 AND sequence=ANY($2)`, raw},
+		{`DELETE FROM sampler_event_block WHERE session_id=$1 AND first_sequence=ANY($2)`, blocks},
+	} {
+		if len(deletion.keys) == 0 {
+			continue
+		}
+		deleted, err := tx.ExecContext(ctx, deletion.query, sessionID, pq.Array(deletion.keys))
 		if err != nil {
 			return err
 		}
@@ -761,21 +783,11 @@ func replaceJournalStorage(ctx context.Context, tx *sql.Tx, sessionID string, so
 		if err != nil {
 			return err
 		}
-		if count != rawCount {
-			return fmt.Errorf("deleted %d standalone source rows, expected %d", count, rawCount)
-		}
-		deleted, err = tx.ExecContext(ctx, `DELETE FROM sampler_event_block WHERE `+repackBlockRange, sessionID, first, last)
-		if err != nil {
-			return err
-		}
-		count, err = deleted.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if count != blockCount {
-			return fmt.Errorf("deleted %d block source rows, expected %d", count, blockCount)
+		if count != int64(len(deletion.keys)) {
+			return fmt.Errorf("deleted %d source rows, expected %d", count, len(deletion.keys))
 		}
 	}
+	outputs = changed
 	if err := insertRepackOutputs(ctx, tx, sessionID, outputs, true); err != nil {
 		return err
 	}

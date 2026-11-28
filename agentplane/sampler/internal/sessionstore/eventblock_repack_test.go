@@ -573,7 +573,9 @@ func TestRepackBlockLimitPreservesCrossingSourceBetweenCommits(t *testing.T) {
 	store := newTestStore(t)
 	store.eventBlockProfile = eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 16, Level: 3}
 	session := openSessionForStore(t, store, "")
-	const opening = 96
+	// Eight outputs: on restart the first group retains one block, while the
+	// second still exercises a full four-block write transaction.
+	const opening = 128
 	appendAPBTestJournalThrough(t, store, session.ID, opening)
 	want := eventFrames(t, store, session.ID, 1, opening)
 	// The first 16-entry output ends inside a 32-entry gzip source.
@@ -591,12 +593,24 @@ func TestRepackBlockLimitPreservesCrossingSourceBetweenCommits(t *testing.T) {
 		t.Fatalf("first transaction: %+v, %v", partial, err)
 	}
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, opening), want)
+	firstVersion := func() string {
+		t.Helper()
+		var version string
+		if err := store.DB().QueryRowContext(t.Context(), `SELECT xmin::text FROM sampler_event_block WHERE session_id=$1 AND first_sequence=1`, session.ID).Scan(&version); err != nil {
+			t.Fatal(err)
+		}
+		return version
+	}
+	beforeRestart := firstVersion()
 	migrationExec(t, store.DB(), `DROP TRIGGER reject_next_block ON sampler_event_block`)
 	result, err := store.CompactJournalWithOptions(t.Context(), session.ID, true, JournalCompactionOptions{})
 	if err != nil || !result.Completed || result.Batches >= preview.Batches {
 		t.Fatalf("multi-block restart: %+v, %v", result, err)
 	}
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, opening), want)
+	if firstVersion() != beforeRestart {
+		t.Fatal("restart replaced the first committed block")
+	}
 	maxInstalled := postgres.Count(t, store.DB(), `SELECT max(n) FROM (SELECT count(*) AS n FROM sampler_event_block WHERE session_id=$1 GROUP BY xmin) AS batches`, session.ID)
 	if maxInstalled != DefaultJournalBlocksPerTxn {
 		t.Fatalf("largest committed group = %d, want %d", maxInstalled, DefaultJournalBlocksPerTxn)
@@ -782,4 +796,31 @@ func TestSingleSessionRepackBacksOffAndResumes(t *testing.T) {
 		t.Fatalf("expected a retry, got %d trigger calls", calls)
 	}
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 32), want)
+}
+
+func TestMixedJournalBatchKeepsMatchingBlock(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	store.eventBlockProfile = eventblock.Profile{TargetBytes: eventblock.MaxBytes, TargetEntries: 32, Level: 3}
+	appendAPBTestJournalThrough(t, store, session.ID, 97)
+	replaceRowsWithBlock(t, store, session.ID, 1, 32, true)
+	replaceRowsWithBlock(t, store, session.ID, 33, 64, false)
+	replaceRowsWithBlock(t, store, session.ID, 65, 96, true)
+	want := eventFrames(t, store, session.ID, 1, 97)
+	var before, after string
+	const query = `SELECT xmin::text FROM sampler_event_block WHERE session_id=$1 AND first_sequence=33`
+	if err := store.DB().QueryRowContext(t.Context(), query, session.ID).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.CompactJournal(t.Context(), session.ID, true)
+	if err != nil || !result.Completed || result.RetainedLegacyBlocks != 0 {
+		t.Fatalf("mixed repack: %+v, %v", result, err)
+	}
+	if err := store.DB().QueryRowContext(t.Context(), query, session.ID).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Fatal("rewrote unchanged block between two legacy blocks")
+	}
+	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 97), want)
 }
