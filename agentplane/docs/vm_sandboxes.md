@@ -69,7 +69,9 @@ lost.
   directly on a block PVC. `RawDiskImage` remains supported for custom VM workspace claims backed
   by a filesystem PVC. The workspace claim survives stop/start and replacement of the VM object.
   The VM's separate state PVC remains a `DirectoryTree` on a `Filesystem` claim, attached through
-  virtiofs; staging puts both VM claims on `piraeus-ssd-2-autodiskful`. The Pod runner keeps its
+  virtiofs; staging puts both VM claims on `piraeus-ssd-local`, the single-copy class, so a guest may run on
+  any untainted node with an `ssd` pool (the OVH workers, wyrm2, optiplex) and then stays on the node holding
+  its disk. The Pod runner keeps its
   Sandbox-owned `DirectoryTree` workspace and existing storage class. Fresh VM claims use the new
   layout; changing the template does not convert retained image-file workspaces. Custom VM
   templates may also declare generic DataVolume disks; those

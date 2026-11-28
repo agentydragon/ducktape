@@ -739,7 +739,11 @@ def environment(*, identity_catalog: bool) -> Environment:
         ),
         vm_sandboxes=True,
         firecracker_sandboxes=True,
-        vm_storage_class=piraeus_storage.SSD_REPLICATED,
+        # The replicated class pins its copies and its diskless attachments to
+        # topology.kubernetes.io/zone=hil-ovh, which kept VM and Firecracker guests off wyrm2 and
+        # optiplex. The single-copy local class admits them, so these Sandboxes stay on the node that
+        # holds their disk instead of following it elsewhere.
+        vm_storage_class=piraeus_storage.SSD_LOCAL,
         vm_resources=STAGING_VM_RESOURCES,
         vm_executor=Executor(url="ws://127.0.0.1:4501", owner=SystemdExecutorOwner(), placement="systemd"),
     )
