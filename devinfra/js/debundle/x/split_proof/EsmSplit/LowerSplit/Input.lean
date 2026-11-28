@@ -49,20 +49,22 @@ structure DeploymentManifest where
   entry : String
   chunks : List DeploymentChunk
   ownedNodePackage : Option OwnedNodePackage.Spec := none
+  nodeEsmRoot : Option System.FilePath := none
 
 private def relativeTo (manifest : System.FilePath) (value : String) : System.FilePath :=
   let path : System.FilePath := value
   if path.isAbsolute then path else manifest.parent.getD "." / path
 
-def readDeploymentManifest (path : System.FilePath) (allowOwnedPackage : Bool := false) :
-    IO DeploymentManifest := do
+def readDeploymentManifest (path : System.FilePath) (allowOwnedPackage : Bool := false)
+    (allowNodeEsmRoot : Bool := false) : IO DeploymentManifest := do
   let json ← readJson path
   let fields ← IO.ofExcept json.getObj?
   unless
     fields.toList.all
       (fun (field, _) =>
         ["entry", "chunks"].contains field ||
-          (allowOwnedPackage && field == "owned_node_package")) do
+          (allowOwnedPackage && field == "owned_node_package") ||
+          (allowNodeEsmRoot && field == "node_esm_root")) do
     throw (IO.userError "unexpected deployment manifest field")
   let entry ← IO.ofExcept (json.getObjValAs? String "entry")
   let ownedNodePackage : Option OwnedNodePackage.Spec ←
@@ -77,6 +79,11 @@ def readDeploymentManifest (path : System.FilePath) (allowOwnedPackage : Bool :=
         let provider ← IO.ofExcept (pkg.getObjValAs? String "provider")
         let caller ← IO.ofExcept (pkg.getObjValAs? String "caller")
         return ⟨root, entry, provider, caller⟩
+  let nodeEsmRoot ← (fields.get? "node_esm_root").mapM fun value => do
+    let root : System.FilePath := ⟨← IO.ofExcept value.getStr?⟩
+    unless root.isAbsolute do throw (IO.userError "node_esm_root requires an absolute source root")
+    unless ownedNodePackage.isNone do throw (IO.userError "supply only one Node format premise")
+    pure root
   let chunks ←
     (← IO.ofExcept (json.getObjValAs? (List Json) "chunks")).mapM fun chunk => do
         let route ← IO.ofExcept (chunk.getObjValAs? String "path")
@@ -121,7 +128,7 @@ def readDeploymentManifest (path : System.FilePath) (allowOwnedPackage : Bool :=
     throw (IO.userError "duplicate original chunk path")
   unless routes.contains entry do
     throw (IO.userError "deployment entry must name an original chunk")
-  return { entry, chunks, ownedNodePackage }
+  return { entry, chunks, ownedNodePackage, nodeEsmRoot }
 
 def DeploymentChunk.spec (chunk : DeploymentChunk) (unitCount : Nat) : Except String Spec := do
   match chunk.placement with

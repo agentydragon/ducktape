@@ -1777,6 +1777,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/FiniteStaticGraph.lean"],
     deps = [
         ":corejs_deployment_placement",
+        ":corejs_indexed_exported_function",
         ":corejs_link_world",
         ":corejs_linked_pivot_check",
         ":corejs_plan_placement",

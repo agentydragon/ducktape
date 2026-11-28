@@ -47,16 +47,47 @@ same prototype, both stored methods are the original `noop` object, the
 captured drawing behavior agrees, and a sentinel thrown by the drawing
 context escapes with the same partial coordinates.
 
-The ordinary CLI still refuses both manifests. The shipped `.js` routes need
-an explicit ESM format boundary (Node's test flag supplies one). The
+The original replay’s deployment manifest, without a format premise, still
+refuses both placements. The shipped `.js` routes need
+an explicit ESM format boundary (the original Node replay used a flag). The
 primitive finite graph rule also excludes the default import/export and
 these bodies: the actual provider and entry declarations, assignments,
 object/function allocations, and captured method code. Retaining those
 bodies as unchecked fixed bytes would not cover their initialization.
 The prototype-only layout additionally violates the DAG and exact schedule
 rules, as well as the public interface. The alternative clears the order,
-closure, and identity checks in test replay; it is evidence for a graph
-allocation constructor, without a production publication or package claim.
+closure, and identity checks in test replay.
+
+## Ordinary publication with an explicit Node ESM root
+
+The supported placement is **constructor and prototype**: keep `#0`, `#1`,
+and `#4` in `curve/basisClosed.js`; move `#2` and `#3` to
+`curve/closed-prototype.mjs`. It recovers the two surviving members of the
+constructor/prototype group together, with no unrelated source rows in the
+helper. Generated import and export glue is separate. Relative to the
+prototype-only request, it still preserves four of five original entry-row
+owners. The prototype-only request remains a refusal: its generated helper
+would have to import a newly exposed private constructor from the public
+entry.
+
+Add `"node_esm_root": "/absolute/path/to/owned/root"` to the three-chunk
+manifest. All three shipped `.js` files stay at their real relative routes
+inside an owned tree. Supply a regular root `package.json` with
+`"type": "module"` and no nested package scopes over the declared files.
+This is deployment context supplied by the caller; the original distribution’s
+legacy manifest does not establish this premise. Publication uses a fresh
+destination outside that root. It copies the exact format marker and fixed
+providers and independently reparses every module in the staged tree.
+`--check-output` runs the same graph and artifact checks.
+
+The constructor is limited to one named and one default import from two
+closed providers, a private hoisted constructor and its prototype write,
+and the retained public default factory. The named provider’s declarations
+and prototype also have to lower concretely. It checks the original import
+addresses, the full ordered linked schedule, and the public default cell.
+The receipt reports the checked artifact and explicit format marker; client
+coverage remains unchecked and there is no deployment or package-wide
+claim. Node checks this same entry without the test-only format flag.
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/library_splits:d3_basis_closed_graph_test --test_output=all
