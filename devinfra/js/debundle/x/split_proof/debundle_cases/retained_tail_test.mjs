@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { acorn } from "../translation/parser.mjs";
 import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 
@@ -111,3 +111,94 @@ const wrongManifest = writeDeployment(source, wrongSpec, absent);
 const wrongOwner = run(process.env.LOWERSPLIT, [wrongManifest, absent, "--require", "all-outcomes"]);
 assert.equal(wrongOwner.status, 1, wrongOwner.stdout + wrongOwner.stderr);
 assert.equal(existsSync(absent), false);
+
+const publicCase = "emission/return_object_global/spec";
+const publicResult = run(process.execPath, [
+  runner,
+  "--certify",
+  "--filter",
+  publicCase,
+  "--out",
+  report,
+  "--keep",
+  keep,
+]);
+assert.equal(publicResult.status, 0, publicResult.stdout + publicResult.stderr);
+const publicRow = JSON.parse(readFileSync(report, "utf8"));
+assert.equal(publicRow.id, publicCase);
+assert.equal(publicRow.outcome, "certified", JSON.stringify(publicRow));
+assert.deepEqual(publicRow.emission, { scope: "retained-public-function", guarantee: "all-outcomes" });
+assert.deepEqual(publicRow.disk, publicRow.emission);
+assert.equal(publicRow.behavior, "pass");
+assert.deepEqual(
+  publicRow.expectations.filter(({ status }) => status === "pass").map(({ assertion }) => assertion),
+  ["stdout:original", "stdout:emitted"]
+);
+
+const publicStage = path.join(keep, publicCase);
+const publicSource = path.join(publicStage, "main.js");
+const publicSpec = path.join(publicStage, "certificate-spec.json");
+const publicOutput = path.join(publicStage, "all-outcomes");
+const publicManifest = writeDeployment(publicSource, publicSpec, publicOutput);
+const publicArgs = [publicManifest, publicOutput, "--require", "all-outcomes"];
+for (const args of [publicArgs, [...publicArgs, "--check-output"]]) {
+  const checked = run(process.env.LOWERSPLIT, args);
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+  assert.equal(JSON.parse(checked.stdout).every_ending_matches, true);
+}
+worldTest(publicSource, publicSpec, publicOutput, "factory");
+
+const publicEntry = path.join(publicOutput, publicRow.entry);
+const factoryModule = path.join(publicOutput, "factory.mjs");
+const observePublic = (entry, ...owners) => {
+  const observed = run(process.execPath, [
+    "--input-type=module",
+    "-e",
+    `
+      import assert from "node:assert/strict";
+      const [entry, owner] = process.argv.slice(1);
+      const log = [];
+      const first = { log(value) { assert.equal(this, first); log.push(value); } };
+      globalThis.console = first;
+      const { factory } = await import(entry);
+      assert.deepEqual(log, [true]);
+      assert.equal(factory.name, "factory");
+      assert.equal(factory().logger, first);
+      assert.equal(new factory().logger, first);
+      if (owner) assert.equal(factory, (await import(owner)).factory);
+      const second = { log() { assert.fail("unexpected log"); } };
+      globalThis.console = second;
+      assert.equal(factory().logger, second);
+      const sentinel = {};
+      globalThis.console = { log(value) { log.push(value); throw sentinel; } };
+      await assert.rejects(import(entry + "?throw"), (error) => error === sentinel);
+      assert.deepEqual(log, [true, true]);
+    `,
+    ...[entry, ...owners].map((file) => pathToFileURL(file).href),
+  ]);
+  assert.equal(observed.status, 0, observed.stdout + observed.stderr);
+};
+observePublic(publicSource);
+observePublic(publicEntry, factoryModule);
+
+// The namespace still hands out the same function object and passes the Node
+// probes, but it now resolves to a new binding cell instead of the import.
+const entryText = readFileSync(publicEntry, "utf8");
+const exportRow = acorn
+  .parse(entryText, { ecmaVersion: "latest", sourceType: "module" })
+  .body.find((node) => node.type === "ExportNamedDeclaration");
+assert.equal(exportRow.source, null);
+assert.deepEqual(
+  exportRow.specifiers.map((row) => [row.local.name, row.exported.name]),
+  [["factory", "factory"]]
+);
+const alias =
+  entryText.slice(0, exportRow.start) +
+  "const snapshot = factory; export { snapshot as factory };" +
+  entryText.slice(exportRow.end);
+writeFileSync(publicEntry, alias);
+observePublic(publicEntry, factoryModule);
+const wrongCell = run(process.env.LOWERSPLIT, [...publicArgs, "--check-output"]);
+assert.equal(wrongCell.status, 1, wrongCell.stdout + wrongCell.stderr);
+assert.equal(JSON.parse(wrongCell.stdout).status, "rejected");
+assert.equal(readFileSync(publicEntry, "utf8"), alias);

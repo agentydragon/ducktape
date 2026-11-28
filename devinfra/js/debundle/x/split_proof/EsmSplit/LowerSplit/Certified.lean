@@ -727,7 +727,7 @@ private def tryRetainedTail (spec : Spec) (src : BundleInput) (out work : System
   let level := built.certificate.1
   if options.request == .allOutcomes && level != .allOutcomes then
     return none
-  let scope := "retained-tail"
+  let scope := if built.pivots.isEmpty then "retained-public-function" else "retained-tail"
   try
     let programs ←
       IO.ofExcept (ESTreeEmit.programs nodes (sourceBundle nodes) built.plan src.source)
