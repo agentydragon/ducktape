@@ -21,6 +21,9 @@ added `receipt.graph`, `receipt.client`, `receipt.deployment`, and
 [import guarantees specification](import_guarantees.md#deployment-realization)
 explains their checked-versus-assumed distinction. The route table below is
 the original audit, not a complete description of the newer receipt fields.
+The later `finite-static-graph` route is also outside that table; its supported
+closed DAG and receipt boundary are described in the
+[import guarantees specification](import_guarantees.md#corejs-graph-boundary).
 
 | Route                                   | Authenticated source and modeled public observations                                                                                                                                                                                              | Deployment evidence and limits                                                                                                                                                                                                       |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

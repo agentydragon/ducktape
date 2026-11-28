@@ -27,7 +27,17 @@ accept every finite graph or every JavaScript operation. The
 [route audit](publication_receipt_boundary.md) identifies the supported source,
 provider and readback boundaries. For example, the current shared static
 provider route admits a particular closed relative provider, not arbitrary
-external dependency graphs. Some Lean results or receipts have a narrower
+external dependency graphs. The newer `finite-static-graph` route accepts a
+closed, reachable acyclic graph of at least three original raw `.mjs` modules
+with named relative imports, primitive synchronous `const` initializers and
+one authored helper in the public entry's placement. The other original
+modules are fixed; import and export metadata stay in the entry, and the
+original executable schedule must be preserved. It checks original import
+cells and entry exports and rereads the generated and fixed files. It does not
+admit arbitrary multi-module graphs, namespace imports, star re-exports or
+moving import rows. The exact
+[Zod graph control](../integration/library_splits/ZOD_V3_STATIC_GRAPH.md)
+remains refused. Some Lean results or receipts have a narrower
 normal-completion guarantee; do not read them as an all-outcomes proof. The
 abstract graph result does not by itself prove all future calls through exported
 values or a multi-entry client theorem. Those claims need their own modeled
