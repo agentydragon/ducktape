@@ -51,3 +51,38 @@ placement while testing allocation identity and order; isolate a function
 declaration with its captures and later calls; then isolate a semver member
 read with getter, receiver and throw controls. The full-bundle refusals alone
 do not establish that any one of those constructs caused the refusal.
+
+## Declared static graphs
+
+[The three-file fixture](../../translation/linked/finite_static_graph_test.mjs)
+starts at `entry.mjs`, which imports `lib/provider.mjs`, which imports `seed.mjs`.
+Its authored spec moves entry ordinal `#1` to `moved.mjs`; all other ordinals
+and both provider files retain their owners. Both publication and disk
+readback certify `all-outcomes`. The public entry's two exports resolve to the
+same live cells. Lean compares the complete linked schedule, including the
+fixed files, and proves the same complete modeled result at equal fuel in
+every world. The client field remains unchecked and there is no deployment
+claim.
+
+The finite graph constructor requires at least three original raw `.mjs`
+routes, backed by their named files under one source root. The public
+entry has the only authored sequential placement, with exactly one new helper
+containing executable code. All other routes are fixed. The declared graph
+must be closed, reachable and acyclic, with named relative imports and local
+named exports. Every source row must be accounted for; the entry's imports and
+export rows stay in the entry. Initializers are primitive `const` expressions:
+literals (no regex or BigInt), reads from named imports or earlier declarations,
+strict equality and inequality, and conditionals. Evaluation retains the
+source dependency postorder, then the helper and entry; the complete sequence
+of original executable units and their linked bindings must match. Fixed
+providers are checked byte for byte and parsed from disk as part of the
+certificate. Tested refusals include changed fixed bytes, a different import
+cell with the same value, changed execution order, aliases, undeclared or
+unreachable inputs, cycles, and a helper that collides with a source asset.
+
+Two published graphs show what this rung does not yet cover:
+
+| Graph                                                | Evidence and remaining boundary                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Lodash `_baseSortedUniq.js`](LODASH_SORTED_UNIQ.md) | The owned Node package rule already certifies this specific callable default-provider graph and checks the fixed caller's default import snapshot. Its shipped `.js` routes, default import and callable semantics are outside the finite graph rule.                                                                                                                                                                   |
+| [Zod v3](ZOD_V3_STATIC_GRAPH.md)                     | Node exercises the unchanged `zod/v3` public route on the ten-module staged reference. The ordinary finite graph gate still refuses the request. The authored locale placement moves import rows, and the graph has namespace imports and star re-exports. The [decoder and evaluation audit](https://github.com/agentydragon/ducktape/pull/20676) isolates a separate provider execution blocker in `helpers/util.js`. |
