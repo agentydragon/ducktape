@@ -207,3 +207,28 @@ js_test(
     entry_point = "linked_primitive_await_differential_test.mjs",
     env = {"LINKED_PRIMITIVE_AWAIT_TEST": "$(rootpath :linked_primitive_await_test_runner)"},
 )
+
+test_runner(
+    name = "linked_async_method_test_runner",
+    src = "LinkedAsyncMethodTest.lean",
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:corejs_linked_async_method",
+        "//devinfra/js/debundle/x/split_proof:corejs_primitive_await",
+    ],
+)
+
+js_test(
+    name = "linked_async_method_differential_test",
+    data = [
+        "linked_async_method_fixture.mjs",
+        ":linked_async_method_test_runner",
+        "//devinfra/js/debundle/e2e:cases/realizability/await_in_instance_class_field_is_allowed/static/app.js",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "linked_async_method_differential_test.mjs",
+    env = {
+        "LINKED_ASYNC_METHOD_TEST": "$(rootpath :linked_async_method_test_runner)",
+        "SAVED_ASYNC_METHOD": "$(rootpath //devinfra/js/debundle/e2e:cases/realizability/await_in_instance_class_field_is_allowed/static/app.js)",
+    },
+    no_copy_to_bin = ["//devinfra/js/debundle/e2e:cases/realizability/await_in_instance_class_field_is_allowed/static/app.js"],
+)

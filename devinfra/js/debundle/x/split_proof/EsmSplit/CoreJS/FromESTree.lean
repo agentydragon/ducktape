@@ -2099,6 +2099,51 @@ def primitiveAwaitParts (j : Json) : Except String PrimitiveAwaitParts := do
     throw "async function declaration overlaps another binding"
   return ⟨.mk name .asyncFn false params combined, before, operand, after⟩
 
+/-- The return-await form stores the fulfilled primitive in this internal
+lexical slot. No source identifier can refer to it. -/
+def methodAwaitResult : Name := ":await:method-result"
+
+private def methodAwait? (j : Json) : Option (Json × Bool) := do
+  if let some operand := discardedAwait? j then
+    return (operand, false)
+  guard ((field j "type").toOption == some "ReturnStatement")
+  let expr ← (j.getObjVal? "argument").toOption
+  guard ((field expr "type").toOption == some "AwaitExpression")
+  return (← (expr.getObjVal? "argument").toOption, true)
+
+/-- Lower one await cut of a normal method supplied by the public method
+decoder. Use the empty host profile, including for the await operand. -/
+def primitiveMethodAwaitParts (name : Name) (j : Json) :
+    Except String (PrimitiveAwaitParts × Option Name) := do
+  unless (← field j "type") == "FunctionExpression" && (← j.getObjValAs? Bool "async") &&
+      !(← j.getObjValAs? Bool "generator") && !needsOpaqueContext j (checkPrivateNames := true) do
+    throw "await cut requires a normal async method"
+  let params ← (← j.getObjValAs? (List Json) "params").mapM localBinding
+  unless params.Nodup do throw "duplicate async method parameter"
+  let block ← j.getObjVal? "body"
+  unless (← field block "type") == "BlockStatement" do throw "expected an async method body block"
+  let stmts ← block.getObjValAs? (List Json) "body"
+  let lead := stmts.takeWhile fun stmt => (methodAwait? stmt).isNone
+  let cut :: tail := stmts.drop lead.length | throw "expected a method await"
+  let some (operand, returns) := methodAwait? cut | throw "expected a method await"
+  if (lead ++ operand :: tail).any hasAsyncSuspension || (returns && !tail.isEmpty) then
+    throw "expected one discarded await or a final return-await"
+  let lower (ss : List Json) :=
+    linkedBlockBody .empty [] .function (Json.mkObj [("body", .arr ss.toArray)]) (allowFunctions := true)
+  let before ← lower lead
+  let expr ← (linkedExpr .empty [] true "" operand).mapError ("async method await operand: " ++ ·)
+  let after ← lower tail
+  let (cutStmt, resume, result) :=
+    if returns then
+      (.decl .const methodAwaitResult expr, [.ret (.var methodAwaitResult)], some methodAwaitResult)
+    else (.expr expr, after, none)
+  let combined := before ++ cutStmt :: resume
+  let functions := (funDecls combined).map Func.name
+  unless functions.Nodup &&
+      !functions.any (fun x => params.contains x || (varNamesOf combined).contains x) do
+    throw "async method body declarations overlap another binding"
+  return (⟨.mk name .asyncFn false params combined, before, expr, resume⟩, result)
+
 /-- Lower one module declaration and list its declared names in binding order.
 Function declarations initialize their cells at link time. -/
 def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) :

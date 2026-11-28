@@ -1451,6 +1451,9 @@ debundle_e2e_test(
 )
 
 exports_files(
-    ["cases/emission/syntactic_holes/memoized_sequence_tail/static/app.js"],
+    [
+        "cases/emission/syntactic_holes/memoized_sequence_tail/static/app.js",
+        "cases/realizability/await_in_instance_class_field_is_allowed/static/app.js",
+    ],
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
 )

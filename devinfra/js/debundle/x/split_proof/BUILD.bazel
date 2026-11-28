@@ -4730,6 +4730,19 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_linked_async_method",
+    srcs = ["EsmSplit/CoreJS/LinkedAsyncMethod.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [
+        ":corejs_from_estree",
+        ":corejs_linked_input",
+        ":corejs_program_turn",
+        ":corejs_turn_units",
+        ":estree_units",
+    ],
+)
+
+lean_library(
     name = "corejs_linked_primitive_await",
     srcs = ["EsmSplit/CoreJS/LinkedPrimitiveAwait.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
