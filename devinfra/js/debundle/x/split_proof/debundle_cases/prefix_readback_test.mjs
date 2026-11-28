@@ -75,7 +75,7 @@ assert.equal(goodRuntime.status, 0, goodRuntime.stderr);
 assert.equal(goodRuntime.stdout, "3\n");
 const passing = check(staged);
 assert.equal(passing.status, 0, passing.stdout + passing.stderr);
-assert.match(passing.stdout, /declaration-prefix checked; semantics of retained unit 4 unresolved/);
+assert.match(passing.stdout, /modeled prefix and retained suffix checked; same live export cells/);
 
 // Retarget the import of c while keeping the console operation and public
 // export row intact. The mutated code is well-formed and binds c to z's cell.

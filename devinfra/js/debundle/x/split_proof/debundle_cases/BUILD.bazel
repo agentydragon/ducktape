@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
 
 _RUNNER_DATA = [
+    "census.mjs",
     "certify.mjs",
     "expectations.mjs",
     "results/cases.jsonl",
@@ -35,6 +36,29 @@ js_test(
     data = _RUNNER_DATA,
     entry_point = "run_cases.mjs",
     env = _RUNNER_ENV,
+    shard_count = 6,
+)
+
+js_test(
+    name = "authored_placement_census_test",
+    size = "large",
+    args = [
+        "--certify",
+        "--audit-placement",
+        "--print-ledger",
+    ],
+    data = _RUNNER_DATA + [
+        "//devinfra/js/debundle",
+        "//devinfra/js/debundle/x/split_proof:authored_placement_census_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    entry_point = "run_cases.mjs",
+    env = dict(
+        _RUNNER_ENV,
+        AUTHORED_PLACEMENT_CENSUS = "$(rootpath //devinfra/js/debundle/x/split_proof:authored_placement_census_runner)",
+        DEBUNDLE = "$(rootpath //devinfra/js/debundle:debundle)",
+        SPLIT_PROOF_MODULE_IO = "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    ),
     shard_count = 6,
 )
 

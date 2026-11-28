@@ -11,6 +11,7 @@
 //   3. run the original and the emitted entry in Node;
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
+import { auditPlacement } from "./census.mjs";
 import { certify } from "./certify.mjs";
 import { expectationLedger, observeExpectations } from "./expectations.mjs";
 import { classify, coverageLosses, rejectKind, wanted } from "./verdict.mjs";
@@ -52,6 +53,8 @@ const filter = option("filter", "");
 if (args.includes("--check-certificates")) throw new Error("--check-certificates has been retired; use --certify");
 if (args.includes("--strategy-census")) throw new Error("--strategy-census has been retired");
 const certification = args.includes("--certify");
+const audit = args.includes("--audit-placement");
+if (audit && !certification) throw new Error("--audit-placement requires --certify");
 const outFile = path.resolve(
   option(
     "out",
@@ -271,7 +274,7 @@ function runCase(dir, specName, expected, id) {
       return unsupported("input does not parse as a module", error.message);
     }
     const spec = parseYaml(readFileSync(path.join(dir, specName), "utf8"));
-    let plan, resolvedUnits;
+    let plan, placement;
     try {
       // Corpus specs omit the fixture input paths; preserve explicit overrides.
       mkdirSync(path.join(stage, ".fixture"), { recursive: true });
@@ -291,12 +294,11 @@ function runCase(dir, specName, expected, id) {
         }
         return { ...record, outcome: "error:resolver", processFailure };
       }
-      const placement = JSON.parse(readFileSync(path.join(stage, ".fixture/placement.json"), "utf8"));
+      placement = JSON.parse(readFileSync(path.join(stage, ".fixture/placement.json"), "utf8"));
       if (placement.chunk_id !== chunk || placement.source_sha256 !== createHash("sha256").update(code).digest("hex")) {
         throw new Error("resolved placement does not identify the checker input");
       }
       plan = translate(spec, chunk, analysis.statements, placement);
-      resolvedUnits = placement.units;
     } catch (error) {
       if (error instanceof Unsupported) return unsupported(error.cause, error.detail);
       throw error;
@@ -308,11 +310,26 @@ function runCase(dir, specName, expected, id) {
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
     if (certification) {
+      let evidence;
+      if (audit) {
+        writeFileSync(path.join(stage, "lean_spec.json"), JSON.stringify({ ...plan, privateEntryBody: true }));
+        evidence = auditPlacement({
+          stage,
+          chunkFile,
+          specName,
+          spec,
+          statements: analysis.statements,
+          plan,
+          placement,
+          accept: expected.accept,
+          run,
+        });
+      }
       const result = certify({
         stage,
         chunkFile,
         plan,
-        resolvedUnits,
+        resolvedUnits: placement.units,
         want: expected.accept.stdout,
         originalWant: wanted(expected),
         providers: Object.values(expected.accept.runtime_files ?? {}),
@@ -333,7 +350,7 @@ function runCase(dir, specName, expected, id) {
         if (result.expectations.some((item) => item.status === "fail")) result.outcome = "error:expectation";
         if (keepDir) cpSync(stage, path.join(keepDir, id), { recursive: true });
       }
-      return { id, ...result };
+      return { id, ...result, ...(audit && { evidence }) };
     }
     const checkerArgs = [
       "--diagnostic",

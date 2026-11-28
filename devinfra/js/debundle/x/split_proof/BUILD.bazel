@@ -3617,11 +3617,25 @@ lean_proof_test(
 )
 
 test_runner(
+    name = "authored_placement_census_runner",
+    src = "AuthoredPlacementCensus.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
+    deps = [
+        ":corejs_authenticated_source",
+        ":corejs_indexed_checked_split",
+        ":corejs_linked_input_census",
+        ":lowersplit_input",
+        ":ordered_const_syntax",
+    ],
+)
+
+test_runner(
     name = "prefix_readback_test_runner",
     src = "PrefixReadbackTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
     deps = [
         ":corejs_linked_input",
+        ":corejs_linked_suffix",
         ":corejs_syntax_match",
         ":lowersplit_input",
         ":split_declarator_schedule",
@@ -3629,9 +3643,29 @@ test_runner(
 )
 
 lean_library(
+    name = "corejs_linked_suffix",
+    srcs = ["EsmSplit/CoreJS/LinkedSuffix.lean"],
+    deps = [
+        ":corejs_linked_behavior",
+        ":corejs_linked_pivot_check",
+        ":corejs_split",
+    ],
+)
+
+lean_proof_test(
+    name = "linked_suffix_axioms_test",
+    modules = ["EsmSplit.CoreJS.LinkedSuffix"],
+    required_theorems = ["CoreJS.LinkedSuffix.run_eq"],
+    deps = [":corejs_linked_suffix"],
+)
+
+lean_library(
     name = "split_declarator_schedule",
     srcs = ["SplitDeclaratorSchedule.lean"],
-    deps = [":corejs_linked_behavior"],
+    deps = [
+        ":corejs_linked_behavior",
+        ":corejs_linked_suffix",
+    ],
 )
 
 lean_proof_test(
@@ -3639,10 +3673,11 @@ lean_proof_test(
     modules = ["SplitDeclaratorSchedule"],
     required_theorems = [
         "CoreJS.SplitDeclaratorSchedule.console_argument",
+        "CoreJS.SplitDeclaratorSchedule.retained_outcomes",
+        "CoreJS.SplitDeclaratorSchedule.retained_same_exports",
         "CoreJS.SplitDeclaratorSchedule.dependency_schedule",
         "CoreJS.SplitDeclaratorSchedule.prefix_outcomes",
         "CoreJS.SplitDeclaratorSchedule.terminal_exports",
-        "CoreJS.SplitDeclaratorSchedule.with_console",
     ],
     deps = [":split_declarator_schedule"],
 )

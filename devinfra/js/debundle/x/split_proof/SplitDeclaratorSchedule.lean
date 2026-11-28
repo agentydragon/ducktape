@@ -1,13 +1,13 @@
 import EsmSplit.CoreJS.LinkedBehavior
+import EsmSplit.CoreJS.LinkedSuffix
 
 /-! Conditional schedule obligation for the saved
 `e2e/cases/emission/lowering/split_declarator_fragments/spec.yaml`.
 
-CoreJS below models the four declaration units in the original source and
-in the Rust-emitted graph. Unit 4 is the original `console.log(c)` and is
-still an open obligation, represented by a continuation after the prefix.
-The terminal export row (unit 5) is retained in the entry's export table.
-This file does not lower or certify the JavaScript artifacts. -/
+The declaration prefix follows the original and emitted schedules. The
+retained final operation is modeled as an arbitrary world interaction with
+its checked lexical capture. The terminal export row (unit 5) remains in
+the entry's export table. This file does not model the Node console. -/
 
 namespace CoreJS.SplitDeclaratorSchedule
 
@@ -117,38 +117,67 @@ theorem prefix_outcomes (w : World) (fuel : Nat) :
       | zero => rfl
       | succ n => rfl
 
-/-- What remains for unit 4: the same full observation of the actual
-`console.log(c)` in the original and split scopes on the common prefix state.
-In particular, no premise about the ambient console is derived here. -/
-theorem with_console {w : World} (fuel : Nat) (observe : Env → M w Unit)
-    (console :
-      ∀ state,
-        runProgram w fuel originalPrefix = .ok () state →
-          observe originalEnv state = observe entryEnv state) :
-    ((do
-          runUnits fuel (unitsOf originalLinked);
-          observe originalEnv)
-        (ready w)) =
-      ((do
-          runUnits fuel (unitsOf splitLinked);
-          observe entryEnv)
-        (ready w)) := by
-  have prior := prefix_outcomes w fuel
-  rw [LinkedBehavior.run_after_link fuel (originalLink w),
-    LinkedBehavior.run_after_link fuel (splitLink w)] at prior
-  simp only [M.bind_apply]
-  change
-    runUnits fuel (unitsOf originalLinked) (ready w) =
-      runUnits fuel (unitsOf splitLinked) (ready w) at prior
-  rw [← prior]
-  cases result : runUnits fuel (unitsOf originalLinked) (ready w) with
-  | ok value state =>
-    cases value
-    apply console state
-    rw [LinkedBehavior.run_after_link fuel (originalLink w)]
-    exact result
-  | throw => rfl
-  | unknown => rfl
-  | fuel => rfl
+/-- The saved tail gives the host code the linked cell of c. This is the
+retained original unit, not a semantic interpretation of JavaScript console. -/
+private def tail : Nat × Stmt := (4, .opaque 4 [] [] ["c"] .world)
+
+private def retainTail (entry : Module) : Module := { entry with body := entry.body ++ [tail] }
+
+def originalWithTail : Program := ⟨originalModule.name, [retainTail originalModule]⟩
+
+def splitWithTail : Program :=
+  ⟨entryPath, [retainTail entryModule, xModule, residualModule]⟩
+
+private def readyWithTail (w : World) : State w :=
+  { ready w with heap := (ready w).heap.push #[], cells := (ready w).cells.push #[] }
+
+private def originalTailLink (w : World) : LinkedBehavior.CheckedLink originalWithTail w :=
+  ⟨[(retainTail originalModule, originalEnv)], readyWithTail w, by cbv⟩
+
+private def splitTailLink (w : World) : LinkedBehavior.CheckedLink splitWithTail w :=
+  ⟨[(residualModule, residualEnv), (xModule, xEnv), (retainTail entryModule, entryEnv)],
+    readyWithTail w, by cbv⟩
+
+/-- The proved declaration prefix still agrees in the full linked state:
+the final operation's additional, empty region is present on both sides. -/
+private theorem fullPrefix (w : World) (fuel : Nat) :
+    runUnits fuel ((unitsOf (originalTailLink w).linked).take 4) (originalTailLink w).ready =
+    runUnits fuel ((unitsOf (splitTailLink w).linked).take 4) (splitTailLink w).ready := by
+  cases fuel with
+  | zero => rfl
+  | succ n =>
+    cases n with
+    | zero => rfl
+    | succ n =>
+      cases n with
+      | zero => rfl
+      | succ n => rfl
+
+/-- The complete modeled execution, including any result from the retained
+world operation, agrees without a premise about the actual console. -/
+theorem retained_outcomes (w : World) (fuel : Nat) :
+    runProgram w fuel originalWithTail = runProgram w fuel splitWithTail := by
+  let before := originalTailLink w
+  let after := splitTailLink w
+  apply LinkedSuffix.run_eq fuel 4 before after (fullPrefix w fuel)
+  change SameUnits [(tail.1, tail.2, originalEnv)] [(tail.1, tail.2, entryEnv)]
+  apply SameUnits.cons _ SameUnits.nil
+  refine ⟨rfl, rfl, rfl, rfl, ?_⟩
+  intro x member
+  change x ∈ ["c"] at member
+  have name : x = "c" := by simpa using member
+  subst x
+  rfl
+
+theorem retained_same_exports : LinkedBehavior.SameExports originalWithTail splitWithTail := by
+  intro w
+  let table : List (Name × Addr) := [("c", ⟨3, 0⟩), ("z", ⟨4, 0⟩)]
+  refine ⟨table, table, ?_, ?_, List.Perm.refl _⟩
+  · unfold LinkedBehavior.exports
+    rw [(originalTailLink w).equation]
+    rfl
+  · unfold LinkedBehavior.exports
+    rw [(splitTailLink w).equation]
+    rfl
 
 end CoreJS.SplitDeclaratorSchedule
