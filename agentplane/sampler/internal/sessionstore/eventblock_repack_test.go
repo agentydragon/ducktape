@@ -783,3 +783,30 @@ func TestSingleSessionRepackBacksOffAndResumes(t *testing.T) {
 	}
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 32), want)
 }
+
+func TestMixedJournalBatchKeepsMatchingBlock(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	store.eventBlockProfile = eventblock.Profile{TargetBytes: eventblock.MaxBytes, TargetEntries: 32, Level: 3}
+	appendAPBTestJournalThrough(t, store, session.ID, 97)
+	replaceRowsWithBlock(t, store, session.ID, 1, 32, true)
+	replaceRowsWithBlock(t, store, session.ID, 33, 64, false)
+	replaceRowsWithBlock(t, store, session.ID, 65, 96, true)
+	want := eventFrames(t, store, session.ID, 1, 97)
+	var before, after string
+	const query = `SELECT xmin::text FROM sampler_event_block WHERE session_id=$1 AND first_sequence=33`
+	if err := store.DB().QueryRowContext(t.Context(), query, session.ID).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.CompactJournal(t.Context(), session.ID, true)
+	if err != nil || !result.Completed || result.RetainedLegacyBlocks != 0 {
+		t.Fatalf("mixed repack: %+v, %v", result, err)
+	}
+	if err := store.DB().QueryRowContext(t.Context(), query, session.ID).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Fatal("rewrote unchanged block between two legacy blocks")
+	}
+	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 97), want)
+}
