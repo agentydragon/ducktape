@@ -7,10 +7,18 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import ts from "typescript";
+import { dumpParsed } from "../../translation/annotated_estree.mjs";
 import { parseModule, topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { split } from "../../translation/testing/split.mjs";
 import { attribute, composeAcorn, sha256 } from "./source_ownership.mjs";
 import { smoke } from "./smoke.mjs";
+import {
+  checkLocutilOutput,
+  locutilConsumer,
+  locutilEvidence,
+  locutilFile,
+  locutilPlacement,
+} from "./acorn_locutil.mjs";
 
 const json = (file) => JSON.parse(readFileSync(file));
 const compressed = (file) => JSON.parse(gunzipSync(readFileSync(new URL(file, import.meta.url))));
@@ -277,7 +285,10 @@ function grouping(rows, ownerFor, residual) {
 
 const sources = [];
 const placements = [];
-for (const sourceArg of process.argv.slice(2)) {
+const [mode, ...args] = process.argv.slice(2);
+const locutil = mode === "--acorn-locutil";
+let focus;
+for (const sourceArg of locutil ? args : [mode, ...args]) {
   const source = path.resolve(sourceArg);
   const library = path.basename(source, ".mjs");
   const prefix = source.slice(0, -4);
@@ -309,10 +320,22 @@ for (const sourceArg of process.argv.slice(2)) {
     baseline,
   });
   const halves = census.placements.find(({ variant, id }) => variant === library && id === "halves");
-  for (const [id, placement] of [
-    ["halves", halves.placement],
-    ["source_files", sourceFilePlacement(rows)],
-  ]) {
+  const sourceFiles = sourceFilePlacement(rows);
+  const requests = locutil
+    ? [
+        ["source_files", sourceFiles],
+        ["locutil", locutilPlacement(rows)],
+      ]
+    : [
+        ["halves", halves.placement],
+        ["source_files", sourceFiles],
+      ];
+  const consumer = locutil ? await locutilConsumer(source) : null;
+  if (locutil) {
+    assert.equal(library, "acorn");
+    focus = { sourceSha256: pin, ...locutilEvidence(parsed, units, rows, map, acornBuild), consumer };
+  }
+  for (const [id, placement] of requests) {
     const work = path.join(process.env.TEST_TMPDIR, library + "-" + id);
     mkdirSync(work);
     const specText = JSON.stringify(placement, null, 2);
@@ -354,7 +377,90 @@ for (const sourceArg of process.argv.slice(2)) {
     };
     if (rust.status === "emitted") assert(rust.smokeMatches, library + "/" + id);
     if (accepted) assert(row.strict.smokeMatches, library + "/" + id);
-    placements.push(row);
+    if (locutil) {
+      if (id === "source_files") {
+        const prior = compressed("./results/source-ownership.json.gz").placements.find(
+          ({ library, id, sourceSha256 }) => library === "acorn" && id === "source_files" && sourceSha256 === pin
+        );
+        assert.equal(specSha256, prior.specSha256);
+      }
+      const modeOwner = id === "locutil" ? "locutil.mjs" : locutilFile + ".mjs";
+      const getGroup = ({ perFile }) => perFile.find(({ file }) => file === locutilFile);
+      const requested = getGroup(row.requestedGrouping);
+      assert.deepEqual(requested.best, [{ owner: modeOwner, together: 4, unrelatedKnown: 0 }]);
+      const emitted = rust.status === "emitted";
+      if (id === "source_files") assert(emitted, JSON.stringify(rust));
+      assert(emitted || rust.status === "refused", JSON.stringify(rust));
+      const group = emitted ? getGroup(row.rust.grouping) : null;
+      const owner = rust.routes[modeOwner];
+      let rustLocationConsumer = null;
+      if (emitted) {
+        assert.deepEqual(group.best, [{ owner, together: 4, unrelatedKnown: 0 }]);
+        assert.equal(group.unknownOutput, 0);
+        assert.equal(group.inResidual, 0);
+        const root = path.join(work, "rust");
+        rustLocationConsumer = await checkLocutilOutput(
+          path.join(root, rust.routes[placement.entry]),
+          path.join(root, owner),
+          consumer
+        );
+        assert.deepEqual(rustLocationConsumer.missingExports, []);
+        if (id === "locutil") assert.deepEqual(rustLocationConsumer.extraExports, []);
+      }
+      const strictLocationConsumer = accepted
+        ? await checkLocutilOutput(path.join(strictOut, placement.entry), path.join(strictOut, modeOwner), consumer)
+        : null;
+      if (strictLocationConsumer) {
+        assert.deepEqual(strictLocationConsumer.extraExports, []);
+        assert.deepEqual(strictLocationConsumer.missingExports, []);
+      }
+      const classification = spawnSync(process.env.LINKED_INPUT_CHECKER, {
+        input:
+          JSON.stringify([
+            {
+              kind: "singletonSourceShape",
+              input: {
+                source: dumpParsed(parsed, { includeOpaqueCaptures: true }),
+                sourceText: code,
+                spec: placement,
+                entry: placement.entry,
+              },
+            },
+          ]) + "\n",
+        encoding: "utf8",
+        timeout: 90_000,
+        maxBuffer: 32 * 1024 * 1024,
+      });
+      assert.equal(classification.status, 0, classification.stderr);
+      const [sourceShape] = JSON.parse(classification.stdout);
+      const measurement = {
+        id,
+        specSha256,
+        requested,
+        requestedOwners: Object.keys(placement.modules).length,
+        rust: {
+          status: rust.status,
+          group,
+          locationConsumer: rustLocationConsumer,
+          outputFiles: rust.output.files.length,
+          ownerFile: rust.output.files.find((file) => file.owner === owner) ?? null,
+          ...(rust.diagnostic && { diagnostic: rust.diagnostic }),
+          wholeBundleEmittedBytes: rust.output.files.reduce((sum, file) => sum + file.emittedBytes, 0),
+        },
+        strict: {
+          verdict: strict.verdict,
+          sourceShape: sourceShape.error ?? "decoded",
+          diskChecked: accepted,
+          locationConsumer: strictLocationConsumer,
+          files: strict.files,
+          group: accepted ? getGroup(row.strict.grouping) : null,
+        },
+      };
+      if (id === "locutil")
+        writeFileSync(path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "acorn-locutil-spec.json"), specText);
+      console.log(JSON.stringify(measurement));
+      placements.push(measurement);
+    } else placements.push(row);
     console.log(
       JSON.stringify({
         library,
@@ -379,8 +485,16 @@ for (const sourceArg of process.argv.slice(2)) {
     );
   }
 }
-assert.equal(sources.length, Object.keys(pins).length);
-writeFileSync(
-  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "source-ownership.json.gz"),
-  gzipSync(JSON.stringify({ sources, placements }) + "\n", { level: 9 })
-);
+if (locutil) {
+  assert.equal(sources.length, 1);
+  writeFileSync(
+    path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "acorn-locutil.json"),
+    JSON.stringify({ ...focus, placements }, null, 2) + "\n"
+  );
+} else {
+  assert.equal(sources.length, Object.keys(pins).length);
+  writeFileSync(
+    path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "source-ownership.json.gz"),
+    gzipSync(JSON.stringify({ sources, placements }) + "\n", { level: 9 })
+  );
+}

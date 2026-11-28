@@ -106,6 +106,11 @@ export function classifyInput(library, file) {
 }
 
 export function composeAcorn(dist, artifact) {
+  const origins = composeAcornOrigins(dist, artifact);
+  return (point) => origins(point)?.source ?? null;
+}
+
+export function composeAcornOrigins(dist, artifact) {
   assert.equal(sha256(dist), artifact.distSha256, "Acorn distribution changed");
   const offsets = positionOffsets(dist);
   const intervals = mapIntervals(dist, artifact.map);
@@ -119,7 +124,7 @@ export function composeAcorn(dist, artifact) {
       else high = mid;
     }
     const candidate = intervals[low - 1];
-    return candidate?.end > position ? candidate.source : null;
+    return candidate?.end > position && candidate.source !== null ? candidate : null;
   };
 }
 

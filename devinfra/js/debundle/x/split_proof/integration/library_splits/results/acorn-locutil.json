@@ -1,0 +1,260 @@
+{
+  "sourceSha256": "e2478dfecff35578381298798b067b66c0424057a99c4c6ddddc6f6b2fb45eee",
+  "file": "acorn/src/locutil.js",
+  "sourceRanges": [
+    {
+      "ordinal": 35,
+      "utf16": [19036, 19126],
+      "bytes": [19036, 19126],
+      "mappedBytes": 87,
+      "upstreamLines": [6, 10]
+    },
+    {
+      "ordinal": 36,
+      "utf16": [19127, 19229],
+      "bytes": [19127, 19229],
+      "mappedBytes": 81,
+      "upstreamLines": [12, 14]
+    },
+    {
+      "ordinal": 37,
+      "utf16": [19230, 19402],
+      "bytes": [19230, 19402],
+      "mappedBytes": 166,
+      "upstreamLines": [17, 22]
+    },
+    {
+      "ordinal": 38,
+      "utf16": [19403, 19651],
+      "bytes": [19403, 19651],
+      "mappedBytes": 239,
+      "upstreamLines": [31, 38]
+    }
+  ],
+  "bindings": {
+    "Position": {
+      "definition": 35,
+      "reads": [36, 38, 258, 442, 446]
+    },
+    "SourceLocation": {
+      "definition": 37,
+      "reads": [42, 269, 399, 442, 446]
+    },
+    "getLineInfo": {
+      "definition": 38,
+      "reads": [256, 442, 446]
+    },
+    "nextLineBreak": {
+      "definition": 23,
+      "reads": [38, 408]
+    },
+    "isNewLine": {
+      "definition": 22,
+      "reads": [23, 409, 431, 435, 437, 442, 446]
+    }
+  },
+  "exported": [
+    ["Position", "Position"],
+    ["SourceLocation", "SourceLocation"],
+    ["getLineInfo", "getLineInfo"]
+  ],
+  "consumer": {
+    "names": [
+      "Node",
+      "Parser",
+      "Position",
+      "SourceLocation",
+      "TokContext",
+      "Token",
+      "TokenType",
+      "defaultOptions",
+      "getLineInfo",
+      "isIdentifierChar",
+      "isIdentifierStart",
+      "isNewLine",
+      "keywordTypes",
+      "lineBreak",
+      "lineBreakG",
+      "nonASCIIwhitespace",
+      "parse",
+      "parseExpressionAt",
+      "tokContexts",
+      "tokTypes",
+      "tokenizer",
+      "version"
+    ],
+    "ctorNames": ["Position2", "SourceLocation2"],
+    "nodes": [
+      {
+        "start": [2, 0],
+        "end": [2, 19],
+        "source": "alpha.js",
+        "range": [9, 28],
+        "sourceFile": "alpha.input"
+      },
+      {
+        "start": [2, 14],
+        "end": [2, 18],
+        "source": "alpha.js",
+        "range": [23, 27],
+        "sourceFile": "alpha.input"
+      },
+      {
+        "start": [3, 0],
+        "end": [3, 6],
+        "source": "alpha.js",
+        "range": [29, 35],
+        "sourceFile": "alpha.input"
+      },
+      {
+        "start": [3, 0],
+        "end": [3, 6],
+        "source": "beta.js",
+        "range": [29, 35],
+        "sourceFile": "beta.input"
+      },
+      {
+        "start": [3, 0],
+        "end": [3, 6],
+        "source": null,
+        "range": [29, 35],
+        "sourceFile": null
+      },
+      {
+        "start": [1, 0],
+        "end": [1, 7],
+        "source": "alpha.js",
+        "range": [0, 7],
+        "sourceFile": null
+      },
+      {
+        "start": [3, 0],
+        "end": [3, 5],
+        "source": "alpha.js",
+        "range": [29, 34],
+        "sourceFile": null
+      }
+    ],
+    "error": {
+      "pos": 43,
+      "raisedAt": 44,
+      "loc": [4, 6]
+    }
+  },
+  "placements": [
+    {
+      "id": "source_files",
+      "specSha256": "ebb7a578fe1c85d25cdd74039ae5bb88942782e85339670d77a11933eede8052",
+      "requested": {
+        "file": "acorn/src/locutil.js",
+        "surviving": 4,
+        "destinations": {
+          "acorn/src/locutil.js.mjs": 4
+        },
+        "best": [
+          {
+            "owner": "acorn/src/locutil.js.mjs",
+            "together": 4,
+            "unrelatedKnown": 0
+          }
+        ],
+        "unknownOutput": 0,
+        "inResidual": 0
+      },
+      "requestedOwners": 26,
+      "rust": {
+        "status": "emitted",
+        "group": {
+          "file": "acorn/src/locutil.js",
+          "surviving": 4,
+          "destinations": {
+            "app/main/owners/8.js": 4
+          },
+          "best": [
+            {
+              "owner": "app/main/owners/8.js",
+              "together": 4,
+              "unrelatedKnown": 0
+            }
+          ],
+          "unknownOutput": 0,
+          "inResidual": 0
+        },
+        "locationConsumer": {
+          "locationsMatch": true,
+          "extraExports": ["keywords", "parse3", "parseExpressionAt2", "tokenizer2", "types", "types$1"],
+          "missingExports": []
+        },
+        "outputFiles": 26,
+        "ownerFile": {
+          "owner": "app/main/owners/8.js",
+          "emittedBytes": 1103,
+          "emittedUnits": 8
+        },
+        "wholeBundleEmittedBytes": 234384
+      },
+      "strict": {
+        "verdict": {
+          "every_ending_matches": false,
+          "guarantee": null,
+          "reason": "no constructor accepts the requested placement of entry.mjs",
+          "reason_code": "no_constructed_rule",
+          "requested": "all-outcomes",
+          "scope": null,
+          "status": "rejected"
+        },
+        "sourceShape": "statement 8: unsupported global RegExp",
+        "diskChecked": false,
+        "locationConsumer": null,
+        "files": [],
+        "group": null
+      }
+    },
+    {
+      "id": "locutil",
+      "specSha256": "27797b85a670d3f4b70d9fe8fe76fb8fd82547cadff80999edba6cc59000bf05",
+      "requested": {
+        "file": "acorn/src/locutil.js",
+        "surviving": 4,
+        "destinations": {
+          "locutil.mjs": 4
+        },
+        "best": [
+          {
+            "owner": "locutil.mjs",
+            "together": 4,
+            "unrelatedKnown": 0
+          }
+        ],
+        "unknownOutput": 0,
+        "inResidual": 0
+      },
+      "requestedOwners": 2,
+      "rust": {
+        "status": "refused",
+        "group": null,
+        "locationConsumer": null,
+        "outputFiles": 0,
+        "ownerFile": null,
+        "diagnostic": "materialize_logical_modules: chunk main — spec is unrealizable: 1 module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge. Full per-cycle evidence at <work>/reports/main/cycles.json. Full graph queries require rerunning with --graphs or building the dependency_graphs Bazel output group. Summary:\nRoot cause: 1 mutual constraining cycle(s) (Pass 1). Pass 2 needs a linker order, which a Pass-1 cycle rules out, so it did not run on this assignment. 0 conditional SCC(s) below are what Pass 2 reports with each Pass-1 SCC collapsed into one module.\nCycle #0 [Pass 1: mutual constraining cycle]: 2 module(s) in unrealizable SCC, 5 R/S edge(s) across 1 (from-module, to-module) pair(s).\n  Complete Pass-1 closed walk (2 step(s); showing 2):\n    <anon stmt #36> (owners/0, unit:36) --at-init--> TokenType (anon_residual_sentinel, unit:13)\n    <anon stmt #64> (anon_residual_sentinel, unit:64) --at-init--> Position (owners/0, unit:35)\n  Binding pairs forcing the cycle (count: source binding (module) → kind → target binding (module), then why each edge constrains):\n       1x  <anon stmt #36> (owners/0)  --side-effect-->  <side-effect> (anon_residual_sentinel)\n           - at-init timeline of `TokenType`: source observes after target wrote (source effect assumed by a callback opaque code may invoke (`opaque_callback_invocation`))\n       1x  <anon stmt #36> (owners/0)  --at-init-->  TokenType (anon_residual_sentinel)\n           - at-init read in the conservative closure of an unresolved at-init call\n       1x  <anon stmt #36> (owners/0)  --at-init-->  hasOwnProperty (anon_residual_sentinel)\n           - at-init read in the conservative closure of an unresolved at-init call\n       1x  <anon stmt #36> (owners/0)  --at-init-->  keywords (anon_residual_sentinel)\n           - at-init read in the conservative closure of an unresolved at-init call\n       1x  <anon stmt #36> (owne",
+        "wholeBundleEmittedBytes": 0
+      },
+      "strict": {
+        "verdict": {
+          "every_ending_matches": false,
+          "guarantee": null,
+          "reason": "no constructor accepts the requested placement of entry.mjs",
+          "reason_code": "no_constructed_rule",
+          "requested": "all-outcomes",
+          "scope": null,
+          "status": "rejected"
+        },
+        "sourceShape": "statement 8: unsupported global RegExp",
+        "diskChecked": false,
+        "locationConsumer": null,
+        "files": [],
+        "group": null
+      }
+    }
+  ]
+}
