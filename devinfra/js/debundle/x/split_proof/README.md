@@ -160,6 +160,7 @@ For validation of a separately authored tree, see the
 ## Further reading
 
 - [Production acceptance and proof work](PLAN.md)
+- [Unchanged deferred functions and opaque calls](docs/deferred_call_equivalence.md)
 - [Structural checker experiments and Node comparisons](experiments/README.md)
 - [Historical scale measurements](experiments/TIMINGS.md)
 - [Lessons from the experiment](docs/lessons_learned.md)
