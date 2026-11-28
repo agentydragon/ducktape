@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.ExactProjectedSwap
 import EsmSplit.CoreJS.HiddenRegion
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.LinkedPivotCheck
@@ -365,7 +366,7 @@ abbrev ScheduleResult (intrinsics : List StableIntrinsic) (source candidate : Pr
 interfaces can use the same linker witnesses. -/
 def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate : Program}
     (before : CheckedLink source World.probe) (after : CheckedLink candidate World.probe)
-    (recordPivots : Std.HashSet Nat) :
+    (recordPivots : Std.HashSet Nat) (exactProjectedSwap := false) :
     Except StructuralRefusal (ScheduleResult intrinsics source candidate) := do
   let some ⟨initial⟩ :=
     StateMatch.probe before.ready
@@ -398,6 +399,17 @@ def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate :
           runUnits n candidateUnits (linkState w after.ready)
       rw [← congrArg (linkState w) initial, runUnits_same n same]
     return ⟨.allOutcomes, .preservedOrder, ⟨equivalent, sameExports⟩⟩
+  if exactProjectedSwap then
+    if let some ⟨runs⟩ := ExactProjectedSwap.check recordPivots before.ready sourceUnits candidateUnits then
+      have equivalent :
+          ScheduleEquivalent .allOutcomes (StableIntrinsic.Worlds intrinsics) source candidate := by
+        intro w _ n
+        rw [run_after_link n (before.forWorld w), run_after_link n (after.forWorld w)]
+        change runUnits n sourceUnits (linkState w before.ready) =
+          runUnits n candidateUnits (linkState w after.ready)
+        rw [← congrArg (linkState w) initial]
+        exact runs w n
+      return ⟨.allOutcomes, .singlePivot, ⟨equivalent, sameExports⟩⟩
   let runs ←
     match checkRuns intrinsics before.ready sourceUnits candidateUnits with
     | .ok ok =>
@@ -441,10 +453,10 @@ def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate :
   return ⟨.normalCompletion, method, ⟨equivalent, sameExports⟩⟩
 
 def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program)
-    (recordPivots : Std.HashSet Nat) :
+    (recordPivots : Std.HashSet Nat) (exactProjectedSwap := false) :
     Except StructuralRefusal (ScheduleResult intrinsics source candidate) := do
   let before ← (checkLink source).mapError fun why => .unclassified ("original linker: " ++ why)
   let after ← (checkLink candidate).mapError fun why => .unclassified ("candidate linker: " ++ why)
-  checkLinkedSchedules intrinsics before after recordPivots
+  checkLinkedSchedules intrinsics before after recordPivots exactProjectedSwap
 
 end CoreJS.LinkedBehavior

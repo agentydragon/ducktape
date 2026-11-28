@@ -65,9 +65,17 @@ js_test(
 js_test(
     name = "retained_tail_test",
     size = "medium",
-    data = _RUNNER_DATA + ["run_cases.mjs"],
+    data = _RUNNER_DATA + [
+        "run_cases.mjs",
+        "//devinfra/js/debundle/x/split_proof:retained_tail_world_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
     entry_point = "retained_tail_test.mjs",
-    env = _RUNNER_ENV,
+    env = dict(
+        _RUNNER_ENV,
+        RETAINED_TAIL_WORLD_TEST = "$(rootpath //devinfra/js/debundle/x/split_proof:retained_tail_world_test_runner)",
+        SPLIT_PROOF_MODULE_IO = "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    ),
 )
 
 js_test(
