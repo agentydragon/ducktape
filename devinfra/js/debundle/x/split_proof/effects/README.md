@@ -5,8 +5,9 @@
 ## Run
 
 ```bash
-cd .. && lake build lower translate lowersplit
-cd translation && cp package.json.in package.json && npm ci --no-audit --no-fund
+repo_root=$(git rev-parse --show-toplevel)
+(cd "$repo_root" && lake build lower translate lowersplit)
+cd ../translation && cp package.json.in package.json && npm ci --no-audit --no-fund
 node ../effects/run.mjs [--show]                      # golden cases
 node ../effects/run.mjs --permutations 20 --seed 1    # and random permutations of every case's units
 node fuzz.mjs --count 300 --seed 3                    # tree fuzzer

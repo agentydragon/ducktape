@@ -39,12 +39,12 @@ Times and conditions: [`TIMINGS.md`](TIMINGS.md). Raw output: [`records/`](recor
 
 [Stage the public bundle dumps](#public-bundle-inputs) and keep their absolute
 directory in `out`. From the repository root, use Lake from the Lean release
-pinned in [`lean-toolchain`](../lean-toolchain).
+pinned in [`lean-toolchain`](../../../../../../lean-toolchain).
 
 ```sh
 p=devinfra/js/debundle/x/split_proof
 (cd "$p/translation" && cp package.json.in package.json && npm ci --no-audit --no-fund)
-(cd "$p" && lake build lowersplit replicate_plan)
+lake build lowersplit replicate_plan
 BUNDLES_DIR="$out" "$p/lowering/scale.sh"
 BUNDLES_DIR="$out" "$p/lowering/scale.sh" replicate
 ```

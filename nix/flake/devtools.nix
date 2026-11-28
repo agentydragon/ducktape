@@ -8,6 +8,7 @@
 
 let
   llvmAddr2line = pkgs.llvmPackages.bintools-unwrapped;
+  leanFmt = import ../packages/lean-fmt.nix { inherit pkgsUnstable; };
   # The BuildBuddy runner VM drives Bazel CI; Bazel actions run in the separate
   # RBE container image. These are the only Nix tools its scripts need.
   buildBuddyRunnerPackages = {
@@ -33,6 +34,7 @@ let
     ducktapePkgs.gazelle
     pkgs.pre-commit
     pkgs.python3Packages.pre-commit-hooks
+    leanFmt
     buildBuddyRunnerPackages.bazelisk
     pkgs.nixfmt
     pkgs.statix

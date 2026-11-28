@@ -6,6 +6,7 @@
 
 # Build system
 /bazel-*
+/.lean-fmt-cache/
 /MODULE.bazel.lock
 /.docker-certs/
 /bb-out
