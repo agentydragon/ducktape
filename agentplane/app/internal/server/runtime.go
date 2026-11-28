@@ -49,8 +49,6 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-const systemStatusTimeout = 5 * time.Second
-
 // Run owns process dependencies and their shutdown. Each API call continues to use the
 // repository's generated Kubernetes, gRPC, and protobuf APIs; the process adds only composition.
 func Run(ctx context.Context, config settings.Config) error {
@@ -297,7 +295,7 @@ func newSystemStatus(config settings.Config, httpClient *http.Client, samplerHea
 	if config.ElectricURL != "" {
 		probes = append(probes, status.HTTPHealthProbe("Electric", httpClient, healthURL(config.ElectricURL, "/v1/health")))
 	}
-	checker, err := status.New(probes, systemStatusTimeout)
+	checker, err := status.New(probes, time.Duration(config.SystemStatusTimeoutSeconds)*time.Second)
 	if err != nil {
 		closeConnections(connections)
 		return nil, nil, err
@@ -340,7 +338,7 @@ func serve(ctx context.Context, config settings.Config, app *httpServer, appAuth
 	appCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	httpServer := &http.Server{
-		Handler: appHTTPHandler(app.Handler(appAuth)), ReadHeaderTimeout: 10 * time.Second,
+		Handler: appHTTPHandler(app.Handler(appAuth)), ReadHeaderTimeout: time.Duration(config.HTTPReadHeaderTimeoutSeconds) * time.Second,
 		BaseContext: func(net.Listener) context.Context { return appCtx },
 	}
 	serveErrors := make(chan error, 1)
