@@ -405,6 +405,15 @@ original bodies, and the Node comparison checks the particular calls above.
 The [production regression](https://app.buildbuddy.io/invocation/f0012e65-f9d9-4679-8815-b8d1f53226c8)
 records the separate layer outcomes.
 
+The same regression submits the exact three-file wrapper manifest to the
+ordinary CLI. It refuses with `no_constructed_rule` and writes no files. The
+static graph constructor currently requires the authored split to be the
+deployment entry. Here `vendor/roughjs.js` is fixed and its roughjs dependency
+is authored. A deployment proof needs to retain both fixed inputs, check their
+original request order and the wrapper's live default alias against the
+transformed dependency, and reread all output routes. The Node comparison
+does not supply that proof.
+
 ## How much can be split without modeling module URLs?
 
 The pinned bundle contains 76 chunks (1,890 numbered source units) for which the
