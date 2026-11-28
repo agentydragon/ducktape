@@ -65,6 +65,32 @@ assert.equal(probe.status, 0, probe.stderr);
 assert.equal(probe.stdout, "1 1\n");
 assertCertified(run(original, out, true));
 
+// Preserve both primitive values and public names while replacing one alias
+// with a different cell. The independent disk checker must reject it.
+const entryBytes = readFileSync(entryFile, "utf8");
+const redirected = entryBytes.replace(/\ba as (["'])x-y\1/, 'ghost as "x-y"');
+assert.notEqual(redirected, entryBytes);
+const sameValuesWrongCell = `const ghost = 1;\n${redirected}`;
+writeFileSync(entryFile, sameValuesWrongCell);
+const wrongProbe = spawnSync(
+  process.execPath,
+  [
+    "--input-type=module",
+    "-e",
+    "const m = await import(process.argv[1]); console.log(JSON.stringify(Object.entries(m)));",
+    pathToFileURL(entryFile).href,
+  ],
+  { encoding: "utf8" }
+);
+assert.equal(wrongProbe.status, 0, wrongProbe.stderr);
+assert.deepEqual(JSON.parse(wrongProbe.stdout), [
+  ["foo", 1],
+  ["x-y", 1],
+]);
+assert.equal(run(original, out, true).status, "refused");
+assert.equal(readFileSync(entryFile, "utf8"), sameValuesWrongCell);
+writeFileSync(entryFile, entryBytes);
+
 // Keep the binding and both original public values but leak an extra name.
 const changed = readFileSync(entryFile, "utf8") + "\nexport { a };\n";
 writeFileSync(entryFile, changed);

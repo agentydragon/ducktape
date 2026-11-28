@@ -2,6 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
 
 _RUNNER_DATA = [
     "certify.mjs",
+    "expectations.mjs",
     "results/cases.jsonl",
     "verdict.mjs",
     "//:node_modules/yaml",
@@ -122,4 +123,12 @@ js_test(
         PREFIX_READBACK = "$(rootpath //devinfra/js/debundle/x/split_proof:prefix_readback_test_runner)",
         SPLIT_PROOF_MODULE_IO = "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
     ),
+)
+
+js_test(
+    name = "expectation_ledger_test",
+    size = "large",
+    data = _RUNNER_DATA + ["run_cases.mjs"],
+    entry_point = "expectation_ledger_test.mjs",
+    env = _RUNNER_ENV,
 )
