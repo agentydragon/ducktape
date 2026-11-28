@@ -364,6 +364,57 @@ export const cases = [
     `,
   },
   {
+    name: "switch saves the discriminant and skips later labels after a match",
+    end: "normal",
+    source: `
+      function query(value) { console.log("discriminant", value); return value; }
+      function test(label) { console.log("label", label); return label; }
+      function run(value, stop) {
+        let scoped = "outside";
+        switch (query(value)) {
+          case test(0):
+          case test(1):
+            { let scoped = "inside"; console.log(scoped); }
+            var captured = scoped;
+            if (stop) break;
+          case test(2):
+            console.log("two", captured);
+          default:
+            console.log("default");
+        }
+        console.log("after", scoped, captured);
+      }
+      run(1, false);
+      run(0, true);
+      run(2, false);
+      run(4, false);
+    `,
+  },
+  {
+    name: "switch fallthrough propagates return, throw and outer continue",
+    end: "normal",
+    source: `
+      const token = {};
+      function run(mode) {
+        let n = 0;
+        for (let i = 0; i < 2; i++) {
+          switch (i) {
+            case 0:
+              n += 1;
+              if (mode === 0) return n;
+              if (mode === 1) throw token;
+            default:
+              n += 10;
+              continue;
+          }
+        }
+        return n;
+      }
+      console.log(run(0), run(2));
+      try { run(1); } catch (e) { console.log(e === token); }
+    `,
+  },
+  {
     name: "a read in the temporal dead zone throws",
     source: `
       console.log("before");

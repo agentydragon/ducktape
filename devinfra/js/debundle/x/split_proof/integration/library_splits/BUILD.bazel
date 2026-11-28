@@ -319,3 +319,34 @@ js_test(
     entry_point = "default_snapshot_format_audit.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
 )
+
+js_test(
+    name = "d3_basis_test",
+    size = "small",
+    args = [
+        "$(rootpath @d3_shape_source//:src/curve/basis.js)",
+        "$(rootpath @d3_shape_source//:src/curve/bundle.js)",
+    ],
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof:basis_placement_test_runner",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+        "@d3_shape_source//:src/curve/basis.js",
+        "@d3_shape_source//:src/curve/bundle.js",
+    ],
+    entry_point = "d3_basis_test.mjs",
+    env = {
+        "PLACEMENT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:basis_placement_test_runner)",
+        "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+    },
+    no_copy_to_bin = [
+        "@d3_shape_source//:src/curve/basis.js",
+        "@d3_shape_source//:src/curve/bundle.js",
+    ],
+)

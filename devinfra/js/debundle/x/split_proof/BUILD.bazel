@@ -2086,6 +2086,35 @@ test_runner(
     ],
 )
 
+lean_library(
+    name = "corejs_switch_fallthrough",
+    srcs = ["EsmSplit/CoreJS/SwitchFallthrough.lean"],
+    deps = [":corejs_scope"],
+)
+
+lean_proof_test(
+    name = "corejs_switch_fallthrough_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SwitchFallthrough"],
+    required_theorems = [
+        "CoreJS.SwitchFallthrough.breakScope_result",
+        "CoreJS.SwitchFallthrough.execStmts_append",
+    ],
+    deps = [":corejs_switch_fallthrough"],
+)
+
+test_runner(
+    name = "basis_placement_test_runner",
+    src = "BasisPlacementTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__"],
+    deps = [
+        ":cli",
+        ":corejs_authenticated_source",
+        ":corejs_link_world",
+        ":lowersplit_input",
+    ],
+)
+
 test_runner(
     name = "linked_input_test_runner",
     src = "LinkedInputTest.lean",
