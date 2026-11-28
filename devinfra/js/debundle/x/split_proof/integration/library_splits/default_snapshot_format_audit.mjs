@@ -45,12 +45,26 @@ for (const result of [...published, ...reread]) {
   assert.equal(result.guarantee, "all-outcomes");
   assert.equal(result.verdict.every_ending_matches, true);
   assert.deepEqual(result.files, [entry, "limits.mjs"]);
+  const { receipt } = result.verdict;
+  assert.deepEqual(receipt.graph.public_entry, { route: entry, exports: ["default"], live_cells: "same-linked-cells" });
+  assert.deepEqual(receipt.graph.source.evaluation_order, [entry]);
+  assert.deepEqual(receipt.graph.output.evaluation_order, ["limits.mjs", entry]);
+  assert.equal(receipt.client.coverage, "unchecked");
+  assert(receipt.client.premises.includes("generated-paths-private"));
+  assert.equal(receipt.deployment.claim, "none");
+  assert.deepEqual(receipt.deployment.fixed_files, []);
+  assert(!receipt.deployment.checked.includes("explicit-node-esm-manifest"));
 }
 for (const file of published[0].files) {
   assert.deepEqual(readFileSync(path.join(esm.out, file)), readFileSync(path.join(commonjs.out, file)));
 }
 assert.deepEqual(published[0].verdict, published[1].verdict);
 assert.deepEqual(reread[0].verdict, reread[1].verdict);
+assert.equal(published[0].verdict.receipt.operation, "published");
+assert.deepEqual(reread[0].verdict, {
+  ...published[0].verdict,
+  receipt: { ...published[0].verdict.receipt, operation: "checked-output" },
+});
 
 const good = nodeCall(path.join(esm.out, entry));
 assert.equal(good.status, 0, good.stderr);
@@ -58,6 +72,28 @@ assert.equal(good.stdout, original.stdout);
 const bad = nodeCall(path.join(commonjs.out, entry));
 assert.notEqual(bad.status, 0);
 assert.match(bad.stderr, /Cannot use import statement outside a module/);
+
+// A client that observes implementation routes distinguishes these trees.
+// This filesystem observation lives only in the test process.
+function probeHelper(dir) {
+  const run = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      'import { existsSync } from "node:fs"; console.log(existsSync(process.argv[1]));',
+      path.join(dir, "limits.mjs"),
+    ],
+    { encoding: "utf8" }
+  );
+  assert.equal(run.status, 0, run.stderr);
+  return run.stdout.trim();
+}
+const unsplit = path.join(tmp, "unsplit");
+mkdirSync(unsplit);
+writeFileSync(path.join(unsplit, entry), readFileSync(source));
+assert.equal(probeHelper(unsplit), "false");
+assert.equal(probeHelper(esm.out), "true");
 
 console.log(
   JSON.stringify({

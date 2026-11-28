@@ -55,6 +55,36 @@ private structure CertifiedOptions where
   request : Guarantee
   checkOnly : Bool
 
+/-- Report only facts established by the graph and artifact checks on this
+route. A fixed caller or manifest is not a general loader or client proof. -/
+private def importReceipt (options : CertifiedOptions) (before after : CoreJS.Program)
+    (fixedFiles : List String) (ownedCaller : Option String := none) : String × Json :=
+  let graph (p : CoreJS.Program) := Json.mkObj [
+    ("entry", toJson p.entry), ("modules", toJson (p.modules.map (·.name))),
+    ("evaluation_order", toJson p.evalOrder)]
+  let exports := ((before.find before.entry).map (fun m => m.exports.map Prod.fst)).getD []
+  ("receipt", Json.mkObj [
+    ("operation", toJson (if options.checkOnly then "checked-output" else "published")),
+    ("graph", Json.mkObj [
+      ("source", graph before), ("output", graph after),
+      ("public_entry", Json.mkObj [
+        ("route", toJson before.entry), ("exports", toJson exports),
+        ("live_cells", toJson "same-linked-cells")]),
+      ("run_result", toJson "equal-complete-modeled-result-at-equal-fuel-for-every-world")]),
+    ("client", Json.mkObj ([
+      ("coverage", toJson (if ownedCaller.isSome then "default-import-snapshot" else "unchecked")),
+      ("premises", toJson ["observe-through-designated-public-entry", "generated-paths-private"])] ++
+      ownedCaller.toList.map (fun route => ("checked_route", toJson route)))),
+    ("deployment", Json.mkObj [
+      ("claim", toJson "none"),
+      ("checked", toJson (["exact-artifact-paths", "generated-esm-syntax"] ++
+        (if fixedFiles.isEmpty then [] else ["fixed-file-bytes"]) ++
+        (if ownedCaller.isSome then ["owned-flat-root", "explicit-node-esm-manifest"] else []))),
+      ("fixed_files", toJson fixedFiles),
+      ("assumptions", toJson [
+        "runtime-loads-the-checked-graphs-with-their-formats-routes-and-module-identities",
+        "new-implementation-routes-are-fresh-in-the-deployment"])])])
+
 private def noConstructor (requested reason : String) : IO UInt32 :=
   emitRefusal requested { reason, reasonCode := some "no_constructed_rule" }
 
@@ -120,7 +150,9 @@ private def runStaticProvider (chunk : DeploymentChunk) (spec : Spec) (src : Bun
     match result with
     | .ok _ =>
       emitVerdict options.request.label (.ok .allOutcomes) "shared-static-provider"
-        [("strategy", toJson "compiled-constructor")]
+        [("strategy", toJson "compiled-constructor"),
+          importReceipt options (CoreJS.StaticProviderConstruction.original classified provider)
+            built.program [request.source]]
     | .error why => emitRefusal options.request.label why "shared-static-provider"
   catch e => refuse e.toString
 
@@ -324,7 +356,7 @@ private def tryDefaultSnapshot (spec : Spec) (src : BundleInput)
       return ()
     match checked with
     | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) scope
-        [("strategy", toJson "compiled-constructor")])
+        [("strategy", toJson "compiled-constructor"), importReceipt options decoded.program built.program []])
     | .error refusal => return some (← emitRefusal options.request.label refusal scope)
   catch e => return some (← emitVerdict options.request.label (.error e.toString) scope)
 
@@ -387,7 +419,9 @@ private def runOwnedNodePackage (pkg : OwnedNodePackage.Spec) (chunk : Deploymen
       return ← emitRefusal options.request.label failure scope
     emitVerdict options.request.label (.ok .allOutcomes) scope
       [("strategy", toJson "compiled-constructor"), ("proof_scope", toJson "linked-entry-provider"),
-        ("caller_context", toJson "default-import-snapshot")]
+        ("caller_context", toJson "default-import-snapshot"),
+        importReceipt options (CoreJS.CallableDefaultProvider.original classified provider)
+          built.program ["package.json", pkg.provider, pkg.caller] (some pkg.caller)]
   catch e => refuse e.toString
 
 /-- Both emission and readback must start from a successful construction. -/

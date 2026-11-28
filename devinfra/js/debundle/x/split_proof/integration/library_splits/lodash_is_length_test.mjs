@@ -103,7 +103,10 @@ assert.equal(result.status, "certified", result.log);
 assert.equal(result.guarantee, "all-outcomes");
 assert.equal(result.scope, "indexed-default-snapshot");
 assert.deepEqual(result.files, ["isLength.js", "limits.mjs"]);
-assert.deepEqual(split({ ...request, checkOutput: true }).verdict, result.verdict);
+assert.deepEqual(split({ ...request, checkOutput: true }).verdict, {
+  ...result.verdict,
+  receipt: { ...result.verdict.receipt, operation: "checked-output" },
+});
 
 const misplaced = split({ ...request, spec: specFor("misplaced_export"), out: path.join(tmp, "misplaced") });
 assert.equal(misplaced.status, "refused", misplaced.log);
@@ -150,7 +153,10 @@ writeFileSync(
 const reassign = { ...request, source: changedSource, spec: changedSpec, out: path.join(tmp, "reassign") };
 const snap = split(reassign);
 assert.equal(snap.status, "certified", snap.log);
-assert.deepEqual(split({ ...reassign, checkOutput: true }).verdict, snap.verdict);
+assert.deepEqual(split({ ...reassign, checkOutput: true }).verdict, {
+  ...snap.verdict,
+  receipt: { ...snap.verdict.receipt, operation: "checked-output" },
+});
 assert.equal((await readModule(changedSource)).default(3), true);
 assert.equal((await readModule(path.join(reassign.out, "reassign.mjs"))).default(3), true);
 

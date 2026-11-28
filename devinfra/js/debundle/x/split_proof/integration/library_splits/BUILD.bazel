@@ -291,8 +291,7 @@ js_test(
     },
 )
 
-# Known receipt boundary. Keep it manual: a follow-up may tighten or replace
-# the success receipt for the CommonJS half.
+# A graph receipt must not claim deployment when package format is unchecked.
 js_test(
     name = "default_snapshot_format_audit",
     data = [
@@ -303,5 +302,4 @@ js_test(
     ],
     entry_point = "default_snapshot_format_audit.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
-    tags = ["manual"],
 )
