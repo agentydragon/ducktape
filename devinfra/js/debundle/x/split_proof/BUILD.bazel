@@ -2542,6 +2542,8 @@ lean_proof_test(
         "CoreJS.WrapperLoader.eval_body",
         "CoreJS.WrapperLoader.linked_suffix",
         "CoreJS.WrapperLoader.prepareArgs_origin",
+        "CoreJS.WrapperLoader.swap_after_prefix",
+        "CoreJS.wrapper_arrow_all_outcomes",
     ],
     deps = [":corejs_wrapper_loader"],
 )

@@ -156,3 +156,42 @@ in the editor and the arrow moves to the scroll owner. It is also crossed
 by the full three-member scroll placement (`#1336`–`#1338`). That placement
 needs additional ordering proofs, including the unchanged provider prefix
 and its ambient reads. No split is certified by the invocation theorem.
+
+### Equal-fuel allocation swap
+
+The linked lowerer now checks the two original editor units independently:
+`#5` is a var initialization of `po` by a bare call to `Ve` with one
+anonymous arrow argument; `#1337` is a var initialization of `Jb` with
+an anonymous arrow. Substituting a different factory alias in the check
+fails with `unlinked imported name Ve`. The provider check above still
+compares the whole `#7` factory statement to the one in the proof.
+
+From a common prefix, `WrapperLoader.swap_after_prefix` preserves the
+complete result of swapping those two shapes. It requires the actual
+factory closure in the imported cell, two initialized mutable destination
+cells in distinct statement regions, and the same capture environments
+on the two routes. Below six units of CoreJS fuel, allocating the
+factory result runs out of fuel. At or above that threshold the existing
+locality proof gives the same heap and cells after both declarations.
+The two computations carry the same addresses even though the order of
+allocation differs. Prefix throws and refusals propagate unchanged;
+any later dispatch, including a call to the new loader, runs from the
+same resulting state.
+
+The unchanged editor still refuses at `#41` (`Uint8Array`) during
+authenticated lowering and the fixed provider still refuses at `#0`
+(`Object.create`). The swap discharges one adjacent crossing once a
+constructor checks its prefix and captures; it certifies no full
+placement. The reduced crossing remains report-only, and no staged
+output was written.
+
+The published non-minified semver 7.8.6 bundle has a related allocation
+at `#9` (`require_constants`), with an object argument and an ordinary
+named function result. Its factory at `#6` reads no ambient value on
+allocation, but the returned loader reads the live `__getOwnPropNames`
+cell (`#3`) before a first call. If the callback throws, semver resets
+the cache to zero and rethrows. The Excalidraw loader retains the partial
+exports on that path. An invocation rule for semver therefore needs to
+preserve the helper-cell read, indirect callback call and cache reset;
+a cache-retention rule would give the wrong retry behavior. The first
+top-level load is `#56` (`__toESM(require_semver2(), 1)`).

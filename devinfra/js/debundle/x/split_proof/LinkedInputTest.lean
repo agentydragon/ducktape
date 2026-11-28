@@ -269,6 +269,25 @@ private def wrapperFactoryShape (input : Json) : Except String Json := do
   let some _ := CoreJS.SyntaxMatch.stmtEq lowered expected | throw "factory syntax differs from the loader proof"
   return toJson true
 
+/-- Lower the two original executable units independently of the unsupported
+prefix. Link and destination-cell checks belong to the eventual constructor. -/
+private def wrapperCrossingShape (input : Json) : Except String Json := do
+  let ast ← input.getObjVal? "source"
+  let factoryAlias ← input.getObjValAs? String "factoryAlias"
+  let nodes ← ESTreeUnits.checkedNodes ast (← ast.getObjValAs? String "sourceText")
+  let some caller := nodes[5]? | throw "no caller unit"
+  let some arrow := nodes[1337]? | throw "no arrow unit"
+  let .decl .var target (.call (.var callee) [.func callback]) ←
+    CoreJS.LinkedInput.lowerLinkedStatement .empty [factoryAlias] 5 caller false false |
+    throw "expected one arrow argument to a bare wrapper call"
+  let .decl .var moved (.func closure) ←
+    CoreJS.LinkedInput.lowerLinkedStatement .empty [factoryAlias] 1337 arrow false false |
+    throw "expected an arrow initializer"
+  unless callee == factoryAlias && callback.kind == .arrow && !callback.self &&
+    closure.kind == .arrow && !closure.self do
+    throw "wrapper crossing requires the selected callee and anonymous arrows"
+  return Json.mkObj [("wrapper", toJson target), ("arrow", toJson moved)]
+
 /-- Check the actual indexed decoder, source-derived planner bundle and
 authored order-kept request for a top-level lexical inline export. -/
 private def indexedInlinePlan (input : Json) : Except String Json := do
@@ -504,6 +523,8 @@ private def fixtures (input : Json) : Except String Json := do
                 pure (moduleDiagnostic (← fixture.getObjVal? "input"))
               | "singletonSourceShape" =>
                 pure (singletonSourceShape (← fixture.getObjVal? "input"))
+              | "wrapperCrossingShape" =>
+                pure (wrapperCrossingShape (← fixture.getObjVal? "input"))
               | "wrapperFactoryShape" =>
                 pure (wrapperFactoryShape (← fixture.getObjVal? "input"))
               | "sourceClassification" =>

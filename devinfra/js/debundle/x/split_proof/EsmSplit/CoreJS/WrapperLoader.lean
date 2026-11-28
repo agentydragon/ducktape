@@ -166,4 +166,30 @@ theorem linked_suffix {W : World} {α : Type} (fuel : Nat) (s : State W)
   | succ n =>
     simp only [M.bind_apply, call_from_object n s addr callback cache closed o object code]
 
+/-- Compose the checked swap with an unchanged linked prefix, for the exact
+esbuild loader returned by the factory. The prefix can throw, refuse or
+exhaust fuel. The suffix can invoke the loader through its original cell,
+including reentry and later cache reads. -/
+theorem swap_after_prefix {W : World} {α β : Type} (prefixRun : M W α)
+    (env other : Env) (alias output movedName : Name) (i j : Nat)
+    (callback moved : Func) (cbArrow : callback.kind = .arrow) (cbSelf : callback.self = false)
+    (movedArrow : moved.kind = .arrow) (movedSelf : moved.self = false)
+    (fuel : Nat) (continuation : M W β) (distinct : i ≠ j)
+    (checked : ∀ start value s, prefixRun start = .ok value s →
+      ClosureWriteReady s i env output ∧ ClosureWriteReady s j other movedName ∧
+      ∃ cell addr closed factoryName,
+        WrapperAt s env alias cell addr closed factoryName ["a", "b"] (loader "a" "b") ∧
+        cell.region ≠ j + 1 ∧ addr.region ≠ j + 1) :
+    let create := runUnit fuel env i (.decl .var output (.call (.var alias) [.func callback]))
+    let arrow := runUnit fuel other j (.decl .var movedName (.func moved))
+    (prefixRun >>= fun _ => create >>= fun _ => arrow >>= fun _ => continuation) =
+      (prefixRun >>= fun _ => arrow >>= fun _ => create >>= fun _ => continuation) := by
+  intro create arrow
+  apply M.bind_congr_ok
+  intro start value s prefixDone
+  obtain ⟨outReady, movedReady, cell, addr, closed, factoryName, factoryAt, hc, ha⟩ :=
+    checked start value s prefixDone
+  exact wrapper_arrow_all_outcomes factoryAt outReady movedReady distinct hc ha callback moved
+    cbArrow cbSelf rfl rfl movedArrow movedSelf fuel continuation
+
 end CoreJS.WrapperLoader
