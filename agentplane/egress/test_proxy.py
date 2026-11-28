@@ -1096,7 +1096,9 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         async with (
             go_replica(settings[0], database_url=history_db_url, directory=tmp_path) as first,
             go_replica(settings[1], database_url=history_db_url, directory=tmp_path) as second,
-            aiohttp.ClientSession() as client,
+            # Keep the same connection across watch recovery. aiohttp's default 15s idle
+            # timeout can expire while health() waits on the separate gRPC connection.
+            aiohttp.ClientSession(connector=aiohttp.TCPConnector(keepalive_timeout=120)) as client,
         ):
 
             async def get(

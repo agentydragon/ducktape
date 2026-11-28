@@ -26,8 +26,8 @@ const (
 	journalRepackBatchEntries  = eventblock.MaxEntries
 	journalRepackBatchBytes    = eventblock.MaxBytes
 	journalRepackStoredBytes   = eventblock.MaxBytes + (64 << 10)
-	journalLockWait            = 100 * time.Millisecond
-	journalLockHold            = 250 * time.Millisecond
+	DefaultJournalLockWait     = 5 * time.Second
+	DefaultJournalLockHold     = 250 * time.Millisecond
 )
 
 var (
@@ -35,8 +35,24 @@ var (
 	ErrJournalBatchChanged = errors.New("journal input changed during preparation")
 )
 
+// JournalLockBudget bounds acquisition and hold time separately for each apply transaction.
+type JournalLockBudget struct {
+	Wait time.Duration
+	Hold time.Duration
+}
+
+func (b JournalLockBudget) Validate() error {
+	for _, d := range []time.Duration{b.Wait, b.Hold} {
+		if err := postgres.ValidateMaintenanceLockDuration(d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // JournalCompactionOptions controls pacing and bounded maintenance runs.
 type JournalCompactionOptions struct {
+	LockBudget JournalLockBudget
 	// WaitForIdle keeps a single-Session maintenance job on its current batch
 	// after the short retries are exhausted. Fleet scans yield to other Sessions.
 	WaitForIdle          bool
@@ -121,6 +137,12 @@ func (s *Store) CompactJournal(ctx context.Context, sessionID string, apply bool
 // batch. Progress stays in memory; a later invocation safely scans from the start.
 func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string, apply bool, options JournalCompactionOptions) (JournalCompactionResult, error) {
 	var result JournalCompactionResult
+	if options.LockBudget == (JournalLockBudget{}) {
+		options.LockBudget = JournalLockBudget{Wait: DefaultJournalLockWait, Hold: DefaultJournalLockHold}
+	}
+	if err := options.LockBudget.Validate(); err != nil {
+		return result, err
+	}
 	if options.MaxBlocksPerTxn == 0 {
 		options.MaxBlocksPerTxn = DefaultJournalBlocksPerTxn
 	}
@@ -176,7 +198,7 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 			}
 			plan := pending[0]
 			if apply {
-				hold, err := s.applyJournalRepack(ctx, sessionID, state, plan)
+				hold, err := s.applyJournalRepack(ctx, sessionID, state, plan, options.LockBudget)
 				addLockHold(&result, hold)
 				if errors.Is(err, ErrJournalBatchChanged) || errors.Is(err, ErrJournalBusy) {
 					pending = nil // Re-read from the last committed cursor.
@@ -651,8 +673,8 @@ func validateJournalRepackCoverage(entries []repackEntry, outputs []repackStorag
 	return nil
 }
 
-func (s *Store) applyJournalRepack(ctx context.Context, sessionID string, previous journalRepackState, plan repackPlan) (time.Duration, error) {
-	return s.withJournalSessionLock(ctx, sessionID, func(txCtx context.Context, tx *sql.Tx, cursor uint64) error {
+func (s *Store) applyJournalRepack(ctx context.Context, sessionID string, previous journalRepackState, plan repackPlan, budget JournalLockBudget) (time.Duration, error) {
+	return s.withJournalSessionLock(ctx, sessionID, budget, func(txCtx context.Context, tx *sql.Tx, cursor uint64) error {
 		if cursor < previous.opening {
 			return errors.New("sampler Session cursor regressed below repack opening watermark")
 		}
@@ -807,14 +829,14 @@ func insertRepackOutputs(ctx context.Context, tx *sql.Tx, sessionID string, outp
 	return nil
 }
 
-func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, apply func(context.Context, *sql.Tx, uint64) error) (time.Duration, error) {
-	transactionCtx, cancel := context.WithTimeout(ctx, journalLockWait+journalLockHold)
+func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, budget JournalLockBudget, apply func(context.Context, *sql.Tx, uint64) error) (time.Duration, error) {
+	transactionCtx, cancel := context.WithTimeout(ctx, budget.Wait+budget.Hold)
 	defer cancel()
 	var holdTimer *time.Timer
 	var lockStarted time.Time
 	var holdExceeded atomic.Bool
 	err := postgres.Transaction(transactionCtx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(transactionCtx, `SET LOCAL lock_timeout='100ms'`); err != nil {
+		if _, err := tx.ExecContext(transactionCtx, `SELECT set_config('lock_timeout',$1,true)`, fmt.Sprintf("%dms", budget.Wait.Milliseconds())); err != nil {
 			return err
 		}
 		var cursor int64
@@ -826,7 +848,7 @@ func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, ap
 			return err
 		}
 		lockStarted = time.Now()
-		holdTimer = time.AfterFunc(journalLockHold, func() {
+		holdTimer = time.AfterFunc(budget.Hold, func() {
 			holdExceeded.Store(true)
 			cancel()
 		})
@@ -852,7 +874,7 @@ func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, ap
 		case ctx.Err() != nil:
 			return hold, ctx.Err()
 		case holdExceeded.Load():
-			return hold, fmt.Errorf("%w: lock hold exceeded %s: %w", ErrJournalBusy, journalLockHold, err)
+			return hold, fmt.Errorf("%w: lock hold exceeded %s: %w", ErrJournalBusy, budget.Hold, err)
 		case transactionCtx.Err() == context.DeadlineExceeded:
 			return hold, fmt.Errorf("%w: transaction deadline: %w", ErrJournalBusy, err)
 		}
@@ -860,8 +882,8 @@ func (s *Store) withJournalSessionLock(ctx context.Context, sessionID string, ap
 	if isPGError && pgErr.Code == "55P03" {
 		err = fmt.Errorf("%w: session row lock timeout", ErrJournalBusy)
 	}
-	if err == nil && hold > journalLockHold {
-		err = fmt.Errorf("%w: lock held for %s, limit %s", ErrJournalBusy, hold, journalLockHold)
+	if err == nil && hold > budget.Hold {
+		err = fmt.Errorf("%w: lock held for %s, limit %s", ErrJournalBusy, hold, budget.Hold)
 	}
 	return hold, err
 }

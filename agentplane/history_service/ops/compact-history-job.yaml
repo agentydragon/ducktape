@@ -34,6 +34,8 @@ spec:
             - compact-history
             - --session
             - "91e0ad22-4ae2-45b0-a499-f617d54eb9ca"
+            - --lock-wait=250ms
+            - --guard-check-interval=5s
             - --dry-run
             - --bytes-per-second
             - "1048576"

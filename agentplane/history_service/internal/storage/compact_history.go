@@ -32,7 +32,7 @@ const (
 	DefaultRepackBlocksPerTxn = 4
 	// DefaultRepackBatchBudget bounds each append-lock transaction, including row-lock wait.
 	DefaultRepackBatchBudget       = 5 * time.Second
-	repackLockWaitTimeout          = 250 * time.Millisecond
+	DefaultRepackLockWait          = 250 * time.Millisecond
 	repackBatchMaxAttempts         = 3
 	repackUnpackPhase        int16 = 0
 	repackPackPhase          int16 = 1
@@ -430,6 +430,9 @@ func (s *Store) retryRepackBatch(ctx context.Context, sessionID uuid.UUID, opera
 }
 
 func (s *Store) runRepackBatchTransaction(ctx context.Context, sessionID uuid.UUID, operation string, work func(context.Context, *sql.Tx) error) error {
+	if err := postgres.ValidateMaintenanceLockDuration(s.options.RepackLockWait); err != nil {
+		return err
+	}
 	budget := s.options.RepackBatchBudget
 	contextBudget := budget * 9 / 10
 	if contextBudget <= 0 {
@@ -441,7 +444,7 @@ func (s *Store) runRepackBatchTransaction(ctx context.Context, sessionID uuid.UU
 	var lockAcquiredAt time.Time
 	err := postgres.NamedTransaction(batchCtx, s.db, sql.TxOptions{}, "history.repack_"+operation, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(batchCtx, `SELECT set_config('lock_timeout',$1,true),set_config('transaction_timeout',$2,true)`,
-			repackLockWaitTimeout.String(), budget.String()); err != nil {
+			fmt.Sprintf("%dms", s.options.RepackLockWait.Milliseconds()), budget.String()); err != nil {
 			return err
 		}
 		waitStarted := time.Now()
@@ -476,7 +479,7 @@ func (s *Store) runRepackBatchTransaction(ctx context.Context, sessionID uuid.UU
 	}
 	slog.InfoContext(ctx, "History repack batch transaction",
 		"session_id", sessionID, "operation", operation,
-		"lock_wait", lockWait, "lock_wait_budget", repackLockWaitTimeout,
+		"lock_wait", lockWait, "lock_wait_budget", s.options.RepackLockWait,
 		"lock_hold", lockHold, "context_budget", contextBudget, "budget", budget, "outcome", outcome)
 	return err
 }

@@ -35,6 +35,8 @@ spec:
           args:
             - compact-journal
             - --all
+            - --lock-wait=5s
+            - --lock-hold=250ms
             - --dry-run
           env:
             - name: AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL

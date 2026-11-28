@@ -12,21 +12,23 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	"github.com/agentydragon/ducktape/agentplane/history_service/backfill"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 )
 
 type historyMaintenanceOptions struct {
-	session            uuid.UUID
-	all                bool
-	apply              bool
-	bytesPerSecond     int64
-	maxBlocksPerTxn    int
-	batchBudget        time.Duration
-	pauseFile          string
-	guardFile          string
-	maxReplicaLagBytes int64
-	minFreeBytes       int64
-	guardMaxAge        time.Duration
+	lockWait, guardInterval time.Duration
+	session                 uuid.UUID
+	all                     bool
+	apply                   bool
+	bytesPerSecond          int64
+	maxBlocksPerTxn         int
+	batchBudget             time.Duration
+	pauseFile               string
+	guardFile               string
+	maxReplicaLagBytes      int64
+	minFreeBytes            int64
+	guardMaxAge             time.Duration
 }
 
 func parseHistoryMaintenanceOptions(command string, args []string) (historyMaintenanceOptions, error) {
@@ -39,7 +41,13 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 	var maxBlocksPerTxn int
 	var batchBudget time.Duration
 	var pauseFile, guardFile string
-	var guardMaxAge time.Duration
+	var guardMaxAge, guardInterval time.Duration
+	defaultLockWait := backfill.DefaultLockWait
+	if command == "compact-history" {
+		defaultLockWait = storage.DefaultRepackLockWait
+	}
+	lockWait := flags.Duration("lock-wait", defaultLockWait, "PostgreSQL lock acquisition timeout per transaction")
+
 	if command == "compact-history" {
 		flags.Int64Var(&bytesPerSecond, "bytes-per-second", 1<<20, "maximum source bytes processed per second")
 		flags.IntVar(&maxBlocksPerTxn, "max-blocks-per-txn", storage.DefaultRepackBlocksPerTxn, "maximum output blocks per packing transaction")
@@ -50,7 +58,7 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 		flags.Int64Var(&maxReplicaLagBytes, "max-replica-lag-bytes", 0, "pause above this replica replay lag (requires --guard-file)")
 		flags.Int64Var(&minFreeBytes, "min-free-bytes", 0, "pause below this free-space value (requires --guard-file)")
 		flags.DurationVar(&guardMaxAge, "guard-max-age", 60*time.Second, "maximum age of the guard file before pausing")
-		guardMaxAge = 60 * time.Second
+		flags.DurationVar(&guardInterval, "guard-check-interval", 5*time.Second, "delay between checks while paused")
 	}
 	if err := flags.Parse(args); err != nil {
 		return historyMaintenanceOptions{}, err
@@ -58,7 +66,11 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 	if flags.NArg() != 0 || *apply == *dryRun || *all == (*session != "") {
 		return historyMaintenanceOptions{}, errors.New("use exactly one of --session UUID / --all and --dry-run / --apply")
 	}
+	if err := postgres.ValidateMaintenanceLockDuration(*lockWait); err != nil {
+		return historyMaintenanceOptions{}, fmt.Errorf("lock-wait: %w", err)
+	}
 	options := historyMaintenanceOptions{
+		lockWait: *lockWait, guardInterval: guardInterval,
 		all: *all, apply: *apply, bytesPerSecond: bytesPerSecond, maxBlocksPerTxn: maxBlocksPerTxn, batchBudget: batchBudget, pauseFile: pauseFile, guardFile: guardFile,
 		maxReplicaLagBytes: maxReplicaLagBytes, minFreeBytes: minFreeBytes, guardMaxAge: guardMaxAge,
 	}
@@ -66,7 +78,7 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 		if options.maxBlocksPerTxn < 1 || options.maxBlocksPerTxn > eventblock.MaxEntries {
 			return historyMaintenanceOptions{}, fmt.Errorf("max-blocks-per-txn must be in [1,%d]", eventblock.MaxEntries)
 		}
-		if options.bytesPerSecond <= 0 || options.batchBudget <= 0 || options.maxReplicaLagBytes < 0 ||
+		if options.guardInterval <= 0 || options.bytesPerSecond <= 0 || options.batchBudget <= 0 || options.maxReplicaLagBytes < 0 ||
 			options.minFreeBytes < 0 || options.guardMaxAge <= 0 {
 			return historyMaintenanceOptions{}, errors.New("invalid repack rate, transaction budget, or guard threshold")
 		}
@@ -99,7 +111,7 @@ func runSettleHistory(ctx context.Context, args []string) error {
 	}
 	defer db.Close()
 	run := func(id uuid.UUID) error {
-		result, err := backfill.RunSession(ctx, db, id, options.apply)
+		result, err := backfill.RunSession(ctx, db, id, options.apply, options.lockWait)
 		slog.InfoContext(ctx, "historical settlement Session", "session_id", id, "apply", options.apply,
 			"items", result.Items, "rows", result.Rows, "logical_payload_bytes", result.PayloadBytes)
 		return err

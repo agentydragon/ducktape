@@ -35,6 +35,7 @@ spec:
             - settle-history
             - --session
             - "58e5d7cc-8e45-46e8-bf7b-8e8a79b28d12"
+            - --lock-wait=1s
             - --dry-run
           env:
             - name: AGENTPLANE_HISTORY_SERVICE_DATABASE_URL

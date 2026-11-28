@@ -104,7 +104,7 @@ func TestHistoricalSettlementPreservesFoldedContentAndCorrectsPastReaders(t *tes
 	if f.deltaEvidence(t) == 0 {
 		t.Fatal("fixture has no folded delta evidence")
 	}
-	dry, err := RunSession(t.Context(), f.db, f.id, false)
+	dry, err := RunSession(t.Context(), f.db, f.id, false, DefaultLockWait)
 	if err != nil || dry.Items != 1 || dry.Rows != 4 || dry.PayloadBytes <= 0 {
 		t.Fatalf("dry run: %+v %v", dry, err)
 	}
@@ -112,7 +112,7 @@ func TestHistoricalSettlementPreservesFoldedContentAndCorrectsPastReaders(t *tes
 		f.count(t, "session_event_removed_range") != 0 || f.count(t, "session_projection_lease") != 0 || f.deltaEvidence(t) == 0 {
 		t.Fatal("dry run changed history or projection metadata")
 	}
-	applied, err := RunSession(t.Context(), f.db, f.id, true)
+	applied, err := RunSession(t.Context(), f.db, f.id, true, DefaultLockWait)
 	if err != nil || applied != dry {
 		t.Fatalf("apply: %+v %v, want %+v", applied, err, dry)
 	}
@@ -136,7 +136,7 @@ func TestHistoricalSettlementPreservesFoldedContentAndCorrectsPastReaders(t *tes
 	if _, err := f.history.Append(t.Context(), f.id, f.span.Entries); err != nil {
 		t.Fatal(err)
 	}
-	if again, err := RunSession(t.Context(), f.db, f.id, true); err != nil || again != (Result{}) || f.count(t, "session_event") != 5 {
+	if again, err := RunSession(t.Context(), f.db, f.id, true, DefaultLockWait); err != nil || again != (Result{}) || f.count(t, "session_event") != 5 {
 		t.Fatalf("rerun/replay: %+v %v", again, err)
 	}
 }
@@ -160,11 +160,11 @@ func TestHistoricalSettlementReadsAndPrunesPackedHistory(t *testing.T) {
 	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM session_event_block WHERE session_id=$1", id).Scan(&blocks); err != nil || blocks == 0 {
 		t.Fatalf("blocks %d: %v", blocks, err)
 	}
-	dry, err := RunSession(t.Context(), db, id, false)
+	dry, err := RunSession(t.Context(), db, id, false, DefaultLockWait)
 	if err != nil || dry.Items != 1 || dry.Rows != 160 || dry.PayloadBytes <= 0 {
 		t.Fatalf("dry run: %+v, %v", dry, err)
 	}
-	applied, err := RunSession(t.Context(), db, id, true)
+	applied, err := RunSession(t.Context(), db, id, true, DefaultLockWait)
 	if err != nil || applied != dry {
 		t.Fatalf("apply: %+v, %v", applied, err)
 	}
@@ -189,7 +189,7 @@ func TestBackfillRetainsDeltasReferencedAfterTheirCompletion(t *testing.T) {
 	span.Stderr("test diagnostic citing an old native chunk")
 	span.Entries[len(span.Entries)-1].Event.SourceSequences = []uint64{3}
 	f := retained(t, span)
-	result, err := RunSession(t.Context(), f.db, f.id, true)
+	result, err := RunSession(t.Context(), f.db, f.id, true, DefaultLockWait)
 	if err != nil || result != (Result{}) || f.count(t, "session_event") != 9 || f.count(t, "session_projection_lease") != 0 {
 		t.Fatalf("referenced span: %+v %v", result, err)
 	}
@@ -208,7 +208,7 @@ func TestBackfillFencesProjectionAndRefusesAChangedPrefix(t *testing.T) {
 	}); err != nil || held == nil {
 		t.Fatalf("acquire: %v", err)
 	}
-	if _, err := RunSession(t.Context(), f.db, f.id, true); !errors.Is(err, ErrProjectionBusy) {
+	if _, err := RunSession(t.Context(), f.db, f.id, true, DefaultLockWait); !errors.Is(err, ErrProjectionBusy) {
 		t.Fatalf("busy projection: %v", err)
 	}
 	if f.count(t, "session_event_settlement") != 0 {
@@ -217,7 +217,7 @@ func TestBackfillFencesProjectionAndRefusesAChangedPrefix(t *testing.T) {
 	if _, err := f.db.Exec("UPDATE session_projection_lease SET expires_at = clock_timestamp() - interval '1 second' WHERE session_id = $1", f.id); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := RunSession(t.Context(), f.db, f.id, true); err != nil || result.Rows != 200 {
+	if result, err := RunSession(t.Context(), f.db, f.id, true, DefaultLockWait); err != nil || result.Rows != 200 {
 		t.Fatalf("expired projection lease: %+v %v", result, err)
 	}
 	// A projector holding a fetched page from before settlement cannot resurrect its evidence.
@@ -230,7 +230,7 @@ func TestBackfillFencesProjectionAndRefusesAChangedPrefix(t *testing.T) {
 	if _, err := f.history.Append(t.Context(), f.id, f.span.Entries[len(f.span.Entries)-1:]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := settleCompletion(t.Context(), f.db, f.id, found.completions[0], found, true); !errors.Is(err, ErrSessionAdvanced) {
+	if _, err := settleCompletion(t.Context(), f.db, f.id, found.completions[0], found, true, DefaultLockWait); !errors.Is(err, ErrSessionAdvanced) {
 		t.Fatalf("advanced prefix: %v", err)
 	}
 	if f.count(t, "session_projection_lease") != 0 {
@@ -252,7 +252,7 @@ func TestBackfillRollsBackDeletionAndMetadataTogether(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if _, err := RunSession(t.Context(), f.db, f.id, true); err == nil {
+	if _, err := RunSession(t.Context(), f.db, f.id, true, DefaultLockWait); err == nil {
 		t.Fatal("apply ignored a correction failure")
 	}
 	for table, want := range map[string]int64{
@@ -276,7 +276,7 @@ func TestBackfillKeepsAnIneligibleSpan(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := RunSession(t.Context(), f.db, f.id, true); err != nil || result != (Result{}) || f.count(t, "session_event") != 8 {
+	if result, err := RunSession(t.Context(), f.db, f.id, true, DefaultLockWait); err != nil || result != (Result{}) || f.count(t, "session_event") != 8 {
 		t.Fatalf("ineligible completion: %+v %v", result, err)
 	}
 }

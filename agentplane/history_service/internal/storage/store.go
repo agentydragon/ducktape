@@ -159,6 +159,7 @@ type Options struct {
 	EventPackers             map[historypb.EventKind]*eventblock.Packer
 	RepackBlocksPerTxn       int
 	RepackBatchBudget        time.Duration
+	RepackLockWait           time.Duration
 	SettleDeltas             bool
 	CompactDeltas            bool
 	CompactExecutionEvidence bool
@@ -167,6 +168,9 @@ type Options struct {
 func NewStore(db *sql.DB, options Options) *Store {
 	if options.RepackBlocksPerTxn <= 0 {
 		options.RepackBlocksPerTxn = DefaultRepackBlocksPerTxn
+	}
+	if options.RepackLockWait == 0 {
+		options.RepackLockWait = DefaultRepackLockWait
 	}
 	if options.RepackBatchBudget <= 0 {
 		options.RepackBatchBudget = DefaultRepackBatchBudget

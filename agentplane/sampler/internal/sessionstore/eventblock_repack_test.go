@@ -280,7 +280,7 @@ func TestRepackCompareAndSwapDetectsLiveWriterSealingPreparedRows(t *testing.T) 
 	if got := postgres.Count(t, live.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1 AND first_sequence=1`, session.ID); got != 1 {
 		t.Fatalf("live writer did not seal the prepared rows: %d blocks", got)
 	}
-	if _, err := store.applyJournalRepack(t.Context(), session.ID, state, plan); !errors.Is(err, ErrJournalBatchChanged) {
+	if _, err := store.applyJournalRepack(t.Context(), session.ID, state, plan, JournalLockBudget{Wait: DefaultJournalLockWait, Hold: DefaultJournalLockHold}); !errors.Is(err, ErrJournalBatchChanged) {
 		t.Fatalf("stale prepared batch error=%v, want ErrJournalBatchChanged", err)
 	}
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1 AND first_sequence=1`, session.ID); got != 1 {
@@ -365,8 +365,8 @@ func TestRepackKeepsLiveReadsAndAppendsAvailableDuringBoundedLock(t *testing.T) 
 	if outcome.err != nil || !outcome.result.Completed {
 		t.Fatalf("concurrent repack result=%+v err=%v", outcome.result, outcome.err)
 	}
-	if outcome.result.LockHoldMax <= 0 || outcome.result.LockHoldMax > journalLockHold {
-		t.Fatalf("measured lock hold=%s, limit=%s", outcome.result.LockHoldMax, journalLockHold)
+	if outcome.result.LockHoldMax <= 0 || outcome.result.LockHoldMax > DefaultJournalLockHold {
+		t.Fatalf("measured lock hold=%s, limit=%s", outcome.result.LockHoldMax, DefaultJournalLockHold)
 	}
 	select {
 	case err := <-appendDone:
@@ -641,7 +641,7 @@ func TestRepackSplitBlockPreservesPendingSamplingProjection(t *testing.T) {
 	if err != nil || len(batches) < 2 {
 		t.Fatalf("split into %d batches: %v", len(batches), err)
 	}
-	if _, err := store.applyJournalRepack(t.Context(), session.ID, state, batches[0]); err != nil {
+	if _, err := store.applyJournalRepack(t.Context(), session.ID, state, batches[0], JournalLockBudget{Wait: DefaultJournalLockWait, Hold: DefaultJournalLockHold}); err != nil {
 		t.Fatal(err)
 	}
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence BETWEEN $2 AND $3`, session.ID, cursor+17, cursor+40); got != 24 {
@@ -673,11 +673,29 @@ func TestRepackMigratesSmallerLegacySource(t *testing.T) {
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, through), want)
 }
 
+func TestRepackUsesConfiguredTransactionLocalLockWait(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	_, err := store.withJournalSessionLock(t.Context(), session.ID, JournalLockBudget{Wait: 310 * time.Millisecond, Hold: time.Second}, func(ctx context.Context, tx *sql.Tx, _ uint64) error {
+		var timeout string
+		if err := tx.QueryRowContext(ctx, "SHOW lock_timeout").Scan(&timeout); err != nil {
+			return err
+		}
+		if timeout != "310ms" {
+			t.Errorf("lock_timeout = %q, want 310ms", timeout)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRepackRetriesOnlyItsOwnDeadline(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	run := func(ctx context.Context, query string) error {
-		_, err := store.withJournalSessionLock(ctx, session.ID, func(txCtx context.Context, tx *sql.Tx, _ uint64) error {
+		_, err := store.withJournalSessionLock(ctx, session.ID, JournalLockBudget{Wait: 50 * time.Millisecond, Hold: 75 * time.Millisecond}, func(txCtx context.Context, tx *sql.Tx, _ uint64) error {
 			_, err := tx.ExecContext(txCtx, query)
 			return err
 		})
