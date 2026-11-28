@@ -207,3 +207,35 @@ complete Zod program linked or ran in Lean.
 p=//devinfra/js/debundle/x/split_proof/integration/library_splits
 bbr test "$p:static_star_exports_test" "$p:zod_v3_linked_diagnostic" --test_output=all
 ```
+
+## Linking the imported namespace's member cells
+
+The [namespace diagnostic](https://app.buildbuddy.io/invocation/f3c280e7-20d2-4021-b01b-d8e48439a269)
+uses the same resolved star records and the ordinary CoreJS scope and import
+resolver. It allocates cells for the declarations in the parsed source but
+does not initialize hoisted bindings, evaluate snapshots, or lower or run the
+providers. Its internal declaration shells do not produce an executable
+program. An import of a namespace has a distinct binding address associated
+with the target module's view of its export addresses.
+
+For both exact Zod trees, that view for `index.js`'s `z` points to
+`external.js` and has the same 107 string keys observed by the Node
+consumer. Every member address also appears under the same named export at
+the public entry. In particular, `z.defaultErrorMap`, the top-level named
+export, and the bindings of both internal consumers alias the locale
+facade's `default` cell. The public `default` has a separate cell from
+`z`: Node observes the same namespace object through both names after
+evaluation, which the address probe does not attempt to reproduce.
+
+A separate small graph runs with real CoreJS provider bodies. The view built
+from its ordinary link sees a reference error before the member's cell
+initializes and sees the updated value after module evaluation. Redirecting
+the forwarding export to a different provider changes the value read from
+the view. This checks a lookup of the current cell contents instead of a copy
+made at link time.
+
+The address probe does not model JavaScript's namespace object, its property
+descriptors, enumeration order, or object identity. Moving the original locale
+imports, executing provider bodies, and evaluating the index snapshot in
+CoreJS remain separate obligations. Ordinary emit and readback still refuse
+the complete Zod input.

@@ -65,7 +65,7 @@ function schedule(entry, records) {
   return { order, cycles, requests, records };
 }
 
-export function inspect({ original, candidate, manifest, worker }) {
+export function inspect({ original, candidate, manifest, worker, observedNamespaceKeys }) {
   const { entry, chunks } = JSON.parse(readFileSync(manifest, "utf8"));
   const changed = chunks.find(({ spec }) => spec);
   const spec = JSON.parse(readFileSync(changed.spec, "utf8"));
@@ -91,7 +91,19 @@ export function inspect({ original, candidate, manifest, worker }) {
     [entry, "z"],
     [entry, "default"],
   ];
+  const namespaceInput = (trees) => ({
+    entry,
+    files: trees,
+    namespace: "z",
+    queries: [
+      ["v3/locales/en.js", "default"],
+      ["v3/errors.js", "defaultErrorMap"],
+      ["v3/helpers/parseUtil.js", "defaultErrorMap"],
+    ],
+  });
   const inputs = [
+    { kind: "namespaceLinks", input: namespaceInput(asts) },
+    { kind: "namespaceLinks", input: namespaceInput({ ...asts, ...files }) },
     { kind: "starMetadata", input: { files: asts, queries } },
     { kind: "starMetadata", input: { files: { ...asts, ...files }, queries } },
     { kind: "deploymentDiagnostic", input: { entry, source: asts[changed.path], spec, fixed, files } },
@@ -108,7 +120,7 @@ export function inspect({ original, candidate, manifest, worker }) {
     })
   );
   for (const row of results) assert.ok(row.output, JSON.stringify(row));
-  const [beforeStar, afterStar, deployment, ...probes] = results.map(({ output }) => output);
+  const [beforeCells, afterCells, beforeStar, afterStar, deployment, ...probes] = results.map(({ output }) => output);
   const starOrigins = [
     [changed.path, "default"],
     [changed.path, "default"],
@@ -121,10 +133,29 @@ export function inspect({ original, candidate, manifest, worker }) {
     starOrigins.map((output) => ({ output }))
   );
   assert.deepEqual(afterStar, beforeStar);
+  function compareNamespaceCells({ target, members, exports, locals, namespaceBinding }) {
+    assert.equal(target, "v3/external.js");
+    assert.deepEqual(members.map(([name]) => name).sort(), observedNamespaceKeys);
+    const cells = Object.fromEntries(members);
+    const publicCells = Object.fromEntries(exports);
+    for (const [name, cell] of members) assert.deepEqual(publicCells[name], cell, name);
+    assert.deepEqual(publicCells.z, namespaceBinding);
+    assert.notDeepEqual(publicCells.default, namespaceBinding);
+    for (const [binding, cell] of locals) assert.deepEqual(cells.defaultErrorMap, cell, binding.join(":"));
+    return {
+      target,
+      keys: members.length,
+      defaultErrorMap: cells.defaultErrorMap,
+      namespaceBinding,
+      defaultSnapshotCell: publicCells.default,
+    };
+  }
+  const namespaceCells = [beforeCells, afterCells].map(compareNamespaceCells);
   const graph = (tree) =>
     schedule(entry, Object.fromEntries(Object.entries(tree).map(([file, parsed]) => [file, record(parsed, file)])));
   const report = {
     deployment,
+    namespaceCells,
     starOrigins: queries.map((query, i) => ({ query, origin: starOrigins[i] })),
     before: graph(before),
     after: graph(after),
@@ -135,6 +166,7 @@ export function inspect({ original, candidate, manifest, worker }) {
   console.log(
     JSON.stringify({
       deployment,
+      namespaceCells,
       starOrigins: report.starOrigins,
       before: report.before.order,
       after: report.after.order,

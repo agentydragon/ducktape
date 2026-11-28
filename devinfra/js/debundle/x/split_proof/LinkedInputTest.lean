@@ -446,7 +446,32 @@ private def starReadback (input : Json) : Except String Json := do
     let some addr := exports.lookup name | throw s!"{path}: no linked export {name}"
     let some (.bool val) := (ready.cellAt addr).bind (·.value) | throw s!"{path}: not a boolean: {name}"
     return Json.mkObj [("cell", toJson [addr.region, addr.index]), ("value", toJson val)]
-  return Json.mkObj [("order", toJson program.evalOrder), ("exports", toJson values)]
+  let mut result := [("order", toJson program.evalOrder), ("exports", toJson values)]
+  if let .ok (path, name) := input.getObjValAs? (String × String) "namespaceRead" then
+    let view ← CoreJS.StaticStarExports.NamespaceView.ofLinked path linked.linked
+    let read initial := view.read name initial
+    let .throw (.error .reference _) _ := read linked.ready
+      | throw "namespace read should see the uninitialized exported cell"
+    let .ok (.bool value) _ := read ready | throw "namespace read did not see the final boolean"
+    let .ok .undef _ := view.read "missing" ready | throw "missing namespace member did not yield undefined"
+    result := result ++ [("liveRead", toJson value)]
+  return Json.mkObj result
+
+private def namespaceLinks (input : Json) : Except String Json := do
+  let graph ← CoreJS.StaticStarExports.resolve (← input.getObjVal? "files")
+  let entry ← input.getObjValAs? String "entry"
+  let localName ← input.getObjValAs? String "namespace"
+  let links ← graph.linkNamespaceCells entry
+  let localCell ← links.localCell entry localName
+  let view ← links.viewAt localCell
+  let addr (cell : CoreJS.Addr) := toJson [cell.region, cell.index]
+  let members := view.members.map fun (name, cell) => (name, addr cell)
+  let publicExports := (← links.exports entry).map fun (name, cell) => (name, addr cell)
+  let queries ← input.getObjValAs? (List (String × String)) "queries"
+  let locals ← queries.mapM fun (path, name) => do
+    return ((path, name), addr (← links.localCell path name))
+  return Json.mkObj [("target", toJson view.target), ("members", toJson members),
+    ("exports", toJson publicExports), ("locals", toJson locals), ("namespaceBinding", addr localCell)]
 
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
@@ -467,6 +492,8 @@ private def fixtures (input : Json) : Except String Json := do
                 pure (structural (← fixture.getObjVal? "input"))
               | "structuralSparseHole" =>
                 pure (structuralSparseHole (← fixture.getObjVal? "input"))
+              | "namespaceLinks" =>
+                pure (namespaceLinks (← fixture.getObjVal? "input"))
               | "starMetadata" =>
                 pure (starMetadata (← fixture.getObjVal? "input"))
               | "starReadback" =>
