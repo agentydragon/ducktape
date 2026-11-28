@@ -68,13 +68,15 @@ function sandboxNotice(sandbox: EnvironmentDescriptor | undefined, inventoryFres
 export interface ThreadPageProps {
   threadId: string;
   settingsOpen?: boolean;
+  /** Several Threads share the page in a docked workspace, which owns the document title and favicon. */
+  embedded?: boolean;
 }
 
 export function ThreadPage(props: ThreadPageProps): JSX.Element {
   return <SelectedThreadPage key={props.threadId} {...props} />;
 }
 
-function SelectedThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
+function SelectedThreadPage({ threadId, settingsOpen = false, embedded = false }: ThreadPageProps): JSX.Element {
   const sync = useThreadSync();
   const [historySession, setHistorySession] = useState<string | null>(null);
   const openDeliveryHistory = () => setHistorySession(threadId);
@@ -165,9 +167,10 @@ function SelectedThreadPage({ threadId, settingsOpen = false }: ThreadPageProps)
     ? appDocumentTitle("/", true)
     : threadDocumentTitle(thread?.metadata.name, threadId, topbarStatus);
   useEffect(() => {
+    if (embedded) return;
     document.title = documentTitle;
-  }, [documentTitle]);
-  useEffect(() => installThreadFavicon(topbarStatus.kind), [topbarStatus.kind]);
+  }, [documentTitle, embedded]);
+  useEffect(() => (embedded ? undefined : installThreadFavicon(topbarStatus.kind)), [topbarStatus.kind, embedded]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
