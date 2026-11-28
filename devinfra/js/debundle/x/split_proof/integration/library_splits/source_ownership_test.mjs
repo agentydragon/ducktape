@@ -13,6 +13,7 @@ import { split } from "../../translation/testing/split.mjs";
 import { attribute, composeAcorn, sha256 } from "./source_ownership.mjs";
 import { smoke } from "./smoke.mjs";
 import {
+  checkLocutilForwarder,
   checkLocutilOutput,
   locutilConsumer,
   locutilEvidence,
@@ -390,10 +391,16 @@ for (const sourceArg of locutil ? args : [mode, ...args]) {
       assert.deepEqual(requested.best, [{ owner: modeOwner, together: 4, unrelatedKnown: 0 }]);
       const emitted = rust.status === "emitted";
       if (id === "source_files") assert(emitted, JSON.stringify(rust));
-      assert(emitted || rust.status === "refused", JSON.stringify(rust));
+      else {
+        assert.equal(rust.status, "refused", JSON.stringify(rust));
+        assert.match(rust.diagnostic, /Pass 1: mutual constraining cycle/);
+        assert.match(rust.diagnostic, /unit:36\) --at-init--> TokenType .*unit:13\)/);
+        assert.match(rust.diagnostic, /unit:64\) --at-init--> Position .*unit:35\)/);
+      }
       const group = emitted ? getGroup(row.rust.grouping) : null;
       const owner = rust.routes[modeOwner];
       let rustLocationConsumer = null;
+      let forwardedEntry = null;
       if (emitted) {
         assert.deepEqual(group.best, [{ owner, together: 4, unrelatedKnown: 0 }]);
         assert.equal(group.unknownOutput, 0);
@@ -406,6 +413,17 @@ for (const sourceArg of locutil ? args : [mode, ...args]) {
         );
         assert.deepEqual(rustLocationConsumer.missingExports, []);
         if (id === "locutil") assert.deepEqual(rustLocationConsumer.extraExports, []);
+        else {
+          forwardedEntry = await checkLocutilForwarder({
+            root,
+            routes: rust.output.files.map(({ owner }) => owner),
+            entry: rust.routes[placement.entry],
+            owner,
+            target: path.join(work, "forwarded"),
+            expected: consumer,
+            parse: (text) => acorn.parse(text, { ecmaVersion: "latest", sourceType: "module" }),
+          });
+        }
       }
       const strictLocationConsumer = accepted
         ? await checkLocutilOutput(path.join(strictOut, placement.entry), path.join(strictOut, modeOwner), consumer)
@@ -442,6 +460,7 @@ for (const sourceArg of locutil ? args : [mode, ...args]) {
           status: rust.status,
           group,
           locationConsumer: rustLocationConsumer,
+          ...(forwardedEntry && { forwardedEntry }),
           outputFiles: rust.output.files.length,
           ownerFile: rust.output.files.find((file) => file.owner === owner) ?? null,
           ...(rust.diagnostic && { diagnostic: rust.diagnostic }),

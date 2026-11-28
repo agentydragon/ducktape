@@ -79,6 +79,29 @@ entry exports: `keywords`, `parse3`, `parseExpressionAt2`, `tokenizer2`,
 namespace. The concentrated request has no artifact on which to make a
 public surface claim.
 
+## Exact public entry for the source-files layout
+
+A separate Node replay puts the 26 Rust-emitted files under
+`implementation/` byte for byte and puts one explicit re-export at the
+original `app/main/entry.js` path. It forwards the names from the pinned
+source namespace; generated bindings stay inside the implementation. Both
+trees run under the test's explicit ESM package scope. The graph check
+verifies that all implementation requests are relative and closed, rejects
+dynamic imports and URL metadata, and compares the two depth-first orders.
+The original implementation is acyclic. The wrapper adds only the final
+public entry to that order and introduces no back edge.
+
+The wrapper exposes exactly the original namespace. The three location
+exports are the same functions as in the implementation and in
+`Parser.acorn`. The location consumer still passes and `nextLineBreak`
+stays absent from the public namespace. A star re-export of the same tree
+exposes the six glue names again. All four locutil body units stay together
+with zero unrelated body units; the wrapper contributes one generated file
+and no original units. This is an alternative entry layout for the
+source-files artifact. The concentrated request still fails the Rust
+initialization cycle, and the full strict proof still stops at eager
+`RegExp` in #8.
+
 ```sh
 p=//devinfra/js/debundle/x/split_proof/integration/library_splits
 bbr test "$p:acorn_locutil_test" "$p:source_ownership_unit_test" \
