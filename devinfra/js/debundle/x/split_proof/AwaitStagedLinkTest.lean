@@ -77,6 +77,10 @@ private def replay (source files : Json) (plan : EsmSplit.Plan) (swap abrupt : B
   | .ok proof =>
     if swap then throw "swapped call sites passed the all-fuel check"
     let _ := proof.down.drains
+  let .ok .paused firstTurn := drain 96 1 ta | throw "one job must leave the second job pending"
+  let .str "A7" ← value firstTurn ea "trace" | throw "lost the write before the first continuation threw"
+  let .rejected (.str "left") ← settled firstTurn ea "first" | throw "the first continuation did not reject"
+  let .pending ← settled firstTurn ea "second" | throw "draining one job ran the second continuation"
   let finalA ← drainAll ta
   let finalB ← drainAll tb
   unless swap || (StateMatch.probe finalA.state finalB.state).isSome do

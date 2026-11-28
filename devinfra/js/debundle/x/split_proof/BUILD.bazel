@@ -4456,6 +4456,9 @@ lean_proof_test(
         "CoreJS.PrimitiveAwait.drain_paused",
         "CoreJS.PrimitiveAwait.launch_suspends",
         "CoreJS.PrimitiveAwait.launch_zero",
+        "CoreJS.PrimitiveAwait.launchTurn_lift",
+        "CoreJS.PrimitiveAwait.launchTurn_suspends",
+        "CoreJS.PrimitiveAwait.runJobWith_throw",
         "CoreJS.PrimitiveAwait.runJob_keeps_result",
     ],
     deps = [":corejs_primitive_await"],
@@ -4466,6 +4469,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/LinkedPrimitiveAwait.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [
+        ":corejs_call_turn",
         ":corejs_eval",
         ":corejs_from_estree",
         ":corejs_linked_input",
@@ -4473,6 +4477,7 @@ lean_library(
         ":corejs_program_turn",
         ":corejs_scope",
         ":corejs_split",
+        ":corejs_syntax_match",
         ":estree_units",
         ":plan",
     ],
@@ -4484,6 +4489,7 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.LinkedPrimitiveAwait"],
     required_theorems = [
         "CoreJS.LinkedPrimitiveAwait.noCuts_agree",
+        "CoreJS.LinkedPrimitiveAwait.noCuts_turn",
         "CoreJS.LinkedPrimitiveAwait.runImmediate_same",
     ],
     deps = [":corejs_linked_primitive_await"],
@@ -4542,6 +4548,7 @@ lean_library(
         ":corejs_split",
         ":corejs_state_match",
         ":corejs_syntax_match",
+        ":corejs_turn_publication",
         ":plan",
     ],
 )
@@ -4550,7 +4557,10 @@ lean_proof_test(
     name = "corejs_linked_primitive_await_proof_axioms_test",
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.LinkedPrimitiveAwaitProof"],
-    required_theorems = ["CoreJS.LinkedPrimitiveAwait.StagedImmediate.drains"],
+    required_theorems = [
+        "CoreJS.LinkedPrimitiveAwait.StagedImmediate.drains",
+        "CoreJS.LinkedPrimitiveAwait.StagedImmediate.publicationOfBridge",
+    ],
     deps = [":corejs_linked_primitive_await_proof"],
 )
 

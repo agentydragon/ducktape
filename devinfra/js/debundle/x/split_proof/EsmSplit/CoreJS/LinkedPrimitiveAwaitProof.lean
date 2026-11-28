@@ -5,6 +5,7 @@ import EsmSplit.CoreJS.Scope
 import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.StateMatch
 import EsmSplit.CoreJS.SyntaxMatch
+import EsmSplit.CoreJS.TurnPublication
 import EsmSplit.Plan
 
 /-! Derive the immediate outcome and queue premise from checked links. Only
@@ -77,5 +78,31 @@ theorem StagedImmediate.drains {source files plan} (h : StagedImmediate source f
   obtain ⟨placed, decoded, exported, immediate⟩ := h
   exact ⟨placed, decoded, exported, fun w fuel jobFuel quota =>
     congrArg (TurnResult.checkpoint jobFuel quota) (immediate w fuel)⟩
+
+/-- The staged theorem can feed the publisher only after the fixed evaluator
+agrees on the complete turn of each exact reread program and there is a
+positive completion and drain in every world. A pair of refusals supplies
+neither premise. -/
+theorem StagedImmediate.publicationOfBridge {source files plan placed}
+    (h : StagedImmediate source files plan)
+    (decoded : decodePlacedChecked source files plan = .ok placed)
+    (before : ∀ w fuel, runProgramTurn w fuel placed.before.program =
+      (runImmediate w fuel placed.before).observed)
+    (after : ∀ w fuel, runProgramTurn w fuel placed.after.program =
+      (runImmediate w fuel placed.after).observed)
+    (supported : ∀ w, ∃ (fuel jobFuel quota : Nat) (turn finished : Turn w),
+      (runImmediate w fuel placed.before).observed.completedTurn = some turn ∧
+        PrimitiveAwait.drain jobFuel quota turn = .ok .empty finished) :
+    TurnPublication placed.before.program placed.after.program := by
+  obtain ⟨checked, equation, exports, same⟩ := h
+  have eq : checked = placed := Except.ok.inj (equation.symm.trans decoded)
+  subst checked
+  refine ⟨exports, ?_, ?_⟩
+  · intro w fuel
+    rw [before, after, same]
+  · intro w
+    obtain ⟨fuel, jobFuel, quota, turn, finished, completed, drained⟩ := supported w
+    exact ⟨fuel, jobFuel, quota, turn, finished, (congrArg TurnResult.completedTurn (before w fuel)).trans completed,
+      drained⟩
 
 end CoreJS.LinkedPrimitiveAwait

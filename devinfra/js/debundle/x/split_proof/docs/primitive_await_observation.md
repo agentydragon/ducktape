@@ -81,3 +81,28 @@ all-world, all-fuel claim about the explicit primitive-await semantics and
 the actual reread files. The production split proof still uses ordinary
 `runProgram`, which does not execute these reached awaits. It must use
 the same supported semantics before this placement can be certified.
+
+The staged payload now retains the exact deferred function lowered at the
+original unit. The reread declaration must match that function, including
+its callable site and capture list. Binding the payload checks the concrete
+closure in the original allocation region; invocation checks its address,
+deferred function and linked environment. A reassigned name cannot lend
+the original cut to another function. On that path the ordinary callee
+runs at the same bound, including the existing refusal for unrelated
+deferred code.
+
+The source fixture with a getter operand uses the shared property rule for
+that read. Suspension appends after the operand's returned turn. The module
+step keeps that turn for the next unit, and the drain takes its next state
+and FIFO from the resumed computation. A quota-one check on the staged
+pair observes the first write before its rejection, with the second Promise
+still pending. Resumed code and other operands still use the ordinary
+rules for the supported fragment; a nested deferred suspension, unmodeled
+thenable or imported capture remains outside it.
+
+`StagedImmediate.publicationOfBridge` states the remaining certificate
+obligations: the fixed production evaluator must equal the staged turn on
+both exact decoded programs, and every modeled world needs a language
+completion and successful empty drain. The current evaluator does not
+supply those equalities for a reached await. The staging check still refuses
+publication. No ambient global policy is needed.

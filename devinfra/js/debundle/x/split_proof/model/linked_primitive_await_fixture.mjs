@@ -5,7 +5,13 @@ const payload = {};
 async function rejectAfter(mark) {
   const reason = payload;
   trace += mark;
-  await 0;
+  const probe = {
+    get value() {
+      trace += "g";
+      return 0;
+    },
+  };
+  await probe.value;
   trace += "A";
   throw reason;
 }

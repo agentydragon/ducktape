@@ -73,6 +73,48 @@ def launch (prototype : Addr) (prefixStep : Nat → M W Prefix) :
     | .throw _ s => .unknown "model: promise allocation threw" ⟨s, turn.jobs⟩
     | .fuel => .fuel
 
+/-- Launch a prefix that may already have updated the turn. In particular,
+suspension appends to the queue returned by the operand, not the entry queue. -/
+def launchTurn (prototype : Addr) (prefixStep : Nat → TurnM W Prefix) :
+    Nat → Turn W → Result W Val
+  | 0, _ => .fuel
+  | fuel + 1, turn =>
+    match AsyncPrefix.allocate prototype turn.state with
+    | .ok promise s =>
+      match prefixStep fuel { turn with state := s } with
+      | .ok (.completed value) t => liftCompletion t.jobs (AsyncPrefix.finish promise (.ok value t.state))
+      | .ok (.suspended operand env body) t => suspend promise operand env body t
+      | .throw reason t => liftCompletion t.jobs (AsyncPrefix.finish promise (.throw reason t.state))
+      | .unknown why t => .unknown why t
+      | .fuel => .fuel
+    | .unknown why s => .unknown why ⟨s, turn.jobs⟩
+    | .throw _ s => .unknown "model: promise allocation threw" ⟨s, turn.jobs⟩
+    | .fuel => .fuel
+
+theorem launchTurn_lift (prototype : Addr) (runPrefix : Nat → M W Prefix) (fuel : Nat) (turn : Turn W) :
+    launchTurn prototype (fun n => TurnM.lift (runPrefix n)) fuel turn =
+      launch prototype runPrefix fuel turn := by
+  cases fuel with
+  | zero => rfl
+  | succ n =>
+    simp only [launchTurn, launch]
+    cases AsyncPrefix.allocate prototype turn.state with
+    | ok promise s =>
+      simp only [TurnM.lift]
+      cases runPrefix n s with
+      | ok result state => cases result <;> rfl
+      | _ => rfl
+    | _ => rfl
+
+theorem launchTurn_suspends {prototype promise : Addr} {run : Nat → TurnM W Prefix} {fuel : Nat}
+    {turn post : Turn W} {allocated : State W} {operand : Val} {env : Env} {body : List Stmt}
+    (fresh : AsyncPrefix.allocate prototype turn.state = .ok promise allocated)
+    (reached : run fuel { turn with state := allocated } = .ok (.suspended operand env body) post)
+    (primitive : isPrimitive operand = true) (pending : isPending post.state promise = true) :
+    launchTurn prototype run (fuel + 1) turn =
+      .ok (.obj promise) { post with jobs := post.jobs ++ [(Job.mk promise post.state.region env body).capture] } := by
+  simp [launchTurn, fresh, reached, suspend, primitive, pending]
+
 /-- Resume with the current state and the original activation's region.
 The result's region belongs to the scheduler. -/
 def onResume (job : Job) (fuel : Nat) (s : State W) : Res W Val :=
@@ -87,9 +129,63 @@ private def restoreRegion (region : Nat) (jobs : List Job) : Res W Val → Resul
   | .throw _ state => .unknown "model: promise settlement threw" ⟨{ state with region }, jobs⟩
   | .fuel => .fuel
 
+/-- Resume a continuation in the scheduler's current turn. A language throw
+settles the original Promise after its effects; a refusal retains its turn. -/
+def resumeTurn (job : Job) (body : TurnM W Val) : TurnM W Val := do
+  let outcome ← TurnM.attempt body
+  TurnM.lift (AsyncPrefix.complete job.promise outcome)
+
+def runJobWith (job : Job) (body : TurnM W Val) (turn : Turn W) : Result W Unit :=
+  if isPending turn.state job.promise then
+    match resumeTurn job body { turn with state := { turn.state with region := job.region } } with
+    | .ok _ next => .ok () { next with state := { next.state with region := turn.state.region } }
+    | .unknown why next => .unknown why { next with state := { next.state with region := turn.state.region } }
+    | .throw _ next => .unknown "model: promise settlement threw"
+        { next with state := { next.state with region := turn.state.region } }
+    | .fuel => .fuel
+  else .unknown "model: queued continuation requires a pending promise" turn
+
+private def jobBody (job : Job) (fuel : Nat) : M W Val := do
+  let flow ← execStmts fuel job.env job.body
+  Flow.functionResult flow
+
 def runJob (job : Job) (fuel : Nat) (s : State W) (rest : List Job) : Result W Unit :=
-  if isPending s job.promise then restoreRegion s.region rest (onResume job fuel s)
-  else .unknown "model: queued continuation requires a pending promise" ⟨s, rest⟩
+  runJobWith job (TurnM.lift (jobBody job fuel)) ⟨s, rest⟩
+
+/-- Rejection uses the state and FIFO the body actually returned, including
+effects before the throw. It only restores the scheduler's region. -/
+theorem runJobWith_throw {job : Job} {body : TurnM W Val} {turn post : Turn W} {why : Val}
+    {settled : State W} {value : Val}
+    (pending : isPending turn.state job.promise = true)
+    (threw : body { turn with state := { turn.state with region := job.region } } = .throw why post)
+    (settlement : AsyncPrefix.complete job.promise (.error why) post.state = .ok value settled) :
+    runJobWith job body turn = .ok () ⟨{ settled with region := turn.state.region }, post.jobs⟩ := by
+  simp [runJobWith, pending, resumeTurn, TurnM.bind_apply, TurnM.attempt, threw, TurnM.lift,
+    settlement, TurnResult.withJobs]
+
+/-- Same bound and exact state on the ordinary continuation overlap. The
+tail can be arbitrary; its elements are never replayed by the current job. -/
+theorem runJob_sync (job : Job) (fuel : Nat) (s : State W) (rest : List Job) :
+    runJob job fuel s rest =
+      if isPending s job.promise then restoreRegion s.region rest (onResume job fuel s)
+      else .unknown "model: queued continuation requires a pending promise" ⟨s, rest⟩ := by
+  unfold runJob runJobWith resumeTurn onResume jobBody
+  simp only [TurnM.bind_apply, TurnM.attempt, TurnM.lift]
+  split
+  · rename_i h
+    generalize execution : (do
+      let flow ← execStmts fuel job.env job.body
+      Flow.functionResult flow : M W Val) { s with region := job.region } = out
+    cases out
+    · rename_i result after
+      simp only [TurnResult.withJobs, AsyncPrefix.finish]
+      cases AsyncPrefix.complete job.promise (.ok result) after <;> rfl
+    · rename_i why after
+      simp only [TurnResult.withJobs, AsyncPrefix.finish]
+      cases AsyncPrefix.complete job.promise (.error why) after <;> rfl
+    · rfl
+    · rfl
+  · rfl
 
 inductive Drained where
   | empty
@@ -137,7 +233,7 @@ only the allocation region restored. It never restores the old heap or world. -/
 theorem runJob_keeps_result {job : Job} {fuel : Nat} {s next : State W} {rest : List Job} {v : Val}
     (pending : isPending s job.promise = true) (ran : onResume job fuel s = .ok v next) :
     runJob job fuel s rest = .ok () ⟨{ next with region := s.region }, rest⟩ := by
-  simp [runJob, pending, ran, restoreRegion]
+  simp [runJob_sync, pending, ran, restoreRegion]
 
 end CoreJS.PrimitiveAwait
 

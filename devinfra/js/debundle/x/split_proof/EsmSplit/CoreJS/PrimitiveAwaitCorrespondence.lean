@@ -61,7 +61,7 @@ theorem runJob_corresponds {left right : Job} {tail tail' : List Job}
     (head : left.Corresponds right) (rest : QueueCorresponds tail tail')
     (fuel : Nat) (state : State W) :
     (runJob left fuel state tail).Corresponds (runJob right fuel state tail') := by
-  unfold runJob
+  rw [runJob_sync, runJob_sync]
   rw [← head.promise, onResume_corresponds head fuel state]
   split
   · cases onResume right fuel state <;> first
