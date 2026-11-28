@@ -34,7 +34,9 @@ the complete modeled outcomes at equal fuel from 0 through 96, including fuel
 exhaustion, and checks the concrete successes and throw separately. Node
 independently runs both projections with a corresponding reentrant callback.
 
-The next caller obligation is to change the live helper after the loader is
-allocated: an uncached call must use the new helper and a cached call must
-skip it. The full bundle still needs the actual global bootstrap and the
-ordinal 56 initialization call to link to an external API observation.
+A separate control rebinds the live helper after the loader is allocated.
+The cold loader calls the replacement, whose write and throw are preserved
+before the opaque callback can run. A hot loader skips the replacement and
+returns the original cached export without repeating the effect. The full
+bundle still needs the actual global bootstrap and the ordinal 56
+initialization call to link to an external API observation.

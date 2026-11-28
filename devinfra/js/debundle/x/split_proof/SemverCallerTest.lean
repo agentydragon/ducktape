@@ -126,6 +126,7 @@ private def effect (failOnce : Bool) : M (world r) (Val × Addr × Addr × Addr)
 private structure PublicCall where
   loader : Val
   cache : Addr
+  helper : Addr
   prior : Addr
   sentinel : Addr
 
@@ -142,8 +143,10 @@ private def prepare (cells : Addr × Addr) (failOnce : Bool) : TurnM (world r) P
   unless fn.name == "__require" && fn.opaqueBody.isNone do
     TurnM.lift (unknown "exact loader is not executable")
   let some cache := captured.vars.lookup "mod" | TurnM.lift (unknown "missing captured cache")
+  let some helper := captured.vars.lookup "__getOwnPropNames" |
+    TurnM.lift (unknown "missing live own-names helper")
   TurnM.lift (setCell slot loader)
-  return ⟨loader, cache, prior, sentinel⟩
+  return ⟨loader, cache, helper, prior, sentinel⟩
 
 private def invoke (fuel : Nat) (call : PublicCall) : TurnM (world r) Val :=
   callFnTurn fuel call.loader .undef []
@@ -173,6 +176,33 @@ private def checkEqual (a b : TurnResult (world r) Val) : IO Unit := do
     | .unknown av sa, .unknown bv sb => av == bv && same sa sb
     | .fuel, .fuel => true
     | _, _ => false) do throw (IO.userError "caller results differ")
+
+private def checkHelperRebind (call other : PublicCall) (a b : Turn (world false)) : IO Unit := do
+  let replace (addr : Addr) : M (world false) Unit := do
+    let f ← makeFunc emptyEnv (.mk "replacement" .normal false []
+      [log "replacement lookup", .throw (.str "lookup threw")])
+    setCell addr f
+  let checkCold (call : PublicCall) : TurnM (world false) Val := do
+    TurnM.lift (replace call.helper)
+    invoke 96 call
+  checkEqual (checkCold call a) (checkCold other b)
+  let .throw (.str "lookup threw") failed := checkCold call a |
+    throw (IO.userError "cold loader did not use the new helper")
+  unless failed.state.out == #["replacement lookup"] && failed.state.world.state.events.isEmpty &&
+      (failed.state.cellAt call.cache).bind Binding.value == some (.num 0) do
+    throw (IO.userError "failure before the opaque call reached the cache or callback")
+  let checkHot (call : PublicCall) : TurnM (world false) (Val × Val) := do
+    let first ← invoke 96 call
+    TurnM.lift (replace call.helper)
+    let second ← invoke 96 call
+    return (first, second)
+  let .ok (x, y) a' := checkHot call a | throw (IO.userError "cached call reread the helper")
+  let .ok (x', y') b' := checkHot other b | throw (IO.userError "relocated cached call reread the helper")
+  checkEqual (.ok y a') (.ok y' b')
+  unless x == y && x == x' && a'.state.out == #["effect"] &&
+      a'.state.world.state.events == ["resolve effect", "call effect", "reply"] do
+    throw (IO.userError "cached call changed the exports or repeated an effect")
+  IO.println "live helper: cold failure before callback; hot cache skips lookup"
 
 private def checkTrial (dep : LinkedInput.DecodedDeployment) (cells : Addr × Addr)
     (r failOnce : Bool) : IO Unit := do
@@ -238,6 +268,15 @@ private def checkTrial (dep : LinkedInput.DecodedDeployment) (cells : Addr × Ad
     IO.println "refusal: effect retained; no catch"
   | _, _ => throw (IO.userError "unexpected caller result")
 
+private def checkHelperTrial (dep : LinkedInput.DecodedDeployment) (cells : Addr × Addr) : IO Unit := do
+  let setup (p : Program) : TurnResult (world false) PublicCall :=
+    (do
+      TurnM.lift (fun _ => runProgram (world false) 96 p)
+      prepare cells false) ⟨initialState (world false) 0, []⟩
+  let .ok call a := setup dep.before | throw (IO.userError "original loader not initialized")
+  let .ok other b := setup dep.after | throw (IO.userError "moved loader not initialized")
+  checkHelperRebind call other a b
+
 def main (args : List String) : IO Unit := do
   let [full, projection, dest] := args | throw (IO.userError "expected full source, projection and scratch output")
   IO.FS.withTempDir fun work => do
@@ -265,6 +304,7 @@ def main (args : List String) : IO Unit := do
       checkTrial dep cells false false
       checkTrial dep cells false true
       checkTrial dep cells true false
+      checkHelperTrial dep cells
 
 end SemverCaller
 
