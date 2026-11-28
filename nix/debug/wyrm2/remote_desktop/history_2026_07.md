@@ -159,7 +159,7 @@ wyrm2 as root.
   so an Xorg session under xrdp may not exist — check before assuming.
 - **Visual density / HiDPI.** The Xfce session could use tuning (scale factor /
   resolution) for the client display.
-- **Sunshine/Moonlight** (Path B) and **Guacamole via Authentik RAC** (`x/linux_rac/`)
-  remain later passwordless options (Sunshine needs a logged-in seat; Guac is
-  greenfield, and its SSH protocol is terminal-not-graphical until Kerberos/mTLS).
+- **Sunshine/Moonlight** (Path B) and **Guacamole via Authentik RAC** remain later
+  passwordless options (Sunshine needs a logged-in seat; Guac is greenfield, and its
+  SSH protocol is terminal-not-graphical until Kerberos/mTLS).
 - GRD (#3424) stays merged-dormant (NixOS-blocked; inert).
