@@ -452,6 +452,43 @@ for (const unsupported of ["null?.x.y.z;", "(null?.x.y)();"]) {
   assert.match(result.detail, /unsupported optional chain/, unsupported);
 }
 
+const optionalCallback = `
+  let trace = "";
+  function argument() { trace += "a"; return 3; }
+  function withLocal(n) { return n?.(argument()); }
+  function value(a) { trace += this === undefined ? "v" : "x"; return a; }
+  console.log(withLocal(undefined), trace);
+  console.log(withLocal(null), trace);
+  console.log(withLocal(value), trace);
+  let f = value;
+  console.log(f?.((f = null, argument())), trace, f);
+`;
+const [callbackResult] = run([dumpSource(optionalCallback)], true);
+const callbackNode = execFileSync(process.execPath, ["--input-type=module", "-e", optionalCallback], {
+  encoding: "utf8",
+});
+assert.equal(callbackResult.end, "normal", JSON.stringify(callbackResult));
+assert.deepEqual(callbackResult.out, callbackNode.split("\n").slice(0, -1));
+
+for (const [source, error, out] of [
+  ['const n = false; n?.(console.log("argument"));', "TypeError", ["argument"]],
+  ['n?.(console.log("argument")); let n;', "ReferenceError", []],
+]) {
+  const [result] = run([dumpSource(source)], true);
+  const node = spawnSync(process.execPath, ["--input-type=module", "-e", source], { encoding: "utf8" });
+  assert.equal(node.status, 1, source);
+  assert.match(node.stderr, new RegExp(error + ":"));
+  assert.deepEqual(node.stdout.split("\n").slice(0, -1), out);
+  assert.deepEqual([result.end, result.detail, result.out], ["throw", error, out]);
+}
+
+// Arbitrary callee expressions, ambient bindings and tails still refuse.
+for (const source of ["(() => 1)?.();", "console?.();", "const f = null; f?.().x;"]) {
+  const [refused] = run([dumpSource(source)], true);
+  assert.equal(refused.end, "malformed", source);
+  assert.match(refused.detail, /unsupported optional call/, source);
+}
+
 // Object rest excludes selected string keys and copies only enumerable own
 // properties, including symbols, after the selected getters have run.
 const objectRestSource = `
