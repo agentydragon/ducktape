@@ -1,11 +1,14 @@
 # What a split publication receipt checks
 
-This audit starts at devel `6b3da2f148`. The owned-package caller defect
+This audit records the routes and receipt fields at devel `6b3da2f148`. The
+[import guarantees specification](import_guarantees.md) states the graph,
+client and deployment boundaries independently of this historical snapshot.
+The owned-package caller defect
 ([#20657](https://github.com/agentydragon/ducktape/pull/20657#issuecomment-7230274306))
 is tracked separately. The ordinary CLI selects these routes in
 [Certified.lean](../EsmSplit/LowerSplit/Certified.lean).
 
-A success reports a constructor `scope`, `strategy: compiled-constructor`,
+At that revision a success reports a constructor `scope`, `strategy: compiled-constructor`,
 `guarantee: all-outcomes`, and `every_ending_matches: true`. The guarantee
 selects the CoreJS theorem about all modeled outcomes, worlds and fuel.
 The receipt has no separate field for the deployment realization or for a
@@ -57,34 +60,9 @@ bbr test "$p/integration/library_splits:default_snapshot_format_audit" \
   --nocache_test_results --test_output=all
 ```
 
-## Design proposal for review
+## Contract
 
-1. **Closed resolved graph.** Keep the current Lean result at its actual
-   boundary: linked and resolved source and output graphs with the designated
-   entry bindings, ordered effects and modeled outcomes. Preserve any
-   admitted external import edge, the identity of its binding, and its
-   evaluation order and effects. A syntactically valid import is not
-   evidence of a resolved, unchanged edge.
-2. **Public entry context.** State which external contexts may observe the
-   designated public routes, their exported values, calls and modeled
-   effects. Require new helper names to be fresh in the realized graph and
-   private to that contract. A client importing or probing a helper by path
-   can observe a real difference: the helper request fails in the original
-   tree and succeeds after the split. The #20657 caller probe did exactly
-   this. Exclude that observation explicitly for clients of designated
-   entries, or check a narrower caller and its observation contract. Copying
-   a caller or checking its first static import does not prove that contract.
-   Private in this sense does not make a file inaccessible.
-3. **Deployment realization.** Separately state what establishes that the
-   source and published bytes load as the checked graphs (format, routes,
-   and dependency identity). State which facts the writer verifies from
-   files and which are supplied assumptions. Ordinary readback establishes
-   file-set and syntax correspondence, not the enclosing package format.
-   The owned-package gate checks more packaging facts by capturing fixed
-   bytes and guarding its owned root; caller behavior remains a separate
-   question. A graph-only or explicitly conditional receipt must not be
-   presented as proof that an unverified Node deployment runs.
-
-This audit does not propose a new resolver, implement importability checks,
-or change the CLI or certificate schema. The receipt and admission policy
-should be decided in design review.
+The [import guarantees specification](import_guarantees.md) states the
+approved graph and proposed client boundaries and the separate deployment
+obligation. This audit is evidence for that contract; it does not implement
+importability checks or change a CLI or receipt schema.

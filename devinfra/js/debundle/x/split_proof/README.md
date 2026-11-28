@@ -1,8 +1,15 @@
 # Splitting a bundle into ES modules, with a Lean proof
 
-A flat JavaScript bundle goes in. A spec says which top-level statement goes to which module.
+A spec assigns source units to modules and gives their import priority.
 The experimental splitter emits ES modules after Lean certifies the requested
 CoreJS guarantee. The [target theorem](PLAN.md#target) covers every input and spec accepted by the constructor, with its proof checked when building the splitter. [Certification commands and guarantees](#request-a-corejs-guarantee)
+
+The [import guarantees specification](docs/import_guarantees.md) separates the
+resolved CoreJS graph comparison, the proposed public-client contract, and
+deployment realization. A graph proof does not by itself establish that a
+runtime loads those graphs or that arbitrary clients satisfy the proposed
+boundary. The [receipt audit](docs/publication_receipt_boundary.md) records
+current route coverage and a measured Node package-format gap.
 
 [`SUPPORT.md`](SUPPORT.md) inventories the syntax, standard library and host
 features the intended inputs require. [CoreJS coverage](model/README.md) tracks
@@ -76,7 +83,9 @@ complete graph on disk, including the fixed files. The receipt covers the
 public entry's live cells and complete modeled outcomes. Its client coverage
 is unchecked and it makes no deployment claim.
 
-Host-dependent and structural checks, and other multi-chunk deployments, cannot publish output.
+Host-dependent and structural checks, and other multi-chunk deployments, cannot
+publish output. The [receipt audit](docs/publication_receipt_boundary.md)
+describes the route boundaries and deployment premises.
 The [construction roadmap](CONSTRUCTION_ROADMAP.md) tracks coverage. For the
 scope of earlier artifact certificates, see the
 [historical checker guide](https://github.com/agentydragon/ducktape/blob/b88098ac2a1cbaa970a7019f50ec78df94054629/devinfra/js/debundle/x/split_proof/README.md).

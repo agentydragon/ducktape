@@ -6,6 +6,11 @@ How to write selectors: <docs/selectors.md>. Selector-resolution implementation:
 [selector_resolution.md](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/selector_resolution.md). Design and correctness
 proof: [design.md](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md).
 
+The experimental Lean-certified splitter has a separate
+[import guarantees specification](x/split_proof/docs/import_guarantees.md).
+Its graph proof, proposed client boundary and deployment premises do not change
+the `debundle` CLI guarantees in this document.
+
 ## Resolved CLI invocations
 
 The global `--print-invocation` option parses the selected command normally,
