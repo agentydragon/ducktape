@@ -8,10 +8,10 @@ private def statements : List Stmt :=
 private def row : EsmSplit.LocalExportUnit :=
   ⟨2, [("exposed", "second"), ("alias", "second")]⟩
 
-private def bundle : EsmSplit.Bundle := [
-  { src := "", defs := ["first"] },
-  { src := "", defs := ["second"], eager := ["first"] },
-  { src := "", eager := ["second"], exports := [("exposed", some "second"), ("alias", some "second")] }]
+private def bundle : EsmSplit.Bundle :=
+  [{ src := "", defs := ["first"] }, { src := "", defs := ["second"], eager := ["first"] },
+    { src := "", eager := ["second"],
+      exports := [("exposed", some "second"), ("alias", some "second")] }]
 
 def main : IO Unit := do
   unless decide (MetadataCells.Footprints statements bundle) do
@@ -26,7 +26,8 @@ def main : IO Unit := do
   let badUse := [bundle[0]!, { src := "", defs := ["second"] }, bundle[2]!]
   if decide (MetadataCells.Footprints statements badUse) then
     throw (IO.userError "missing executable free read accepted")
-  let badRow : EsmSplit.Stmt := { src := "", eager := ["second"], exports := [("alias", some "second")] }
+  let badRow : EsmSplit.Stmt :=
+    { src := "", eager := ["second"], exports := [("alias", some "second")] }
   if decide (row.FootprintMatches badRow) then
     throw (IO.userError "incomplete public export row accepted")
   let badLocal : EsmSplit.Stmt := { src := "", exports := (bundle.stmt 2).exports }
