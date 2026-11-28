@@ -1,5 +1,27 @@
 # Public split-proof scoreboard
 
+## Snapshot 2026-11-28 — devel `aed42d64dd450748586df24c7996ad351cb74272`
+
+The independently reproduced ordinary result remains **1/122**: one
+certificate with all applicable saved observations passing and 121 refusals.
+An [authored-placement census](https://github.com/agentydragon/ducktape/pull/20700)
+at reviewed head `111009432f3f92488aa4e9cace018074dda60fd4` is under review;
+it retains each original request and adds separately measured Rust-emitted
+surfaces and per-unit diagnostics. Its [122-case observation](https://app.buildbuddy.io/invocation/6bb5c91a-f8d3-4cf3-ac25-561f96d83765)
+found 44 cases where the actual Rust entry namespace differs from the original;
+31 of those also change an exported function's own `name` descriptor. Rust
+passes its authored expectations, which can intentionally request readable
+aliases. These are strict surface differences, not 44 ordinary constructor
+successes or 44 independent placement failures. The other 78 have no measured
+namespace or name-descriptor difference; this observation does not establish
+their equivalence.
+
+The census's retained-suffix proof and real artifact readback for
+`split_declarator_fragments` are conditional proof/test evidence. They do not
+add an ordinary CLI admission, console semantics, a published artifact, or a
+second certified member of the saved cohort. Its authored module-export and
+whole-tree syntax observations still need ordinary runner coverage.
+
 ## Snapshot 2026-11-28 — devel `8dff388f2271f31ee30cef0eebbfaf191b0acd8c`
 
 This update retains the prior snapshot below. The [full-bundle census](library_splits/results/full-blocker-census.json.gz)
