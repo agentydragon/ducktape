@@ -582,7 +582,10 @@ js_library(
 js_library(
     name = "syntax_inventory",
     srcs = ["syntax_inventory.mjs"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
+    ],
     deps = [":node_modules/acorn"],
 )
 
