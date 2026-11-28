@@ -46,6 +46,7 @@ private def entryExpr (switchBody : Bool) : Nat → Expr → Bool
     | .undef | .this | .var _ => true
     | .func f => entryFunc switchBody n f
     | .arr elems => elems.all (entryExpr switchBody n)
+    | .obj props => props.all (entryObjectProperty switchBody n)
     | .get a b | .binary _ a b | .logical _ a b =>
       entryExpr switchBody n a && entryExpr switchBody n b
     | .seq a b => switchBody && entryExpr switchBody n a && entryExpr switchBody n b
@@ -60,6 +61,18 @@ private def entryExpr (switchBody : Bool) : Nat → Expr → Bool
       entryExpr switchBody n receiver && entryExpr switchBody n key &&
         args.all (entryExpr switchBody n)
     | e => literal e
+-- Like Zod's options normalization, a retained copy may override static
+-- own fields after CopyDataProperties. The source object is evaluated by
+-- CoreJS, including its descriptors and getter effects. Defining a getter
+-- on the new object, setting its prototype, and rest exclusions are outside
+-- this literal fragment.
+private def entryObjectProperty (switchBody : Bool) : Nat → PropDef → Bool
+  | 0, _ => false
+  | n + 1, .spread source [] => entryExpr switchBody n source
+  | n + 1, .init (.str _) (.func (.mk _ .arrow false [] [.ret value])) =>
+    entryExpr switchBody n value
+  | n + 1, .init (.str _) value => entryExpr switchBody n value
+  | _, _ => false
 private def entryTarget (switchBody : Bool) : Nat → Target → Bool
   | 0, _ => false
   | _ + 1, .var _ => true
