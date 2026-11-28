@@ -57,6 +57,54 @@ private def elem (kind : String) : M World.probe Val := do
               ("points", .data (.obj points) true true true)] }
   return .obj elem
 
+/-- Exercise the original callback through an ordinary supplied receiver.
+The supplied method handles two inputs without using array intrinsics. -/
+private def filterReceiver (consumer : Addr) (fails : Bool) : M World.probe Json := do
+  let first ← elem "freedraw"
+  let second ← elem "rectangle"
+  let sentinel ← alloc { proto := some objectProto, props := [] }
+  if fails then
+    let .obj firstAddr := first | unknown "expected an element object"
+    let sentinelCell ← newCell ⟨some (.obj sentinel), false⟩
+    let getter ← makeFunc { vars := [("sentinel", sentinelCell)], this := .undef }
+      (.mk "" .normal false [] [.throw (.var "sentinel")])
+    defineOwn firstAddr "isDeleted" { get := some getter }
+  let fld (name : String) := Expr.get .this (.str name)
+  let assign (name : String) (value : Expr) := Stmt.expr (.assign (.member .this (.str name)) value)
+  let callOn (name : String) := Expr.call (.var "callback") [fld name]
+  let method : Func := .mk "" .normal false ["callback"] [
+    assign "trace" (.num 1),
+    .decl .const "keepFirst" (callOn "first"),
+    assign "firstDecision" (.var "keepFirst"),
+    assign "trace" (.num 12),
+    .decl .const "keepSecond" (callOn "second"),
+    .ret (.cond (.var "keepFirst")
+      (.cond (.var "keepSecond") (.arr [fld "first", fld "second"]) (.arr [fld "first"]))
+      (.cond (.var "keepSecond") (.arr [fld "second"]) (.arr [])))
+  ]
+  let ownFilter ← makeFunc { vars := [], this := .undef } method
+  let prop (name : String) (value : Val) := (PropertyKey.str name, .data value true true true)
+  let receiver := Val.obj (← alloc { proto := some objectProto, props := [
+    prop "first" first, prop "second" second, prop "trace" (.num 0),
+    prop "firstDecision" .undef, prop "filter" ownFilter] })
+  let outcome ← attempt (callFn 128 (← readCell consumer) .undef [receiver])
+  let get (value : Val) (key : String) := getProp (callFn 128) value (.str key)
+  let count : Nat ← (match outcome with
+    | .ok result => do
+      unless !fails && result != receiver && (← get result "length") == .num 1 &&
+          (← get result "0") == second do
+        unknown "expected a fresh result array containing the original second element"
+      pure 1
+    | .error (.obj a) =>
+      if fails && a == sentinel then pure 0 else unknown "wrong throw"
+    | .error _ => unknown "expected the supplied sentinel")
+  let .num trace ← get receiver "trace" | unknown "missing receiver write"
+  unless trace == (if fails then 1 else 12) &&
+      (← get receiver "firstDecision") == (if fails then .undef else .bool false) do
+    unknown "callback or receiver effects differ"
+  return Json.mkObj [("trace", toJson trace.toUInt64.toNat), ("selected", toJson count),
+    ("threw", toJson fails)]
+
 private def audit (p : Program) : Except String Json := do
   let checked ← checkLink p
   let env ← entryEnv checked
@@ -84,10 +132,8 @@ private def audit (p : Program) : Except String Json := do
   let invoke (which : Addr) (args : List Val) : M World.probe Val := do
     callFn 128 (← readCell which) .undef args
   let predicate :=
-    resultTag
-      ((do
-          invoke size [← elem "freedraw"])
-        state)
+    resultTag (OrderedArrowInit.observeExport (w := World.probe) p 128 "zj" size fun fn => do
+      callFn 128 fn .undef [← elem "freedraw"])
   ensure (predicate == "true") "the original small free-draw branch did not run"
   let ordinaryArray : M World.probe Val := do
     let receiver ← alloc (arrayObject [← elem "freedraw"])
@@ -109,6 +155,11 @@ private def audit (p : Program) : Except String Json := do
     invoke consumer [.obj receiver]
   let arrayOverrideResult := resultTag (arrayOverride state)
   ensure (arrayOverrideResult == "unknown: a property is defined on an array") arrayOverrideResult
+  let outcomes ← [false, true].mapM fun fails =>
+    match filterReceiver consumer fails state with
+    | .ok report _ => pure report
+    | .unknown why _ => throw why
+    | _ => throw "supplied filter failed unexpectedly"
   let linkedRead := resultTag (readCell freeDraw checked.ready)
   let evaluatedRead := resultTag (readCell freeDraw state)
   let some exports := LinkedBehavior.exports World.probe p | throw "missing public cells"
@@ -118,7 +169,8 @@ private def audit (p : Program) : Except String Json := do
         ("exportCells", Json.mkObj (exports.map fun (name, binding) => (name, addr binding))),
         ("early", toJson linkedRead), ("late", toJson evaluatedRead),
         ("smallFreeDraw", toJson predicate), ("filter", toJson reason),
-        ("ownFilter", toJson replacement), ("arrayOverride", toJson arrayOverrideResult)]
+        ("ownFilter", toJson replacement), ("arrayOverride", toJson arrayOverrideResult),
+        ("suppliedFilter", toJson outcomes)]
 
 private def inspect (input : Json) : IO Json := do
   let sourceFile : System.FilePath := ⟨← IO.ofExcept (input.getObjValAs? String "source")⟩

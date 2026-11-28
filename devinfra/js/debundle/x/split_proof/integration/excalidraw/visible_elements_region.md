@@ -87,3 +87,14 @@ call certificate follows from the equal initialization states. Ordinary
 
 [The staged replay and axiom audit](https://app.buildbuddy.io/invocation/39c7a34d-d0f1-4f22-86f8-2fc0c7a3f785)
 exercise the model and Node on this fixed projection.
+
+The [extended replay](https://app.buildbuddy.io/invocation/cad2e2ff-0988-42c9-b087-e2d2cf436852)
+calls `Vc` through the actual `zj` export. The proof checks that observations
+through the same public cell start from the same complete initialized state
+at equal fuel. On a supplied ordinary receiver, the original `Lm` calls the
+supplied `filter` with its own callback. The callback excludes the short
+free-draw element and retains the original rectangle. If the first element's
+getter for `isDeleted` throws, the exact sentinel escapes, the receiver's
+first write survives, and the second element is never tested. The wrong
+private-cell layout keeps both objects in Node. These observations leave
+the native-array filter boundary and ordinary CLI refusal in place.

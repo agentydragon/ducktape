@@ -34,6 +34,35 @@ structure Behavior (source candidate : Program) : Prop where
   publicCells : SameExports source candidate
   initialization : ∀ w fuel, runProgram w fuel source = runProgram w fuel candidate
 
+/-- Apply a caller observation to a specific public live cell after initialization.
+The caller can supply arguments or allocate its own receiver in the common state. -/
+def observeExport {w : World} (p : Program) (fuel : Nat) (name : Name) (cell : Addr)
+    (observe : Val → M w α) : Res w α :=
+  match runProgram w fuel p with
+  | .ok () state =>
+    if (exports w p).any (·.contains (name, cell)) then
+      (do observe (← readCell cell)) state
+    else .unknown "missing public cell" state
+  | .throw v state => .throw v state
+  | .unknown why state => .unknown why state
+  | .fuel => .fuel
+
+/-- An observer using the same public cell gets the same complete result,
+including the effects of supplied getters and callbacks. Equality can
+still be an unsupported result on both sides. -/
+theorem Behavior.observeExport_eq {source candidate : Program}
+    (proof : Behavior source candidate) (w : World)
+    (fuel : Nat) (name : Name) (cell : Addr) (observe : Val → M w α) :
+    observeExport source fuel name cell observe = observeExport candidate fuel name cell observe := by
+  obtain ⟨a, b, ha, hb, perm⟩ := proof.publicCells w
+  have same : a.contains (name, cell) = b.contains (name, cell) := by
+    apply Bool.eq_iff_iff.mpr
+    simp only [List.contains_iff_mem]
+    exact perm.mem_iff
+  unfold observeExport
+  rw [proof.initialization w fuel, ha, hb]
+  simp only [Option.any, same]
+
 private def concreteVarArrow (u : LinkedUnit) : Bool :=
   match u.stmt with
   | .decl .var _ (.func f) => f.kind == .arrow && f.opaqueBody.isNone
