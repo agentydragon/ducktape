@@ -157,6 +157,47 @@ lexical `Symbol` binding passes strict certification and the Node control in
 the existing local host-binding proof.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 
+### Full scroll owner acceptance
+
+The [constructor acceptance probe](constructor_acceptance_test.mjs) keeps the
+earlier two-member request and separately tries every surviving member of the
+[upstream `scene/scroll.ts`](https://github.com/excalidraw/excalidraw/blob/a2ec2889babf7d2295469c6d90ebe77fae57df84/packages/excalidraw/scene/scroll.ts):
+`#1336` `isOutsideViewPort`, `#1337` `centerScrollOn`, and `#1338`
+`calculateScrollCenter`. It verifies the resolver's canonical members
+against the unmodified `chunk-PN7KOLDJ.js` (1,787 units, SHA-256
+`fa1cfc7930fe3c0e2b4d95e6cb14ebde21068014cd92db303622509d9a0d455c`).
+The sequential request restricts the canonical import priority to the single
+`packages/excalidraw/scene/scroll.mjs` owner; all other rows stay in their
+original entry, at its original route.
+
+```sh
+p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
+bbr test "$p:constructor_acceptance_test" --test_output=all --remote_build_event_upload=all
+```
+
+The ordinary `--require all-outcomes` CLI currently refuses both placements
+with exit 1 and `no_constructed_rule`, without publishing a tree. The full
+request also refuses over an existing tree and in `--check-output` mode.
+An adversarial request assigning `#1338` to both entry and owner refuses
+with the same reason. The old tree is untouched in each case. These refusals
+do not show that the CLI reached duplicate-owner validation. The separate
+constructor probe on the two-member request stops at retained `#41`,
+`unsupported global Uint8Array`. See `acceptance.json` and the exact
+specs in the test's output archive.
+
+The success path requires the ordinary CLI's compiled `all-outcomes` verdict
+and the exact entry and owner files. It requires a separate `--check-output`
+pass, and a copied output with `throw 0;` added to the owner must fail the disk
+check. Only then use the existing browser harness as an observer. At the same
+origin, serve the rechecked files at their exact routes over the original
+bundle and verify the served bytes. Compare the original and candidate public
+entry namespaces. In each editor, draw a rectangle, pan until it is offscreen,
+click **Scroll back to content**, and observe the same rectangle return to the
+viewport. The [upstream button handler](https://github.com/excalidraw/excalidraw/blob/a2ec2889babf7d2295469c6d90ebe77fae57df84/packages/excalidraw/components/LayerUI.tsx#L541-L552)
+calls `calculateScrollCenter` directly. Loading the owner or calling a private
+helper from the test would not establish that the public action uses it.
+There is no emitted candidate to read back or exercise in Chromium today.
+
 ### Browser deployment replay
 
 The certified Excalidraw browser target is retired. Its historical
