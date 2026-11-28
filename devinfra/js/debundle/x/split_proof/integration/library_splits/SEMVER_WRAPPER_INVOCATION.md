@@ -30,6 +30,14 @@ as undeclared outputs. The evidence covers different inputs and phases:
 | Private projection | The printer transplants `#3`, `#6`, and `#9` into a test driver. The test reparses the output and checks the three initializers, including exact factory spelling. The driver checks constants identity and uses a synthetic callback to make throw and reentry observable. It does not add a public loader export.                                                                            |
 | Deployment         | The ordinary constructor tries keeping `#0`–`#55` in `prefix.mjs` ahead of `#56`–`#58` in `entry.mjs`, with `all-outcomes` required. It refuses with `no_constructed_rule`, emits no files, and therefore has no split to reread. The test independently checks the staged files and public API if this placement is later certified.                                                          |
 
+A separate import of the shipped bytes throws from the captured helper
+on the first `#9` lookup. It observes only `#55`, `#11`, and `#9`, then
+rejects with the same error object. Importing that URL again returns
+the cached module evaluation error, with no additional lookup. After
+restoring the helper, a fresh URL initializes and its public `valid`
+call succeeds. ESM import retries and retries of a private loader inside
+a surviving module are different observations.
+
 In the private control, factory allocation calls the callback zero times.
 The first call installs the cache before the callback can reenter. Reentry
 sees the same partial exports, including a write made before the callback

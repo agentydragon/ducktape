@@ -73,24 +73,29 @@ const baseline = await smoke("semver", source);
 assert(baseline.ok, JSON.stringify(baseline));
 const traced = path.join(tmp, "traced.mjs");
 copyFileSync(source, traced);
-const descriptor = Object.getOwnPropertyDescriptor(Object, "getOwnPropertyNames");
-const callbackLookups = [];
-Object.defineProperty(Object, "getOwnPropertyNames", {
-  ...descriptor,
-  value(value) {
-    const keys = Reflect.apply(descriptor.value, this, [value]);
-    const row = keys.length === 1 ? callbacks.get(keys[0]) : undefined;
-    if (row) callbackLookups.push(row.id);
-    return keys;
-  },
-});
-const tracedUrl = pathToFileURL(traced).href;
-let actual;
-try {
-  actual = await import(tracedUrl);
-} finally {
-  Object.defineProperty(Object, "getOwnPropertyNames", descriptor);
+// Install the observer only until the entry has captured it and initialized.
+// Each run still uses the same pinned source bytes.
+async function observedImport(url, onLookup) {
+  const descriptor = Object.getOwnPropertyDescriptor(Object, "getOwnPropertyNames");
+  Object.defineProperty(Object, "getOwnPropertyNames", {
+    ...descriptor,
+    value(value) {
+      const keys = Reflect.apply(descriptor.value, this, [value]);
+      const row = keys.length === 1 ? callbacks.get(keys[0]) : undefined;
+      if (row) onLookup(row.id);
+      return keys;
+    },
+  });
+  try {
+    return await import(url);
+  } finally {
+    Object.defineProperty(Object, "getOwnPropertyNames", descriptor);
+  }
 }
+
+const tracedUrl = pathToFileURL(traced).href;
+const callbackLookups = [];
+const actual = await observedImport(tracedUrl, (id) => callbackLookups.push(id));
 assert.deepEqual(Object.keys(actual), ["semver"]);
 const duringImport = callbackLookups.slice();
 assert.equal(duringImport[0], 55);
@@ -108,6 +113,25 @@ assert.deepEqual(afterImport, []);
 console.log(
   JSON.stringify({ loaderCount: loaderRows.size, directCalls: directCalls.length, duringImport, afterImport })
 );
+
+// Throw from the captured lookup at the first constants load in the actual
+// import chain. The failed ESM evaluation remains observable on a second
+// import of the same URL, even though CommonJS resets its private cache.
+const eagerFailure = new Error("captured lookup threw while loading constants");
+const abruptLookups = [];
+const failedUrl = tracedUrl + "?throw";
+await assert.rejects(
+  observedImport(failedUrl, (id) => {
+    abruptLookups.push(id);
+    if (id === 9) throw eagerFailure;
+  }),
+  (error) => error === eagerFailure
+);
+assert.deepEqual(abruptLookups, [55, 11, 9]);
+await assert.rejects(import(failedUrl), (error) => error === eagerFailure);
+assert.deepEqual(abruptLookups, [55, 11, 9]);
+const fresh = await import(tracedUrl + "?fresh");
+assert.equal(fresh.semver.valid("1.2.3"), "1.2.3");
 
 // Project the original capture, factory and first loader into a test driver.
 // Reparse emitted bytes before running the private controls.
@@ -179,7 +203,11 @@ writeFileSync(
   JSON.stringify(
     {
       original: { sha256, units: units.length, directCalls, loaderRows: [...loaderRows.values()] },
-      reached: { duringImport, afterImport },
+      reached: {
+        duringImport,
+        afterImport,
+        abruptImport: { lookups: abruptLookups, sameErrorOnRepeatImport: true, freshImport: "1.2.3" },
+      },
       projection: {
         units: projectionIds,
         controls: controlRun,
