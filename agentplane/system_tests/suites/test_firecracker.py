@@ -27,7 +27,7 @@ async def test_firecracker_preserves_live_guest(
 async def test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_guest_runner(
     cluster: Cluster, native_sandbox: Sandboxes
 ) -> None:
-    view = await native_sandbox(f"systest-firecracker-trust-{uuid4().hex[:8]}", template="environment-firecracker")
+    view = await native_sandbox(f"systest-firecracker-trust-{uuid4().hex[:8]}", template="firecracker")
     await workload_trust.a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_runner(
         cluster, view, route=workload_trust.RunnerControlRoute.POD_IP
     )

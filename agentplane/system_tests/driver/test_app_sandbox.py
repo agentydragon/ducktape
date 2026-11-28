@@ -529,7 +529,7 @@ async def test_scope_does_not_select_vm_validation_for_pod_with_a_vm_like_templa
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", AsyncMock())
 
     async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
-        assert await create("ordinary-pod", template="environment-vm-compat-tools") is view
+        assert await create("ordinary-pod", template="vm-compat-tools") is view
 
     admitted.assert_not_awaited()
 
@@ -701,7 +701,7 @@ async def test_scope_keeps_generic_diagnostics_when_failed_readiness_has_no_bind
 
     with pytest.raises(SandboxNotReadyError, match="did not reach Ready") as raised:
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
-            await create("unbound-failure", template="environment-vm-old-pod")
+            await create("unbound-failure", template="vm-old-pod")
 
     readiness.assert_awaited_once_with(client, created)
     assert raised.value is readiness_error

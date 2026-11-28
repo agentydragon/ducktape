@@ -180,7 +180,7 @@ class AppFixture:
 
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
 # or preset does -- so unlike staging's it is the fixture's own to rename.
-POD_TEMPLATE = "environment-tools"
+POD_TEMPLATE = "pod-hdd"
 NATIVE_TEST_CLIENT = NATIVE_CLIENT_NAME
 _NATIVE_TEST_CLIENT_LABELS = {"app.kubernetes.io/name": NATIVE_TEST_CLIENT}
 # Runner environments use this image; the idle identity Pod reuses PostgreSQL instead.
@@ -932,14 +932,14 @@ def add_vm_templates(
     )
     config = ConfigMap(
         scope,
-        "environment-vm-config",
+        "vm-config",
         metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
         data=config_data,
     )
     labels = environment_sandbox.ENVIRONMENT_RUNTIME_LABELS
     environment_vm.EnvironmentVmTemplate(
         scope,
-        "environment-vm-template",
+        "vm-template",
         env,
         template_name=environment_vm.NAME,
         root_image=root_disk,

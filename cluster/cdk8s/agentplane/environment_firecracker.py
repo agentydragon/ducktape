@@ -27,7 +27,7 @@ from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, N
 from cluster.cdk8s.settings_file import SettingsFile
 from util.settings_contract import validate_settings_fragment
 
-NAME = "environment-firecracker"
+NAME = "firecracker"
 BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset"
 LAUNCHER_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher:unset"
 GATEWAY = "192.0.2.1"

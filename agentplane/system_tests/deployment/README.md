@@ -304,7 +304,7 @@ independent. Both harnesses, Git and `findmnt` are pinned in the root disk. Runn
 private manager connection; a real system bus also exercises denial of unprivileged management
 requests.
 
-The Claude sandbox scenario uses `environment-vm-supervision`, which differs from `environment-vm` only by
+The Claude sandbox scenario uses `vm-supervision`, which differs from `vm` only by
 an explicit boot argument. That boot runs
 `/run/agentplane/environment/bin/environment-runtime-systemd-fixture` from the test runner disk before
 starting production Runner.
@@ -341,7 +341,7 @@ session ID and reads successful output from a new process in it.
 Evidence goes to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted
 upstream requests.
 
-The `environment-vm-codex-oom` template adds `agentplane.cgroup-observer=1` to `environment-vm`'s
+The `vm-codex-oom` template adds `agentplane.cgroup-observer=1` to `vm`'s
 guest configuration. The argument starts a root service that publishes read-only snapshots of
 kernel counters and executor identity outside both execution slices. Tool processes retain
 production's UID and cgroup permissions.

@@ -221,7 +221,9 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
         for rule in gateway["egress"]
         for endpoint in rule.get("toEndpoints", [])
     )
-    runner_listener = find_resource(staging_manifests, "CiliumNetworkPolicy", "environment-tools-listener")["spec"]
+    runner_listener = find_resource(
+        staging_manifests, "CiliumNetworkPolicy", "agentplane-environment-runtime-listener"
+    )["spec"]
     gateway_label = runner_gateway.sessions_service(staging.ENV.namespace).pods.selector["app.kubernetes.io/name"]
     assert not any(
         endpoint["matchLabels"].get("app.kubernetes.io/name") == gateway_label

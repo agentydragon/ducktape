@@ -1180,7 +1180,7 @@ directory, with intended defaults and override behavior visible. Include the nor
 ### `VM_STARTUP_LATENCY` — measure production time to a useful fresh VM Session
 
 **Later; low priority, not wanted soon (operator, 2026-11-15 UTC); selected next on 2026-10-30
-PDT.** First measure one ordinary staging `environment-vm` start using
+PDT.** First measure one ordinary staging `vm` start using
 the production NixOS guest on a KVM-schedulable node. The [prior-work audit](../debug/vm_startup_latency/2026_11_01_vm_startup_latency.md)
 records the boot, image, and runner-disk improvements already shipped, and why the recent Debian/QEMU
 system-test timings do not measure this product path. The staging [fresh VM acceptance](../docs/vm_sandboxes.md#fresh-vm-trial-readiness)
@@ -2107,7 +2107,7 @@ squashfs-disk and split-`containerDisk` shapes in the decision node beside it. K
 Firecracker stays open; what must not change is that the state volume and its ownership rules survive
 (`STATE_VOLUME_BLOCK`, and the `107:107` virtiofs constraint). Halted containerDisk replacement already
 works, so the update path exists. Landed: the environment processes and CLI are published as their own
-`containerDisk` (`//agentplane/env/images:disk_image`), which the `environment-vm` template attaches as a
+`containerDisk` (`//agentplane/env/images:disk_image`), which the `vm` template attaches as a
 second read-only disk. The guest mounts it at `/run/agentplane/environment` and runs Environment Runtime
 and the CLI from it, leaving the guest root disk without those binaries (a Sandbox on `agentplane-testing`
 booted this way). Remaining: the tools disk is not split yet.

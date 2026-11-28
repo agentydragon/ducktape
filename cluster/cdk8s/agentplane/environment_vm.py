@@ -38,7 +38,7 @@ from cluster.cdk8s.agentplane import template_storage
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.kubevirt.virtual_machine import HostDiskRoot, container_disk_template
 
-NAME = "environment-vm"
+NAME = "vm"
 ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-environment-vm:unset"  # image-pins/ sets the tag
 RUNNER_DISK_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"  # image-pins/ sets the tag
 _WORKSPACE = "workspace"

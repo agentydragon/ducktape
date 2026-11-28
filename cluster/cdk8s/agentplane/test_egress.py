@@ -277,7 +277,7 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
         assert route["upstream"] == environments.authority
         assert route["transport"] == {"mode": "tls_connect", "server_uri": SANDBOX_CONTROLLER_URI}
 
-    pod_template = find_resource(staging_manifests, "SandboxTemplate", "environment-tools")
+    pod_template = find_resource(staging_manifests, "SandboxTemplate", "pod-hdd")
     pod_runner = one(
         container
         for container in pod_template["spec"]["pod"]["spec"]["containers"]
@@ -300,7 +300,7 @@ def test_managed_cli_service_origins_use_svid_routes(staging_manifests: list[dic
     )
 
     vm_runtime = json.loads(
-        find_resource(staging_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
+        find_resource(staging_manifests, "ConfigMap", "vm-config")["data"]["environment-runtime.json"]
     )
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == f"http://{sessions_authority}"
     assert vm_runtime["harness_environment"]["values"]["AGENTPLANE_HISTORY_URL"] == (

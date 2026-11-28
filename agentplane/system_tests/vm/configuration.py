@@ -2,9 +2,9 @@
 
 from agentplane.env.config import GuestResources, ResourceLimits
 
-SUPERVISION_TEMPLATE = "environment-vm-supervision"
+SUPERVISION_TEMPLATE = "vm-supervision"
 SUPERVISION_KERNEL_ARG = "agentplane.supervision-checks=1"
-OOM_TEMPLATE = "environment-vm-codex-oom"
+OOM_TEMPLATE = "vm-codex-oom"
 
 _MIB = 1024 * 1024
 CPU_QUOTA_PERIOD_MICROS = 100_000

@@ -70,9 +70,10 @@ from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate
 from cluster.cdk8s.service_ref import Pods
 from cluster.cdk8s.settings_file import SettingsFile
 
-# The Pod name label selects every Environment Runtime workload for the network fence.
-NAME = "environment-tools"
+# The Pod name label selects every Environment Runtime workload for the network fence, so the
+# fence is named for it: one fence covers the runners of every Pod template, not one template's Pods.
 _POD_LABEL_NAME = "agentplane-environment-runtime"
+NAME = _POD_LABEL_NAME
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
 ENVIRONMENT_RUNTIME_LABELS = {**_LABELS, **telemetry.EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS}

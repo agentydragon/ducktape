@@ -6,7 +6,7 @@ is a trusted, privileged host process. The guest runs the same Environment Runti
 supervision, harnesses and Execution Service as the NixOS KubeVirt image.
 
 The staging configuration includes the **Firecracker** launch preset, which selects the
-`environment-firecracker` template, standard policies and a Codex thread. Staging launch is held
+`firecracker` template, standard policies and a Codex thread. Staging launch is held
 pending a cluster integration and admission decision. A server-side dry run rejected the
 privileged launcher under staging's baseline policy ([#18421](https://github.com/agentydragon/ducktape/pull/18421)).
 The launcher image targets x86-64. The Pod requests `devices.kubevirt.io/kvm` and requires
