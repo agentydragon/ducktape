@@ -38,6 +38,24 @@ restoring the helper, a fresh URL initializes and its public `valid`
 call succeeds. ESM import retries and retries of a private loader inside
 a surviving module are different observations.
 
+The live-cell control keeps the full bundle and inserts a test hook just
+before `#56`. An independent parse checks that all 59 original units remain
+in their original order. The hook can replace the actual lexical
+`__getOwnPropNames` binding during a lookup. Its replacement delegates except
+that it throws if asked for the constants callback.
+
+- Rebinding during the `#11` lookup happens before the first `#9` call.
+  The replacement sees `#9` and the import rejects with its error.
+- Rebinding during the `#10` lookup happens after `#9` returns to `#11`.
+  The later `#9` calls complete without another constants lookup. In
+  particular, `#55` reads the constants for the public
+  `semver.SEMVER_SPEC_VERSION` export. The import and public API smoke
+  complete with the baseline results.
+
+The test records both traces under `liveRebind`. The inserted hook adds no
+public export to the bundle; the trace is a behavior control rather than a
+certification of the instrumented file.
+
 In the private control, factory allocation calls the callback zero times.
 The first call installs the cache before the callback can reenter. Reentry
 sees the same partial exports, including a write made before the callback
