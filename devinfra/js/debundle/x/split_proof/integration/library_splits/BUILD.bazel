@@ -290,3 +290,18 @@ js_test(
         "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof:callable_default_provider_test_module_io)",
     },
 )
+
+# Known receipt boundary. Keep it manual: a follow-up may tighten or replace
+# the success receipt for the CommonJS half.
+js_test(
+    name = "default_snapshot_format_audit",
+    data = [
+        "lodash_is_length/split.json",
+        ":node_modules/lodash-es",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "default_snapshot_format_audit.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)"},
+    tags = ["manual"],
+)
