@@ -342,6 +342,7 @@ js_library(
         "*.mjs",
         "entries/*.mjs",
         "lodash_is_length/*.mjs",
+        "lodash_join/*.mjs",
         "zod_v3_static_graph/*.mjs",
     ]),
 )
@@ -602,6 +603,41 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "zod_object_spread_test.mjs",
+    env = {
+        "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+    },
+)
+
+_LODASH_JOIN_DATA = [
+    "lodash_join/caller.mjs",
+    "lodash_join/oracle.mjs",
+    "lodash_join/split.json",
+    "source_ownership.mjs",
+    ":node_modules/acorn",
+    ":node_modules/eslint-scope",
+    ":node_modules/lodash-es",
+    "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+    "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+]
+
+js_test(
+    name = "lodash_join_node_test",
+    size = "small",
+    args = ["--node-only"],
+    data = _LODASH_JOIN_DATA,
+    entry_point = "lodash_join_test.mjs",
+)
+
+js_test(
+    name = "lodash_join_test",
+    size = "small",
+    data = _LODASH_JOIN_DATA + [
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+    ],
+    entry_point = "lodash_join_test.mjs",
     env = {
         "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
