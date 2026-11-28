@@ -74,9 +74,8 @@ Physical JS bytes are also separate from original-unit recovery: editor
 main and historical joint strict requests refused without publishing; these
 Rust emissions add **zero strict certificates** and no new strict disk or
 browser result. The historical structural/browser evidence remains labeled in
-the older snapshot. At this checkpoint a stale full replay was a harness issue,
-not a semantic or certification outcome; its later resolution is recorded in
-the newer snapshot above.
+the older snapshot. A stale full replay is a harness issue pending its fix; it
+must not be counted as a semantic or certification outcome.
 
 ## Snapshot 2026-11-28 — devel `27b68135d257d9ed34c358cf203eb36eefb77cd2`
 
