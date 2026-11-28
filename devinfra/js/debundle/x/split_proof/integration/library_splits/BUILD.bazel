@@ -687,3 +687,22 @@ js_test(
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
     },
 )
+
+js_test(
+    name = "label_origin_probe",
+    args = ["$(rootpath :real_bundles/acorn.mjs):410"],
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":real_bundles/acorn.mjs",
+        "//devinfra/js/debundle/x/split_proof:corejs",
+        "//devinfra/js/debundle/x/split_proof:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "label_origin_probe.mjs",
+    env = {
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof:corejs)",
+        "LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:linked_input_test_runner)",
+    },
+)

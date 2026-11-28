@@ -296,6 +296,16 @@ partial def stmtEq : MatchEq Stmt
     return ⟨by rw [test, yes, no]⟩
   | .block a, .block b => (listEq stmtEq a b).map fun h => ⟨congrArg Stmt.block h.down⟩
   | .brk, .brk | .cont, .cont => some ⟨rfl⟩
+  | .breakTo a, .breakTo b => (scalarEq a b).map fun h => ⟨congrArg Stmt.breakTo h.down⟩
+  | .continueTo a, .continueTo b => (scalarEq a b).map fun h => ⟨congrArg Stmt.continueTo h.down⟩
+  | .labelScope name body, .labelScope name' body' => do
+    let ⟨n⟩ ← scalarEq name name'
+    let ⟨b⟩ ← stmtEq body body'
+    return ⟨n ▸ b ▸ rfl⟩
+  | .labelContinue name body, .labelContinue name' body' => do
+    let ⟨n⟩ ← scalarEq name name'
+    let ⟨b⟩ ← stmtEq body body'
+    return ⟨n ▸ b ▸ rfl⟩
   | .loop init test update body postTest, .loop init' test' update' body' postTest' => do
     let ⟨i⟩ ← listEq stmtEq init init'
     let ⟨t⟩ ← exprEq test test'

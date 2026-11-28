@@ -81,6 +81,8 @@ theorem loop_reachFrame_step {r R cells A n} (away : Away r R A)
     cases flow
     case brk => exact reachFrame_pure r R cells A Flow.normal (FlowSafe.normal A)
     case ret value => exact reachFrame_pure r R cells A (Flow.ret value) hflow
+    case breakTo label => exact reachFrame_pure r R cells A (Flow.breakTo label) hflow
+    case continueTo label => exact reachFrame_pure r R cells A (Flow.continueTo label) hflow
     all_goals
       apply (condition postTest).bind
       intro again _
@@ -211,6 +213,8 @@ private theorem loopIterator_reachFrame {r R cells A} (away : Away r R A) (call 
         | cont => exact ih next hStep.2
         | brk => exact close (.ok .normal) (FlowSafe.normal A)
         | ret v => exact close (.ok (.ret v)) h
+        | breakTo label => exact close (.ok (.breakTo label)) h
+        | continueTo label => exact close (.ok (.continueTo label)) h
 
 theorem forOf_reachFrame_step {r R cells A n} (away : Away r R A)
     (framed : CallFramed r R cells A (callFn n : Call W)) (objectRoot : A (.obj objectProto))
@@ -390,8 +394,26 @@ theorem execStmt_reachFrame_step {r R cells A n} (away : Away r R A)
             | exact safe
             | intro _ eq; cases eq)
   | forOf kind pattern source body => exact forOfFrame env kind pattern source body h
+  | labelScope label body =>
+    simp only [execStmt]
+    apply (step env body h).bind
+    intro flow safe
+    cases flow <;> dsimp only
+    case breakTo target =>
+      split <;> exact reachFrame_pure r R cells A _ (fun _ eq => by cases eq)
+    all_goals exact reachFrame_pure r R cells A _ safe
+  | labelContinue label body =>
+    simp only [execStmt]
+    apply (step env body h).bind
+    intro flow safe
+    cases flow <;> dsimp only
+    case continueTo target =>
+      split <;> exact reachFrame_pure r R cells A _ (fun _ eq => by cases eq)
+    all_goals exact reachFrame_pure r R cells A _ safe
   | brk
-  | cont => exact reachFrame_pure r R cells A _ (fun _ eq => by cases eq)
+  | cont
+  | breakTo _
+  | continueTo _ => exact reachFrame_pure r R cells A _ (fun _ eq => by cases eq)
   | «throw» e => exact (eval e env h).bind fun v hv => reachFrame_errorValue v hv
   | tryCatch body param
     handler =>
