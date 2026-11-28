@@ -395,6 +395,36 @@ js_test(
 )
 
 js_test(
+    name = "d3_basis_closed_graph_test",
+    size = "small",
+    args = [
+        "$(rootpath @d3_shape_source//:src/curve/basisClosed.js)",
+        "$(rootpath @d3_shape_source//:src/curve/basis.js)",
+        "$(rootpath @d3_shape_source//:src/noop.js)",
+    ],
+    data = [
+        "//devinfra/js/debundle/x/split_proof:basis_closed_graph_test_runner",
+        "//devinfra/js/debundle/x/split_proof:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+        "@d3_shape_source//:src/curve/basis.js",
+        "@d3_shape_source//:src/curve/basisClosed.js",
+        "@d3_shape_source//:src/noop.js",
+    ],
+    entry_point = "d3_basis_closed_graph_test.mjs",
+    env = {
+        "BASIS_CLOSED_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof:basis_closed_graph_test_runner)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof:lowersplit)",
+        "MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    },
+    no_copy_to_bin = [
+        "@d3_shape_source//:src/curve/basis.js",
+        "@d3_shape_source//:src/curve/basisClosed.js",
+        "@d3_shape_source//:src/noop.js",
+    ],
+)
+
+js_test(
     name = "d3_basis_test",
     size = "small",
     args = [

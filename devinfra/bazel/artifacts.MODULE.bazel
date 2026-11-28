@@ -1012,7 +1012,7 @@ http_file(
 # Complete source modules from d3-shape 1.3.7, pinned in the root pnpm lock.
 http_archive(
     name = "d3_shape_source",
-    build_file_content = 'exports_files(["src/curve/basis.js", "src/curve/bundle.js"], visibility = ["//visibility:public"])',
+    build_file_content = 'exports_files(["src/curve/basis.js", "src/curve/basisClosed.js", "src/curve/bundle.js", "src/noop.js"], visibility = ["//visibility:public"])',
     sha256 = "d19261dad8ff192357db2720d57c1786dbfb8c9f42eafe577cb7c4d5b473fd0e",
     strip_prefix = "package",
     urls = ["https://registry.npmjs.org/d3-shape/-/d3-shape-1.3.7.tgz"],
