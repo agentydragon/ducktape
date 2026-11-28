@@ -1,5 +1,81 @@
 # Public split-proof scoreboard
 
+## Snapshot 2026-11-28 — devel `27b68135d257d9ed34c358cf203eb36eefb77cd2`
+
+### Attributed source files in the four readable bundles
+
+The merged [source-ownership audit](library_splits/SOURCE_OWNERSHIP.md) joins
+byte-verified source maps to the original unit spans. Its source-file homes
+are evidence of file origin, not automatically proof of semantic module
+recovery. Unknown, bundler-generated and fixture-entry units remain separate.
+Span bytes count input units; whitespace and comments outside units are not
+included. These are the four readable bundles from the first snapshot, not the
+separate identity-baseline byte totals or the minified variants.
+
+| Original input | Bytes / units   | Known single-file units / span bytes / homes | Generated glue units | Fixture / unmapped units |
+| -------------- | --------------- | -------------------------------------------- | -------------------: | ------------------------ |
+| Acorn          | 204,565 / 447   | 446 / 203,627 / 25                           |                    1 | 0 / 0                    |
+| lodash         | 97,358 / 670    | 669 / 76,739 / 202                           |                    1 | 0 / 0                    |
+| semver         | 78,583 / 59     | 47 / 72,651 / 47                             |                   10 | 1 / 1                    |
+| Zod            | 767,238 / 1,072 | 1,048 / 716,800 / 90                         |                   23 | 1 / 0                    |
+
+No unit has anchors in multiple files; a single-file classification does not
+mean every byte is mapped. Acorn's homes include five upstream-generated data
+files, separately from bundler glue. Zod's file attribution uses byte-verified
+rebuilds of the published JavaScript from shipped TypeScript; it is not a
+TypeScript column-level map. The audit leaves nonunique output AST matches and
+rewrites unknown rather than guessing their owners.
+
+Each readable bundle has two distinct requests on the same pinned bytes: the
+previous halves and a source-file layout. Rust physically emitted both Acorn
+layouts (2 and 26 files), both lodash layouts (2 and 203 files), and semver
+halves (2 files); the five outputs matched their finite Node API smoke tests.
+Rust refused semver's source-file request and both Zod requests. Strict
+`all-outcomes` refused all eight without files, so **zero of these eight are
+ordinary certified allocations**. The exact selectors, output-byte counts,
+unknown matches and per-owner results are in the audit's
+[machine-readable ledger](library_splits/results/source-ownership.json.gz)
+and [replay](https://app.buildbuddy.io/invocation/cceda8fa-d96f-4a00-8782-b990203e1db4).
+
+For example, among units with known source and output homes, lodash halves
+co-locate 2,106 same-source pairs out of 111,556 output pairs; all 2,106
+same-source input pairs stay together, but 109,450 different-source pairs are
+also mixed. The source-file layout has 2,106 / 2,106 correct output pairs and
+2,106 / 2,106 same-source input pairs. These are Rust observations, not strict
+certificates, and they illustrate why units moved or byte equality alone do
+not measure recovered logical groups.
+
+The matching Acorn pair counts are 10,062 / 49,506 correct output pairs and
+10,062 / 10,638 same-source input pairs for halves; the source-file layout has
+10,597 / 10,597 and 10,597 / 10,638 respectively. One authored unit in that
+layout is not uniquely located by the output matcher; that is an evidence gap,
+not evidence that the unit was dropped. Semver halves have 0 / 522 correct
+output pairs; each mapped input home contributes only one unit, so the
+same-source pair denominator is empty. These pair counts exclude unknown output
+matches and are not substitutes for the per-group member ledger.
+
+### D3 BasisClosed: separately authored co-move now certified
+
+The original prototype-only request from the previous snapshot remains
+refused: it exposes a private constructor. The explicit alternative assigns
+entry rows #2 and #3 to the helper and leaves #0, #1 and #4 in entry, changing
+one of five row owners relative to that request. With a **caller-supplied**
+Node ESM root and explicit format marker, the merged
+[#20702](https://github.com/agentydragon/ducktape/pull/20702) now publishes
+and independently rereads that alternative at `all-outcomes`. It preserves
+the five original entry-row assignments of the alternative and the five
+executable rows in two fixed providers. The two surviving constructor and
+prototype members are together in the helper, with no unrelated original
+source rows there; generated glue is separate. The original distribution's
+legacy manifest does not itself supply the selected ESM premise.
+
+Node exercises the actual public factory, prototype and fixed imported
+function identities, drawing calls and the sentinel throw. The receipt's
+client coverage remains unchecked and it makes no deployment or package-wide
+claim. This result is one certified **alternative** placement, not a success
+for the original prototype-only request or for the whole D3 package.
+[Uncached devel replay](https://app.buildbuddy.io/invocation/8a370595-c3fa-46b8-8801-1d9fb059bed1).
+
 ## Snapshot 2026-11-28 — devel `aed42d64dd450748586df24c7996ad351cb74272`
 
 The independently reproduced ordinary result remains **1/122**: one
