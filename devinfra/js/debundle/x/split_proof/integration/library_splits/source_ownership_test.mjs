@@ -12,6 +12,7 @@ import { parseModule, topLevelStatements } from "../../translation/scope_metadat
 import { split } from "../../translation/testing/split.mjs";
 import { attribute, composeAcorn, sha256 } from "./source_ownership.mjs";
 import { smoke } from "./smoke.mjs";
+import { compareRegExpConstruction } from "./acorn_regexp.mjs";
 import {
   checkLocutilForwarder,
   checkLocutilOutput,
@@ -401,6 +402,7 @@ for (const sourceArg of locutil ? args : [mode, ...args]) {
       const owner = rust.routes[modeOwner];
       let rustLocationConsumer = null;
       let forwardedEntry = null;
+      let regexpConstruction = null;
       if (emitted) {
         assert.deepEqual(group.best, [{ owner, together: 4, unrelatedKnown: 0 }]);
         assert.equal(group.unknownOutput, 0);
@@ -423,6 +425,16 @@ for (const sourceArg of locutil ? args : [mode, ...args]) {
             expected: consumer,
             parse: (text) => acorn.parse(text, { ecmaVersion: "latest", sourceType: "module" }),
           });
+          regexpConstruction = await compareRegExpConstruction({
+            original: source,
+            emitted: path.join(work, "forwarded", rust.routes[placement.entry]),
+            units,
+            control: path.join(work, "swapped-regexp-control.mjs"),
+          });
+          writeFileSync(
+            path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "acorn-regexp.json"),
+            JSON.stringify(regexpConstruction, null, 2) + "\n"
+          );
         }
       }
       const strictLocationConsumer = accepted
@@ -461,6 +473,16 @@ for (const sourceArg of locutil ? args : [mode, ...args]) {
           group,
           locationConsumer: rustLocationConsumer,
           ...(forwardedEntry && { forwardedEntry }),
+          ...(regexpConstruction && {
+            regexpConstruction: {
+              ranges: regexpConstruction.ranges,
+              initializationCalls: regexpConstruction.input.evaluation.filter(([kind]) => kind === "construct").length,
+              publicCalls: regexpConstruction.input.calls.filter(([kind]) => kind === "construct").length,
+              reentryMatches: true,
+              firstThrowMatches: true,
+              swapDetected: true,
+            },
+          }),
           outputFiles: rust.output.files.length,
           ownerFile: rust.output.files.find((file) => file.owner === owner) ?? null,
           ...(rust.diagnostic && { diagnostic: rust.diagnostic }),
